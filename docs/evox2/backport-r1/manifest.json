@@ -1,0 +1,107 @@
+{
+  "package": "qwen38-evox2-upstream-r1",
+  "date_utc": "2026-09-15",
+  "base_repository": "https://github.com/LaurentZuijdwijk/llama.cpp",
+  "base_commit": "5e085d123eead2e89b5c19f824fccb05727da6a2",
+  "upstream_repository": "https://github.com/ggml-org/llama.cpp",
+  "upstream_snapshot": "d1d3c3396aa13a5f239109a822666c4870490ad5",
+  "range_start_b10641_equivalent": "539f24529bdf99e0baefd54fefff1660034bfe7b",
+  "common_ancestor": "0190529ec450659b541ff608449401e68c27d098",
+  "patch_file": "qwen38-upstream-r1.patch",
+  "patch_sha256": "d7a28899d5e556f70041392dbf0439303df11d61a430fb6b13d7ff34687417b0",
+  "updates": [
+    {
+      "commit": "481c65f091f74c5e7089dd0a3a1cc6b50cced31e",
+      "pr": 28705,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28705",
+      "title": "vulkan: fix data race and OOB access in argsort(large) (#28705)",
+      "scope": "complete"
+    },
+    {
+      "commit": "22397c31a00e78f55ae556c41fc78b717c5911bd",
+      "pr": 28592,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28592",
+      "title": "vulkan: Convert FILL to distribute workgroups in 2D to avoid exceeding maxComputeWorkGroupCount (#28592)",
+      "scope": "complete"
+    },
+    {
+      "commit": "09412af38a9fe328da2ed452a40f310eea350290",
+      "pr": 28023,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28023",
+      "title": "qwen4exp: sum the indexer heads by slices (#28023)",
+      "scope": "complete"
+    },
+    {
+      "commit": "5fdfa6282936576d2f352d4b97f397a109f207a6",
+      "pr": 28068,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28068",
+      "title": "models : fix GDN normalization from `max` to `rsqrt` (#28068)",
+      "scope": "Qwen4exp and shared helper only"
+    },
+    {
+      "commit": "c7bda030e7faee594dbe7550185e857351ad405d",
+      "pr": 28190,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28190",
+      "title": "vulkan: fix FA dequant path engagement (#28190)",
+      "scope": "complete"
+    },
+    {
+      "commit": "992cb503cdacf691ef06c332d05243bc7807257b",
+      "pr": 28387,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28387",
+      "title": "ggml: allow backend inputs to not create another split (#28387)",
+      "scope": "complete"
+    },
+    {
+      "commit": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+      "pr": 28618,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28618",
+      "title": "vulkan: use CPU writes in ggml_backend_vk_cpy_tensor_async if the context is idle (#28618)",
+      "scope": "complete"
+    },
+    {
+      "commit": "0cae43063cf15170e91a2ff4d034da0ecef4a1b2",
+      "pr": 28253,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28253",
+      "title": "vulkan: support type-aligned GET_ROWS (#28253)",
+      "scope": "Vulkan and existing backend tests only"
+    },
+    {
+      "commit": "50182a53fa2c26bd2a7fc31d855231effdc2f4ad",
+      "pr": 28422,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28422",
+      "title": "vulkan: use add_alloc_dep to enable topk_moe fusion for prefill (#28422)",
+      "scope": "adapted to existing fusion state"
+    },
+    {
+      "commit": "6788edb4f325c1cb4210997eb79edcab2e27aeaa",
+      "pr": 28457,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28457",
+      "title": "vulkan: small M matrix optimizations for qwen (#28457)",
+      "scope": "adapted to existing tile selector"
+    },
+    {
+      "commit": "41abbfd599fbdd3470fcae0a1fb6530ad8403cd7",
+      "pr": 28896,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28896",
+      "title": "qwen4exp: enable rms_norm + mul fusion (#28896)",
+      "scope": "adapted; preserve trunk flags and include MTP norm tensors"
+    },
+    {
+      "commit": "311d4211bf1611ff7ca6b67035a4a07c79766efc",
+      "pr": 28330,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/28330",
+      "title": "memory : avoid allocating V cache for indexer (it's not used) (#28330)",
+      "scope": "adapted to fork indexer cache"
+    },
+    {
+      "commit": "36b10154383b60eb15baac2c7a40d2a5f784faa7",
+      "pr": 27941,
+      "url": "https://github.com/ggml-org/llama.cpp/pull/27941",
+      "title": "qwen4exp: fix seq_cp, block position keying, mtmd input, cuda abort, add tests (#27941)",
+      "scope": "indexer RoPE type flag only; no other changes from this PR"
+    }
+  ],
+  "build_script_revision": "r1.1",
+  "build_script_updated_utc": "2026-09-16"
+}
