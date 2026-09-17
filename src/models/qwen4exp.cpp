@@ -1057,7 +1057,14 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
     ggml_tensor * k = mctx_cur->get_k(ctx0, il);
     ggml_tensor * v = mctx_cur->get_v(ctx0, il);
 
-    ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, kq_scale, il);
+    static const bool use_union = [] {
+        const char * value = getenv("GGML_VK_QSA_UNION");
+        return value && strcmp(value, "1") == 0;
+    }();
+    const bool union_hint = use_union && top_k->ne[1] >= 32 && top_k->ne[3] == 1 &&
+                            k->type == GGML_TYPE_F16 && v->type == GGML_TYPE_F16;
+    ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, kq_mask_top_k, nullptr, nullptr, kq_scale, il,
+                                      union_hint ? top_k : nullptr);
     cb(cur, "kqv_out", il);
 
     // the rotation is its own inverse, so undo it on the value side of the output

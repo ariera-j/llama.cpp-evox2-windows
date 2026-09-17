@@ -162,4 +162,7 @@ AGENTS.local.md
 
 # Evo-X2 local benchmark output
 /evox2-logs/
+/evox2-r2-bench/
+/evox2-r2-tests/
+/build-llvm20-r2/
 /tools/evox2/.venv/

@@ -2,17 +2,23 @@
 
 Windows Vulkan experiments for Qwen3.8-Flash-Next on the GMKtec Evo-X2 (Ryzen AI Max+ 395 / Radeon 8060S, 128 GB unified memory).
 
-**[Windows build, model conversion and benchmark instructions (Japanese)](docs/evox2/README-ja.md)**
+**[r2 QSA union: build, correctness checks and measurements (Japanese)](docs/evox2/r2/README-ja.md)**
+
+This version adds opt-in QSA grouped-union prefill for Vulkan. It uses a 16 KiB segmented bitmap and preserves each query's attention mask. The feature is disabled by default. Windows measurements completed at 64k and 128k context; 256k and MTP remain unverified. See the r2 instructions and verification record before using it.
+
+[r1 Windows build, model conversion and baseline instructions (Japanese)](docs/evox2/README-ja.md)
+
+[Investigation and optimization summary for C++ developers new to LLM inference (Japanese)](docs/evox2/OPTIMIZATION-SUMMARY-ja.md)
 
 This repository starts from [LaurentZuijdwijk/llama.cpp](https://github.com/LaurentZuijdwijk/llama.cpp) at `5e085d123eead2e89b5c19f824fccb05727da6a2`, with selected upstream backports documented in [the r1 manifest](docs/evox2/backport-r1/manifest.json). It is not a full merge of current upstream. [README-source-fork.md](README-source-fork.md) retains the source fork's README and its separate Linux results.
 
-## Current baseline
+## r1 reference
 
 - The inference changes are the same r1 patch tested on Windows on 2026-09-16.
 - The source fork's ROCmFPx formats, PLE16 support and MTP implementation are retained.
 - The Unsloth conversion tool splits the joined PLE table into 16 tensors without requantizing the weights. The converted model completed the recorded 96 GB GPU-allocation tests.
 - Measured settings: 65,536 context, 61,789 prompt tokens, f16 K/V cache, batch 2,048, ubatch 1,024, one conversation, MTP off, LLVM 20.1.8 and Vulkan SDK 1.4.357.0.
-- 128k/256k, MTP and new sparse-prefill changes still need validation in this Windows setup. The fastest compiler/configuration has not been established.
+- r2 QSA union completed the recorded 64k and 128k Windows measurements. The 256k, MTP and MSVC comparisons are still pending. The fastest compiler/configuration has not been established.
 
 Conversion and benchmark scripts are in [tools/evox2](tools/evox2). Model weights, private prompts and raw inference logs are not included. Inherited GitHub Actions definitions have a `.disabled` suffix because they assume the source project's runners, schedules and release setup. No downstream CI result is implied.
 

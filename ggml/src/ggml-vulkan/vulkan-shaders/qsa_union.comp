@@ -1,0 +1,94 @@
+#version 450
+
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_basic : require
+
+// Adapted from LynxPDA/llama.cpp flash_attn_union.comp at 1f4e25789 (MIT).
+// Reuse a 16 KiB bitmap across index ranges; do not truncate high KV positions.
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer T { int data_top[]; };
+layout(binding = 1) writeonly buffer U { uint data_union[]; };
+layout(binding = 2) writeonly buffer C { uint data_count[]; };
+
+layout(push_constant) uniform Parameters {
+    uint n_kv;
+    uint n_top;
+    uint n_batch;
+    uint top_stride;
+    uint batch_off;
+} p;
+
+const uint WORDS = 4096;
+const uint RANGE = WORDS * 32;
+shared uint bitmap[WORDS];
+shared uint wave_totals[32];
+shared uint base;
+
+void main() {
+    const uint tid = gl_LocalInvocationIndex;
+    const uint lane = gl_SubgroupInvocationID;
+    const uint wave = gl_SubgroupID;
+    const uint nwave = gl_NumSubgroups;
+
+    if (tid == 0) {
+        base = 0;
+    }
+    barrier();
+
+    for (uint begin = 0; begin < p.n_kv; begin += RANGE) {
+        const uint length = min(RANGE, p.n_kv - begin);
+        const uint words = (length + 31) / 32;
+        for (uint w = tid; w < words; w += 256) {
+            bitmap[w] = 0;
+        }
+        barrier();
+
+        for (uint j = tid; j < p.n_batch * p.n_top; j += 256) {
+            const int idx = data_top[(p.batch_off + j / p.n_top) * p.top_stride + j % p.n_top];
+            if (idx >= 0 && uint(idx) >= begin && uint(idx) - begin < length) {
+                const uint local = uint(idx) - begin;
+                atomicOr(bitmap[local >> 5], 1u << (local & 31));
+            }
+        }
+        barrier();
+
+        for (uint chunk = 0; chunk < words; chunk += 256) {
+            const uint w = chunk + tid;
+            uint bits = w < words ? bitmap[w] : 0;
+            const uint count = bitCount(bits);
+            const uint offset = subgroupExclusiveAdd(count);
+            const uint total_wave = subgroupAdd(count);
+            if (lane == 0) {
+                wave_totals[wave] = total_wave;
+            }
+            barrier();
+
+            uint prefix = 0;
+            uint total = 0;
+            for (uint s = 0; s < nwave; ++s) {
+                if (s < wave) {
+                    prefix += wave_totals[s];
+                }
+                total += wave_totals[s];
+            }
+            uint slot = base + prefix + offset;
+            while (bits != 0) {
+                const uint b = findLSB(bits);
+                bits &= bits - 1;
+                data_union[slot++] = begin + w * 32 + b;
+            }
+            barrier();
+            if (tid == 0) {
+                base += total;
+            }
+            barrier();
+        }
+    }
+    if (tid == 0) {
+        data_count[0] = max(256u, (base + 255) & ~255u);
+        data_count[1] = base;
+        data_count[2] = p.n_batch * p.n_top;
+        data_count[3] = p.n_kv;
+    }
+}

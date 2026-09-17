@@ -27,7 +27,7 @@ Unsloth UD-IQ3_XXSはPLE16変換後、AgentionはROCmFP4-FAST-v2-ple16を使用�
 | r1 + Agention、2回 | 230.72 / 230.83 | 23.74 / 23.76 |
 | r1 + Unsloth PLE16、後刻の再計測 | 232.44 | 23.70 |
 
-`GGML_VK_FUSE_UNARY_MUL=1` は近接したOFF計測とほぼ同程度で、採用する根拠は得られていません。基準計測では未設定にします。128k/256k、MTP ON、新しい疎Attention、MSVCとLLVMの最終比較は未検証・未完了です。64kでの正常終了を他の条件へ一般化しません。
+`GGML_VK_FUSE_UNARY_MUL=1` は近接したOFF計測とほぼ同程度で、採用する根拠は得られていません。基準計測では未設定にします。このページはr1の記録です。QSA unionと128kの結果は[r2のページ](r2/README-ja.md)を参照してください。256k、MTP ON、MSVCとLLVMの最終比較は未完了です。
 
 ## LLVM 20.1.8でビルド
 
@@ -36,7 +36,7 @@ Git、Visual StudioのC++ Build ToolsとWindows SDK、CMake、Ninja、LLVM 20.1.
 初期登録後に通常のcloneを行う場合:
 
 ```powershell
-git clone https://github.com/isferia/llama.cpp-evox2-windows.git C:\llama-build\llama.cpp-evox2-windows
+git clone https://github.com/ariera-j/llama.cpp-evox2-windows.git C:\llama-build\llama.cpp-evox2-windows
 ```
 
 初期登録スクリプトがこのフォルダーを作成済みならcloneは不要です。「x64 Native Tools Command Prompt for VS」を開き、次を **cmd.exe** で実行します。インストール先は実際の場所に合わせてください。環境変数の変更はこのウィンドウ内だけです。
@@ -117,11 +117,11 @@ Remove-Item Env:GGML_VK_PERF_LOGGER_FREQUENCY -ErrorAction SilentlyContinue
 
 自動管理ページファイルでモデル読み込み中にコミット上限へ近づいた記録があるため、長コンテキストの試験前にコミット余裕を確認します。ページファイル設定はメモリ確保の余裕を作るための別の設定であり、速度改善そのものではありません。
 
-## 次の実装候補と出典
+## r2と出典
 
 profilerでは純粋なPP区間のGPU時間の約42.7%を `FLASH_ATTN_EXT` が占め、後半の区間では約56.6%でした。QSA top-k単体は約0.44%。この内訳はprofiler付き測定であり、通常のPP/TG速度とは区別します。
 
-[grouped-union sparse prefillの外部PR](https://github.com/Nathanw1014/llama.cpp/pull/11)は候補ですが未適用です。クエリーごとのマスク、端数ubatch、GQA、数値の正しさ、Windowsドライバーの共有メモリ32KiB制約を確認し、基準版から分けて評価します。Linuxでの報告倍率をWindowsの予測値にはしません。
+[grouped-union sparse prefillの外部PR](https://github.com/Nathanw1014/llama.cpp/pull/11)を参考にしたQSA unionをr2として追加しました。クエリーごとのmaskを保ち、端数ubatch、GQA、数値の正しさ、Windowsドライバーの共有メモリ32KiB制約を確認しています。実装範囲とWindows結果は[r2のページ](r2/README-ja.md)に分離しています。Linuxで報告された倍率をWindowsの予測値にはしていません。
 
 - [元fork](https://github.com/LaurentZuijdwijk/llama.cpp)、[upstream](https://github.com/ggml-org/llama.cpp)
 - [採用PRのSHA・範囲](backport-r1/manifest.json)、[選定理由](backport-r1/UPSTREAM-AUDIT-ja.md)

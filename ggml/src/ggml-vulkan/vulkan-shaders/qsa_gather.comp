@@ -1,0 +1,52 @@
+#version 450
+
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+
+// Gather each KV head once and retain the mask for each query in the group.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer K { uint data_k[]; };
+layout(binding = 1) readonly buffer V { uint data_v[]; };
+layout(binding = 2) readonly buffer U { uint data_union[]; };
+layout(binding = 3) readonly buffer M { float16_t data_m[]; };
+layout(binding = 4) writeonly buffer KC { uint data_kc[]; };
+layout(binding = 5) writeonly buffer VC { uint data_vc[]; };
+layout(binding = 6) writeonly buffer MC { float16_t data_mc[]; };
+layout(binding = 7) readonly buffer C { uint data_count[]; };
+
+layout(push_constant) uniform Parameters {
+    uint capacity;
+    uint k_words;
+    uint v_words;
+    uint k_row_stride;
+    uint v_row_stride;
+    uint k_head_stride;
+    uint v_head_stride;
+    uint mask_stride;
+    uint n_batch;
+    uint batch_off;
+} p;
+
+void main() {
+    const uint row = gl_WorkGroupID.x + gl_WorkGroupID.y * 4096;
+    const uint head = gl_WorkGroupID.z;
+    const uint tid = gl_LocalInvocationIndex;
+    const uint kv = data_count[0];
+    if (row >= kv) {
+        return;
+    }
+    const bool valid = row < data_count[1];
+    const uint src = valid ? data_union[row] : 0;
+    const uint kd = (head * p.capacity + row) * p.k_words;
+    const uint vd = (head * p.capacity + row) * p.v_words;
+    for (uint i = tid; i < p.k_words; i += 64) {
+        data_kc[kd + i] = valid ? data_k[head * p.k_head_stride + src * p.k_row_stride + i] : 0;
+    }
+    for (uint i = tid; i < p.v_words; i += 64) {
+        data_vc[vd + i] = valid ? data_v[head * p.v_head_stride + src * p.v_row_stride + i] : 0;
+    }
+    if (head == 0 && tid < p.n_batch) {
+        data_mc[tid * kv + row] = valid ? data_m[(p.batch_off + tid) * p.mask_stride + src] : float16_t(uintBitsToFloat(0xff800000));
+    }
+}

@@ -2476,6 +2476,12 @@ extern "C" {
             struct ggml_tensor * a,
             struct ggml_tensor * sinks);
 
+    // Optional I32 indices [selected, queries, 1, streams]. The mask must be -INF outside this set.
+    // Backends may ignore this hint and evaluate the full mask. Invalid indices are ignored.
+    GGML_API void ggml_flash_attn_ext_set_top_k(
+            struct ggml_tensor * a,
+            struct ggml_tensor * top_k);
+
     // TODO: needs to be adapted to ggml_flash_attn_ext
     GGML_API struct ggml_tensor * ggml_flash_attn_back(
            struct ggml_context * ctx,
