@@ -118,12 +118,15 @@ void llama_model_qwen4exp::load_arch_tensors(llama_model_loader & ml) {
     const int64_t hc_dim = hc * n_embd;
     const int64_t hc_lr  = hparams.hc_low_rank;
 
+    const bool mtp_only = hparams.n_layer_nextn > 0 && ml.get_weight("blk.0.hc_attn_norm.weight") == nullptr;
+    const int  trunk_flags = mtp_only ? TENSOR_NOT_REQUIRED : 0;
+
     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, 0);
 
     // there is no output_norm: the final hyper-connection mixer carries it
-    hc_head_norm = create_tensor(tn(LLM_TENSOR_HC_HEAD_NORM, "weight"), { n_embd, hc }, TENSOR_ALLOW_RESHAPE);
-    hc_head_down = create_tensor(tn(LLM_TENSOR_HC_HEAD_DOWN, "weight"), { hc_dim, hc_lr }, 0);
-    hc_head_up   = create_tensor(tn(LLM_TENSOR_HC_HEAD_UP,   "weight"), { hc_lr, hc_dim }, 0);
+    hc_head_norm = create_tensor(tn(LLM_TENSOR_HC_HEAD_NORM, "weight"), { n_embd, hc }, trunk_flags | TENSOR_ALLOW_RESHAPE);
+    hc_head_down = create_tensor(tn(LLM_TENSOR_HC_HEAD_DOWN, "weight"), { hc_dim, hc_lr }, trunk_flags);
+    hc_head_up   = create_tensor(tn(LLM_TENSOR_HC_HEAD_UP,   "weight"), { hc_lr, hc_dim }, trunk_flags);
 
     output = create_tensor(tn(LLM_TENSOR_OUTPUT, "weight"), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
     if (output == NULL) {
@@ -222,11 +225,6 @@ void llama_model_qwen4exp::load_arch_tensors(llama_model_loader & ml) {
             }
         }
     }
-
-    // An MTP-only file carries just the draft block. Keep walking the trunk so the
-    // per-layer bookkeeping still runs, but let its tensors be absent.
-    const bool mtp_only = hparams.n_layer_nextn > 0 && ml.get_weight("blk.0.hc_attn_norm.weight") == nullptr;
-    const int  trunk_flags = mtp_only ? TENSOR_NOT_REQUIRED : 0;
 
     for (int il = 0; il < n_layer; ++il) {
         auto & layer = layers[il];
@@ -341,6 +339,10 @@ void llama_model_qwen4exp::load_arch_tensors(llama_model_loader & ml) {
         layer.nextn.enorm   = create_tensor(tn(LLM_TENSOR_NEXTN_ENORM,   "weight", il), { n_embd }, flags);
         layer.nextn.hnorm   = create_tensor(tn(LLM_TENSOR_NEXTN_HNORM,   "weight", il), { hc_dim }, flags);
         layer.nextn.eh_proj = create_tensor(tn(LLM_TENSOR_NEXTN_EH_PROJ, "weight", il), { 2 * n_embd, n_embd }, flags);
+
+        layer.nextn.hc_head_norm = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_NORM, "weight", il), { n_embd, hc }, flags | TENSOR_NOT_REQUIRED | TENSOR_ALLOW_RESHAPE);
+        layer.nextn.hc_head_down = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_DOWN, "weight", il), { hc_dim, hc_lr }, flags | TENSOR_NOT_REQUIRED);
+        layer.nextn.hc_head_up   = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_UP,   "weight", il), { hc_lr, hc_dim }, flags | TENSOR_NOT_REQUIRED);
     }
 }
 
@@ -572,6 +574,11 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     GGML_ASSERT(layer.nextn.enorm   && "MTP block is missing nextn.enorm");
     GGML_ASSERT(layer.nextn.hnorm   && "MTP block is missing nextn.hnorm");
 
+    ggml_tensor * hc_head_norm = layer.nextn.hc_head_norm ? layer.nextn.hc_head_norm : model.hc_head_norm;
+    ggml_tensor * hc_head_down = layer.nextn.hc_head_down ? layer.nextn.hc_head_down : model.hc_head_down;
+    ggml_tensor * hc_head_up   = layer.nextn.hc_head_up   ? layer.nextn.hc_head_up   : model.hc_head_up;
+    GGML_ASSERT(hc_head_norm && hc_head_down && hc_head_up && "MTP block is missing a hyper-connection output head");
+
     int sections[4];
     std::copy(std::begin(hparams.rope_sections), std::begin(hparams.rope_sections) + 4, sections);
 
@@ -652,7 +659,7 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
         inpL = ggml_reshape_3d(ctx0, flat, n_embd, hc, n_outputs);
     }
 
-    cur = build_hc_mix(inpL, model.hc_head_norm, model.hc_head_down, model.hc_head_up, nullptr, nullptr, -1);
+    cur = build_hc_mix(inpL, hc_head_norm, hc_head_down, hc_head_up, nullptr, nullptr, -1);
     cb(cur, "result_norm", -1);
     res->t_embd = cur;
 
