@@ -1341,6 +1341,10 @@ struct llm_graph_context {
     //
 
     llm_graph_input_mem_hybrid * build_inp_mem_hybrid() const;
+    // Build a hybrid attention input without a recurrent input.  This is used
+    // by hybrid memories whose graph has no recurrent layers (e.g. the MTP
+    // QSA prototype), so the unused recurrent input is not left unallocated.
+    llm_graph_input_mem_hybrid * build_inp_mem_hybrid_attn_only() const;
     llm_graph_input_mem_hybrid_k * build_inp_mem_hybrid_k() const;
 
     llm_graph_input_mem_hybrid_iswa * build_inp_mem_hybrid_iswa() const;

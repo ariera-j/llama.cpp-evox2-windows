@@ -17,6 +17,7 @@
 #include "llama-memory-recurrent.h"
 
 #include <cassert>
+#include <cinttypes>
 #include <cmath>
 #include <cstring>
 #include <numeric>
@@ -1099,7 +1100,17 @@ void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
 
     const int64_t n_rs = mctx->get_recr()->get_n_rs();
 
-    if (inp_rs->s_copy) {
+    if (getenv("LLAMA_DEBUG_NULL_BUFFER") != nullptr &&
+            inp_rs != nullptr && inp_rs->s_copy != nullptr && inp_rs->s_copy->buffer == nullptr) {
+        LLAMA_LOG_INFO("%s: unallocated recurrent input tensor '%s' (tensor=%p buffer=%p n_rs=%" PRId64 ")\n",
+                __func__, inp_rs->s_copy->name, (void *) inp_rs->s_copy,
+                (void *) inp_rs->s_copy->buffer, n_rs);
+    }
+
+    // Some hybrid memories intentionally have no recurrent component.  Their
+    // recurrent graph input is not part of the graph and therefore has no
+    // scheduler buffer; do not probe that null buffer here.
+    if (inp_rs != nullptr && inp_rs->s_copy != nullptr && n_rs > 0) {
         GGML_ASSERT(ggml_backend_buffer_is_host(inp_rs->s_copy->buffer));
         int32_t * data = (int32_t *) inp_rs->s_copy->data;
 
@@ -1122,13 +1133,15 @@ bool llm_graph_input_mem_hybrid::can_reuse(const llm_graph_params & params) {
 
     res &= can_reuse_kq_mask(inp_attn->self_kq_mask, mctx->get_attn(), params.ubatch, params.cparams);
 
-    res &= inp_rs->s_copy->ne[0] == mctx->get_recr()->get_n_rs();
+    if (inp_rs != nullptr) {
+        res &= inp_rs->s_copy->ne[0] == mctx->get_recr()->get_n_rs();
 
-    res &= inp_rs->s_copy_main->ne[0]  == params.ubatch.n_seqs;
-    res &= inp_rs->s_copy_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
+        res &= inp_rs->s_copy_main->ne[0]  == params.ubatch.n_seqs;
+        res &= inp_rs->s_copy_extra->ne[0] == mctx->get_recr()->get_n_rs() - params.ubatch.n_seqs;
 
-    res &= inp_rs->head == mctx->get_recr()->get_head();
-    res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+        res &= inp_rs->head == mctx->get_recr()->get_head();
+        res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+    }
 
     return res;
 }
@@ -3536,6 +3549,17 @@ llm_graph_input_mem_hybrid * llm_graph_context::build_inp_mem_hybrid() const {
     auto inp_attn = build_attn_inp_kv_impl(ctx0, ubatch, hparams, cparams, mctx_cur->get_attn());
 
     auto inp = std::make_unique<llm_graph_input_mem_hybrid>(cparams, std::move(inp_attn), std::move(inp_rs), mctx_cur);
+
+    return (llm_graph_input_mem_hybrid *) res->add_input(std::move(inp));
+}
+
+llm_graph_input_mem_hybrid * llm_graph_context::build_inp_mem_hybrid_attn_only() const {
+    const auto * mctx_cur = static_cast<const llama_memory_hybrid_context *>(mctx);
+
+    auto inp_attn = build_attn_inp_kv_impl(ctx0, ubatch, hparams, cparams, mctx_cur->get_attn());
+
+    auto inp = std::make_unique<llm_graph_input_mem_hybrid>(
+            cparams, std::move(inp_attn), nullptr, mctx_cur);
 
     return (llm_graph_input_mem_hybrid *) res->add_input(std::move(inp));
 }

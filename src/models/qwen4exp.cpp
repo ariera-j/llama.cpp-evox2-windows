@@ -621,7 +621,7 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     // Dense remains the default. The hybrid input is selected only when the
     // feature flag, reference hparams, MTP indexer tensors, and hybrid_idx
     // memory all agree; otherwise the legacy attention-only context is used.
-    auto * inp_mem_hybrid = mtp_qsa ? build_inp_mem_hybrid() : nullptr;
+    auto * inp_mem_hybrid = mtp_qsa ? build_inp_mem_hybrid_attn_only() : nullptr;
     auto * inp_attn = inp_mem_hybrid != nullptr ? inp_mem_hybrid->get_attn() : build_attn_inp_kv();
     const auto * mctx_hyb = mtp_qsa ? mctx_mtp_qsa : nullptr;
 
