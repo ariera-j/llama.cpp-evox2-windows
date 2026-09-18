@@ -18,6 +18,16 @@ struct llama_cparams;
 struct llama_ubatch;
 struct llama_model_loader;
 
+// Experimental Qwen3.8-Flash-Next MTP QSA prototype.
+// The flag is intentionally process-wide and defaults to disabled.
+bool llama_mtp_qsa_requested();
+
+// Returns the effective MTP QSA block ratio for the supported reference model,
+// or zero when the model definition is not compatible. This does not mutate
+// hparams.dsv4_compress_ratios; the returned value is used only inside the
+// gated MTP QSA graph path.
+uint32_t llama_qwen4exp_mtp_qsa_ratio(const llama_hparams & hparams);
+
 // available models
 enum llm_type {
     LLM_TYPE_UNKNOWN,

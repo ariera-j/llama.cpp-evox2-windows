@@ -319,8 +319,12 @@ void llama_model_qwen4exp::load_arch_tensors(llama_model_loader & ml) {
         layer.attn_q_norm = create_tensor(tn(LLM_TENSOR_ATTN_Q_NORM, "weight", il), { n_embd_head_k }, flags);
         layer.attn_k_norm = create_tensor(tn(LLM_TENSOR_ATTN_K_NORM, "weight", il), { n_embd_head_k }, flags);
 
-        // the draft attends dense, so the indexer weights are present but never read
-        const int idx_flags = flags | TENSOR_NOT_REQUIRED | TENSOR_SKIP;
+        // The default MTP path remains dense. When the experimental QSA flag is
+        // enabled, keep these optional so legacy/Agention MTP files without
+        // nextn indexer tensors still load and fall back to dense attention.
+        const bool mtp_qsa_hparams = llama_qwen4exp_mtp_qsa_ratio(hparams) > 0;
+        const int idx_flags = flags | TENSOR_NOT_REQUIRED |
+            (llama_mtp_qsa_requested() && mtp_qsa_hparams ? 0 : TENSOR_SKIP);
         layer.index_q_proj = create_tensor(tn(LLM_TENSOR_INDEXER_Q_PROJ, "weight", il), { n_embd, hparams.indexer_n_head * idx_dim }, idx_flags);
         layer.index_k_proj = create_tensor(tn(LLM_TENSOR_INDEXER_K_PROJ, "weight", il), { n_embd, idx_dim }, idx_flags);
         layer.index_q_norm = create_tensor(tn(LLM_TENSOR_INDEXER_Q_NORM, "weight", il), { idx_dim }, idx_flags);
@@ -602,9 +606,24 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
 
     ggml_tensor * inp_pos     = build_inp_pos();
     ggml_tensor * inp_out_ids = build_inp_out_ids();
-    // The draft block is the only layer in an MTP context and attends dense, so it takes a
-    // plain attention input. create_memory gives that context an attention-only filter.
-    auto        * inp_attn    = build_attn_inp_kv();
+    const int mtp_qsa_layer = hparams.n_layer();
+    const auto * mctx_mtp_qsa = dynamic_cast<const llama_memory_hybrid_idx_context *>(mctx);
+    const bool mtp_qsa = llama_mtp_qsa_requested() &&
+        llama_qwen4exp_mtp_qsa_ratio(hparams) > 0 &&
+        mtp_qsa_layer < (int) model.layers.size() &&
+        mctx_mtp_qsa != nullptr &&
+        mctx_mtp_qsa->get_idx() != nullptr &&
+        model.layers[mtp_qsa_layer].index_q_proj != nullptr &&
+        model.layers[mtp_qsa_layer].index_k_proj != nullptr &&
+        model.layers[mtp_qsa_layer].index_q_norm != nullptr &&
+        model.layers[mtp_qsa_layer].index_k_norm != nullptr;
+
+    // Dense remains the default. The hybrid input is selected only when the
+    // feature flag, reference hparams, MTP indexer tensors, and hybrid_idx
+    // memory all agree; otherwise the legacy attention-only context is used.
+    auto * inp_mem_hybrid = mtp_qsa ? build_inp_mem_hybrid() : nullptr;
+    auto * inp_attn = inp_mem_hybrid != nullptr ? inp_mem_hybrid->get_attn() : build_attn_inp_kv();
+    const auto * mctx_hyb = mtp_qsa ? mctx_mtp_qsa : nullptr;
 
     // Grouped RMSNorm: each hc stream is normed over its own n_embd, and gamma is applied
     // across the whole [hc*n_embd] row. Norming the full row instead (which this used to do)
@@ -633,9 +652,7 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
             layer.hc_attn_norm, layer.hc_attn_down, layer.hc_attn_up, layer.hc_attn_inject, &inject, il);
     cb(cur, "mtp_hc_attn_pre", il);
 
-    // dense attention for the draft: a QSA indexer would need a cache of its own, and one
-    // block spends its time reading weights rather than attending
-    cur = build_layer_attn(inp_attn, nullptr, cur, inp_pos, sections, il);
+    cur = build_layer_attn(inp_attn, mctx_hyb, cur, inp_pos, sections, il);
     inpL = build_hc_combine(inpL, cur, inject, il);
     cb(inpL, "mtp_hc_attn_post", il);
 
@@ -776,7 +793,9 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
 
     const int64_t idx_dim  = hparams.indexer_head_size;
     const int64_t n_idx_h  = hparams.indexer_n_head;
-    const int64_t r        = hparams.dsv4_compress_ratios[il];
+    const int64_t r        = il >= (int) hparams.n_layer()
+        ? llama_qwen4exp_mtp_qsa_ratio(hparams)
+        : hparams.dsv4_compress_ratios[il];
     const int64_t n_kv     = mctx_idx->get_n_kv();
 
     GGML_ASSERT(r > 0);
@@ -1092,16 +1111,20 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
     const int64_t n_embd_head = hparams.n_embd_head_v();
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
 
-    // indexer reads the same block input as q/k/v; no context (the MTP draft attends
-    // dense, see build_layer_attn's caller in graph_mtp), no cache, or no ratio means dense
-    const bool qsa = mctx_hyb != nullptr && mctx_hyb->get_idx() != nullptr && hparams.dsv4_compress_ratios[il] > 0;
+    // Indexer reads the same block input as q/k/v. MTP gets its ratio only from
+    // the gated reference-model helper; hparams.dsv4_compress_ratios[mtp] is
+    // intentionally not rewritten.
+    const uint32_t ratio = il >= (int) hparams.n_layer()
+        ? llama_qwen4exp_mtp_qsa_ratio(hparams)
+        : hparams.dsv4_compress_ratios[il];
+    const bool qsa = mctx_hyb != nullptr && mctx_hyb->get_idx() != nullptr && ratio > 0;
 
     if (getenv("QSA_DEBUG_TIMING") != nullptr) {
         static int dbg_calls = 0;
         if (dbg_calls < 60) {
             fprintf(stderr, "%s: il=%d mctx_hyb=%p get_idx=%p ratio=%u qsa=%d\n", __func__, il,
                     (const void *) mctx_hyb, mctx_hyb ? (const void *) mctx_hyb->get_idx() : nullptr,
-                    hparams.dsv4_compress_ratios[il], (int) qsa);
+                    ratio, (int) qsa);
             fflush(stderr);
         }
         dbg_calls++;

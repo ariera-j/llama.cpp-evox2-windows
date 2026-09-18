@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <numeric>
@@ -39,6 +40,57 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+bool llama_mtp_qsa_requested() {
+    static const bool enabled = [] {
+        const char * value = std::getenv("LLAMA_MTP_QSA");
+        return value != nullptr && strcmp(value, "1") == 0;
+    }();
+
+    return enabled;
+}
+
+uint32_t llama_qwen4exp_mtp_qsa_ratio(const llama_hparams & hparams) {
+    // Qwen3.8-Flash-Next reference definition: 48 trunk layers, one MTP
+    // layer, four indexer query heads, 128-wide indexer keys, and a 2048-token
+    // logical top-k budget. The trunk's full-attention layers use four-token
+    // index blocks; the sidecar metadata currently leaves the MTP ratio at 0.
+    // Keep that metadata untouched and only expose the reference ratio through
+    // the explicitly gated MTP QSA path.
+    constexpr uint32_t reference_ratio = 4;
+
+    if (hparams.n_layer() != 48 ||
+        hparams.n_layer_nextn != 1 ||
+        hparams.n_layer_all != hparams.n_layer() + hparams.n_layer_nextn ||
+        hparams.indexer_n_head != 4 ||
+        hparams.indexer_head_size != 128 ||
+        hparams.indexer_top_k != 2048 ||
+        hparams.swa_type != LLAMA_SWA_TYPE_NONE ||
+        hparams.is_recr(hparams.n_layer())) {
+        return 0;
+    }
+
+    // Accept the sidecar's current omitted value (0) or an explicit reference
+    // value, but never replace a conflicting MTP metadata value.
+    if (hparams.dsv4_compress_ratios[hparams.n_layer()] != 0 &&
+        hparams.dsv4_compress_ratios[hparams.n_layer()] != reference_ratio) {
+        return 0;
+    }
+
+    bool saw_full_attention = false;
+    for (uint32_t il = 0; il < hparams.n_layer(); ++il) {
+        if (hparams.is_recr(il)) {
+            continue;
+        }
+
+        saw_full_attention = true;
+        if (hparams.dsv4_compress_ratios[il] != reference_ratio) {
+            return 0;
+        }
+    }
+
+    return saw_full_attention ? reference_ratio : 0;
+}
 
 static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params & params) {
     switch (arch) {
@@ -2439,6 +2491,28 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                 const bool mtp_on_hybrid_nemotron =
                     params.ctx_type == LLAMA_CONTEXT_TYPE_MTP && arch == LLM_ARCH_NEMOTRON_H_MOE;
 
+                const uint32_t mtp_layer = hparams.n_layer();
+                const bool mtp_indexer_tensors =
+                    mtp_layer < layers.size() &&
+                    layers[mtp_layer].index_q_proj != nullptr &&
+                    layers[mtp_layer].index_k_proj != nullptr &&
+                    layers[mtp_layer].index_q_norm != nullptr &&
+                    layers[mtp_layer].index_k_norm != nullptr;
+                const uint32_t mtp_qsa_ratio = llama_qwen4exp_mtp_qsa_ratio(hparams);
+                const bool mtp_qsa_on_qwen4exp =
+                    params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
+                    arch == LLM_ARCH_QWEN4EXP &&
+                    llama_mtp_qsa_requested() &&
+                    mtp_qsa_ratio > 0 &&
+                    mtp_indexer_tensors;
+
+                if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
+                    arch == LLM_ARCH_QWEN4EXP && llama_mtp_qsa_requested()) {
+                    LLAMA_LOG_INFO("%s: MTP QSA prototype: %s (indexer tensors=%s, ratio=%u)\n",
+                        __func__, mtp_qsa_on_qwen4exp ? "enabled" : "dense fallback",
+                        mtp_indexer_tensors ? "present" : "missing", mtp_qsa_ratio);
+                }
+
                 if (llm_arch_is_recurrent(arch)) {
                     res = new llama_memory_recurrent(
                             *this,
@@ -2449,7 +2523,9 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             cparams.n_seq_max,
                             cparams.n_rs_seq,
                             nullptr);
-                } else if (llm_arch_is_hybrid(arch) && !mtp_on_hybrid_qwen && !mtp_on_hybrid_nemotron) {
+                } else if (llm_arch_is_hybrid(arch) &&
+                           (!mtp_on_hybrid_qwen || mtp_qsa_on_qwen4exp) &&
+                           !mtp_on_hybrid_nemotron) {
                     // The main difference between hybrid architectures is the
                     // layer filters, so pick the right one here
                     llama_memory_hybrid::layer_filter_cb filter_attn = nullptr;
@@ -2470,16 +2546,24 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                         };
                     } else if (arch == LLM_ARCH_QWEN3NEXT || arch == LLM_ARCH_QWEN35 || arch == LLM_ARCH_QWEN35MOE || arch == LLM_ARCH_QWEN4EXP || arch == LLM_ARCH_MINIMAX_01) {
                         filter_attn = [&](uint32_t il) {
-                            return il < hparams.n_layer() && !hparams.is_recr(il);
+                            return mtp_qsa_on_qwen4exp
+                                ? il >= hparams.n_layer() && !hparams.is_recr(il)
+                                : il < hparams.n_layer() && !hparams.is_recr(il);
                         };
                         filter_recr = [&](uint32_t il) {
-                            return il < hparams.n_layer() && hparams.is_recr(il);
+                            return mtp_qsa_on_qwen4exp
+                                ? il >= hparams.n_layer() && hparams.is_recr(il)
+                                : il < hparams.n_layer() && hparams.is_recr(il);
                         };
 
                         if (arch == LLM_ARCH_QWEN4EXP && hparams.indexer_head_size > 0) {
-                            // QSA runs on the dense-attention layers only
+                            // Main context: QSA runs on trunk dense-attention layers.
+                            // MTP prototype: the indexer cache contains only the
+                            // full-attention nextn layer.
                             filter_idx = [&](uint32_t il) {
-                                return il < hparams.n_layer() && !hparams.is_recr(il);
+                                return mtp_qsa_on_qwen4exp
+                                    ? il >= hparams.n_layer() && !hparams.is_recr(il)
+                                    : il < hparams.n_layer() && !hparams.is_recr(il);
                             };
                         }
                     }

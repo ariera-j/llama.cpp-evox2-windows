@@ -6,6 +6,7 @@ param(
     [ValidateSet('f16', 'q8_0')][string]$KvType = 'f16',
     [ValidateSet(128, 256, 512, 1024)][int]$UBatch = 1024,
     [switch]$Mtp,
+    [switch]$MtpQsa,
     [string]$DraftModel = '',
     [ValidateRange(1, 8)][int]$DraftMax = 2,
     [string]$InputFile = '',
@@ -30,6 +31,7 @@ if (-not $AllocationOnly -and -not $InputFile) {
     throw 'Pass -InputFile, or use -AllocationOnly for a short-prompt allocation check.'
 }
 if ($Mtp -and -not $DraftModel) { throw 'MTP requires -DraftModel with the path to a compatible MTP head GGUF.' }
+if ($MtpQsa -and -not $Mtp) { throw '-MtpQsa requires -Mtp.' }
 if ($UmaVramLabel -notmatch '^[A-Za-z0-9_-]+$') { throw 'Use letters, digits, underscores or hyphens for -UmaVramLabel.' }
 
 $RequiredFiles = @($LlamaCli, $ModelFile)
@@ -61,15 +63,16 @@ if ($AllocationOnly) {
 }
 $Workload = if ($AllocationOnly) { 'allocation-short-prompt' } else { 'input-file' }
 $MtpLabel = if ($Mtp) { 'mtp' } else { 'nomtp' }
+$MtpQsaLabel = if ($MtpQsa) { 'mtpqsa' } else { 'dense' }
 $CommandText = ($LlamaCli | ConvertTo-Json -Compress) + ' ' + (($LlamaArguments | ForEach-Object { $_ | ConvertTo-Json -Compress }) -join ' ')
-Write-Host "Workload: $Workload; UMA label: $UmaVramLabel; model: $ModelKind"
+Write-Host "Workload: $Workload; UMA label: $UmaVramLabel; model: $ModelKind; MTP QSA: $([bool]$MtpQsa)"
 Write-Host 'Arguments below are JSON-escaped for display; execution uses an argument array.'
 Write-Host $CommandText
 if ($DryRun) { return }
 
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-$Stem = "$Stamp-$UmaVramLabel-$ModelKind-ple16-ctx-$Context-$KvType-ub-$UBatch-$MtpLabel-$Workload"
+$Stem = "$Stamp-$UmaVramLabel-$ModelKind-ple16-ctx-$Context-$KvType-ub-$UBatch-$MtpLabel-$MtpQsaLabel-$Workload"
 $LogFile = Join-Path $LogDir ($Stem + '.log')
 $SummaryFile = Join-Path $LogDir ($Stem + '.csv')
 $Started = Get-Date
@@ -77,10 +80,10 @@ $Header = @(
     "START: $($Started.ToString('o'))", 'BACKEND: Vulkan (expected; check device lines)',
     "UMA_LABEL: $UmaVramLabel (manual label, not a BIOS measurement)",
     "MODEL: $ModelKind", "MODELFILE: $ModelFile", "CTX_REQUESTED: $Context",
-    "KV_REQUESTED: $KvType", "UBATCH: $UBatch", "MTP: $([bool]$Mtp)",
+    "KV_REQUESTED: $KvType", "UBATCH: $UBatch", "MTP: $([bool]$Mtp)", "MTP_QSA: $([bool]$MtpQsa)",
     "DRAFT: $DraftModel", "WORKLOAD: $Workload", "INPUT: $InputFile",
     "PROMPT_CACHE_MIB: $PromptCacheMiB", 'COMMAND_DISPLAY_FORMAT: JSON-escaped arguments',
-    "COMMAND: $CommandText"
+    "COMMAND: $CommandText", "ENV: LLAMA_MTP_QSA=$([int][bool]$MtpQsa)"
 )
 $Header += @(Get-ChildItem Env: | Where-Object { $_.Name -like 'GGML_VK_*' } | Sort-Object Name | ForEach-Object { "ENV: $($_.Name)=$($_.Value)" })
 $Writer = New-Object System.IO.StreamWriter($LogFile, $false, $Utf8NoBom)
@@ -88,7 +91,10 @@ $Writer.AutoFlush = $true
 $Writer.WriteLine(($Header -join [Environment]::NewLine))
 $ExitCode = -1
 $LocationPushed = $false
+$SavedMtpQsa = [Environment]::GetEnvironmentVariable('LLAMA_MTP_QSA', 'Process')
+$MtpQsaValue = if ($MtpQsa) { '1' } else { $null }
 try {
+    [Environment]::SetEnvironmentVariable('LLAMA_MTP_QSA', $MtpQsaValue, 'Process')
     Push-Location (Split-Path -Parent $LlamaCli)
     $LocationPushed = $true
     # Windows PowerShell wraps native stderr in ErrorRecord even for normal logs.
@@ -104,6 +110,7 @@ try {
 } finally {
     $ErrorActionPreference = 'Stop'
     if ($LocationPushed) { Pop-Location }
+    [Environment]::SetEnvironmentVariable('LLAMA_MTP_QSA', $SavedMtpQsa, 'Process')
     $Writer.Dispose()
 }
 $Finished = Get-Date
@@ -126,7 +133,7 @@ $Summary = [PSCustomObject]@{
     Status = $Status; ExitCode = $ExitCode; DurationMinutes = [Math]::Round(($Finished - $Started).TotalMinutes, 2)
     UmaLabel = $UmaVramLabel; Model = $ModelKind; ModelFile = $ModelFile; LlamaCli = $LlamaCli
     Workload = $Workload; RequestedContext = $Context; ActualContext = $ActualContext
-    KvType = $KvType; UBatch = $UBatch; MTP = [bool]$Mtp; DraftModel = $DraftModel
+    KvType = $KvType; UBatch = $UBatch; MTP = [bool]$Mtp; MtpQsa = [bool]$MtpQsa; DraftModel = $DraftModel
     PromptCacheMiB = $PromptCacheMiB; PromptTokens = $PromptTokens; InputAtLeast80Percent = $EnoughInput
     PP = (Last-Number $PromptPattern 2); TG = (Last-Number $GenerationPattern 2)
     GeneratedTokens = (Last-Number $GenerationPattern 1)
