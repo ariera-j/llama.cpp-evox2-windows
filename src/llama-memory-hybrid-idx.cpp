@@ -73,7 +73,15 @@ llama_memory_hybrid_idx::llama_memory_hybrid_idx(
     // so a second stream would need its own watermark and row range)
     if (mem_idx && mem_idx->get_n_stream() == 1) {
         uint32_t ratio = 0;
-        for (uint32_t il = 0; il < model.hparams.n_layer(); ++il) {
+        // Walk every model layer, but use the exact index-cache filter supplied
+        // by the caller. The MTP prototype filters only the nextn layer; its
+        // metadata ratio is currently zero, so it must not try to look up
+        // trunk layer ids or allocate a pooled cache.
+        for (uint32_t il = 0; il < model.hparams.n_layer_all; ++il) {
+            if (!filter_idx(il)) {
+                continue;
+            }
+
             if (model.hparams.dsv4_compress_ratios[il] > 0) {
                 ratio = model.hparams.dsv4_compress_ratios[il];
                 break;
@@ -94,14 +102,17 @@ llama_memory_hybrid_idx::llama_memory_hybrid_idx(
             pooled_ctx.reset(ggml_init(ip));
 
             ggml_backend_buffer_type_t buft = nullptr;
-            for (uint32_t il = 0; il < model.hparams.n_layer(); ++il) {
+            for (uint32_t il = 0; il < model.hparams.n_layer_all; ++il) {
+                if (!filter_idx(il)) {
+                    continue;
+                }
+
                 // The idx cache is built with filter_idx = !is_recr(il), so get_k_storage is only
-                // in range for those layers - match that predicate exactly rather than inferring the
-                // set from the compress ratios. A layer can be recurrent and still carry a nonzero
+                // in range for those layers. A layer can be recurrent and still carry a nonzero
                 // ratio (synthetic models in test-llama-archs do exactly that), and querying it threw
-                // out_of_range from map_layer_ids.at(). The ratio test stays: pooled rows are only
-                // useful for layers the QSA indexer actually scores.
-                if (model.hparams.is_recr(il) || model.hparams.dsv4_compress_ratios[il] == 0) {
+                // out_of_range from map_layer_ids.at(). The filter and ratio tests together keep
+                // pooled rows only for layers the QSA indexer actually scores.
+                if (model.hparams.dsv4_compress_ratios[il] == 0) {
                     continue;
                 }
                 ggml_tensor * k = mem_idx->get_k_storage((int32_t) il);
