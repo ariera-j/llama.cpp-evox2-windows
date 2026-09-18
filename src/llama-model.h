@@ -22,6 +22,10 @@ struct llama_model_loader;
 // The flag is intentionally process-wide and defaults to disabled.
 bool llama_mtp_qsa_requested();
 
+// MTP-only full-QSA KV threshold. Main-model QSA keeps its existing
+// GGML_VK_QSA_UNION_MIN_KV setting; this value only gates the MTP graph.
+uint32_t llama_mtp_qsa_min_kv();
+
 // Returns the effective MTP QSA block ratio for the supported reference model,
 // or zero when the model definition is not compatible. This does not mutate
 // hparams.dsv4_compress_ratios; the returned value is used only inside the

@@ -50,6 +50,27 @@ bool llama_mtp_qsa_requested() {
     return enabled;
 }
 
+uint32_t llama_mtp_qsa_min_kv() {
+    static const uint32_t threshold = [] {
+        constexpr uint32_t default_threshold = 49152;
+
+        const char * value = std::getenv("LLAMA_MTP_QSA_MIN_KV");
+        if (value == nullptr || value[0] == '\0' || value[0] == '-') {
+            return default_threshold;
+        }
+
+        char * end = nullptr;
+        const unsigned long parsed = std::strtoul(value, &end, 10);
+        if (end == value || *end != '\0' || parsed > UINT32_MAX) {
+            return default_threshold;
+        }
+
+        return (uint32_t) parsed;
+    }();
+
+    return threshold;
+}
+
 uint32_t llama_qwen4exp_mtp_qsa_ratio(const llama_hparams & hparams) {
     // Qwen3.8-Flash-Next reference definition: 48 trunk layers, one MTP
     // layer, four indexer query heads, 128-wide indexer keys, and a 2048-token
@@ -2508,9 +2529,10 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
 
                 if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
                     arch == LLM_ARCH_QWEN4EXP && llama_mtp_qsa_requested()) {
-                    LLAMA_LOG_INFO("%s: MTP QSA prototype: %s (indexer tensors=%s, ratio=%u)\n",
+                    LLAMA_LOG_INFO("%s: MTP QSA prototype: %s (indexer tensors=%s, ratio=%u, min_kv=%u)\n",
                         __func__, mtp_qsa_on_qwen4exp ? "enabled" : "dense fallback",
-                        mtp_indexer_tensors ? "present" : "missing", mtp_qsa_ratio);
+                        mtp_indexer_tensors ? "present" : "missing", mtp_qsa_ratio,
+                        llama_mtp_qsa_min_kv());
                 }
 
                 if (llm_arch_is_recurrent(arch)) {

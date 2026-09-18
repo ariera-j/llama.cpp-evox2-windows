@@ -2348,6 +2348,15 @@ struct llama_model_qwen4exp : public llama_model_base {
         // the QSA cache layout inputs do not depend on the layer, only on its compress ratio,
         // so the layers sharing a ratio share one input set
         std::map<uint32_t, llm_graph_input_qsa *> qsa_inps;
+        std::map<uint32_t, llm_graph_input_qsa *> qsa_k_inps;
+
+        // Update the raw indexer K cache without building the Q projection,
+        // top-k, sparse gather, or QSA attention path.
+        void build_qsa_k_cache(
+        const llama_memory_hybrid_idx_context * mctx_hyb,
+                 llm_graph_input_qsa * inp,
+                            ggml_tensor * cur,
+                                    int il);
 
         // QSA: token indices this layer's queries may attend to, or nullptr for dense
         ggml_tensor * build_qsa_top_k(

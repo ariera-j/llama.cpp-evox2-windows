@@ -719,12 +719,16 @@ ggml_tensor * llama_model_qwen4exp::graph::build_norm_gated(
 // one mean-pooled indexer key scores each block; set_input resolves the cache layout
 class llama_model_qwen4exp::llm_graph_input_qsa : public llm_graph_input_i {
 public:
-    llm_graph_input_qsa(const llama_memory_hybrid_idx_context * mctx, uint32_t ratio, bool blk_bias) :
-        mctx(mctx), ratio(ratio), blk_bias(blk_bias) {}
+    llm_graph_input_qsa(const llama_memory_hybrid_idx_context * mctx, uint32_t ratio, bool blk_bias, bool k_only = false) :
+        mctx(mctx), ratio(ratio), blk_bias(blk_bias), k_only(k_only) {}
     virtual ~llm_graph_input_qsa() = default;
 
     void set_input(const llama_ubatch * ubatch) override {
         mctx->get_idx()->set_input_k_idxs(k_idxs, ubatch);
+        if (k_only) {
+            return;
+        }
+
         mctx->set_input_qsa(cell_blk, blk_cells, blk_pos, bias, ubatch, ratio, blk_bias,
                             dirty_cells, dirty_pos, dirty_rows);
     }
@@ -746,6 +750,11 @@ public:
         res &= params.ubatch.n_tokens % n_stream == 0;
 
         res &= k_idxs->ne[0]    == params.ubatch.n_tokens;
+
+        if (k_only) {
+            return res;
+        }
+
         res &= cell_blk->ne[0]  == n_kv;
         res &= cell_blk->ne[1]  == n_stream;
         res &= bias->ne[0]      == (blk_bias ? n_blocks : n_kv);
@@ -780,7 +789,25 @@ public:
 
     // the per-cell half of the bias is the attention mask, so only the per-block half is uploaded
     const bool blk_bias;
+    const bool k_only;
 };
+
+void llama_model_qwen4exp::graph::build_qsa_k_cache(
+        const llama_memory_hybrid_idx_context * mctx_hyb,
+                 llm_graph_input_qsa * inp,
+                            ggml_tensor * cur,
+                                    int il) {
+    const llama_kv_cache_context * mctx_idx = mctx_hyb->get_idx();
+
+    // The raw indexer K is cached before normalization/rope. This is the same
+    // cache write used by full QSA, but deliberately has no Q projection or
+    // sparse-selection work attached to it.
+    ggml_tensor * k_raw = build_lora_mm(model.layers[il].index_k_proj, cur);
+    k_raw = ggml_reshape_3d(ctx0, k_raw, hparams.indexer_head_size, 1, n_tokens);
+    cb(k_raw, "indexer_k_raw", il);
+
+    ggml_build_forward_expand(gf, mctx_idx->cpy_k(ctx0, k_raw, inp->k_idxs, il));
+}
 
 ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
         const llama_memory_hybrid_idx_context * mctx_hyb,
@@ -882,12 +909,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_top_k(
         qsa_inps.emplace((uint32_t) r, inp);
     }
 
-    // cached indexer keys are raw: pooling precedes norm and rotation, so apply neither
-    ggml_tensor * k_raw = build_lora_mm(model.layers[il].index_k_proj, cur);
-    k_raw = ggml_reshape_3d(ctx0, k_raw, idx_dim, 1, n_tokens);
-    cb(k_raw, "indexer_k_raw", il);
-
-    ggml_build_forward_expand(gf, mctx_idx->cpy_k(ctx0, k_raw, inp->k_idxs, il));
+    build_qsa_k_cache(mctx_hyb, inp, cur, il);
 
     // one key head, so rows are contiguous. get_k gives [idx_dim, n_head_kv, n_kv, n_stream].
     ggml_tensor * k_all = mctx_idx->get_k(ctx0, il);
@@ -1117,7 +1139,39 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
     const uint32_t ratio = il >= (int) hparams.n_layer()
         ? llama_qwen4exp_mtp_qsa_ratio(hparams)
         : hparams.dsv4_compress_ratios[il];
-    const bool qsa = mctx_hyb != nullptr && mctx_hyb->get_idx() != nullptr && ratio > 0;
+    const bool qsa_memory = mctx_hyb != nullptr && mctx_hyb->get_idx() != nullptr && ratio > 0;
+    const bool mtp_layer = il >= (int) hparams.n_layer();
+    const int64_t n_kv = qsa_memory ? mctx_hyb->get_idx()->get_n_kv() : 0;
+
+    // There is no explicit prefill phase bit in llm_graph_params. The MTP
+    // prompt path arrives as a large per-sequence ubatch, while speculative
+    // generation uses decode-sized ubatches. Keep this independent of the
+    // configured DraftMax and aligned with the existing QSA decode-sized
+    // boundary used by the pooled-cache path.
+    constexpr uint32_t mtp_prefill_min_tokens = 32;
+    const bool mtp_prefill = ubatch.n_seq_tokens > mtp_prefill_min_tokens;
+    const bool mtp_full_qsa = !mtp_layer ||
+        (mtp_prefill && n_kv >= (int64_t) llama_mtp_qsa_min_kv());
+    const bool qsa = qsa_memory && mtp_full_qsa;
+
+    if (qsa_memory && !qsa) {
+        const uint32_t key = (uint32_t) ratio;
+        llm_graph_input_qsa * inp_k = nullptr;
+
+        const auto it = qsa_k_inps.find(key);
+        if (it != qsa_k_inps.end()) {
+            inp_k = it->second;
+        } else {
+            auto qsa_k = std::make_unique<llm_graph_input_qsa>(mctx_hyb, key, false, true);
+            qsa_k->k_idxs = mctx_hyb->get_idx()->build_input_k_idxs(ctx0, ubatch);
+
+            inp_k = qsa_k.get();
+            res->add_input(std::move(qsa_k));
+            qsa_k_inps.emplace(key, inp_k);
+        }
+
+        build_qsa_k_cache(mctx_hyb, inp_k, cur, il);
+    }
 
     if (getenv("QSA_DEBUG_TIMING") != nullptr) {
         static int dbg_calls = 0;
@@ -1125,6 +1179,12 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
             fprintf(stderr, "%s: il=%d mctx_hyb=%p get_idx=%p ratio=%u qsa=%d\n", __func__, il,
                     (const void *) mctx_hyb, mctx_hyb ? (const void *) mctx_hyb->get_idx() : nullptr,
                     ratio, (int) qsa);
+            if (mtp_layer) {
+                fprintf(stderr, "%s: mtp_prefill=%d n_seq_tokens=%u n_kv=%" PRId64
+                        " min_kv=%u full_qsa=%d indexer_k_only=%d\n", __func__,
+                        (int) mtp_prefill, ubatch.n_seq_tokens, n_kv,
+                        llama_mtp_qsa_min_kv(), (int) mtp_full_qsa, (int) (qsa_memory && !qsa));
+            }
             fflush(stderr);
         }
         dbg_calls++;
