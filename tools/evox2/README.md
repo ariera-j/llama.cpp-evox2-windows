@@ -22,6 +22,7 @@ tools/evox2/
 └─ benchmark/
    ├─ Evox2.Benchmark.psm1
    ├─ Measure-LlamaCli.ps1
+   ├─ Measure-LlamaBench.ps1
    ├─ Monitor-LlamaProcess.ps1
    └─ configs/
       ├─ local.example.psd1
@@ -32,7 +33,6 @@ Planned next:
 
 ```text
 benchmark/
-├─ Measure-LlamaBench.ps1
 ├─ Invoke-BenchmarkMatrix.ps1
 └─ configs/
    ├─ qwen38-baseline.psd1
@@ -384,14 +384,158 @@ The build-script cleanup phase will generate them automatically.
 
 Official/prebuilt llama.cpp builds can still be benchmarked without a manifest because runtime identity is detected from the executable.
 
-## Planned Phase 3
 
-Phase 3 adds:
+## Phase 3: `Measure-LlamaBench.ps1`
+
+`Measure-LlamaBench.ps1` is the synthetic/public reproducibility companion to the real-input `Measure-LlamaCli.ps1`.
+
+It uses the same foundations:
+
+- local build/model lookup keys
+- runtime backend detection via `--list-devices`
+- build/commit/compiler detection via `--version`
+- executable SHA-256
+- optional model SHA-256
+- Git/system metadata
+- condition IDs
+- exact-PID resource monitoring
+- repository-local `evox2-logs` output
+
+The wrapper forces native llama-bench JSON output and preserves it as:
 
 ```text
-Measure-LlamaBench.ps1
+llama-bench.json
 ```
 
-It will use the same metadata and resource-monitoring foundation for a synthetic, publishable reproducibility reference.
+It also writes:
 
-`llama-cli` with the private real-world input remains the primary practical benchmark.
+```text
+conditions.json
+result.json
+summary.csv
+output.log
+stderr.log
+resources.csv              # with -ResourceMonitor
+```
+
+### Important llama-bench semantics
+
+For the exact b11247 baseline, llama-bench supports:
+
+```text
+-p / --n-prompt
+-n / --n-gen
+-d / --n-depth
+-r / --repetitions
+-o json
+```
+
+`-p` and `-n` are separate benchmark types. For example:
+
+```powershell
+-PromptTokens 512,4096,65536 `
+-GenerationTokens 128
+```
+
+produces prompt-processing tests for 512, 4096, and 65536 tokens plus a separate 128-token generation test. It does **not** mean "generate 128 tokens after each of those prompt sizes."
+
+To benchmark generation after a prefilled long context, use depth:
+
+```powershell
+-PromptTokens 0 `
+-GenerationTokens 128 `
+-Depths 65536
+```
+
+`-d` pre-fills the KV cache before the measured test.
+
+llama-bench does not include tokenization or sampling time in its measurements. This is one reason the llama-cli real-input benchmark remains the primary practical measurement.
+
+The Phase 3 wrapper intentionally does not add MTP/speculative decoding. The b11247 llama-bench interface does not expose the draft-MTP controls used by the llama-cli/server path. Use `Measure-LlamaCli.ps1` for MTP measurements.
+
+### Dry run
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -PromptTokens 512 `
+  -GenerationTokens 128 `
+  -Repetitions 3 `
+  -DryRun
+```
+
+### Short reproducibility smoke benchmark
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -PromptTokens 512 `
+  -GenerationTokens 128 `
+  -Repetitions 3 `
+  -ResourceMonitor
+```
+
+### Prompt-processing sweep
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -PromptTokens 512,4096,16384,32768,65536 `
+  -GenerationTokens 0 `
+  -Repetitions 3
+```
+
+### Short-context generation only
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -PromptTokens 0 `
+  -GenerationTokens 128 `
+  -Depths 0 `
+  -Repetitions 3
+```
+
+### Generation after a 64k prefilled context
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -PromptTokens 0 `
+  -GenerationTokens 128 `
+  -Depths 65536 `
+  -Repetitions 3
+```
+
+This last test answers a different question from the short-context `tg 128` result, so keep the depth visible when comparing TG numbers.
+
+### Native JSON and summary
+
+The native JSON contains llama-bench's own averages, standard deviations, and per-repetition samples.
+
+`summary.csv` flattens the most useful fields, including:
+
+```text
+Test
+PromptTokens
+GenerationTokens
+Depth
+AvgTokensPerSec
+StdDevTokensPerSec
+RepetitionSamples
+BenchBackends
+BuildNumber
+BenchBuildCommit
+```
+
+The full native rows are also embedded in `result.json`.
+
+
+## Planned Phase 4
+
+Phase 4 adds `Invoke-BenchmarkMatrix.ps1` so selected llama-cli and llama-bench runs can be launched from one declarative benchmark plan.

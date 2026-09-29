@@ -427,6 +427,63 @@ function ConvertFrom-Evox2LlamaCliResult {
     }
 }
 
+
+function ConvertFrom-Evox2LlamaBenchJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Json
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Json)) {
+        throw 'llama-bench JSON output is empty.'
+    }
+
+    try {
+        $parsed = $Json | ConvertFrom-Json
+    } catch {
+        throw "Failed to parse llama-bench JSON output: $($_.Exception.Message)"
+    }
+
+    if ($null -eq $parsed) {
+        return @()
+    }
+
+    if ($parsed -is [System.Array]) {
+        return $parsed
+    }
+
+    return @($parsed)
+}
+
+function Get-Evox2LlamaBenchTestLabel {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Row
+    )
+
+    $nPrompt = if ($null -ne $Row.n_prompt) { [int64]$Row.n_prompt } else { 0 }
+    $nGen = if ($null -ne $Row.n_gen) { [int64]$Row.n_gen } else { 0 }
+    $nDepth = if ($null -ne $Row.n_depth) { [int64]$Row.n_depth } else { 0 }
+
+    if ($nPrompt -gt 0 -and $nGen -gt 0) {
+        $label = "pg $nPrompt,$nGen"
+    } elseif ($nPrompt -gt 0) {
+        $label = "pp $nPrompt"
+    } elseif ($nGen -gt 0) {
+        $label = "tg $nGen"
+    } else {
+        $label = 'unknown'
+    }
+
+    if ($nDepth -gt 0) {
+        $label += " @ d$nDepth"
+    }
+
+    return $label
+}
+
 Export-ModuleMember -Function @(
     'Import-Evox2LocalConfig',
     'Get-Evox2RelevantEnvironment',
@@ -437,5 +494,7 @@ Export-ModuleMember -Function @(
     'Get-Evox2BuildLabel',
     'New-Evox2RunDirectory',
     'Write-Evox2CombinedLog',
-    'ConvertFrom-Evox2LlamaCliResult'
+    'ConvertFrom-Evox2LlamaCliResult',
+    'ConvertFrom-Evox2LlamaBenchJson',
+    'Get-Evox2LlamaBenchTestLabel'
 )
