@@ -536,6 +536,287 @@ BenchBuildCommit
 The full native rows are also embedded in `result.json`.
 
 
-## Planned Phase 4
+## Phase 4: benchmark matrix runner
 
-Phase 4 adds `Invoke-BenchmarkMatrix.ps1` so selected llama-cli and llama-bench runs can be launched from one declarative benchmark plan.
+`Invoke-BenchmarkMatrix.ps1` orchestrates the already-validated
+`Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1` wrappers.
+
+The matrix layer does not parse llama.cpp output itself. Each child wrapper
+remains responsible for:
+
+- executable/backend/build detection
+- exact benchmark command construction
+- condition IDs
+- native output parsing
+- resource monitoring
+- per-run result files
+
+The matrix runner adds:
+
+- declarative `.psd1` plans
+- CLI-only, llama-bench-only, or combined execution
+- multiple build keys/backends
+- context/input pairs
+- CLI MTP variants
+- cooldown between runs
+- continue-on-error or stop-on-error behavior
+- filtering before execution
+- a hard `MaxRuns` guard
+- batch-level plan, status, and result summaries
+
+### Phase 4 files
+
+```text
+benchmark/
+├─ Invoke-BenchmarkMatrix.ps1
+└─ configs/
+   ├─ qwen38-baseline.psd1
+   ├─ qwen38-longctx.psd1
+   └─ qwen38-mtp.psd1
+```
+
+`local.psd1` remains machine-local and ignored by Git. Matrix plans refer to
+lookup keys from `local.psd1`; they do not contain machine-specific model or
+build paths.
+
+### Plan schema
+
+A plan contains:
+
+```text
+SchemaVersion
+Name
+Settings
+Defaults
+Jobs
+```
+
+Each job chooses:
+
+```text
+Tool       = cli | bench
+BuildKeys
+ModelKeys
+Cases
+Variants
+Parameters
+```
+
+Parameter precedence is:
+
+```text
+Defaults for the selected tool
+    < Job.Parameters
+    < Case.Parameters
+    < Variant.Parameters
+    < command-line matrix overrides
+```
+
+`BuildKey`, `ModelKey`, `LocalConfig`, executable/model direct paths,
+`DryRun`, and `NoThrowOnFailure` are reserved by the matrix runner.
+
+For CLI long-context plans, keep `Context` and `InputKey` together in a
+single Case. This avoids generating meaningless Cartesian combinations such
+as a 128k context paired with the 32k input file.
+
+### Expansion order
+
+The runner expands jobs in this order:
+
+```text
+Case
+  -> BuildKey
+     -> ModelKey
+        -> Variant
+```
+
+This deliberately keeps no-MTP/MTP variants adjacent for the same context.
+
+### Plan-only validation
+
+Always inspect a new or edited plan before a long run:
+
+```powershell
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan .\tools\evox2\benchmark\configs\qwen38-baseline.psd1 `
+  -PlanOnly
+```
+
+`-PlanOnly`:
+
+- loads `local.psd1`
+- verifies referenced build/model/input keys
+- verifies tool-specific parameter names
+- validates MTP draft-model requirements
+- expands the selected matrix
+- rejects duplicate expanded conditions
+- applies the `MaxRuns` safety limit
+- starts no benchmark process
+
+### CLI only, bench only, or both
+
+A plan may contain both tool types.
+
+Run everything selected by the plan:
+
+```powershell
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan .\tools\evox2\benchmark\configs\qwen38-baseline.psd1
+```
+
+Run only real-input llama-cli jobs:
+
+```powershell
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan .\tools\evox2\benchmark\configs\qwen38-baseline.psd1 `
+  -Tool cli
+```
+
+Run only llama-bench jobs:
+
+```powershell
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan .\tools\evox2\benchmark\configs\qwen38-baseline.psd1 `
+  -Tool bench
+```
+
+### Filters
+
+Filters accept PowerShell wildcard patterns:
+
+```powershell
+-OnlyJob cli-*
+-OnlyCase 64k
+-OnlyVariant mtp
+-OnlyBuild R3ROCm
+```
+
+For example, run only the 64k MTP case from the MTP plan:
+
+```powershell
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan .\tools\evox2\benchmark\configs\qwen38-mtp.psd1 `
+  -OnlyCase 64k `
+  -OnlyVariant mtp
+```
+
+### Resource-monitor override
+
+Normally each plan decides whether resource monitoring is enabled.
+
+Force it on for all selected child runs:
+
+```powershell
+-ResourceMonitor
+```
+
+Force it off:
+
+```powershell
+-NoResourceMonitor
+```
+
+Do not specify both.
+
+### Failure and cooldown policy
+
+The example plans default to:
+
+```text
+CooldownSeconds = 10
+ContinueOnError = true
+```
+
+Override the cooldown from the command line:
+
+```powershell
+-CooldownSeconds 30
+```
+
+Stop after the first non-OK child result:
+
+```powershell
+-StopOnError
+```
+
+The matrix runner always invokes child wrappers with `NoThrowOnFailure` so
+their structured result can be recorded first. Exceptions such as invalid
+paths or parameter-binding failures are still caught and stored as matrix
+run failures.
+
+### MaxRuns safety guard
+
+The default is:
+
+```text
+MaxRuns = 100
+```
+
+If an edited plan accidentally expands beyond that limit, execution is
+refused.
+
+A deliberate larger run must explicitly opt in:
+
+```powershell
+-MaxRuns 200
+```
+
+### Matrix batch output
+
+Each actual matrix execution creates:
+
+```text
+evox2-logs/
+└─ matrix/
+   └─ <timestamp>-<plan-name>/
+      ├─ matrix-plan.json
+      ├─ matrix-runs.csv
+      ├─ matrix-results.csv
+      └─ matrix-result.json
+```
+
+`matrix-plan.json` stores the fully expanded run plan plus the SHA-256 of the
+plan and local config.
+
+`matrix-runs.csv` contains one row per child invocation and is rewritten
+after every completed run, so partial overnight results survive a later
+failure or reboot.
+
+`matrix-results.csv` contains normalized performance rows:
+
+- one row per llama-cli run
+- one row per native llama-bench result, so `pp 512` and `tg 128` remain
+  separate
+
+All detailed logs remain in the normal child run directories.
+
+### Included plans
+
+`qwen38-baseline.psd1` contains:
+
+- real-input 64k, MTP off
+- R3Vulkan + R3ROCm
+- short `pp 512` / `tg 128` llama-bench anchor on both builds
+
+`qwen38-longctx.psd1` contains:
+
+- 32k / 64k / 96k / 128k / 256k real-input CLI measurements
+- R3ROCm by default
+- an optional disabled synthetic long-context PP sweep
+
+`qwen38-mtp.psd1` contains:
+
+- Unsloth PLE16 base
+- R3ROCm by default
+- 32k / 64k / 96k / 128k
+- adjacent no-MTP / MTP variants using `UnslothMtp`
+
+These are version-controlled experiment definitions, not private machine
+configuration.
+
+## Planned Phase 5
+
+Phase 5 can move the remaining build/model-conversion/QSA helper scripts into
+the same `tools/evox2` structure and add generated `evox2-build.json`
+manifests for future builds.
+
