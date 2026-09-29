@@ -77,6 +77,53 @@ function Merge-Evox2Hashtable {
     return $merged
 }
 
+function Assert-Evox2Environment {
+    param(
+        [hashtable]$Environment,
+        [string]$Context
+    )
+
+    foreach ($key in $Environment.Keys) {
+        $name = [string]$key
+
+        if ($name -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+            throw "Invalid environment variable name '$name' in $Context."
+        }
+
+        $value = $Environment[$key]
+        if ($null -ne $value -and
+            -not ($value -is [string]) -and
+            -not ($value -is [ValueType])) {
+            throw (
+                "Environment variable '$name' in $Context must be a scalar " +
+                'value or $null.'
+            )
+        }
+    }
+}
+
+function ConvertTo-Evox2EnvironmentSummary {
+    param(
+        [hashtable]$Environment
+    )
+
+    if ($null -eq $Environment -or $Environment.Count -eq 0) {
+        return ''
+    }
+
+    $parts = @()
+    foreach ($key in @($Environment.Keys | Sort-Object)) {
+        $value = $Environment[$key]
+        if ($null -eq $value) {
+            $parts += "$key=<unset>"
+        } else {
+            $parts += "$key=$value"
+        }
+    }
+
+    return ($parts -join ';')
+}
+
 function Get-Evox2OptionalHashtable {
     param(
         [hashtable]$Parent,
@@ -373,6 +420,13 @@ $DefaultBenchParameters = Get-Evox2OptionalHashtable `
     -Parent $Defaults `
     -Key 'BenchParameters'
 
+$DefaultEnvironment = Get-Evox2OptionalHashtable `
+    -Parent $Defaults `
+    -Key 'Environment'
+Assert-Evox2Environment `
+    -Environment $DefaultEnvironment `
+    -Context 'Defaults.Environment'
+
 $Jobs = Get-Evox2OptionalArray -Parent $PlanData -Key 'Jobs'
 if ($Jobs.Count -eq 0) {
     throw 'Matrix plan contains no Jobs.'
@@ -434,6 +488,10 @@ foreach ($rawJob in $Jobs) {
     }
 
     $jobParameters = Get-Evox2OptionalHashtable -Parent $job -Key 'Parameters'
+    $jobEnvironment = Get-Evox2OptionalHashtable -Parent $job -Key 'Environment'
+    Assert-Evox2Environment `
+        -Environment $jobEnvironment `
+        -Context "job '$jobName' Environment"
 
     $cases = Get-Evox2OptionalArray -Parent $job -Key 'Cases'
     if ($cases.Count -eq 0) {
@@ -473,6 +531,10 @@ foreach ($rawJob in $Jobs) {
         }
 
         $caseParameters = Get-Evox2OptionalHashtable -Parent $case -Key 'Parameters'
+        $caseEnvironment = Get-Evox2OptionalHashtable -Parent $case -Key 'Environment'
+        Assert-Evox2Environment `
+            -Environment $caseEnvironment `
+            -Context "case '$jobName/$caseName' Environment"
 
         foreach ($buildKeyValue in $buildKeys) {
             $buildKey = [string]$buildKeyValue
@@ -507,6 +569,20 @@ foreach ($rawJob in $Jobs) {
                     $variantParameters = Get-Evox2OptionalHashtable `
                         -Parent $variant `
                         -Key 'Parameters'
+
+                    $variantEnvironment = Get-Evox2OptionalHashtable `
+                        -Parent $variant `
+                        -Key 'Environment'
+                    Assert-Evox2Environment `
+                        -Environment $variantEnvironment `
+                        -Context "variant '$jobName/$caseName/$variantName' Environment"
+
+                    $effectiveEnvironment = Merge-Evox2Hashtable -Tables @(
+                        $DefaultEnvironment,
+                        $jobEnvironment,
+                        $caseEnvironment,
+                        $variantEnvironment
+                    )
 
                     $baseDefaults = if ($toolName -eq 'cli') {
                         $DefaultCliParameters
@@ -602,10 +678,11 @@ foreach ($rawJob in $Jobs) {
                     }
 
                     $planKeyData = [ordered]@{
-                        Tool       = $toolName
-                        BuildKey   = $buildKey
-                        ModelKey   = $modelKey
-                        Parameters = $effectiveParameters
+                        Tool        = $toolName
+                        BuildKey    = $buildKey
+                        ModelKey    = $modelKey
+                        Parameters  = $effectiveParameters
+                        Environment = $effectiveEnvironment
                     }
                     $planRunKey = Get-Evox2ConditionId `
                         -Condition $planKeyData `
@@ -637,7 +714,10 @@ foreach ($rawJob in $Jobs) {
                         Workload    = Get-Evox2MatrixWorkloadLabel `
                             -ToolName $toolName `
                             -Parameters $effectiveParameters
+                        EnvironmentSummary = ConvertTo-Evox2EnvironmentSummary `
+                            -Environment $effectiveEnvironment
                         Parameters  = $effectiveParameters
+                        Environment = $effectiveEnvironment
                     }
                 }
             }
@@ -666,7 +746,7 @@ Write-Host "ContinueOnError  : $ContinueOnError"
 Write-Host ''
 
 $expanded |
-    Select-Object MatrixRunId, Tool, Job, Case, Variant, BuildKey, ModelKey, Workload |
+    Select-Object MatrixRunId, Tool, Job, Case, Variant, BuildKey, ModelKey, Workload, EnvironmentSummary |
     Format-Table -AutoSize |
     Out-Host
 
@@ -717,7 +797,9 @@ foreach ($item in $expanded) {
         BuildKey    = $item.BuildKey
         ModelKey    = $item.ModelKey
         Workload    = $item.Workload
+        EnvironmentSummary = $item.EnvironmentSummary
         Parameters  = $item.Parameters
+        Environment = $item.Environment
     }
 }
 
@@ -786,6 +868,9 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
     Write-Host "BuildKey  : $($planRun.BuildKey)"
     Write-Host "ModelKey  : $($planRun.ModelKey)"
     Write-Host "Workload  : $($planRun.Workload)"
+    if (-not [string]::IsNullOrWhiteSpace($planRun.EnvironmentSummary)) {
+        Write-Host "Environment: $($planRun.EnvironmentSummary)"
+    }
     Write-Host '============================================================'
     Write-Host ''
 
@@ -801,6 +886,22 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
     $childRunId = $null
     $childConditionId = $null
     $childRunDirectory = $null
+
+    $savedRunEnvironment = @{}
+    foreach ($name in $planRun.Environment.Keys) {
+        $existing = Get-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        $savedRunEnvironment[$name] = [ordered]@{
+            Exists = ($null -ne $existing)
+            Value = if ($null -ne $existing) { $existing.Value } else { $null }
+        }
+
+        $newValue = $planRun.Environment[$name]
+        if ($null -eq $newValue) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        } else {
+            Set-Item -LiteralPath "Env:$name" -Value ([string]$newValue)
+        }
+    }
 
     try {
         if ($planRun.Tool -eq 'cli') {
@@ -842,6 +943,15 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
             "Matrix run $($planRun.MatrixRunId) failed with an exception: " +
             $_.Exception.Message
         )
+    } finally {
+        foreach ($name in $savedRunEnvironment.Keys) {
+            $saved = $savedRunEnvironment[$name]
+            if ($saved.Exists) {
+                Set-Item -LiteralPath "Env:$name" -Value $saved.Value
+            } else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     $runEnd = Get-Date
@@ -857,6 +967,7 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         BuildKey         = $planRun.BuildKey
         ModelKey         = $planRun.ModelKey
         Workload         = $planRun.Workload
+        Environment      = $planRun.EnvironmentSummary
         StartTime        = $runStart.ToString('o')
         EndTime          = $runEnd.ToString('o')
         DurationMinutes  = [math]::Round(

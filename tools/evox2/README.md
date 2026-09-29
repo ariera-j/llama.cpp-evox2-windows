@@ -814,9 +814,113 @@ All detailed logs remain in the normal child run directories.
 These are version-controlled experiment definitions, not private machine
 configuration.
 
-## Planned Phase 5
+## Phase 5: build provenance, external PLE conversion, and experiment environments
 
-Phase 5 can move the remaining build/model-conversion/QSA helper scripts into
-the same `tools/evox2` structure and add generated `evox2-build.json`
-manifests for future builds.
+Phase 5 adds three pieces that deliberately stay separate.
+
+### Build wrappers and `evox2-build.json`
+
+```text
+build/
+├─ README.md
+├─ Evox2.Build.psm1
+├─ Build-Vulkan.ps1
+└─ Build-ROCm.ps1
+```
+
+The build wrappers preserve the documented Windows Vulkan / ROCm build
+settings and write:
+
+```text
+<build>\bin\Release\evox2-build.json
+```
+
+The benchmark metadata layer already reads this file automatically.
+
+For the existing b11247 builds, manifests can be backfilled without compiling:
+
+```powershell
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-b11247 `
+  -ManifestOnly
+
+.\tools\evox2\build\Build-ROCm.ps1 `
+  -BuildDir .\build-rocm-b11247 `
+  -ManifestOnly
+```
+
+See `build/README.md` for full-build examples.
+
+### PLE layout conversion with explicit external attribution
+
+```text
+model/
+├─ README.md
+├─ Convert-Unsloth-Ple16.ps1
+└─ verify-ple-layout.py
+```
+
+The PLE conversion algorithm is not owned by this repository.
+
+The actual converter remains the external script:
+
+```text
+https://github.com/LaurentZuijdwijk/llama.cpp
+gguf-py/gguf/scripts/gguf_split_ple_heads.py
+```
+
+It is not vendored here.
+
+`Convert-Unsloth-Ple16.ps1` only invokes that external script and records
+provenance: external checkout commit/dirty state, converter SHA-256,
+input/output identities, logs, and a sidecar JSON.
+
+This distinction is intentional. Existing PLE16 model files that were
+converted before Phase 5 should continue to be described as having been
+converted with the LaurentZuijdwijk script, not with this later wrapper.
+
+### Environment-controlled experiments
+
+The Phase 4 matrix runner now accepts `Environment` hashtables at:
+
+```text
+Defaults
+Job
+Case
+Variant
+```
+
+The environment is applied only around the selected child benchmark and is
+restored afterward.
+
+This supports QSA threshold A/B tests without creating a new launcher for
+every environment variable.
+
+Examples live in:
+
+```text
+experiments/qsa/
+├─ README.md
+├─ qsa-union-thresholds.example.psd1
+└─ mtp-qsa-threshold.example.psd1
+```
+
+These are templates for QSA-capable builds. An environment variable is not
+evidence that a baseline binary implements or honors it.
+
+## Suggested next phase
+
+After Phase 5, the repository is ready to start the actual r3 patch-stack
+integration:
+
+```text
+COMMON-001 PLE16 loader
+COMMON-002 Unsloth MTP compatibility
+COMMON-003 ROCmFPx core/format evaluation
+VULKAN-001 ROCmFPx kernels evaluation
+VULKAN-002 QSA grouped-union re-evaluation
+```
+
+The new build manifests and matrix conditions make those patch comparisons
+much easier to audit.
 
