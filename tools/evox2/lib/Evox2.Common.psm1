@@ -440,7 +440,7 @@ function Get-Evox2SystemMetadata {
         OsCaption          = if ($os) { $os.Caption } else { $null }
         OsVersion          = if ($os) { $os.Version } else { $null }
         OsBuildNumber      = if ($os) { $os.BuildNumber } else { $null }
-        HostVisiblePhysicalBytes = if ($computer) { [int64]$computer.TotalPhysicalMemory } else { $null }
+        TotalPhysicalBytes = if ($computer) { [int64]$computer.TotalPhysicalMemory } else { $null }
         CpuName            = if ($cpu) { $cpu.Name } else { $null }
         CpuLogicalCount    = if ($cpu) { $cpu.NumberOfLogicalProcessors } else { $null }
         VideoControllers   = $video
@@ -524,7 +524,10 @@ function ConvertTo-Evox2CanonicalObject {
         foreach ($item in $InputObject) {
             $values.Add((ConvertTo-Evox2CanonicalObject -InputObject $item))
         }
-        return @($values)
+        # Windows PowerShell 5.1 can throw "Argument types do not match"
+        # when @() is applied directly to List[object]. Materialize a real
+        # object[] instead.
+        return $values.ToArray()
     }
 
     $ordered = [ordered]@{}

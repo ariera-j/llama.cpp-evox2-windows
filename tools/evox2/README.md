@@ -10,44 +10,55 @@ A benchmark result should derive its backend, llama.cpp build identity, executab
 
 The BIOS UMA setting remains a manual test-condition label because the current tooling does not have a reliable method to read the configured BIOS value directly.
 
-## Directory layout
+## Current implementation status
 
-Target r3 layout:
+Implemented:
 
 ```text
 tools/evox2/
 ├─ README.md
 ├─ lib/
 │  └─ Evox2.Common.psm1
-├─ build/
-│  ├─ Build-Vulkan.ps1
-│  └─ Build-ROCm.ps1
-├─ benchmark/
-│  ├─ Evox2.Benchmark.psm1
-│  ├─ Measure-LlamaCli.ps1
-│  ├─ Measure-LlamaBench.ps1
-│  ├─ Monitor-LlamaProcess.ps1
-│  ├─ Invoke-BenchmarkMatrix.ps1
-│  └─ configs/
-│     ├─ local.example.psd1
-│     ├─ local.psd1
-│     ├─ qwen38-baseline.psd1
-│     ├─ qwen38-longctx.psd1
-│     └─ qwen38-mtp.psd1
-├─ model/
-│  ├─ Convert-Unsloth-Ple16.ps1
-│  └─ verify-ple16.py
-└─ experiments/
-   └─ qsa/
-      ├─ Measure-Qsa-Union.ps1
-      └─ Test-Qsa-Union.ps1
+└─ benchmark/
+   ├─ Evox2.Benchmark.psm1
+   ├─ Measure-LlamaCli.ps1
+   ├─ Monitor-LlamaProcess.ps1
+   └─ configs/
+      ├─ local.example.psd1
+      └─ local.psd1              # local only, ignored by Git
 ```
 
-Not every file above is implemented yet. The r3 migration is intentionally incremental so the measurement framework itself can be validated before downstream inference patches are measured.
+Planned next:
+
+```text
+benchmark/
+├─ Measure-LlamaBench.ps1
+├─ Invoke-BenchmarkMatrix.ps1
+└─ configs/
+   ├─ qwen38-baseline.psd1
+   ├─ qwen38-longctx.psd1
+   └─ qwen38-mtp.psd1
+```
+
+The final r3 layout will also include cleaned build, model-conversion, and experiment-specific scripts.
+
+## PowerShell compatibility
+
+The scripts target Windows PowerShell 5.1 on the primary Evo-X2 system.
+
+The Phase 1 common module was validated on Windows PowerShell 5.1 with:
+
+```text
+llama.cpp build: 11247
+commit: 0bc845d35
+compiler: Clang 23.0.0
+detected backend: ROCm
+device: AMD Radeon(TM) 8060S Graphics
+```
 
 ## Local logs
 
-All generated Evo-X2 benchmark output should live under the repository-local directory:
+Generated benchmark output lives under:
 
 ```text
 <repo>\evox2-logs\
@@ -61,31 +72,27 @@ C:\llama-build\llama.cpp-evox2-windows-r3\evox2-logs\
 
 The directory is ignored by Git.
 
-A future matrix run will use a layout similar to:
+A Phase 2 `llama-cli` run creates one directory such as:
 
 ```text
 evox2-logs/
-└─ 20260929-230501-qwen38-r3-baseline/
-   ├─ batch.json
+└─ 20260930-001500-123-cli-rocm-b11247-ctx65536-a1b2c3d4e5f6/
+   ├─ conditions.json
+   ├─ result.json
    ├─ summary.csv
-   └─ runs/
-      ├─ 001-cli-rocm-b11247-ctx65536/
-      │  ├─ conditions.json
-      │  ├─ output.log
-      │  ├─ result.json
-      │  └─ resources.csv
-      └─ 002-bench-rocm-b11247/
-         ├─ conditions.json
-         ├─ output.log
-         ├─ result.json
-         └─ resources.csv
+   ├─ output.log
+   ├─ stdout.log
+   ├─ stderr.log
+   └─ resources.csv              # only when -ResourceMonitor is used
 ```
 
-Detailed conditions belong in JSON/CSV metadata, not only in filenames.
+The directory name contains only detected/basic run facts. Detailed conditions belong in `conditions.json`.
+
+`output.log` is a combined post-run file with clearly separated stderr and stdout sections. `stdout.log` is kept separately so generated model text is easy to inspect.
 
 ## Machine-local configuration
 
-Copy:
+Copy the example once:
 
 ```powershell
 Copy-Item `
@@ -93,11 +100,11 @@ Copy-Item `
   .\tools\evox2\benchmark\configs\local.psd1
 ```
 
-Then edit `local.psd1` for the local machine.
+Edit `local.psd1` with machine-specific paths.
 
 `local.psd1` is ignored by Git.
 
-It contains machine-specific paths such as:
+It may contain:
 
 - Vulkan and ROCm binary directories
 - model paths
@@ -105,244 +112,273 @@ It contains machine-specific paths such as:
 - log root
 - manual UMA label
 
-Aliases such as `R3ROCm` and `UnslothPle16` are lookup keys and human-readable labels. They must not override detected runtime facts.
+Aliases such as `R3ROCm` and `UnslothOriginal` are lookup keys. They are not trusted as runtime facts.
 
-For example, if a build configured as `R3ROCm` actually reports a Vulkan device, the detected backend must remain `Vulkan`, and an expectation check may fail the run.
+If a build entry says:
 
-## PowerShell compatibility
+```powershell
+ExpectedBackend = 'ROCm'
+```
 
-The scripts are intended to work with Windows PowerShell 5.1 as used on the primary Evo-X2 system. The common module avoids direct array-subexpression conversion of `List[object]`, which can raise `Argument types do not match` on Windows PowerShell 5.1.
+but `llama-cli --list-devices` detects Vulkan, the measurement wrapper stops before inference.
 
 ## Common metadata module
 
-Import the common module:
+Import manually when metadata-only inspection is useful:
 
 ```powershell
 Import-Module .\tools\evox2\lib\Evox2.Common.psm1 -Force
 ```
 
-### Repository identity
+Example:
 
 ```powershell
-$git = Get-Evox2GitMetadata `
-  -RepoRoot 'C:\llama-build\llama.cpp-evox2-windows-r3'
+$cli = '.\build-rocm-b11247\bin\Release\llama-cli.exe'
 
-$git | Format-List
-```
-
-The metadata includes:
-
-```text
-commit
-short commit
-branch
-dirty/clean state
-dirty fingerprint
-origin URL
-porcelain status
-```
-
-The dirty fingerprint is a SHA-256 over Git status plus staged and unstaged diffs. It is intended to distinguish modified working trees during local experiments. It is not a hash of every byte in the repository.
-
-### llama.cpp executable identity
-
-```powershell
-$cli = 'C:\llama-build\llama.cpp-evox2-windows-r3\build-rocm-b11247\bin\Release\llama-cli.exe'
-
-$exe = Get-Evox2ExecutableMetadata -Executable $cli
-$exe | Format-List
-```
-
-The module reads `--version` and records:
-
-```text
-executable path
-SHA-256
-file size
-llama.cpp build number
-llama.cpp commit
-compiler
-raw version text
-```
-
-### Backend and device detection
-
-```powershell
-$device = Get-Evox2DeviceMetadata -Executable $cli
-$device | ConvertTo-Json -Depth 6
-```
-
-The module reads `--list-devices`.
-
-For the tested r3 ROCm build, the expected shape is similar to:
-
-```text
-BackendDetected: ROCm
-ROCm0: AMD Radeon(TM) 8060S Graphics (...)
-```
-
-The backend label is derived from the reported device ID, not from a manually typed benchmark label.
-
-### Combined runtime identity
-
-```powershell
-$identity = Get-Evox2LlamaIdentity `
+Get-Evox2LlamaIdentity `
   -Executable $cli `
-  -RepoRoot 'C:\llama-build\llama.cpp-evox2-windows-r3'
-
-$identity | ConvertTo-Json -Depth 10
+  -RepoRoot $PWD |
+  ConvertTo-Json -Depth 10
 ```
 
-This combines executable, device, optional build-manifest, Git, and host-system metadata.
+The common module records executable, backend/device, Git, host-system, optional build-manifest, and file identity metadata.
 
-### File identity
+## Phase 2: `Measure-LlamaCli.ps1`
 
-For small input files, SHA-256 can be recorded automatically:
+This is the primary practical benchmark wrapper.
+
+It:
+
+- resolves local build/model/input lookup keys
+- detects backend from `--list-devices`
+- records `--version` build/commit/compiler information
+- hashes the executable
+- hashes the private input file
+- records model path/size/mtime without hashing a 70+ GB GGUF by default
+- records the manual UMA label separately
+- writes a stable condition ID
+- captures stdout and stderr separately
+- parses PP, TG, token counts, actual context, MTP acceptance, and selected memory information
+- optionally launches resource monitoring against the exact `llama-cli` PID
+- writes JSON plus a compact CSV summary
+
+### Recommended first Phase 2 test
+
+With `local.psd1` configured:
 
 ```powershell
-Get-Evox2FileIdentity `
-  -Path 'C:\path\to\input.txt' `
-  -Sha256
+.\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -InputKey 64k `
+  -Context 65536 `
+  -KvType f16 `
+  -UBatch 1024 `
+  -ResourceMonitor
 ```
 
-For very large GGUF files, full SHA-256 hashing can take noticeable time. The measurement layer will therefore record path, size, and modification time automatically and can use a cached or explicit full hash when required.
+Most other arguments default to the current r3 long-context baseline:
 
-### Stable condition ID
+```text
+ngl: 999
+ncmoe: 0
+threads: 4
+batch: 2048
+ubatch: 1024
+flash attention: 1
+verbosity: 4
+K/V: f16/f16
+fit: off
+cache-ram: 0
+temperature: 0.2
+top-p: 0.8
+jinja: on
+single-turn: on
+reasoning: off
+MTP: off
+generation limit: 1024
+```
 
-A condition object can be converted to a short deterministic ID:
+The actual backend/build are detected. `R3ROCm` is only a lookup key plus an optional expectation.
+
+### Dry run
+
+Use:
 
 ```powershell
-$condition = [ordered]@{
-    Backend = 'ROCm'
-    Context = 65536
-    KvType  = 'f16'
-    UBatch  = 1024
-    MTP     = $false
-}
-
-Get-Evox2ConditionId -Condition $condition
+.\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -InputKey 64k `
+  -Context 65536 `
+  -DryRun
 ```
 
-The future benchmark layer will use this for grouping repeated runs with the same effective conditions.
+This performs preflight and metadata detection, displays the effective command and condition ID, and does not start inference.
+
+### Direct paths
+
+The local config is optional when direct paths are supplied:
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
+  -LlamaCli 'C:\path\to\llama-cli.exe' `
+  -ModelFile 'C:\path\to\model.gguf' `
+  -InputFile 'C:\path\to\prompt.txt' `
+  -Context 65536
+```
+
+### Allocation-only smoke check
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
+  -BuildKey R3ROCm `
+  -ModelKey UnslothOriginal `
+  -Context 65536 `
+  -AllocationOnly `
+  -ResourceMonitor
+```
+
+This uses a short prompt and 32 generated tokens. It checks allocation/model loading; it is not a long-context PP benchmark.
+
+### MTP
+
+After COMMON-002 is ready:
+
+```powershell
+.\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
+  -BuildKey R3Vulkan `
+  -ModelKey UnslothPle16 `
+  -InputKey 64k `
+  -Context 65536 `
+  -Mtp `
+  -DraftModelKey UnslothMtp `
+  -DraftMax 2 `
+  -ResourceMonitor
+```
+
+MTP on/off is derived from the actual wrapper configuration. It is not inferred from a filename.
+
+### Extra llama.cpp arguments
+
+For temporary experiments:
+
+```powershell
+-ExtraArgs @('--ctx-checkpoints', '0t')
+```
+
+Anything supplied through `-ExtraArgs` is written to `conditions.json` and included in the condition ID.
+
+## Resource monitoring
+
+`Monitor-LlamaProcess.ps1` is normally started automatically by `Measure-LlamaCli.ps1` when `-ResourceMonitor` is specified.
+
+The wrapper starts `llama-cli`, obtains its exact PID, and launches the monitor against that PID.
+
+This avoids the previous behavior of summing every process named `llama-cli`.
+
+The unified monitor records the richer previous CLI counter set:
+
+- target working/private/virtual memory
+- GPU process local/dedicated/shared/committed/non-local memory when exposed by Windows
+- GPU engine utilization sum
+- adapter local/dedicated/shared/committed memory
+- physical RAM
+- committed memory and commit limit
+- paging counters
+- disk throughput
+- total CPU usage
+
+If process-specific GPU counters are unavailable, it falls back to adapter/system counters and records that process counters were unavailable.
+
+### Manual monitor invocation
+
+```powershell
+.\tools\evox2\benchmark\Monitor-LlamaProcess.ps1 `
+  -TargetProcessId 12345 `
+  -LogPath .\evox2-logs\manual-resources.csv `
+  -IntervalSeconds 2
+```
+
+The monitor exits automatically when the target PID exits.
+
+### Windows PowerShell 5.1 exit-code handling
+
+The wrapper keeps the native `llama-cli` process handle. It first reads
+`System.Diagnostics.Process.ExitCode` after `WaitForExit()` and uses the
+Windows `GetExitCodeProcess` API as a fallback if Windows PowerShell 5.1
+returns a blank managed exit code.
+
+`result.json` and `summary.csv` record `ExitCodeSource` so the retrieval path
+is visible.
+
+## Output behavior
+
+Phase 2 deliberately uses `Start-Process` with separate stdout/stderr redirection so the exact `llama-cli` PID is known before resource monitoring starts.
+
+On Windows PowerShell 5.1, this means native llama.cpp output is not streamed line-by-line through the parent PowerShell pipeline.
+
+Instead:
+
+- a progress heartbeat is printed every 15 seconds by default
+- `stderr.log` and `stdout.log` are written during execution
+- generated stdout is printed after the run
+- `output.log` combines both streams afterward
+
+This trades live diagnostic scrolling for reliable PID-based monitoring and unambiguous raw stream files.
+
+## Result status
+
+The wrapper reports:
+
+```text
+OK
+FAILED
+FAILED_EXCEPTION
+CHECK_CONTEXT
+CHECK_TIMING
+```
+
+For a normal long-input run, `OK` requires:
+
+- native exit code 0
+- detected actual context equals the requested context
+- prompt timing was parsed successfully
+
+A warning is emitted if the prompt uses less than 80% of the requested context.
+
+## Model hashing
+
+The executable and input file are SHA-256 hashed automatically.
+
+Large GGUF files are not SHA-256 hashed by default because repeatedly reading a 70+ GB model would add substantial I/O before each benchmark.
+
+Use:
+
+```powershell
+-HashModel
+```
+
+when a full model SHA-256 is required.
+
+Otherwise the model identity records path, size, and last-write time.
 
 ## Build manifests
 
-The r3 build scripts will create:
+`evox2-build.json` support already exists in the common module, but the current clean b11247 build directories do not have manifests yet.
+
+The build-script cleanup phase will generate them automatically.
+
+Official/prebuilt llama.cpp builds can still be benchmarked without a manifest because runtime identity is detected from the executable.
+
+## Planned Phase 3
+
+Phase 3 adds:
 
 ```text
-evox2-build.json
+Measure-LlamaBench.ps1
 ```
 
-beside the generated executables.
+It will use the same metadata and resource-monitoring foundation for a synthetic, publishable reproducibility reference.
 
-The manifest will contain build-time facts such as:
-
-```text
-backend
-source commit
-dirty state
-compiler
-GPU target
-build directory
-build timestamp
-```
-
-Benchmark scripts will read this manifest when available and will still query `llama-cli --version` and `--list-devices` as runtime checks.
-
-Official/prebuilt llama.cpp packages do not need this manifest; the benchmark tools will fall back to runtime detection.
-
-## Benchmark tools
-
-The following tools are planned for the next migration stages.
-
-### `Measure-LlamaCli.ps1`
-
-Primary practical benchmark.
-
-It will:
-
-- run a real input file through `llama-cli`
-- preserve model output for quality inspection
-- parse PP and TG
-- record actual prompt and generated-token counts
-- record MTP acceptance when enabled
-- write `conditions.json`, `result.json`, and `output.log`
-- optionally launch the generic resource monitor by PID
-
-This remains the main benchmark for the Evo-X2 project.
-
-### `Measure-LlamaBench.ps1`
-
-Public reproducibility reference.
-
-It will:
-
-- run synthetic llama-bench workloads
-- use the same detected build/model metadata as the CLI wrapper
-- record PP/TG and native llama-bench output
-- support repeated measurements
-- optionally use the generic resource monitor
-
-It is supplemental to the real-input `llama-cli` benchmark, not a replacement for it.
-
-### `Monitor-LlamaProcess.ps1`
-
-Generic process/resource monitor.
-
-Matrix-driven runs will attach by PID to avoid accidentally aggregating another simultaneous `llama-cli` process.
-
-Manual mode may fall back to a process name.
-
-The unified monitor will retain the richer counter set from the previous CLI resource monitor, including system commit, paging, disk throughput, GPU process memory, adapter memory, and GPU engine utilization when Windows exposes those counters.
-
-### `Invoke-BenchmarkMatrix.ps1`
-
-Runs multiple conditions from declarative `.psd1` configuration files.
-
-Planned capabilities:
-
-- preflight validation
-- `-PlanOnly`
-- CLI-only or CLI+llama-bench runs
-- cooldown between runs
-- continue-after-failure behavior
-- per-run logs
-- summary update after every run
-- detected metadata and expectation checks
-
-The matrix file describes what should be measured. It should not duplicate the execution implementation.
-
-## Manual versus automatic metadata
-
-Expected policy:
-
-| Field | Source |
-|---|---|
-| llama.cpp build | automatic |
-| llama.cpp commit | automatic |
-| Git commit/branch/dirty | automatic |
-| executable SHA-256 | automatic |
-| compiler | automatic |
-| backend | automatic |
-| GPU name/reported memory | automatic |
-| driver version | automatic where Windows exposes it |
-| context/batch/ubatch/KV | execution arguments |
-| MTP on/off | execution configuration |
-| model path/name/size | automatic |
-| input hash | automatic |
-| PP/TG/token counts | parsed automatically |
-| MTP acceptance | parsed automatically |
-| PLE16 semantic label | optional human alias |
-| BIOS UMA setting | manual label |
-| room temperature / notes | manual |
-
-## Current migration order
-
-1. common metadata module and local configuration
-2. `llama-cli` wrapper plus generic resource monitor
-3. `llama-bench` wrapper
-4. benchmark matrix runner
-5. Vulkan/ROCm build-script cleanup and build-manifest generation
-6. model-conversion and QSA experiment script cleanup
-
-The measurement framework should be validated against the clean b11247 r3 baseline before COMMON-001 or later inference patches are benchmarked.
+`llama-cli` with the private real-world input remains the primary practical benchmark.
