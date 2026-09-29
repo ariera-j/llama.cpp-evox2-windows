@@ -43,6 +43,44 @@ function Get-SampleSum {
     return [double]$sum
 }
 
+function Get-GpuEngineCounterSummary {
+    param(
+        [array]$Samples,
+        [string]$PathPattern,
+        [double]$MaximumCookedValue = 100.5
+    )
+
+    $matched = @(
+        $Samples |
+        Where-Object {
+            $_.Path -like $PathPattern
+        }
+    )
+
+    $valid = @(
+        $matched |
+        Where-Object {
+            $_.CookedValue -ge 0 -and
+            $_.CookedValue -le $MaximumCookedValue
+        }
+    )
+
+    $sum = (
+        $valid |
+        Measure-Object -Property CookedValue -Sum
+    ).Sum
+
+    if ($null -eq $sum) {
+        $sum = 0.0
+    }
+
+    return [PSCustomObject]@{
+        Sum           = [double]$sum
+        MatchedCount  = [int]$matched.Count
+        RejectedCount = [int]($matched.Count - $valid.Count)
+    }
+}
+
 $fullLogPath = [IO.Path]::GetFullPath($LogPath)
 $logDir = Split-Path -Parent $fullLogPath
 if ($logDir) {
@@ -72,6 +110,7 @@ $StaticCounterPaths = @(
 $previousTimestamp = $null
 $sampleIndex = 0
 $warnedCounterFallback = $false
+$warnedInvalidGpuEngineCounter = $false
 
 while ($true) {
     $loopStart = Get-Date
@@ -108,13 +147,24 @@ while ($true) {
         ).CounterSamples
         $gpuProcessCountersAvailable = $true
     } catch {
+        # A very common shutdown race is:
+        #   1) Get-Process succeeds at the top of the loop,
+        #   2) llama-cli exits while Get-Counter is collecting,
+        #   3) the PID-scoped GPU counter instances disappear first.
+        #
+        # That is a normal end-of-run condition, not a monitoring failure.
+        $targetStillRunning = Get-Process -Id $TargetProcessId -ErrorAction SilentlyContinue
+        if ($null -eq $targetStillRunning) {
+            break
+        }
+
         try {
             $samples = (
                 Get-Counter -Counter $StaticCounterPaths -ErrorAction Stop
             ).CounterSamples
 
             if (-not $warnedCounterFallback) {
-                Write-Warning 'GPU process counters were unavailable; continuing with adapter/system counters only.'
+                Write-Warning 'GPU process counters were unavailable while the target process was still running; continuing with adapter/system counters only.'
                 $warnedCounterFallback = $true
             }
         } catch {
@@ -155,7 +205,33 @@ while ($true) {
         $gpuSharedBytes = Get-SampleSum $samples "*\gpu process memory(pid_${TargetProcessId}_*)\shared usage"
         $gpuCommittedBytes = Get-SampleSum $samples "*\gpu process memory(pid_${TargetProcessId}_*)\total committed"
         $gpuNonLocalBytes = Get-SampleSum $samples "*\gpu process memory(pid_${TargetProcessId}_*)\non local usage"
-        $gpuEnginePercent = Get-SampleSum $samples "*\gpu engine(pid_${TargetProcessId}_*)\utilization percentage"
+        # Each individual GPU Engine utilization counter is a percentage and
+        # should be in the 0..100 range. The sum may legitimately exceed 100
+        # because several engines can be active at the same time.
+        #
+        # Windows occasionally emits a corrupted CookedValue for one engine
+        # instance (for example ~1.8e14%). Reject only the invalid individual
+        # values, not the multi-engine sum.
+        $gpuEngineSummary = Get-GpuEngineCounterSummary `
+            -Samples $samples `
+            -PathPattern "*\gpu engine(pid_${TargetProcessId}_*)\utilization percentage" `
+            -MaximumCookedValue 100.5
+
+        $gpuEnginePercent = $gpuEngineSummary.Sum
+        $gpuEngineMatchedCount = $gpuEngineSummary.MatchedCount
+        $gpuEngineRejectedCount = $gpuEngineSummary.RejectedCount
+
+        if ($gpuEngineRejectedCount -gt 0 -and -not $warnedInvalidGpuEngineCounter) {
+            Write-Warning (
+                'Discarded {0} invalid GPU engine utilization counter value(s) outside 0..100.5%. ' +
+                'The multi-engine utilization sum itself is allowed to exceed 100%.' -f
+                $gpuEngineRejectedCount
+            )
+            $warnedInvalidGpuEngineCounter = $true
+        }
+    } else {
+        $gpuEngineMatchedCount = 0
+        $gpuEngineRejectedCount = 0
     }
 
     $timestamp = Get-Date
@@ -207,6 +283,8 @@ while ($true) {
         TargetGPUTotalCommitted_GiB   = ConvertTo-GiB $gpuCommittedBytes
         TargetGPUNonLocal_GiB         = ConvertTo-GiB $gpuNonLocalBytes
         TargetGPUEngineSum_Percent    = [math]::Round($gpuEnginePercent, 1)
+        GpuEngineCounterInstances     = $gpuEngineMatchedCount
+        GpuEngineRejectedValues       = $gpuEngineRejectedCount
 
         AdapterLocal_GiB              = ConvertTo-GiB $adapterLocalBytes
         AdapterDedicated_GiB          = ConvertTo-GiB $adapterDedicatedBytes

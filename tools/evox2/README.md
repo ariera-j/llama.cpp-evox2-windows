@@ -289,7 +289,20 @@ The unified monitor records the richer previous CLI counter set:
 - disk throughput
 - total CPU usage
 
-If process-specific GPU counters are unavailable, it falls back to adapter/system counters and records that process counters were unavailable.
+If process-specific GPU counters are unavailable while the target process is still running, it falls back to adapter/system counters and records that process counters were unavailable.
+
+A PID-scoped GPU counter can also disappear during the normal shutdown race after `llama-cli` exits. That end-of-run condition is not treated as a warning and no misleading fallback sample is appended.
+
+For GPU engine utilization, each individual Windows GPU Engine counter is validated before summing. Individual values outside `0..100.5%` are rejected as invalid counter data. The final `TargetGPUEngineSum_Percent` is still allowed to exceed 100% because multiple GPU engines can be active simultaneously.
+
+The resource CSV includes:
+
+```text
+GpuEngineCounterInstances
+GpuEngineRejectedValues
+```
+
+so any filtering remains visible in the measurement record.
 
 ### Manual monitor invocation
 
