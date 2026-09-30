@@ -100,6 +100,7 @@ Verify the important pieces:
 $env:VCToolsInstallDir
 where.exe cl
 where.exe clang
+rocm-sdk version
 clang --version
 where.exe rocm-sdk
 Test-Path $env:HIP_DEVICE_LIB_PATH

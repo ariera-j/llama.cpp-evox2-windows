@@ -44,10 +44,23 @@ Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
 
+function Resolve-Evox2RepoPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if ([IO.Path]::IsPathRooted($Path)) {
+        return [IO.Path]::GetFullPath($Path)
+    }
+
+    return [IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
+}
+
 if ([string]::IsNullOrWhiteSpace($BuildDir)) {
     $BuildDir = Join-Path $RepoRoot 'build-rocm-r3'
 }
-$BuildDir = [IO.Path]::GetFullPath($BuildDir)
+$BuildDir = Resolve-Evox2RepoPath -Path $BuildDir
 $BinDir = Join-Path $BuildDir "bin\$Configuration"
 
 $cmake = (Get-Command cmake -CommandType Application -ErrorAction Stop |
@@ -339,7 +352,7 @@ try {
         Clang = Get-Evox2ToolIdentity -Name 'clang'
         ClangXX = Get-Evox2ToolIdentity -Name 'clang++'
         CL = Get-Evox2ToolIdentity -Name 'cl' -VersionArguments @('/Bv')
-        RocmSdk = Get-Evox2ToolIdentity -Name 'rocm-sdk' -VersionArguments @('--version')
+        RocmSdk = Get-Evox2ToolIdentity -Name 'rocm-sdk' -VersionArguments @('version')
         RocmPath = $RocmPath
         RocmBin = $RocmBin
         RocmCmakePath = $RocmCmakePath

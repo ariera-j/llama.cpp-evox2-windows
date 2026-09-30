@@ -20,6 +20,7 @@ LLVM/Clang 20.1.8
 Vulkan SDK 1.4.357.0
 CMake 4.3.1
 Ninja 1.13.2
+7-Zip (required by `GGML_OPENMP_FETCH=ON`)
 ```
 
 The build uses the repository's Windows LLVM toolchain file.
@@ -32,17 +33,26 @@ Example:
 
 ```powershell
 $env:VULKAN_SDK = 'C:\VulkanSDK\1.4.357.0'
-$LlvmBin = 'C:\LLVM\20.1.8\bin'
+$LlvmBin = 'C:\Program Files\LLVM\bin'
+$SevenZipBin = 'C:\Program Files\7-Zip'
 
-$env:PATH = "$LlvmBin;$env:VULKAN_SDK\Bin;$env:PATH"
+$env:PATH = "$LlvmBin;$SevenZipBin;$env:VULKAN_SDK\Bin;$env:PATH"
 
 where.exe clang
 where.exe cmake
 where.exe ninja
+where.exe 7z
 clang --version
 ```
 
 The exact installation paths can differ.
+
+An explicitly selected LLVM directory should contain both `clang.exe` and
+`clang++.exe`. Verify the path rather than allowing another Clang installation
+already on `PATH` to be selected accidentally.
+
+`GGML_OPENMP_FETCH=ON` uses 7-Zip while fetching/configuring OpenMP. If 7-Zip is
+not already on `PATH`, add its installation directory before running CMake.
 
 ## Configure
 

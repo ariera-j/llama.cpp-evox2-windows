@@ -11,6 +11,7 @@ param(
 
     [string]$LlvmBin = '',
     [string]$VulkanSdk = '',
+    [string]$SevenZipBin = '',
 
     [switch]$ConfigureOnly,
     [switch]$BuildOnly,
@@ -39,10 +40,23 @@ Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
 
+function Resolve-Evox2RepoPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if ([IO.Path]::IsPathRooted($Path)) {
+        return [IO.Path]::GetFullPath($Path)
+    }
+
+    return [IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
+}
+
 if ([string]::IsNullOrWhiteSpace($BuildDir)) {
     $BuildDir = Join-Path $RepoRoot 'build-vulkan-r3'
 }
-$BuildDir = [IO.Path]::GetFullPath($BuildDir)
+$BuildDir = Resolve-Evox2RepoPath -Path $BuildDir
 $BinDir = Join-Path $BuildDir "bin\$Configuration"
 
 $cmake = (Get-Command cmake -CommandType Application -ErrorAction Stop |
@@ -53,13 +67,24 @@ $savedVulkanSdk = $env:VULKAN_SDK
 
 try {
     if (-not [string]::IsNullOrWhiteSpace($VulkanSdk)) {
-        $env:VULKAN_SDK = [IO.Path]::GetFullPath($VulkanSdk)
+        $env:VULKAN_SDK = Resolve-Evox2RepoPath -Path $VulkanSdk
     } elseif (-not [string]::IsNullOrWhiteSpace($env:VULKAN_SDK)) {
         $VulkanSdk = $env:VULKAN_SDK
     }
 
     if (-not [string]::IsNullOrWhiteSpace($LlvmBin)) {
-        $LlvmBin = [IO.Path]::GetFullPath($LlvmBin)
+        $LlvmBin = Resolve-Evox2RepoPath -Path $LlvmBin
+
+        $clangPath = Join-Path $LlvmBin 'clang.exe'
+        $clangXXPath = Join-Path $LlvmBin 'clang++.exe'
+
+        if (-not (Test-Path -LiteralPath $clangPath -PathType Leaf)) {
+            throw "clang.exe not found in -LlvmBin: $LlvmBin"
+        }
+        if (-not (Test-Path -LiteralPath $clangXXPath -PathType Leaf)) {
+            throw "clang++.exe not found in -LlvmBin: $LlvmBin"
+        }
+
         $env:PATH = "$LlvmBin;$env:PATH"
     } else {
         $clangCommand = Get-Command clang.exe -CommandType Application -ErrorAction SilentlyContinue |
@@ -69,9 +94,69 @@ try {
         }
     }
 
+    $sevenZipPath = $null
+
+    if (-not [string]::IsNullOrWhiteSpace($SevenZipBin)) {
+        $SevenZipBin = Resolve-Evox2RepoPath -Path $SevenZipBin
+
+        foreach ($name in @('7z.exe', '7zz.exe', '7za.exe')) {
+            $candidate = Join-Path $SevenZipBin $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $sevenZipPath = $candidate
+                break
+            }
+        }
+
+        if (-not $sevenZipPath) {
+            throw "7-Zip executable not found in -SevenZipBin: $SevenZipBin"
+        }
+
+        $env:PATH = "$SevenZipBin;$env:PATH"
+    } else {
+        foreach ($name in @('7z.exe', '7zz.exe', '7za.exe')) {
+            $command = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($command) {
+                $sevenZipPath = $command.Source
+                $SevenZipBin = Split-Path -Parent $sevenZipPath
+                break
+            }
+        }
+
+        if (-not $sevenZipPath) {
+            $candidateDirs = @()
+
+            if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+                $candidateDirs += (Join-Path $env:ProgramFiles '7-Zip')
+            }
+
+            $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+            if (-not [string]::IsNullOrWhiteSpace($programFilesX86)) {
+                $candidateDirs += (Join-Path $programFilesX86 '7-Zip')
+            }
+
+            foreach ($candidateDir in $candidateDirs) {
+                $candidate = Join-Path $candidateDir '7z.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    $sevenZipPath = $candidate
+                    $SevenZipBin = $candidateDir
+                    $env:PATH = "$SevenZipBin;$env:PATH"
+                    break
+                }
+            }
+        }
+    }
+
     if (-not $ManifestOnly -and -not $BuildOnly) {
         if ([string]::IsNullOrWhiteSpace($env:VULKAN_SDK)) {
             throw 'VULKAN_SDK is not set. Pass -VulkanSdk or configure the shell first.'
+        }
+
+        if (-not $sevenZipPath) {
+            throw (
+                'GGML_OPENMP_FETCH requires 7-Zip. Install 7-Zip, put 7z.exe on PATH, ' +
+                'or pass -SevenZipBin.'
+            )
         }
     }
 
@@ -178,6 +263,7 @@ try {
         CL = Get-Evox2ToolIdentity -Name 'cl' -VersionArguments @('/Bv')
         LlvmBin = $LlvmBin
         VulkanSdk = $env:VULKAN_SDK
+        SevenZipPath = $sevenZipPath
     }
 
     $validation = [ordered]@{
