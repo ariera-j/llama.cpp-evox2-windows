@@ -298,6 +298,65 @@ At 64k, recovering most of the historical r2/r3 decode gap is a useful
 implementation check. The final accept/reject decision depends on correctness
 and the 128k/256k depth slope, not on a single 64k threshold.
 
+### Vulkan validation results
+
+COMMON-004 was validated on Vulkan with the Unsloth Qwen3.8-Flash-Next
+PLE16 model, MTP disabled, using same-binary pooled-cache ON/OFF comparisons.
+
+| Context | Pooled cache | PP (tok/s) | TG (tok/s) |
+|---|---|---:|---:|
+| 64k | OFF | 269.18 | 17.13 |
+| 64k | ON | 262.89 | 25.95 |
+| 128k | OFF | 159.39 | 11.91 |
+| 128k | ON | 156.47 | 24.00 |
+| 256k | OFF | 102.77 | 7.27 |
+| 256k | ON | 98.63 | 21.03 |
+
+64k and 128k values are ABBA averages. The 256k result uses one OFF
+and one ON run because of the substantially longer runtime.
+
+TG improvement from the pooled cache was:
+
+- 64k: +51.5%
+- 128k: +101.6%
+- 256k: +189.3%
+
+TG from 64k to 256k decreased by about 19.0% with the pooled cache,
+compared with about 57.6% with the cache disabled.
+
+This strongly supports the pre-implementation profiling result that repeated
+full pooled-summary reconstruction was the dominant long-context decode
+regression.
+
+PP is consistently lower with the pooled cache enabled on Vulkan:
+
+- 64k: -2.3%
+- 128k: -1.8%
+- 256k: -4.0% (single-run comparison)
+
+Treat this as a follow-up item rather than a COMMON-004 blocker. Check whether
+the same PP trend appears on ROCm before profiling or changing the implementation.
+
+
+A scheduler/compute-buffer warning was also observed on pooled-cache ON runs:
+
+Vulkan0 compute buffer size of 4004.7852 MiB,
+does not match expectation of 4362.8672 MiB
+
+The warning appeared on successful runs and was not accompanied by a crash,
+incorrect output, or benchmark failure.
+Keep this as a follow-up item together with the PP regression. Before changing
+COMMON-004, check whether the warning is Vulkan-specific, whether it also
+appears on ROCm, and whether it is related to the pooled-cache graph/buffer
+layout or is only a benign scheduler-reservation mismatch.
+
+### Follow-up checks
+
+- Vulkan PP is consistently lower with pooled caching enabled.
+- A compute-buffer expectation warning appears on pooled-cache ON runs.
+- Check both items on ROCm before profiling or modifying COMMON-004.
+
+
 ## COMMON-005 - gather-based QSA decode
 
 Status:
