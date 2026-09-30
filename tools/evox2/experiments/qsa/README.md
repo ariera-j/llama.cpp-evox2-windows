@@ -39,6 +39,43 @@ unknown or absent QSA variable.
 The example plan is intended for a build where the relevant QSA patch has
 already been integrated and validated.
 
+## Planned COMMON-004 pooled-key-cache A/B
+
+COMMON-004 is the next source optimization target.
+
+The current reference implementations expose a same-binary cache-off control:
+
+```text
+LLAMA_QSA_NO_POOLED_CACHE=1
+```
+
+The intended A/B shape is:
+
+```text
+A: pooled cache enabled (default)
+B: LLAMA_QSA_NO_POOLED_CACHE=1
+```
+
+The Laurent reference also has:
+
+```text
+LLAMA_QSA_POOLED_MAX_TOKENS=32
+```
+
+with `0` meaning no ubatch-size limit. Do not add that variable to an r3 matrix
+plan until the COMMON-004 port explicitly retains it.
+
+Once COMMON-004 exists in r3, use the matrix runner's `Variant.Environment`
+override so cache ON/OFF runs share the same binary and all environment
+differences are recorded in `conditions.json`.
+
+The initial long-context order is Vulkan 128k, Vulkan 256k, and ROCm 128k with
+MTP off. Fill the remaining 64k/256k backend cells after the first signal is
+established. Prefer interleaved/ABBA ordering for close results.
+
+Do not create a committed COMMON-004 matrix example until the final r3 runtime
+controls are known.
+
 ## Example: main Vulkan QSA threshold
 
 See:

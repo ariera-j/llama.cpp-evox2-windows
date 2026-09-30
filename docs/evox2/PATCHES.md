@@ -32,15 +32,21 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 | ID | Scope | Status | Purpose |
 |---|---|---|---|
 | COMMON-001 | common | validated | PLE16 model loading support |
-| COMMON-002 | common | planned | Unsloth MTP compatibility |
+| COMMON-002 | common | planned | Unsloth MTP compatibility, after main-QSA work |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
+| COMMON-004 | common | next | incremental pooled-key cache for the QSA indexer |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
-| VULKAN-002 | Vulkan | evaluate | QSA grouped-union optimization if current upstream still benefits |
+| VULKAN-002 | Vulkan | evaluate | QSA grouped-union optimization after COMMON-004 |
 | ROCM-001 | ROCm | none yet | reserved for a demonstrated ROCm-specific requirement |
 
 `planned` means the feature is expected to be ported.
 
 `evaluate` means the feature existed or was relevant in earlier work, but r3 will first verify whether current upstream still needs it.
+
+`next` means it is the current implementation target.
+
+Current execution order is tracked separately in [ROADMAP.md](ROADMAP.md).
+Patch IDs remain stable and are not renumbered when priorities change.
 
 ## COMMON-001 - PLE16 loader
 
@@ -152,6 +158,87 @@ Upstream interaction:
 
 The patch is intentionally limited to qwen4exp PLE tensor naming, loading, and graph assembly so that later upstream changes can be compared or dropped independently.
 
+## COMMON-004 - incremental pooled-key cache
+
+Status:
+
+```text
+next
+```
+
+Goal:
+
+Reduce the long-context decode cost of the qwen4exp QSA indexer by caching
+complete block summary keys instead of rebuilding pooled/normed/roped summaries
+from the full raw indexer cache on every decode step.
+
+Primary references:
+
+```text
+LaurentZuijdwijk/llama.cpp
+d8ec9e66329c1340e6fc74eee9d66ea5eebdb7c4
+qwen4exp: incremental pooled-key cache for the QSA indexer
+
+ggml-org/llama.cpp
+PR #28699
+qwen4exp: incremental pooled-key cache for the QSA indexer
+```
+
+The upstream PR is the preferred design reference for the r3 port because it
+includes later state/rollback and buffer-allocation handling. The Laurent
+version remains useful for Evo-X2/Vulkan measurements and the decode-sized
+ubatch gate.
+
+Expected behavior:
+
+- one persistent f32 summary row per complete position block per QSA layer
+- only newly completed/invalidated blocks are pooled and written
+- full state loads invalidate pooled rows
+- sequence edits clamp/reset validity as required
+- unsupported multi-stream cases fall back to the full recompute path
+- one binary can run cache-on/cache-off for A/B testing
+
+Reference kill switch:
+
+```text
+LLAMA_QSA_NO_POOLED_CACHE=1
+```
+
+The Laurent source also has:
+
+```text
+LLAMA_QSA_POOLED_MAX_TOKENS
+default: 32
+0: no limit
+```
+
+The r3 implementation should decide explicitly whether that second control
+still belongs in the port.
+
+Initial validation plan:
+
+1. build Vulkan and ROCm from the same COMMON-004 source revision
+2. allocation/load smoke test
+3. MTP off
+4. use the validated PLE16 model for 128k/256k long-context runs
+5. same-binary cache ON/OFF comparison
+6. Vulkan 128k first
+7. Vulkan 256k and ROCm 128k after the first signal
+8. fill 64k and ROCm 256k if the effect is useful
+9. use interleaved/ABBA ordering for close results
+
+Primary metric:
+
+```text
+TG versus context depth
+```
+
+PP and memory use must still be recorded, but PP improvement is not the main
+purpose of this patch.
+
+Do not combine COMMON-004 with grouped-union, MTP compatibility, MTP-QSA, or
+ROCmFPx changes.
+
 ## COMMON-002 - Unsloth MTP compatibility
 
 Status:
@@ -165,6 +252,9 @@ Goal:
 Load and run the Unsloth MTP draft model used in the earlier Evo-X2 tests.
 
 The r2 work required compatibility handling beyond the clean upstream baseline. r3 should port only the minimum compatibility change needed by the current upstream source.
+
+COMMON-002 is deliberately scheduled after COMMON-004 and the first main-QSA
+optimization pass so MTP measurements are not confounded by a moving target.
 
 Validation plan:
 
@@ -216,12 +306,15 @@ r3 must not assume the old patch is still optimal because the new base already c
 
 Before porting:
 
-1. measure current upstream behavior at 128k and 256k
-2. identify whether the same bottleneck remains
-3. port only the required grouped-union delta
-4. validate correctness before benchmarking
+1. complete COMMON-004
+2. complete the selected small post-b11247 Vulkan A/B tests
+3. compare the historical grouped-union path with the then-current qwen4exp/Vulkan graph
+4. port only the required grouped-union delta
+5. validate correctness before benchmarking
+6. use 128k and 256k as the primary PP decision points
 
-Historical r2 results are useful references but are not r3 baseline values.
+Historical r2 results remain strong evidence that the idea is worth
+re-evaluating, but they are not r3 baseline values.
 
 ## MTP-QSA prototype
 
@@ -229,10 +322,11 @@ The earlier MTP-QSA prototype is intentionally outside the initial r3 patch stac
 
 It should only be reconsidered after:
 
+- COMMON-004 is validated
+- the remaining main-QSA long-context decode cost is reduced or characterized
 - COMMON-002 is stable
 - normal MTP on/off measurements are complete
-- current upstream QSA behavior is understood
-- a separate performance case justifies the added complexity
+- a separate performance case justifies the added graph/cache complexity
 
 ## Patch documentation template
 

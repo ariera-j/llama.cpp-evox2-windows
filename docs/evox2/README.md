@@ -71,16 +71,20 @@ The root `README.md` is downstream-specific.
 
 Upstream AI-agent instruction files are intentionally not part of the downstream r3 working tree. They describe contribution rules and agent behavior for the upstream project, while this repository is used as a private/downstream experimentation environment.
 
-## Planned tools layout
+## Tooling layout
 
-The target layout is:
+The r3 tooling cleanup is now in place:
 
 ```text
 tools/evox2/
 ├─ build/
 │  ├─ Build-Vulkan.ps1
-│  └─ Build-ROCm.ps1
+│  ├─ Build-ROCm.ps1
+│  ├─ Evox2.Build.psm1
+│  ├─ Evox2.DependencyCache.psm1
+│  └─ README.md
 ├─ benchmark/
+│  ├─ Evox2.Benchmark.psm1
 │  ├─ Measure-LlamaCli.ps1
 │  ├─ Measure-LlamaBench.ps1
 │  ├─ Monitor-LlamaProcess.ps1
@@ -88,17 +92,22 @@ tools/evox2/
 │  └─ configs/
 ├─ model/
 │  ├─ Convert-Unsloth-Ple16.ps1
-│  └─ verify-ple16.py
+│  ├─ verify-ple-layout.py
+│  └─ README.md
 └─ experiments/
    └─ qsa/
 ```
 
-This layout separates reusable infrastructure from experiment-specific scripts.
+This layout separates reusable build/benchmark infrastructure from
+experiment-specific controls.
 
-The scripts may temporarily be in older locations while the r3 cleanup is in progress. Documentation should be updated when the final script names are committed.
+Build wrappers write `evox2-build.json` manifests and can reuse a shared
+dependency cache outside the repository. Benchmark wrappers consume detected
+runtime/build facts rather than trusting lookup-key labels.
 
 ## Documentation map
 
+- [ROADMAP.md](ROADMAP.md): current optimization order and upstream-refresh policy
 - [BASELINE.md](BASELINE.md): exact baseline, validation, and current reference results
 - [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md): Vulkan build procedure
 - [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md): ROCm 10.0 / TheRock build and runtime procedure

@@ -12,35 +12,41 @@ The BIOS UMA setting remains a manual test-condition label because the current t
 
 ## Current implementation status
 
-Implemented:
+The r3 tooling layout is now implemented:
 
 ```text
 tools/evox2/
-├─ README.md
 ├─ lib/
 │  └─ Evox2.Common.psm1
-└─ benchmark/
-   ├─ Evox2.Benchmark.psm1
-   ├─ Measure-LlamaCli.ps1
-   ├─ Measure-LlamaBench.ps1
-   ├─ Monitor-LlamaProcess.ps1
-   └─ configs/
-      ├─ local.example.psd1
-      └─ local.psd1              # local only, ignored by Git
+├─ build/
+│  ├─ Build-Vulkan.ps1
+│  ├─ Build-ROCm.ps1
+│  ├─ Evox2.Build.psm1
+│  ├─ Evox2.DependencyCache.psm1
+│  └─ README.md
+├─ benchmark/
+│  ├─ Evox2.Benchmark.psm1
+│  ├─ Measure-LlamaCli.ps1
+│  ├─ Measure-LlamaBench.ps1
+│  ├─ Monitor-LlamaProcess.ps1
+│  ├─ Invoke-BenchmarkMatrix.ps1
+│  └─ configs/
+│     ├─ local.example.psd1
+│     ├─ qwen38-baseline.psd1
+│     ├─ qwen38-longctx.psd1
+│     └─ qwen38-mtp.psd1
+├─ model/
+│  ├─ Convert-Unsloth-Ple16.ps1
+│  ├─ verify-ple-layout.py
+│  └─ README.md
+└─ experiments/
+   └─ qsa/
 ```
 
-Planned next:
+`local.psd1` remains machine-local and ignored by Git.
 
-```text
-benchmark/
-├─ Invoke-BenchmarkMatrix.ps1
-└─ configs/
-   ├─ qwen38-baseline.psd1
-   ├─ qwen38-longctx.psd1
-   └─ qwen38-mtp.psd1
-```
-
-The final r3 layout will also include cleaned build, model-conversion, and experiment-specific scripts.
+The next project work is source optimization rather than tooling cleanup.
+COMMON-004 incremental pooled-key caching is the next implementation target.
 
 ## PowerShell compatibility
 
@@ -378,11 +384,18 @@ Otherwise the model identity records path, size, and last-write time.
 
 ## Build manifests
 
-`evox2-build.json` support already exists in the common module, but the current clean b11247 build directories do not have manifests yet.
+The Vulkan and ROCm build wrappers write `evox2-build.json` into the selected
+build directory.
 
-The build-script cleanup phase will generate them automatically.
+The manifest records the detected/selected toolchain, source identity, build
+configuration, and runtime-relevant wrapper metadata. The dependency-cache
+integration also records which shared dependency sources were reused or seeded.
 
-Official/prebuilt llama.cpp builds can still be benchmarked without a manifest because runtime identity is detected from the executable.
+Benchmark wrappers load this manifest when it is present and still verify the
+runtime executable identity independently.
+
+Official/prebuilt llama.cpp builds can still be benchmarked without a manifest
+because runtime identity is detected from the executable.
 
 
 ## Phase 3: `Measure-LlamaBench.ps1`
