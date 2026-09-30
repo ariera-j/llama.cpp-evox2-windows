@@ -12,6 +12,7 @@ param(
     [string]$LlvmBin = '',
     [string]$VulkanSdk = '',
     [string]$SevenZipBin = '',
+    [string]$DependencyCacheRoot = '',
 
     [switch]$ConfigureOnly,
     [switch]$BuildOnly,
@@ -33,12 +34,20 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $toolsRoot = Split-Path -Parent $scriptDir
 $commonModule = Join-Path $toolsRoot 'lib\Evox2.Common.psm1'
 $buildModule = Join-Path $scriptDir 'Evox2.Build.psm1'
+$dependencyCacheModule = Join-Path $scriptDir 'Evox2.DependencyCache.psm1'
 
 Import-Module $commonModule -Force
 Import-Module $buildModule -Force
+Import-Module $dependencyCacheModule -Force
 Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
+
+$dependencyCacheRootExplicit = $PSBoundParameters.ContainsKey('DependencyCacheRoot')
+$DependencyCacheRoot = Resolve-Evox2DependencyCacheRoot `
+    -RepoRoot $RepoRoot `
+    -RequestedRoot $DependencyCacheRoot `
+    -Explicit:$dependencyCacheRootExplicit
 
 function Resolve-Evox2RepoPath {
     param(
@@ -160,6 +169,14 @@ try {
         }
     }
 
+    $dependencyCache = Initialize-Evox2DependencyCache `
+        -RepoRoot $RepoRoot `
+        -BuildDir $BuildDir `
+        -Backend 'Vulkan' `
+        -CacheRoot $DependencyCacheRoot `
+        -ExtraCMakeArgs $ExtraCMakeArgs `
+        -PrepareBuildDir:(-not $ManifestOnly -and -not $BuildOnly)
+
     $toolchainFile = Join-Path $RepoRoot 'cmake\x64-windows-llvm.cmake'
 
     $configureArgs = @(
@@ -181,6 +198,10 @@ try {
         '-DLLAMA_BUILD_UI=OFF',
         '-DGGML_RPC=ON'
     )
+    if ($dependencyCache.ConfigureArgs.Count -gt 0) {
+        $configureArgs += @($dependencyCache.ConfigureArgs)
+    }
+
     if ($ExtraCMakeArgs.Count -gt 0) {
         $configureArgs += $ExtraCMakeArgs
     }
@@ -212,6 +233,11 @@ try {
             throw "CMake configure failed with exit code $LASTEXITCODE."
         }
         $configureRecord.Executed = $true
+        $dependencyCache.Record.Captured = Save-Evox2DependencyCacheFromBuild `
+            -RepoRoot $RepoRoot `
+            -BuildDir $BuildDir `
+            -Backend 'Vulkan' `
+            -CacheRoot $DependencyCacheRoot
     }
 
     if (-not $ManifestOnly -and -not $ConfigureOnly) {
@@ -290,6 +316,7 @@ try {
         }) `
         -Runtime ([ordered]@{
             VulkanSdk = $env:VULKAN_SDK
+            DependencyCache = $dependencyCache.Record
         }) `
         -Validation $validation
 

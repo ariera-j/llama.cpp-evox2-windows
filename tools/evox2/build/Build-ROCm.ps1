@@ -12,6 +12,7 @@ param(
     [string]$RocmPath = '',
     [string]$RocmBin = '',
     [string]$RocmCmakePath = '',
+    [string]$DependencyCacheRoot = '',
 
     [string]$AmdGpuTarget = 'gfx1151',
 
@@ -37,12 +38,20 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $toolsRoot = Split-Path -Parent $scriptDir
 $commonModule = Join-Path $toolsRoot 'lib\Evox2.Common.psm1'
 $buildModule = Join-Path $scriptDir 'Evox2.Build.psm1'
+$dependencyCacheModule = Join-Path $scriptDir 'Evox2.DependencyCache.psm1'
 
 Import-Module $commonModule -Force
 Import-Module $buildModule -Force
+Import-Module $dependencyCacheModule -Force
 Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
+
+$dependencyCacheRootExplicit = $PSBoundParameters.ContainsKey('DependencyCacheRoot')
+$DependencyCacheRoot = Resolve-Evox2DependencyCacheRoot `
+    -RepoRoot $RepoRoot `
+    -RequestedRoot $DependencyCacheRoot `
+    -Explicit:$dependencyCacheRootExplicit
 
 function Resolve-Evox2RepoPath {
     param(
@@ -154,6 +163,14 @@ try {
         $rocmLlvmBin = $null
     }
 
+    $dependencyCache = Initialize-Evox2DependencyCache `
+        -RepoRoot $RepoRoot `
+        -BuildDir $BuildDir `
+        -Backend 'ROCm' `
+        -CacheRoot $DependencyCacheRoot `
+        -ExtraCMakeArgs $ExtraCMakeArgs `
+        -PrepareBuildDir:(-not $ManifestOnly -and -not $BuildOnly)
+
     $configureArgs = @(
         '-S', $RepoRoot,
         '-B', $BuildDir,
@@ -194,6 +211,10 @@ try {
         '-DGGML_RPC=ON'
     )
 
+    if ($dependencyCache.ConfigureArgs.Count -gt 0) {
+        $configureArgs += @($dependencyCache.ConfigureArgs)
+    }
+
     if ($ExtraCMakeArgs.Count -gt 0) {
         $configureArgs += $ExtraCMakeArgs
     }
@@ -227,6 +248,11 @@ try {
             throw "CMake configure failed with exit code $LASTEXITCODE."
         }
         $configureRecord.Executed = $true
+        $dependencyCache.Record.Captured = Save-Evox2DependencyCacheFromBuild `
+            -RepoRoot $RepoRoot `
+            -BuildDir $BuildDir `
+            -Backend 'ROCm' `
+            -CacheRoot $DependencyCacheRoot
     }
 
     if (-not $ManifestOnly -and -not $ConfigureOnly) {
@@ -361,6 +387,7 @@ try {
     }
 
     $runtime = [ordered]@{
+        DependencyCache = $dependencyCache.Record
         RuntimeDllCopySkipped = [bool]$SkipRuntimeDllCopy
         RuntimeDlls = @($runtimeDllRecords)
         Environment = [ordered]@{

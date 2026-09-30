@@ -149,3 +149,73 @@ The manifest records:
 
 The manifest records what the wrapper observed. It is not a claim that every
 toolchain combination is supported.
+
+## Shared dependency cache
+
+The build wrappers can reuse a dependency cache outside the repository so that
+fresh build directories do not repeatedly download the same dependencies.
+
+Cache-root resolution order:
+
+1. explicit `-DependencyCacheRoot`
+2. `EVOX2_DEPS_ROOT`
+3. an existing `evox2-deps` directory beside the repository directory
+
+For the standard Evo-X2 layout:
+
+```text
+C:\llama-build\
+  llama.cpp-evox2-windows-r3\
+  evox2-deps\
+```
+
+the wrappers automatically discover:
+
+```text
+C:\llama-build\evox2-deps
+```
+
+The current cache layout is:
+
+```text
+evox2-deps\
+  fetchcontent\
+    boringssl-src\
+    boringssl-<version>-src\
+  openmp\
+    llvm-openmp-<version>-x64\
+```
+
+The legacy unversioned `fetchcontent\boringssl-src` directory is accepted only
+when Git confirms that it is a clean checkout of the BoringSSL version requested
+by the current llama.cpp source. New cache captures use a versioned source
+directory.
+
+Only the BoringSSL **source tree** is shared. `boringssl-build` is deliberately
+not reused across build directories because Vulkan and ROCm may use different
+compiler toolchains and build settings.
+
+For Vulkan, the wrapper seeds the build-local `_deps\llvm-openmp-...` directory
+from the shared OpenMP cache before CMake configure. For both Vulkan and ROCm,
+the wrapper passes a validated BoringSSL source through
+`FETCHCONTENT_SOURCE_DIR_BORINGSSL`.
+
+On a cache miss, CMake uses its normal network fetch. After a successful
+configure, the wrapper copies the newly fetched dependency into the shared
+cache so that later fresh build directories can reuse it.
+
+To use a different cache explicitly:
+
+```powershell
+-DependencyCacheRoot D:\llama-deps
+```
+
+To disable automatic cache use for one invocation, explicitly pass an empty
+value:
+
+```powershell
+-DependencyCacheRoot ''
+```
+
+A build manifest records the cache root, expected dependency versions, reused
+sources, OpenMP seeding, and any dependency captured after configure.
