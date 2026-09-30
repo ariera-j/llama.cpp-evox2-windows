@@ -35,11 +35,13 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 | COMMON-002 | common | planned | Unsloth MTP compatibility, after main-QSA work |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
 | COMMON-004 | common | next | incremental pooled-key cache for the QSA indexer |
+| COMMON-005 | common | planned | gather selected QSA K/V for long-context single-token decode |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
-| VULKAN-002 | Vulkan | evaluate | QSA grouped-union optimization after COMMON-004 |
+| VULKAN-002 | Vulkan | evaluate | QSA grouped-union / sparse-FA PP optimization after COMMON decode work |
 | ROCM-001 | ROCm | none yet | reserved for a demonstrated ROCm-specific requirement |
 
-`planned` means the feature is expected to be ported.
+`planned` means the feature is expected to be ported or evaluated after its
+prerequisites are complete.
 
 `evaluate` means the feature existed or was relevant in earlier work, but r3 will first verify whether current upstream still needs it.
 
@@ -179,53 +181,112 @@ LaurentZuijdwijk/llama.cpp
 d8ec9e66329c1340e6fc74eee9d66ea5eebdb7c4
 qwen4exp: incremental pooled-key cache for the QSA indexer
 
+LaurentZuijdwijk/llama.cpp
+c659bd6d0c515e4f33f432139c71f3dfc19551de
+qwen4exp: bound the pooled-cache dirty tables against speculative drafts
+
 ggml-org/llama.cpp
 PR #28699
 qwen4exp: incremental pooled-key cache for the QSA indexer
 ```
 
-The upstream PR is the preferred design reference for the r3 port because it
-includes later state/rollback and buffer-allocation handling. The Laurent
-version remains useful for Evo-X2/Vulkan measurements and the decode-sized
-ubatch gate.
+The upstream PR is the preferred structural reference for the r3 port because
+it includes later state/rollback and per-buffer allocation handling. The
+Laurent version remains useful for Evo-X2/Vulkan behavior, the decode-sized
+ubatch gate, and later speculative-safety fixes.
 
-Expected behavior:
+### Pre-implementation evidence
+
+A 64k Vulkan diagnostic profile used the same PLE16 model, the same 61,789-token
+input, MTP off, f16 K/V, batch 2048, ubatch 1024, and
+`GGML_VK_PERF_LOGGER=1`.
+
+| Build | QSA union | PP (tok/s, profiler on) | TG (tok/s, profiler on) | Steady GPU graph |
+|---|---|---:|---:|---:|
+| r2 | OFF | 221.44 | 7.78 | 44.18 ms/token |
+| r2 | ON | 263.28 | 7.77 | 44.31 ms/token |
+| r3 + COMMON-001 | n/a | 259.73 | 6.62 | 59.13 ms/token |
+
+The profiler adds substantial wall-clock overhead, so its PP/TG values are not
+used as absolute performance numbers. The GPU timestamp comparison is used to
+locate the decode gap.
+
+Relative to r2 union OFF, r3 adds about 14.95 ms/token of steady GPU graph time.
+The following QSA-summary differences account for about 14.15 ms/token, or
+94.6% of that gap:
+
+- `CONT`: +11.38 ms/token
+- full-block RMS norm: +2.18 ms/token
+- QSA-related RoPE: +0.59 ms/token
+
+The r2 graph performs the expensive full pooled-summary refill on the first
+decode step and then stops rebuilding the full block set. r3 continues the
+full-context work on every decode step. All profiled runs reported
+`graphs reused = 127`.
+
+The grouped-union switch is therefore not the explanation for the r2 TG
+advantage and remains a separate PP optimization.
+
+### Planned r3 behavior
 
 - one persistent f32 summary row per complete position block per QSA layer
-- only newly completed/invalidated blocks are pooled and written
-- full state loads invalidate pooled rows
-- sequence edits clamp/reset validity as required
-- unsupported multi-stream cases fall back to the full recompute path
-- one binary can run cache-on/cache-off for A/B testing
+- pooled buffers allocated with the QSA indexer K storage on the appropriate
+  buffer type/device
+- only newly completed or invalidated blocks are pooled, normalized, RoPE'd,
+  and written with `set_rows`
+- QSA layers only; recurrent layers are excluded using the same layer filter as
+  the indexer cache
+- full state loads invalidate pooled trust and refill lazily
+- sequence edits clamp or reset pooled validity as required
+- speculative dirty writes are bounded so a build-time dirty-table estimate
+  cannot overflow at fill time
+- dirty-table sizing must remain safe for M-RoPE / repeated-position inputs
+- initial pooled-cache support is limited to a single-sequence memory
+  configuration; unsupported multi-sequence/server cases use the current full
+  recompute path
 
-Reference kill switch:
+### Planned runtime controls
 
 ```text
 LLAMA_QSA_NO_POOLED_CACHE=1
 ```
 
-The Laurent source also has:
+Disables the pooled path for same-binary A/B. The r3 implementation should also
+skip pooled-buffer allocation under this switch so memory A/B is meaningful.
 
 ```text
-LLAMA_QSA_POOLED_MAX_TOKENS
-default: 32
-0: no limit
+LLAMA_QSA_POOLED_MAX_TOKENS=32
 ```
 
-The r3 implementation should decide explicitly whether that second control
-still belongs in the port.
+Default 32; `0` means no ubatch-size limit. The default keeps the incremental
+path focused on decode-sized ubatches and preserves the reference first-decode
+refill behavior. Verify graph reuse when validating the patch.
 
-Initial validation plan:
+### Explicitly outside COMMON-004
+
+Do not combine this patch with:
+
+- multi-sequence pooled row windows or `--parallel > 1` pooled caching
+- COMMON-005 gather-based QSA decode
+- Laurent `44041e78650c9f8aca2642842302dc8139907ded` reverse-scan `get_prev_tokens`
+- grouped-union / Vulkan sparse-FA changes
+- Unsloth MTP compatibility
+- MTP-QSA
+- ROCmFPx format or kernel work
+
+### Initial validation plan
 
 1. build Vulkan and ROCm from the same COMMON-004 source revision
-2. allocation/load smoke test
+2. allocation/load and short-generation smoke tests
 3. MTP off
-4. use the validated PLE16 model for 128k/256k long-context runs
-5. same-binary cache ON/OFF comparison
-6. Vulkan 128k first
-7. Vulkan 256k and ROCm 128k after the first signal
-8. fill 64k and ROCm 256k if the effect is useful
+4. same-binary cache ON/OFF comparison
+5. Vulkan 64k first to confirm the diagnosed cost disappears
+6. Vulkan 128k and 256k for the primary TG-depth decision
+7. ROCm 128k, then fill 64k/256k cells if the signal is useful
+8. record PP, TG, memory, first-decode refill cost, and graph reuse
 9. use interleaved/ABBA ordering for close results
+
+Use the validated PLE16 model for long-context runs.
 
 Primary metric:
 
@@ -233,11 +294,52 @@ Primary metric:
 TG versus context depth
 ```
 
-PP and memory use must still be recorded, but PP improvement is not the main
-purpose of this patch.
+At 64k, recovering most of the historical r2/r3 decode gap is a useful
+implementation check. The final accept/reject decision depends on correctness
+and the 128k/256k depth slope, not on a single 64k threshold.
 
-Do not combine COMMON-004 with grouped-union, MTP compatibility, MTP-QSA, or
-ROCmFPx changes.
+## COMMON-005 - gather-based QSA decode
+
+Status:
+
+```text
+planned
+```
+
+Goal:
+
+Reduce the remaining long-context QSA attention cost after COMMON-004 by
+running decode attention on the K/V rows selected by the indexer instead of
+turning the selection back into a mask over the full KV cache.
+
+Primary reference:
+
+```text
+ggml-org/llama.cpp
+PR #28213
+qwen4exp : gather-based sparse attention for QSA decode
+```
+
+Current rationale:
+
+- the existing qwen4exp path fills a full-length mask, clears selected rows,
+  and still calls attention with full K/V tensors
+- this can leave attention cost proportional to context depth even though QSA
+  only selects a much smaller token budget
+- a model/common gather path could potentially help both Vulkan and ROCm
+
+This patch is intentionally separate from COMMON-004. Evaluate it only after
+COMMON-004 is validated and profiling confirms that full-context attention or
+mask handling remains an important depth-dependent cost.
+
+Expected evaluation requirements:
+
+- single-token decode path first
+- preserve prompt/batched behavior unless separately justified
+- use a short-context gate so gather overhead does not regress small contexts
+- provide a runtime A/B switch
+- validate retrieval and deterministic/near-deterministic behavior before
+  accepting performance results
 
 ## COMMON-002 - Unsloth MTP compatibility
 
@@ -261,10 +363,14 @@ Validation plan:
 - draft model allocation succeeds
 - short-context generation succeeds
 - MTP acceptance statistics are reported
-- compare MTP on/off at a short context where TG is the primary metric
+- compare MTP on/off at short and long context
+- test whether long-context MTP benefit shrinks as draft dense-attention cost grows
 - separately measure long-context PP overhead
 
 Do not combine this patch with MTP-QSA work.
+
+If ordinary MTP loses most or all of its long-context benefit, that becomes an
+explicit trigger to reconsider the frozen MTP-QSA prototype later.
 
 ## COMMON-003 - ROCmFPx format/core support
 
@@ -292,7 +398,7 @@ Port only if the target ROCmFPx model requires downstream Vulkan kernel support 
 
 Keep format/core support and Vulkan kernel support as separate reviewable changes where practical.
 
-## VULKAN-002 - QSA grouped-union
+## VULKAN-002 - QSA grouped-union / sparse-FA PP optimization
 
 Status:
 
@@ -302,16 +408,23 @@ evaluate
 
 Earlier r2 measurements showed a large long-context prefill benefit from a grouped-union QSA path.
 
+The 64k r2/r3 pre-implementation profile confirms that grouped-union is a PP
+optimization: r2 union ON/OFF changed profiled PP from 221.44 to 263.28 tok/s,
+while steady decode GPU time remained 44.18 versus 44.31 ms/token.
+
 r3 must not assume the old patch is still optimal because the new base already contains newer upstream Vulkan/QSA changes.
 
 Before porting:
 
 1. complete COMMON-004
-2. complete the selected small post-b11247 Vulkan A/B tests
-3. compare the historical grouped-union path with the then-current qwen4exp/Vulkan graph
-4. port only the required grouped-union delta
-5. validate correctness before benchmarking
-6. use 128k and 256k as the primary PP decision points
+2. evaluate/profile COMMON-005
+3. complete the selected small post-b11247 Vulkan A/B tests
+4. determine whether the upstream Vulkan sparse-FA work around `#28105` can be
+   enabled or adapted for qwen4exp
+5. compare that route with the historical grouped-union implementation
+6. port only the required delta
+7. validate correctness before benchmarking
+8. use 128k and 256k as the primary PP decision points
 
 Historical r2 results remain strong evidence that the idea is worth
 re-evaluating, but they are not r3 baseline values.
@@ -323,10 +436,11 @@ The earlier MTP-QSA prototype is intentionally outside the initial r3 patch stac
 It should only be reconsidered after:
 
 - COMMON-004 is validated
-- the remaining main-QSA long-context decode cost is reduced or characterized
+- COMMON-005 is decided or remaining full-context attention cost is characterized
 - COMMON-002 is stable
 - normal MTP on/off measurements are complete
-- a separate performance case justifies the added graph/cache complexity
+- long-context MTP loses enough benefit to justify draft-QSA complexity, or a
+  separate new performance case justifies the added graph/cache complexity
 
 ## Patch documentation template
 
