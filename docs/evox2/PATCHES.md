@@ -31,7 +31,7 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 
 | ID | Scope | Status | Purpose |
 |---|---|---|---|
-| COMMON-001 | common | planned | PLE16 model loading support |
+| COMMON-001 | common | validated | PLE16 model loading support |
 | COMMON-002 | common | planned | Unsloth MTP compatibility |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
@@ -47,12 +47,27 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 Status:
 
 ```text
-planned
+validated
+```
+
+Base:
+
+```text
+upstream build: b11247
+upstream commit: 0bc845d356f437d5ce4fe975c36428f7522829cb
 ```
 
 Goal:
 
-Support the PLE16 layout used by the converted Unsloth Qwen3.8-Flash-Next model.
+Support the PLE16 layout used by the converted Unsloth Qwen3.8-Flash-Next model while preserving support for the original joined PLE layout.
+
+Source/history:
+
+```text
+LaurentZuijdwijk/llama.cpp
+bf9e0a2ace3b86f77950e5516f351110baa37f5d
+qwen4exp: store the n-gram table one tensor per head
+```
 
 The historical conversion uses:
 
@@ -60,22 +75,82 @@ The historical conversion uses:
 gguf-py/gguf/scripts/gguf_split_ple_heads.py
 ```
 
-The conversion splits the combined PLE n-gram table into per-head tensors without requantizing the model weights.
+The conversion splits the combined PLE n-gram table into per-head tensors without dequantizing or requantizing the model weights. The converter remains external and is not vendored into this repository.
 
-r3 work should separate:
+Changed files:
 
-1. model conversion utility
-2. loader support required to consume the converted model
-3. benchmark validation
+```text
+src/llama-arch.h
+src/llama-arch.cpp
+src/models/models.h
+src/models/qwen4exp.cpp
+```
 
-Validation plan:
+Behavior:
 
-- model metadata loads
-- tensors are found with the expected PLE16 layout
-- allocation succeeds
-- 64k inference succeeds
-- compare PP/TG against the clean original-model baseline
-- extend to 128k/256k only after the 64k check
+- the original joined `per_layer_token_embd.weight` layout remains supported
+- the loader auto-detects the split `ple_ngram_embd.N.weight` layout
+- when the joined tensor is absent, all 16 split PLE head tensors are required
+- split-head row indices are converted to each head's local vocabulary range before `get_rows`
+- the per-head results are concatenated back to the layout expected by the qwen4exp graph
+
+Runtime controls:
+
+```text
+none
+```
+
+Correctness validation:
+
+- original joined model allocation/load: Vulkan OK, ROCm OK
+- PLE16 model allocation/load: Vulkan OK, ROCm OK
+- 64k real-input inference: Vulkan OK, ROCm OK
+- 128k real-input inference with PLE16: Vulkan OK, ROCm OK
+- 256k real-input inference with PLE16: Vulkan OK, ROCm OK
+- no extreme long-context slowdown, allocation failure, or crash was observed through 256k
+
+Benchmark workload:
+
+- Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS
+- PLE16 conversion for split-layout runs
+- MTP off
+- f16 K/V cache
+- batch 2048, ubatch 1024
+- 4 CPU threads
+- all model layers offloaded where supported
+- Flash Attention enabled
+- 1024-token generation budget
+- temperature 0.2, top_p 0.8
+
+Measured results:
+
+| Backend | Model | Context | PP (tok/s) | TG (tok/s) |
+|---|---|---:|---:|---:|
+| Vulkan | original joined | 64k | 266.23 | 16.96 |
+| Vulkan | PLE16 | 64k | 267.90 | 17.20 |
+| ROCm | original joined | 64k | 357.84 | 14.55 |
+| ROCm | PLE16 | 64k | 357.93 | 14.86 |
+| Vulkan | PLE16 | 128k | 159.56 | 12.00 |
+| ROCm | PLE16 | 128k | 259.41 | 9.91 |
+| Vulkan | PLE16 | 256k | 103.75 | 7.30 |
+| ROCm | PLE16 | 256k | 167.35 | 5.74 |
+
+Interpretation:
+
+- at 64k, PLE16 has only a small performance effect relative to the original joined model
+- the primary purpose of COMMON-001 is reliable loading and execution of the split PLE layout, especially at long context
+- PLE16 completed the 128k and 256k validation runs on both Vulkan and ROCm without the extreme slowdown or crash behavior that motivated the split layout
+- long-context PP/TG still decreases with context depth; this is treated as a separate performance-optimization topic rather than a COMMON-001 correctness issue
+
+Known limitations:
+
+- the PLE16 conversion utility is external to this patch
+- COMMON-001 does not include MTP compatibility, MTP-QSA, grouped-union QSA, or ROCmFPx support
+- ROCm and Vulkan place the model buffers differently; this patch does not attempt to normalize backend-specific placement
+
+Upstream interaction:
+
+The patch is intentionally limited to qwen4exp PLE tensor naming, loading, and graph assembly so that later upstream changes can be compared or dropped independently.
 
 ## COMMON-002 - Unsloth MTP compatibility
 

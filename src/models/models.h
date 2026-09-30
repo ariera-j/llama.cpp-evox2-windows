@@ -2384,6 +2384,10 @@ struct llama_model_qwen4exp : public llama_model_base {
 
     class llm_graph_input_qsa;
 
+    // Optional split PLE layout. Joined files continue to use
+    // llama_model::per_layer_tok_embd unchanged.
+    std::vector<ggml_tensor *> ple_ngram_embd;
+
     void load_arch_hparams(llama_model_loader & ml) override;
     void load_arch_tensors(llama_model_loader & ml) override;
 

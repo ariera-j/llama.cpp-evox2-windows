@@ -61,6 +61,19 @@ without dequantization/requantization when splitting the heads.
 It also supports the reverse operation when the input already contains the
 full per-head layout.
 
+## Runtime loader support
+
+The r3 `COMMON-001` patch adds runtime support for the split
+`ple_ngram_embd.N.weight` layout while preserving support for the original
+joined `per_layer_token_embd.weight` layout.
+
+A converted PLE16 model therefore requires `COMMON-001` or another llama.cpp
+build with equivalent split-PLE loader support.
+
+The conversion wrapper and runtime loader are intentionally separate: this
+directory records how the model layout is produced and verified, while
+`docs/evox2/PATCHES.md` records the downstream runtime patch and its validation.
+
 ## Wrapper usage
 
 Point `-SourceForkRoot` at a local checkout of the LaurentZuijdwijk fork:
