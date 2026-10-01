@@ -830,6 +830,77 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
         ggml_build_forward_expand(gf, mctx_cur->cpy_v(ctx0, v_cur, v_idxs, il));
     }
 
+    // COMMON-005: gather the selected QSA cells during long-context single-token decode.
+    // Keep the existing scan/sparse-FA path as the fallback so Vulkan can continue to use
+    // its backend sparse attention support and batched/speculative ubatches stay unchanged.
+    static const bool gather_enabled = [] {
+        const char * env = std::getenv("QWEN4EXP_QSA_GATHER");
+        return env == nullptr || *env == '\0' || std::atoi(env) != 0;
+    }();
+
+    const int64_t n_kv  = mctx_cur->get_n_kv();
+    const int64_t width = top_k->ne[0];
+    const bool gather = gather_enabled &&
+        cparams.flash_attn &&
+        n_tokens == 1 &&
+        top_k->ne[1] == 1 &&
+        top_k->ne[3] == 1 &&
+        n_kv >= 4*width;
+
+    if (gather) {
+        ggml_tensor * k_all = mctx_cur->get_k(ctx0, il); // [hd_k, n_head_kv, n_kv, 1]
+        ggml_tensor * v_all = mctx_cur->get_v(ctx0, il); // [hd_v, n_head_kv, n_kv, 1]
+
+        const int64_t hd_k   = k_all->ne[0];
+        const int64_t hd_v   = v_all->ne[0];
+        const int64_t n_h_kv = k_all->ne[1];
+
+        GGML_ASSERT(k_all->ne[2] == n_kv && k_all->ne[3] == 1);
+        GGML_ASSERT(v_all->ne[2] == n_kv && v_all->ne[3] == 1);
+        GGML_ASSERT(v_all->ne[1] == n_h_kv);
+
+        // One cache cell contains all KV heads contiguously, so gather the selected cells as rows.
+        GGML_ASSERT(k_all->nb[2] == ggml_row_size(k_all->type, hd_k*n_h_kv));
+        GGML_ASSERT(v_all->nb[2] == ggml_row_size(v_all->type, hd_v*n_h_kv));
+
+        ggml_tensor * k_cells = ggml_view_3d(ctx0, k_all, hd_k*n_h_kv, n_kv, 1,
+                k_all->nb[2], k_all->nb[3], 0);
+        ggml_tensor * v_cells = ggml_view_3d(ctx0, v_all, hd_v*n_h_kv, n_kv, 1,
+                v_all->nb[2], v_all->nb[3], 0);
+
+        ggml_tensor * idx = ggml_reshape_2d(ctx0, top_k, width, 1);
+        ggml_tensor * k_sel = ggml_get_rows(ctx0, k_cells, idx);
+        ggml_tensor * v_sel = ggml_get_rows(ctx0, v_cells, idx);
+
+        k_sel = ggml_reshape_4d(ctx0, k_sel, hd_k, n_h_kv, width, 1);
+        v_sel = ggml_reshape_4d(ctx0, v_sel, hd_v, n_h_kv, width, 1);
+        cb(k_sel, "qsa_k_gathered", il);
+        cb(v_sel, "qsa_v_gathered", il);
+
+        // Reuse the existing attention mask rather than rebuilding visibility from QSA bias.
+        // This keeps causal/sequence semantics unchanged and avoids modifying build_qsa_top_k().
+        ggml_tensor * kq_mask = inp->get_kq_mask();
+        GGML_ASSERT(kq_mask != nullptr);
+        GGML_ASSERT(kq_mask->ne[0] == n_kv && kq_mask->ne[1] == 1 && kq_mask->ne[3] == 1);
+
+        ggml_tensor * mask_cells = ggml_view_3d(ctx0, kq_mask, 1, n_kv, 1,
+                kq_mask->nb[0], kq_mask->nb[1], 0);
+        ggml_tensor * idx_mask = ggml_reshape_3d(ctx0, top_k, width, 1, 1);
+        ggml_tensor * mask = ggml_get_rows(ctx0, mask_cells, idx_mask);
+        mask = ggml_cast(ctx0, ggml_reshape_4d(ctx0, mask, width, 1, 1, 1), GGML_TYPE_F16);
+        cb(mask, "qsa_mask_gathered", il);
+
+        // K/V are already physically compact, so do not request a second sparse-FA compaction.
+        ggml_tensor * cur = build_attn_mha(q_cur, k_sel, v_sel, nullptr, mask, nullptr, nullptr, 0, kq_scale, il);
+        cb(cur, "kqv_out", il);
+
+        if (inp->self_v_rot) {
+            cur = llama_mul_mat_hadamard(ctx0, cur, inp->self_v_rot);
+        }
+
+        return cur;
+    }
+
     ggml_tensor * kq_mask = inp->get_kq_mask();
 
     // prepare new kq mask - starts filled with -INFINITY
