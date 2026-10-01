@@ -35,8 +35,8 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 | COMMON-002 | common | planned | Unsloth MTP compatibility, after main-QSA work |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
 | COMMON-004 | common | validated | incremental pooled-key cache for the QSA indexer |
-| COMMON-005 | common | next | gather selected QSA K/V for long-context single-token decode |
-| COMMON-006 | common | evaluate | move QSA selection closer to the block domain to avoid full cell-score expansion |
+| COMMON-005 | common | validated | gather selected QSA K/V for long-context single-token decode |
+| COMMON-006 | common | next | move QSA selection closer to the block domain to avoid full cell-score expansion |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
 | VULKAN-002 | Vulkan | evaluate | QSA grouped-union / sparse-FA PP optimization after COMMON decode work |
 | ROCM-001 | ROCm | none yet | reserved for a demonstrated ROCm-specific requirement |
@@ -217,7 +217,7 @@ The following QSA-summary differences account for about 14.15 ms/token, or
 94.6% of that gap:
 
 - `CONT`: +11.38 ms/token
-- full-block RMS norm: +2.18 ms/token
+- full-block indexer RMS norm: +2.18 ms/token
 - QSA-related RoPE: +0.59 ms/token
 
 The r2 graph performs the expensive full pooled-summary refill on the first
@@ -274,172 +274,38 @@ Do not combine this patch with:
 - MTP-QSA
 - ROCmFPx format or kernel work
 
-### Initial validation plan
+### Validation results
 
-1. build Vulkan and ROCm from the same COMMON-004 source revision
-2. allocation/load and short-generation smoke tests
-3. MTP off
-4. same-binary cache ON/OFF comparison
-5. Vulkan 64k first to confirm the diagnosed cost disappears
-6. Vulkan 128k and 256k for the primary TG-depth decision
-7. ROCm 128k, then fill 64k/256k cells if the signal is useful
-8. record PP, TG, memory, first-decode refill cost, and graph reuse
-9. use interleaved/ABBA ordering for close results
+COMMON-004 is validated on both Vulkan and ROCm with the PLE16 model and MTP
+disabled.
 
-Use the validated PLE16 model for long-context runs.
+| Backend | Context | Pooled cache | PP (tok/s) | TG (tok/s) |
+|---|---:|---|---:|---:|
+| Vulkan | 64k | OFF | 269.18 | 17.13 |
+| Vulkan | 64k | ON | 262.89 | 25.95 |
+| Vulkan | 128k | OFF | 159.39 | 11.91 |
+| Vulkan | 128k | ON | 156.47 | 24.00 |
+| Vulkan | 256k | OFF | 102.77 | 7.27 |
+| Vulkan | 256k | ON | 98.63 | 21.03 |
+| ROCm | 64k | OFF | 348.90 | 14.82 |
+| ROCm | 64k | ON | 356.55 | 20.62 |
+| ROCm | 128k | OFF | 262.67 | 9.89 |
+| ROCm | 128k | ON | 261.67 | 16.44 |
+| ROCm | 256k | OFF | 167.07 | 5.52 |
+| ROCm | 256k | ON | 166.18 | 11.60 |
 
-Primary metric:
+TG improvement with pooled caching enabled:
 
-```text
-TG versus context depth
-```
+- Vulkan: +51.5% at 64k, +101.6% at 128k, +189.3% at 256k
+- ROCm: +39.1% at 64k, +66.2% at 128k, +110.1% at 256k
 
-At 64k, recovering most of the historical r2/r3 decode gap is a useful
-implementation check. The final accept/reject decision depends on correctness
-and the 128k/256k depth slope, not on a single 64k threshold.
+The pooled-cache allocation grows as expected with context depth. ROCm compute
+buffers are unchanged by cache ON/OFF. Vulkan retains the previously observed
+compute-buffer expectation warning on successful pooled-cache runs.
 
-### Vulkan validation results
-
-COMMON-004 was validated on Vulkan with the Unsloth Qwen3.8-Flash-Next
-PLE16 model, MTP disabled, using same-binary pooled-cache ON/OFF comparisons.
-
-| Context | Pooled cache | PP (tok/s) | TG (tok/s) |
-|---|---|---:|---:|
-| 64k | OFF | 269.18 | 17.13 |
-| 64k | ON | 262.89 | 25.95 |
-| 128k | OFF | 159.39 | 11.91 |
-| 128k | ON | 156.47 | 24.00 |
-| 256k | OFF | 102.77 | 7.27 |
-| 256k | ON | 98.63 | 21.03 |
-
-64k and 128k values are ABBA averages. The 256k result uses one OFF
-and one ON run because of the substantially longer runtime.
-
-TG improvement from the pooled cache was:
-
-- 64k: +51.5%
-- 128k: +101.6%
-- 256k: +189.3%
-
-TG from 64k to 256k decreased by about 19.0% with the pooled cache,
-compared with about 57.6% with the cache disabled.
-
-This strongly supports the pre-implementation profiling result that repeated
-full pooled-summary reconstruction was the dominant long-context decode
-regression.
-
-PP is consistently lower with the pooled cache enabled on Vulkan:
-
-- 64k: -2.3%
-- 128k: -1.8%
-- 256k: -4.0% (single-run comparison)
-
-This trend was not reproduced on ROCm and remains a Vulkan-specific follow-up.
-
-A scheduler/compute-buffer warning was also observed on pooled-cache ON runs:
-
-```text
-Vulkan0 compute buffer size of 4004.7852 MiB,
-does not match expectation of 4362.8672 MiB
-```
-
-The warning appeared on successful runs and was not accompanied by a crash,
-incorrect output, or benchmark failure. The same warning was not observed in
-the ROCm validation runs.
-
-### ROCm validation results
-
-COMMON-004 was also validated on ROCm from the same source revision used for
-the Vulkan validation:
-
-```text
-commit: 6559dd272fd0d5f553823e8851c78b9edc2a5016
-ROCm SDK: 10.0.0
-compiler: AMD Clang 23.0.0
-target: gfx1151
-```
-
-The ROCm build passed the FLASH_ATTN_EXT backend test with 3982/3982 tests
-passing before the long-context measurements.
-
-The same PLE16 model and long-context workload were used with MTP disabled.
-Each context depth used one cache-OFF run followed by one cache-ON run.
-
-| Context | Pooled cache | PP (tok/s) | TG (tok/s) |
-|---|---|---:|---:|
-| 64k | OFF | 348.90 | 14.82 |
-| 64k | ON | 356.55 | 20.62 |
-| 128k | OFF | 262.67 | 9.89 |
-| 128k | ON | 261.67 | 16.44 |
-| 256k | OFF | 167.07 | 5.52 |
-| 256k | ON | 166.18 | 11.60 |
-
-TG improvement from the pooled cache was:
-
-- 64k: +39.1%
-- 128k: +66.2%
-- 256k: +110.1%
-
-The pooled cache therefore provides a substantial decode improvement on ROCm
-as well as Vulkan.
-
-However, the remaining TG depth scaling differs between the backends.
-
-From 64k to 256k:
-
-- ROCm cache OFF: 14.82 -> 5.52 tok/s, about -62.8%
-- ROCm cache ON: 20.62 -> 11.60 tok/s, about -43.7%
-- Vulkan cache OFF: 17.13 -> 7.27 tok/s, about -57.6%
-- Vulkan cache ON: 25.95 -> 21.03 tok/s, about -19.0%
-
-COMMON-004 removes a large context-dependent decode cost on ROCm, but a
-substantial long-context slope remains after pooled-summary caching. Collect
-ROCm profiling data before deciding which remaining QSA optimization should be
-implemented next.
-
-PP behavior on ROCm does not reproduce the consistent Vulkan regression:
-
-- 64k: +2.2%
-- 128k: -0.4%
-- 256k: -0.5%
-
-With only one OFF/ON pair per ROCm depth, these values should not be treated as
-precise performance gains or regressions. They are sufficient to show that the
-systematic Vulkan PP decrease was not reproduced on ROCm.
-
-The pooled-cache allocation behaved as expected:
-
-- 64k: +96 MiB context memory
-- 128k: +192 MiB context memory
-- 256k: +384 MiB context memory
-
-ROCm compute-buffer sizes were unchanged between cache OFF and ON at each
-context depth.
-
-The Vulkan pooled-cache compute-buffer expectation warning was not observed in
-any of the six ROCm long-context runs.
-
-### Follow-up checks
-
-- Vulkan shows a repeatable PP decrease with pooled caching enabled; ROCm did
-  not reproduce the same systematic trend.
-- Vulkan pooled-cache ON runs produced a compute-buffer expectation warning;
-  the warning was not observed in the ROCm validation runs.
-- Treat the Vulkan PP regression and compute-buffer warning as a likely
-  backend-specific follow-up until profiling shows otherwise.
-- ROCm residual profiling and source tracing are complete. At 128k -> 256k,
-  `flash_attn_tile` increased from about 1.452 to 2.939 ms and
-  `k_get_rows_float` from about 0.451 to 0.907 ms, while the main mat-vec time
-  stayed essentially flat. The two increases account for almost the entire
-  measured +23.68 ms/token latency delta.
-- Source tracing identifies `k_get_rows_float` as the block-score to full-cell
-  expansion in `build_qsa_top_k()`, and shows that QSA still passes full K/V to
-  Flash Attention after selection. HIP does not currently use the sparse-FA
-  `n_kv_max` hint, so the ROCm attention path continues to scale with full
-  context depth.
-- COMMON-005 is therefore selected as the next implementation target.
-- COMMON-004 itself is considered validated on both Vulkan and ROCm; the items
-  above are follow-up optimization/debugging work rather than blockers.
+ROCm residual profiling after COMMON-004 identified two remaining O(n_kv)
+decode costs: full-context Flash Attention and block-score-to-full-cell
+expansion. That profiling motivated COMMON-005 and COMMON-006.
 
 Detailed RGP and source-trace notes are recorded in
 [ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
@@ -449,14 +315,21 @@ Detailed RGP and source-trace notes are recorded in
 Status:
 
 ```text
-next
+validated
+```
+
+Implementation commit:
+
+```text
+d03c91b6342b099457de3508c5d67533a9a5f0ee
+qwen4exp: gather selected QSA KV rows for decode
 ```
 
 Goal:
 
 Reduce the remaining long-context QSA attention cost after COMMON-004 by
-running decode attention on the K/V rows selected by the indexer instead of
-turning the selection back into a mask over the full KV cache.
+running decode attention on selected compact K/V rows instead of feeding the
+full KV cache to Flash Attention.
 
 Primary references:
 
@@ -469,54 +342,116 @@ current upstream MiniMax-M3 decode path
 selected K/V/mask gather before Flash Attention
 ```
 
-Profiling and source evidence:
+Implemented behavior:
 
-- RGP 128k -> 256k shows `flash_attn_tile` growing about 2.02x
-  (1.452 -> 2.939 ms per observed full-attention layer)
-- `k_get_rows_float` grows about 2.01x (0.451 -> 0.907 ms)
-- with 12 full-attention layers per token, the two increases explain about
-  23.31 ms/token versus the measured 23.68 ms/token latency increase
-- `build_qsa_top_k()` expands block scores back to full cell granularity before
-  top-k; this is the likely source of the profiled `k_get_rows_float`
-- `build_attn_qsa()` constructs a sparse full-length mask but obtains K/V from
-  the full KV cache and passes those full tensors to `build_attn_mha()`
-- the graph sets `n_kv_max` to the QSA selection width (2051 for top_k=2048,
-  ratio=4), but the current HIP sparse-FA implementation is disabled and the
-  ROCm path still scans the full K/V length
-- Vulkan already has a sparse mask compaction path, and MiniMax-M3 provides a
-  model-layer selected-K/V gather precedent
+- qwen4exp single-token decode only
+- gathers selected K rows, V rows, and existing KQ-mask rows after top-k
+- runs ordinary Flash Attention on physically compact K/V tensors
+- prompt/batched/speculative paths retain the existing fallback
+- short contexts retain the existing fallback through the `n_kv >= 4*width` gate
+- fallback keeps the existing `n_kv_max` sparse-FA hint
+- COMMON-004 pooled-key handling and `build_qsa_top_k()` are unchanged
 
-Basic implementation policy:
+Runtime control:
 
-- begin with qwen4exp single-token decode
-- gather selected K/V and the required mask rows into compact tensors after
-  top-k selection
-- run ordinary Flash Attention on the compact tensors so the first prototype
-  does not depend on adding HIP sparse-FA backend support
-- leave prompt/batched QSA behavior unchanged initially
-- retain a short-context gate so gather overhead does not become a regression
-- provide a runtime A/B switch
-- validate selected-row/mask correctness before performance acceptance
-- use 128k and 256k ABBA measurements as the main depth-scaling decision points
+```text
+QWEN4EXP_QSA_GATHER=0   # force fallback
+QWEN4EXP_QSA_GATHER=1   # enable gather path where eligible
+```
 
-Detailed tensor shapes, row-index construction, fallback conditions, and the
-runtime-control name are intentionally deferred to the COMMON-005 design step.
+The current source treats unset/empty as enabled. Vulkan A/B results show that
+this is not necessarily the fastest choice at every context depth, so retain
+the runtime control while backend/context policy remains under evaluation.
 
-This patch remains separate from COMMON-004 and from COMMON-006 so attribution
-stays clean.
+### ROCm validation
+
+ROCm build/backend tests, allocation-only smoke, and all 10 real-input A/B runs
+passed.
+
+| Context | Gather OFF PP | Gather ON PP | Gather OFF TG | Gather ON TG | TG gain |
+|---|---:|---:|---:|---:|---:|
+| 64k | 359.37 | 357.27 | 20.55 | 22.60 | +10.0% |
+| 128k | 262.44 | 262.50 | 16.425 | 20.41 | +24.3% |
+| 256k | 167.58 | 167.99 | 11.68 | 17.37 | +48.7% |
+
+128k and 256k are ABBA averages; 64k is one OFF/ON pair. PP is effectively
+unchanged.
+
+128k -> 256k added decode latency falls from about +24.73 ms/token with Gather
+OFF to +8.57 ms/token with Gather ON, removing about 65% of the residual depth
+slope.
+
+RGP confirms the intended mechanism:
+
+```text
+pre-COMMON-005 Flash Attention
+128k ~= 1.452 ms
+256k ~= 2.939 ms
+
+COMMON-005 compact Flash Attention
+128k ~= 41.93 us
+256k ~= 42.00 us
+```
+
+The full-context Flash Attention scaling is therefore removed on the profiled
+ROCm path.
+
+The remaining repeated `k_get_rows_float` still scales approximately 2x:
+
+```text
+128k ~= 447.92 us
+256k ~= 907.13 us
+```
+
+This is the post-COMMON-005 evidence for COMMON-006.
+
+### Vulkan validation
+
+Vulkan FLASH_ATTN_EXT backend tests passed 5297/5297, allocation-only smoke
+passed, and all real-input A/B runs completed.
+
+| Context | Gather OFF PP | Gather ON PP | Gather OFF TG | Gather ON TG | TG change |
+|---|---:|---:|---:|---:|---:|
+| 64k | 261.98 | 262.44 | 25.95 | 25.42 | -2.0% |
+| 128k | 156.275 | 156.16 | 24.61 | 24.12 | -2.0% |
+| 256k | 98.065 | 97.975 | 21.135 | 21.69 | +2.6% |
+
+64k is one OFF/ON pair. 128k and 256k are ABBA averages.
+
+Vulkan already has backend sparse Flash Attention support, so COMMON-005 is not
+a universal speedup there. The existing fallback is slightly faster at 64k and
+128k, while model-side gather is slightly faster at 256k. Both ABBA pairs show
+the same direction at each depth, but the effect is only a few percent and does
+not justify a precise automatic crossover threshold from the current data.
+
+The known Vulkan compute-buffer expectation warning occurs on both Gather OFF
+and Gather ON runs and is not treated as a COMMON-005 regression.
+
+### Final interpretation
+
+COMMON-005 is validated because correctness/build/runtime gates pass on both
+backends and the intended ROCm bottleneck is removed. Performance policy remains
+backend-dependent:
+
+- ROCm: gather is strongly beneficial and increasingly valuable with context depth
+- Vulkan: gather and the existing sparse-FA fallback are close; fallback wins
+  slightly at 64k/128k and gather wins slightly at 256k
+
+Detailed final results are recorded in
+[COMMON005-VALIDATION-2026-10-02.md](COMMON005-VALIDATION-2026-10-02.md).
 
 ## COMMON-006 - block-domain QSA selection candidate
 
 Status:
 
 ```text
-evaluate
+next
 ```
 
 Goal:
 
 Remove the remaining O(n_kv) score-expansion work in `build_qsa_top_k()` after
-COMMON-005 has addressed full-context attention.
+COMMON-005 removed the full-context ROCm attention cost.
 
 Current qwen4exp selection flow:
 
@@ -533,20 +468,20 @@ block-domain selection
   -> expand only selected blocks to cell indices
 ```
 
-The RGP source trace makes this worth evaluating because the likely
-block-to-cell `k_get_rows_float` grows from about 0.451 ms at 128k to about
-0.907 ms at 256k.
+Post-COMMON-005 RGP strengthens the case: the repeated block-to-cell
+`k_get_rows_float` remains about 0.448 ms at 128k and 0.907 ms at 256k. With 12
+full-attention groups per token, the nominal increase accounts for roughly 64%
+of the measured COMMON-005 ON 128k -> 256k ROCm latency increase.
 
-Do not combine this with COMMON-005. The design must preserve the qwen4exp
-reference semantics around:
+The design must preserve qwen4exp reference semantics around:
 
 - `indexer_top_k + compress_ratio - 1`
-- the tail block
+- tail-block handling
 - causal/visibility masking
 - tie and ordering behavior
 
-Treat COMMON-006 as a separate correctness-first A/B only after the COMMON-005
-path is stable enough to provide a fixed baseline.
+Keep COMMON-006 as a separate correctness-first A/B so its effect is measured
+against the fixed COMMON-005 baseline.
 
 ## COMMON-002 - Unsloth MTP compatibility
 
@@ -562,8 +497,8 @@ Load and run the Unsloth MTP draft model used in the earlier Evo-X2 tests.
 
 The r2 work required compatibility handling beyond the clean upstream baseline. r3 should port only the minimum compatibility change needed by the current upstream source.
 
-COMMON-002 is deliberately scheduled after COMMON-004 and the first main-QSA
-optimization pass so MTP measurements are not confounded by a moving target.
+COMMON-002 is deliberately scheduled after the main-model QSA work so MTP
+measurements are not confounded by a moving target.
 
 Validation plan:
 
@@ -615,27 +550,20 @@ evaluate
 
 Earlier r2 measurements showed a large long-context prefill benefit from a grouped-union QSA path.
 
-The 64k r2/r3 pre-implementation profile confirms that grouped-union is a PP
-optimization: r2 union ON/OFF changed profiled PP from 221.44 to 263.28 tok/s,
-while steady decode GPU time remained 44.18 versus 44.31 ms/token.
-
-r3 must not assume the old patch is still optimal because the new base already contains newer upstream Vulkan/QSA changes.
+The 64k r2/r3 pre-implementation profile confirms that grouped-union changes PP but
+is essentially neutral for steady decode TG.
 
 Before porting:
 
-1. complete COMMON-004
-2. implement/evaluate COMMON-005
-3. evaluate COMMON-006 only if its residual score-expansion cost remains worth targeting
-4. complete the selected small post-b11247 Vulkan A/B tests
-5. determine whether the upstream Vulkan sparse-FA work around `#28105` can be
-   enabled or adapted for qwen4exp
-6. compare that route with the historical grouped-union implementation
-7. port only the required delta
-8. validate correctness before benchmarking
-9. use 128k and 256k as the primary PP decision points
-
-Historical r2 results remain strong evidence that the idea is worth
-re-evaluating, but they are not r3 baseline values.
+1. keep COMMON-004 and COMMON-005 fixed
+2. evaluate COMMON-006
+3. complete selected small post-b11247 Vulkan A/B tests
+4. determine whether upstream Vulkan sparse-FA work can be enabled/adapted for
+   qwen4exp instead of reviving a larger historical downstream implementation
+5. compare that route with the historical grouped-union implementation
+6. port only the required delta
+7. validate correctness before benchmarking
+8. use 128k and 256k as the primary PP decision points
 
 ## MTP-QSA prototype
 
@@ -643,8 +571,8 @@ The earlier MTP-QSA prototype is intentionally outside the initial r3 patch stac
 
 It should only be reconsidered after:
 
-- COMMON-004 is validated
-- COMMON-005 is decided or remaining full-context attention cost is characterized
+- COMMON-004 and COMMON-005 are validated
+- COMMON-006 is decided or the remaining main-QSA score-expansion cost is known
 - COMMON-002 is stable
 - normal MTP on/off measurements are complete
 - long-context MTP loses enough benefit to justify draft-QSA complexity, or a
