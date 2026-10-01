@@ -34,7 +34,7 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 | COMMON-001 | common | validated | PLE16 model loading support |
 | COMMON-002 | common | planned | Unsloth MTP compatibility, after main-QSA work |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
-| COMMON-004 | common | next | incremental pooled-key cache for the QSA indexer |
+| COMMON-004 | common | validated | incremental pooled-key cache for the QSA indexer |
 | COMMON-005 | common | planned | gather selected QSA K/V for long-context single-token decode |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
 | VULKAN-002 | Vulkan | evaluate | QSA grouped-union / sparse-FA PP optimization after COMMON decode work |
@@ -165,7 +165,7 @@ The patch is intentionally limited to qwen4exp PLE tensor naming, loading, and g
 Status:
 
 ```text
-next
+validated
 ```
 
 Goal:
@@ -227,7 +227,7 @@ full-context work on every decode step. All profiled runs reported
 The grouped-union switch is therefore not the explanation for the r2 TG
 advantage and remains a separate PP optimization.
 
-### Planned r3 behavior
+### Implemented r3 behavior
 
 - one persistent f32 summary row per complete position block per QSA layer
 - pooled buffers allocated with the QSA indexer K storage on the appropriate
@@ -240,19 +240,18 @@ advantage and remains a separate PP optimization.
 - sequence edits clamp or reset pooled validity as required
 - speculative dirty writes are bounded so a build-time dirty-table estimate
   cannot overflow at fill time
-- dirty-table sizing must remain safe for M-RoPE / repeated-position inputs
-- initial pooled-cache support is limited to a single-sequence memory
-  configuration; unsupported multi-sequence/server cases use the current full
-  recompute path
+- dirty-table sizing remains safe for M-RoPE / repeated-position inputs
+- pooled-cache support is limited to a single-sequence memory configuration;
+  unsupported multi-sequence/server cases use the full recompute path
 
-### Planned runtime controls
+### Runtime controls
 
 ```text
 LLAMA_QSA_NO_POOLED_CACHE=1
 ```
 
-Disables the pooled path for same-binary A/B. The r3 implementation should also
-skip pooled-buffer allocation under this switch so memory A/B is meaningful.
+Disables the pooled path for same-binary A/B and also skips pooled-buffer
+allocation so memory A/B is meaningful.
 
 ```text
 LLAMA_QSA_POOLED_MAX_TOKENS=32
@@ -260,7 +259,7 @@ LLAMA_QSA_POOLED_MAX_TOKENS=32
 
 Default 32; `0` means no ubatch-size limit. The default keeps the incremental
 path focused on decode-sized ubatches and preserves the reference first-decode
-refill behavior. Verify graph reuse when validating the patch.
+refill behavior.
 
 ### Explicitly outside COMMON-004
 
@@ -334,28 +333,104 @@ PP is consistently lower with the pooled cache enabled on Vulkan:
 - 128k: -1.8%
 - 256k: -4.0% (single-run comparison)
 
-Treat this as a follow-up item rather than a COMMON-004 blocker. Check whether
-the same PP trend appears on ROCm before profiling or changing the implementation.
-
+This trend was not reproduced on ROCm and remains a Vulkan-specific follow-up.
 
 A scheduler/compute-buffer warning was also observed on pooled-cache ON runs:
 
+```text
 Vulkan0 compute buffer size of 4004.7852 MiB,
 does not match expectation of 4362.8672 MiB
+```
 
 The warning appeared on successful runs and was not accompanied by a crash,
-incorrect output, or benchmark failure.
-Keep this as a follow-up item together with the PP regression. Before changing
-COMMON-004, check whether the warning is Vulkan-specific, whether it also
-appears on ROCm, and whether it is related to the pooled-cache graph/buffer
-layout or is only a benign scheduler-reservation mismatch.
+incorrect output, or benchmark failure. The same warning was not observed in
+the ROCm validation runs.
+
+### ROCm validation results
+
+COMMON-004 was also validated on ROCm from the same source revision used for
+the Vulkan validation:
+
+```text
+commit: 6559dd272fd0d5f553823e8851c78b9edc2a5016
+ROCm SDK: 10.0.0
+compiler: AMD Clang 23.0.0
+target: gfx1151
+```
+
+The ROCm build passed the FLASH_ATTN_EXT backend test with 3982/3982 tests
+passing before the long-context measurements.
+
+The same PLE16 model and long-context workload were used with MTP disabled.
+Each context depth used one cache-OFF run followed by one cache-ON run.
+
+| Context | Pooled cache | PP (tok/s) | TG (tok/s) |
+|---|---|---:|---:|
+| 64k | OFF | 348.90 | 14.82 |
+| 64k | ON | 356.55 | 20.62 |
+| 128k | OFF | 262.67 | 9.89 |
+| 128k | ON | 261.67 | 16.44 |
+| 256k | OFF | 167.07 | 5.52 |
+| 256k | ON | 166.18 | 11.60 |
+
+TG improvement from the pooled cache was:
+
+- 64k: +39.1%
+- 128k: +66.2%
+- 256k: +110.1%
+
+The pooled cache therefore provides a substantial decode improvement on ROCm
+as well as Vulkan.
+
+However, the remaining TG depth scaling differs between the backends.
+
+From 64k to 256k:
+
+- ROCm cache OFF: 14.82 -> 5.52 tok/s, about -62.8%
+- ROCm cache ON: 20.62 -> 11.60 tok/s, about -43.7%
+- Vulkan cache OFF: 17.13 -> 7.27 tok/s, about -57.6%
+- Vulkan cache ON: 25.95 -> 21.03 tok/s, about -19.0%
+
+COMMON-004 removes a large context-dependent decode cost on ROCm, but a
+substantial long-context slope remains after pooled-summary caching. Collect
+ROCm profiling data before deciding which remaining QSA optimization should be
+implemented next.
+
+PP behavior on ROCm does not reproduce the consistent Vulkan regression:
+
+- 64k: +2.2%
+- 128k: -0.4%
+- 256k: -0.5%
+
+With only one OFF/ON pair per ROCm depth, these values should not be treated as
+precise performance gains or regressions. They are sufficient to show that the
+systematic Vulkan PP decrease was not reproduced on ROCm.
+
+The pooled-cache allocation behaved as expected:
+
+- 64k: +96 MiB context memory
+- 128k: +192 MiB context memory
+- 256k: +384 MiB context memory
+
+ROCm compute-buffer sizes were unchanged between cache OFF and ON at each
+context depth.
+
+The Vulkan pooled-cache compute-buffer expectation warning was not observed in
+any of the six ROCm long-context runs.
 
 ### Follow-up checks
 
-- Vulkan PP is consistently lower with pooled caching enabled.
-- A compute-buffer expectation warning appears on pooled-cache ON runs.
-- Check both items on ROCm before profiling or modifying COMMON-004.
-
+- Vulkan shows a repeatable PP decrease with pooled caching enabled; ROCm did
+  not reproduce the same systematic trend.
+- Vulkan pooled-cache ON runs produced a compute-buffer expectation warning;
+  the warning was not observed in the ROCm validation runs.
+- Treat the Vulkan PP regression and compute-buffer warning as a likely
+  backend-specific follow-up until profiling shows otherwise.
+- ROCm still shows substantial TG degradation with context depth after
+  COMMON-004. Collect ROCm profiling data before selecting the next QSA
+  optimization.
+- COMMON-004 itself is considered validated on both Vulkan and ROCm; the items
+  above are follow-up optimization/debugging work rather than blockers.
 
 ## COMMON-005 - gather-based QSA decode
 
