@@ -1,6 +1,6 @@
 # Evo-X2 r3 optimization roadmap
 
-Snapshot: 2026-10-01 (post-COMMON-004 validation)
+Snapshot: 2026-10-01 (post-COMMON-004 ROCm residual profiling/source trace; COMMON-005 next)
 
 This document records the current execution order for the r3 optimization work.
 Patch IDs remain stable even when implementation priority changes.
@@ -73,6 +73,59 @@ missing pooled-summary reuse as the primary first target.
 This diagnostic result motivated COMMON-004 and was confirmed by the later
 long-context cache ON/OFF validation.
 
+## Completed diagnostic gate: ROCm residual decode scaling after COMMON-004
+
+After COMMON-004 validation, ROCm still showed a much steeper TG depth slope
+than Vulkan with pooled caching enabled:
+
+```text
+64k   20.62 tok/s
+128k  16.44 tok/s
+256k  11.60 tok/s
+```
+
+Radeon GPU Profiler captures at 128k and 256k used steady single-token decode.
+The repeated `flash_attn_tile` events appear at about 586-event intervals,
+consistent with the 12 full-attention layers per token in the 48-layer model
+with `full_attention_interval = 4`.
+
+Representative kernel timings were:
+
+| Kernel | 128k | 256k | Change |
+|---|---:|---:|---:|
+| `flash_attn_tile<256,256,1,4,false>` | ~1.452 ms | ~2.939 ms | ~2.02x |
+| `k_get_rows_float` | ~0.451 ms | ~0.907 ms | ~2.01x |
+| `mul_mat_vec_q<type14>` | ~2.835 ms | ~2.836 ms | essentially flat |
+
+The measured decode latency changed from about 62.11 to 85.79 ms/token,
+a +23.68 ms/token increase. Using the 12-layer cadence, the Flash Attention
+increase contributes about +17.84 ms/token and the `k_get_rows_float` increase
+about +5.47 ms/token, for about +23.31 ms/token in total. The estimate is not a
+strict per-token event sum, but it accounts for almost the complete measured
+increase.
+
+Source tracing on `r3/upstream-first` then identified the two context-linear
+paths:
+
+- `build_qsa_top_k()` expands block scores back to full KV-cell granularity via
+  `ggml_get_rows(..., cell_blk)` before `ggml_top_k()`. This is the strongest
+  match for the profiled `k_get_rows_float`.
+- `build_attn_qsa()` constructs a sparse full-length mask but takes K/V directly
+  from the full KV cache and passes the full tensors to `build_attn_mha()`.
+- the graph already supplies the sparse `n_kv_max` hint; for the current model
+  it is 2051 (`top_k=2048`, compression ratio 4).
+- current HIP sparse Flash Attention is disabled, so ROCm does not use that hint
+  to compact K/V and still processes the full context length.
+- Vulkan already contains a sparse mask-compaction path, and the current
+  MiniMax-M3 decode implementation provides a model-layer selected-K/V gather
+  precedent.
+
+The residual diagnostic gate is therefore complete. It justifies COMMON-005 as
+the next implementation target rather than leaving it as an unverified idea.
+
+Detailed notes are in
+[ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
+
 ## Current execution order
 
 ### 1. COMMON-004 - incremental pooled-key cache - completed
@@ -115,30 +168,65 @@ The remaining behavior is backend-dependent:
 
 Detailed validation and follow-up notes are recorded in [PATCHES.md](PATCHES.md).
 
-### 2. Profile remaining ROCm long-context decode scaling
+### 2. ROCm residual profile and source trace - completed
 
-Before selecting the next optimization patch, collect ROCm profiling data with
-COMMON-004 enabled.
+The post-COMMON-004 profiling gate is complete.
 
-The purpose of this step is diagnostic rather than another implementation.
+The decisive evidence is that 128k -> 256k doubles both the full-context
+`flash_attn_tile` time and the block-score-to-cell `k_get_rows_float` time,
+while the main mat-vec kernel remains flat. Source tracing explains both trends
+without requiring a new backend-specific hypothesis.
 
-ROCm TG with pooled caching enabled still decreases substantially with context
-depth:
+Decision:
 
 ```text
-64k   20.62 tok/s
-128k  16.44 tok/s
-256k  11.60 tok/s
+COMMON-005 is the next implementation target.
+COMMON-006 is retained as the next common/model candidate after COMMON-005.
 ```
 
-Do not assume that COMMON-005, a backend-specific change, or another QSA
-optimization is the next patch until the residual ROCm cost is measured.
+Do not spend the next iteration on top-k radix micro-optimization; its observed
+per-dispatch cost is much smaller than the two context-linear paths above.
 
-Use the profile to determine which part of the remaining decode graph scales
-with context depth, then choose the next implementation target from the
-evidence.
+### 3. COMMON-005 - gather-based QSA decode - next
 
-### 3. Evaluate selected post-b11247 upstream changes
+COMMON-005 now moves from a gated idea to the active design/implementation
+candidate.
+
+Current qwen4exp decode behavior:
+
+```text
+block score
+  -> full-cell score expansion
+  -> top-k indices (width 2051 for the target model)
+  -> full-length sparse mask
+  -> full K/V tensors
+  -> Flash Attention
+```
+
+On HIP, the final attention still scans the full K/V length because sparse
+Flash Attention compaction is not enabled for HIP.
+
+Basic implementation direction:
+
+- start with qwen4exp single-token decode
+- gather selected K/V and required mask rows into compact tensors after top-k
+- call ordinary Flash Attention on that compact set
+- avoid depending on a new HIP sparse-FA backend implementation for the first
+  prototype
+- leave prompt/batched QSA behavior unchanged initially
+- keep a short-context gate
+- keep a runtime A/B switch
+- validate row/mask correctness before accepting performance numbers
+- use 128k and 256k ABBA measurements as the primary depth-scaling comparison
+
+This patch should target the full-context attention cost only. Do not fold the
+block-score expansion rewrite into the same patch.
+
+The next step after this documentation checkpoint is to specify the exact tensor
+shapes, row-index construction, fallback conditions, and runtime control before
+editing source.
+
+### 4. Evaluate selected post-b11247 upstream changes
 
 Do not replace the whole upstream base for these tests. Prefer isolated
 cherry-pick A/B work when the changes apply cleanly.
@@ -154,7 +242,7 @@ This is relevant to Qwen3.8-Flash-Next because it is a large MoE model and the
 change selects Vulkan `MUL_MAT_ID` tiles from per-expert row counts rather than
 the total token count.
 
-Keep this test separate from COMMON-004. If it shows a positive signal, repeat
+Keep this test separate from COMMON-005. If it shows a positive signal, repeat
 with multiple ubatch sizes (at least 1024/2048/4096 where practical) because the
 per-expert row shape changes with ubatch size. Test more than one target
 quantization/model family before treating it as a general Evo-X2 default.
@@ -177,32 +265,43 @@ ggml-cuda: HIP: optimize packed byte subtraction (#29478)
 Only keep an upstream candidate in r3 if it produces a useful measured result
 or fixes a relevant correctness issue.
 
-### 4. COMMON-005 - gather-based QSA decode
+### 5. COMMON-006 - block-domain QSA selection candidate
 
-Add a common/model-layer candidate after COMMON-004 rather than treating all
-remaining TG loss as a Vulkan-only problem.
+COMMON-006 is the next common/model candidate after COMMON-005, not part of the
+same implementation.
 
-The current qwen4exp decode path selects a top-k set but then converts that set
-back into a mask over the full KV cache and calls attention over the full
-context. Upstream PR `#28213` demonstrates an alternative single-token decode
-path that gathers only the selected K/V rows and runs ordinary dense attention
-on the compact set.
+Current `build_qsa_top_k()` flow:
 
-Why this is high priority after COMMON-004:
+```text
+block score
+  -> expand score to every KV cell through cell_blk
+  -> cell-level top-k
+```
 
-- it targets another O(context depth) decode cost
-- it is model/common work rather than a Vulkan-only kernel change
-- it can potentially help both Vulkan and ROCm
-- it complements, rather than overlaps, pooled-summary caching
+The source trace strongly associates that expansion with the RGP
+`k_get_rows_float` cost, which increases from about 0.451 ms at 128k to about
+0.907 ms at 256k.
 
-Do not implement COMMON-005 until the ROCm residual profile above identifies
-the remaining depth-dependent cost strongly enough to justify this path.
+Candidate direction:
 
-When evaluated, prefer a gate that avoids the gather path at short contexts
-where the gather overhead exceeds the saved attention work. Preserve a runtime
-A/B switch and validate retrieval/correctness before accepting it.
+```text
+block-domain selection
+  -> expand only selected blocks to cell indices
+```
 
-### 5. VULKAN-002 - QSA grouped-union / sparse-FA re-evaluation
+The main risk is semantic rather than mechanical. The implementation must
+preserve:
+
+- `indexer_top_k + compress_ratio - 1`
+- tail-block handling
+- causal/visibility masking
+- tie/ordering behavior
+
+Only design/benchmark COMMON-006 after COMMON-005 is stable enough to provide a
+fixed baseline. If COMMON-005 changes the residual profile materially, repeat a
+small profile before deciding how far to take COMMON-006.
+
+### 6. VULKAN-002 - QSA grouped-union / sparse-FA re-evaluation
 
 The historical r2 grouped-union path remains a high-value PP candidate.
 
@@ -213,8 +312,8 @@ COMMON decode work above.
 Before re-porting the historical implementation:
 
 1. keep the validated COMMON-004 baseline fixed
-2. collect and interpret the ROCm residual profile
-3. profile/evaluate COMMON-005 if the residual evidence supports it
+2. implement/evaluate COMMON-005
+3. evaluate COMMON-006 if residual score expansion remains important
 4. finish the selected small upstream Vulkan A/B tests
 5. check whether the upstream Vulkan sparse-FA path (including the work around
    `#28105`) can be enabled or adapted for qwen4exp instead of reviving a larger
@@ -226,30 +325,26 @@ Before re-porting the historical implementation:
 128k and 256k remain the primary PP depths for deciding whether the port is
 worth keeping.
 
-### 6. Investigate remaining main-QSA decode scaling
+### 7. Investigate remaining main-QSA decode scaling
 
-After COMMON-004 and the COMMON-005 decision, profile the remaining depth-
+After COMMON-005 and the COMMON-006 decision, profile the remaining depth-
 dependent QSA costs before adding another large patch.
 
 Current investigation order:
 
 1. remaining attention / gather cost
-2. block-score expansion and full-length mask construction/upload
-3. top-k over the cell-level expanded scores
+2. any remaining block-score expansion or mask construction/upload
+3. top-k / selection overhead
 4. block score computation itself
 
-This ordering supersedes the earlier assumption that top-k/select should be the
-first remaining target. On the current gfx1151 Vulkan path the radix-style top-k
-cost appears relatively small compared with the full-context work around it.
-
-A later design may move selection closer to the block domain so the score does
-not need to be expanded to every cell before top-k. That would require explicit
-correctness checks for ties and tail blocks.
+The new ROCm profile supersedes the earlier uncertainty: full-context attention
+and full-cell score expansion are the two measured targets. Top-k radix work is
+not the first optimization target on the current path.
 
 Halogen remains useful as architecture/performance evidence, not as code to port
 blindly from a Linux-only closed engine.
 
-### 7. COMMON-002 - Unsloth MTP compatibility
+### 8. COMMON-002 - Unsloth MTP compatibility
 
 MTP remains important, but it is intentionally scheduled after the main-model
 QSA costs above are better understood.
@@ -277,7 +372,7 @@ candidate; depth 3 remains a coding-oriented comparison point.
 Revisit MTP-QSA only if ordinary MTP loses most or all of its benefit at long
 context because the draft path is dominated by full-context attention.
 
-### 8. COMMON-003 and VULKAN-001 - ROCmFPx
+### 9. COMMON-003 and VULKAN-001 - ROCmFPx
 
 ROCmFPx work is deferred until the main Unsloth/QSA path above is understood.
 
@@ -287,7 +382,7 @@ For the AgentionAI ROCmFP4-FAST model:
 2. add only missing common format/core support as COMMON-003
 3. add Vulkan-specific ROCmFPx kernels as VULKAN-001 only if still required
 
-### 9. MTP-QSA prototype
+### 10. MTP-QSA prototype
 
 MTP-QSA remains outside the initial r3 patch stack.
 
@@ -296,6 +391,7 @@ a PP benefit at 128k and added substantial memory use. Revisit it only after:
 
 - COMMON-004 is validated
 - COMMON-005 is decided or the remaining full-context attention cost is known
+- COMMON-006 is decided or the remaining main-QSA score-expansion cost is known
 - main-QSA long-context TG costs are reduced or characterized
 - COMMON-002 is stable
 - ordinary MTP on/off measurements are complete
@@ -316,11 +412,11 @@ should not re-port them as downstream features.
 
 ## Independent follow-up candidates
 
-Keep these separate from COMMON-004 so attribution stays clean:
+Keep these separate from COMMON-005 so attribution stays clean:
 
 - Laurent `44041e78650c9f8aca2642842302dc8139907ded`: reverse-scan
-  `get_prev_tokens` instead of walking the full cache; re-evaluate after
-  COMMON-004 if a meaningful depth-dependent CPU/cache scan remains
+  `get_prev_tokens` instead of walking the full cache; re-evaluate after the
+  current COMMON decode work if a meaningful depth-dependent CPU/cache scan remains
 - q8_0 K/V cache as an operational A/B while attention still reads the full KV
   cache; treat quality/memory effects separately from source patches
 
@@ -350,14 +446,13 @@ Reasons:
 - COMMON-004 is validated downstream while the equivalent upstream work remains
   unmerged
 - the most interesting post-b11247 Vulkan changes can still be measured independently
-- moving the base now would make the next residual-profile and optimization
-  attribution less clear
+- moving the base now would make COMMON-005 attribution less clear
 
 Reconsider a new upstream base when one or more of these become true:
 
 1. upstream #28699 is merged or superseded by an equivalent implementation
-2. COMMON-005 evaluation and the selected small upstream A/B tests are complete
-   enough to establish a new checkpoint
+2. COMMON-005 and COMMON-006 evaluation plus the selected small upstream A/B
+   tests are complete enough to establish a new checkpoint
 3. qwen4exp/MTP correctness fixes accumulate enough to outweigh base stability
 4. a newer upstream base materially simplifies the remaining QSA work or
    supersedes downstream patches without losing validated behavior

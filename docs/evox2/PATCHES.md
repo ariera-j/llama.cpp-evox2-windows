@@ -35,7 +35,8 @@ Validation is recorded in [BASELINE.md](BASELINE.md).
 | COMMON-002 | common | planned | Unsloth MTP compatibility, after main-QSA work |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
 | COMMON-004 | common | validated | incremental pooled-key cache for the QSA indexer |
-| COMMON-005 | common | planned | gather selected QSA K/V for long-context single-token decode |
+| COMMON-005 | common | next | gather selected QSA K/V for long-context single-token decode |
+| COMMON-006 | common | evaluate | move QSA selection closer to the block domain to avoid full cell-score expansion |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
 | VULKAN-002 | Vulkan | evaluate | QSA grouped-union / sparse-FA PP optimization after COMMON decode work |
 | ROCM-001 | ROCm | none yet | reserved for a demonstrated ROCm-specific requirement |
@@ -426,18 +427,29 @@ any of the six ROCm long-context runs.
   the warning was not observed in the ROCm validation runs.
 - Treat the Vulkan PP regression and compute-buffer warning as a likely
   backend-specific follow-up until profiling shows otherwise.
-- ROCm still shows substantial TG degradation with context depth after
-  COMMON-004. Collect ROCm profiling data before selecting the next QSA
-  optimization.
+- ROCm residual profiling and source tracing are complete. At 128k -> 256k,
+  `flash_attn_tile` increased from about 1.452 to 2.939 ms and
+  `k_get_rows_float` from about 0.451 to 0.907 ms, while the main mat-vec time
+  stayed essentially flat. The two increases account for almost the entire
+  measured +23.68 ms/token latency delta.
+- Source tracing identifies `k_get_rows_float` as the block-score to full-cell
+  expansion in `build_qsa_top_k()`, and shows that QSA still passes full K/V to
+  Flash Attention after selection. HIP does not currently use the sparse-FA
+  `n_kv_max` hint, so the ROCm attention path continues to scale with full
+  context depth.
+- COMMON-005 is therefore selected as the next implementation target.
 - COMMON-004 itself is considered validated on both Vulkan and ROCm; the items
   above are follow-up optimization/debugging work rather than blockers.
+
+Detailed RGP and source-trace notes are recorded in
+[ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
 
 ## COMMON-005 - gather-based QSA decode
 
 Status:
 
 ```text
-planned
+next
 ```
 
 Goal:
@@ -446,34 +458,95 @@ Reduce the remaining long-context QSA attention cost after COMMON-004 by
 running decode attention on the K/V rows selected by the indexer instead of
 turning the selection back into a mask over the full KV cache.
 
-Primary reference:
+Primary references:
 
 ```text
 ggml-org/llama.cpp
 PR #28213
 qwen4exp : gather-based sparse attention for QSA decode
+
+current upstream MiniMax-M3 decode path
+selected K/V/mask gather before Flash Attention
 ```
 
-Current rationale:
+Profiling and source evidence:
 
-- the existing qwen4exp path fills a full-length mask, clears selected rows,
-  and still calls attention with full K/V tensors
-- this can leave attention cost proportional to context depth even though QSA
-  only selects a much smaller token budget
-- a model/common gather path could potentially help both Vulkan and ROCm
+- RGP 128k -> 256k shows `flash_attn_tile` growing about 2.02x
+  (1.452 -> 2.939 ms per observed full-attention layer)
+- `k_get_rows_float` grows about 2.01x (0.451 -> 0.907 ms)
+- with 12 full-attention layers per token, the two increases explain about
+  23.31 ms/token versus the measured 23.68 ms/token latency increase
+- `build_qsa_top_k()` expands block scores back to full cell granularity before
+  top-k; this is the likely source of the profiled `k_get_rows_float`
+- `build_attn_qsa()` constructs a sparse full-length mask but obtains K/V from
+  the full KV cache and passes those full tensors to `build_attn_mha()`
+- the graph sets `n_kv_max` to the QSA selection width (2051 for top_k=2048,
+  ratio=4), but the current HIP sparse-FA implementation is disabled and the
+  ROCm path still scans the full K/V length
+- Vulkan already has a sparse mask compaction path, and MiniMax-M3 provides a
+  model-layer selected-K/V gather precedent
 
-This patch is intentionally separate from COMMON-004. Evaluate it only after
-COMMON-004 is validated and profiling confirms that full-context attention or
-mask handling remains an important depth-dependent cost.
+Basic implementation policy:
 
-Expected evaluation requirements:
-
-- single-token decode path first
-- preserve prompt/batched behavior unless separately justified
-- use a short-context gate so gather overhead does not regress small contexts
+- begin with qwen4exp single-token decode
+- gather selected K/V and the required mask rows into compact tensors after
+  top-k selection
+- run ordinary Flash Attention on the compact tensors so the first prototype
+  does not depend on adding HIP sparse-FA backend support
+- leave prompt/batched QSA behavior unchanged initially
+- retain a short-context gate so gather overhead does not become a regression
 - provide a runtime A/B switch
-- validate retrieval and deterministic/near-deterministic behavior before
-  accepting performance results
+- validate selected-row/mask correctness before performance acceptance
+- use 128k and 256k ABBA measurements as the main depth-scaling decision points
+
+Detailed tensor shapes, row-index construction, fallback conditions, and the
+runtime-control name are intentionally deferred to the COMMON-005 design step.
+
+This patch remains separate from COMMON-004 and from COMMON-006 so attribution
+stays clean.
+
+## COMMON-006 - block-domain QSA selection candidate
+
+Status:
+
+```text
+evaluate
+```
+
+Goal:
+
+Remove the remaining O(n_kv) score-expansion work in `build_qsa_top_k()` after
+COMMON-005 has addressed full-context attention.
+
+Current qwen4exp selection flow:
+
+```text
+block score
+  -> expand score to every KV cell through cell_blk
+  -> cell-level top-k
+```
+
+Candidate direction:
+
+```text
+block-domain selection
+  -> expand only selected blocks to cell indices
+```
+
+The RGP source trace makes this worth evaluating because the likely
+block-to-cell `k_get_rows_float` grows from about 0.451 ms at 128k to about
+0.907 ms at 256k.
+
+Do not combine this with COMMON-005. The design must preserve the qwen4exp
+reference semantics around:
+
+- `indexer_top_k + compress_ratio - 1`
+- the tail block
+- causal/visibility masking
+- tie and ordering behavior
+
+Treat COMMON-006 as a separate correctness-first A/B only after the COMMON-005
+path is stable enough to provide a fixed baseline.
 
 ## COMMON-002 - Unsloth MTP compatibility
 
@@ -551,14 +624,15 @@ r3 must not assume the old patch is still optimal because the new base already c
 Before porting:
 
 1. complete COMMON-004
-2. evaluate/profile COMMON-005
-3. complete the selected small post-b11247 Vulkan A/B tests
-4. determine whether the upstream Vulkan sparse-FA work around `#28105` can be
+2. implement/evaluate COMMON-005
+3. evaluate COMMON-006 only if its residual score-expansion cost remains worth targeting
+4. complete the selected small post-b11247 Vulkan A/B tests
+5. determine whether the upstream Vulkan sparse-FA work around `#28105` can be
    enabled or adapted for qwen4exp
-5. compare that route with the historical grouped-union implementation
-6. port only the required delta
-7. validate correctness before benchmarking
-8. use 128k and 256k as the primary PP decision points
+6. compare that route with the historical grouped-union implementation
+7. port only the required delta
+8. validate correctness before benchmarking
+9. use 128k and 256k as the primary PP decision points
 
 Historical r2 results remain strong evidence that the idea is worth
 re-evaluating, but they are not r3 baseline values.
