@@ -22,6 +22,26 @@ The next phase is a separate upstream-refresh branch. Do not rewrite r3 onto the
 new base. Establish a clean refreshed baseline first, then re-apply only the
 remaining downstream deltas that measurements justify.
 
+### r2 grouped-union remains the long-context PP reference
+
+r3 intentionally does **not** include the r2 QSA grouped-union optimization.
+This is by design: r3 is an attribution-focused upstream-first checkpoint, not
+a claim that every r2 performance optimization has already been superseded.
+
+Keep the validated r2 grouped-union results as the long-context Vulkan PP
+reference when evaluating the refreshed upstream:
+
+| Context | r2 QSA union PP |
+|---|---:|
+| 64k | ~275 tok/s |
+| 128k | 222.77 tok/s |
+| 256k | 177.01 tok/s |
+
+In the r4 refresh, compare clean upstream PP against these values before deciding
+whether VULKAN-002/grouped-union should be reintroduced. Do not add grouped-union
+to r3 merely to make the checkpoint faster; preserving the clean attribution of
+COMMON-001/004/005 is more valuable at this stage.
+
 Latest upstream master observed during the 2026-10-02 review:
 
 ```text
