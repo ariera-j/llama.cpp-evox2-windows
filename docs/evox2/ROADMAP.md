@@ -1,13 +1,13 @@
-# Evo-X2 r3 optimization roadmap
+# Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-02 (COMMON-005 validated on ROCm and Vulkan; COMMON-006 next)
+Snapshot: 2026-10-02 (r3 COMMON-005 checkpoint complete; upstream refresh next)
 
-This document records the current execution order for the r3 optimization work.
-Patch IDs remain stable even when implementation priority changes.
+This document records the current execution order for the Evo-X2 optimization
+work. Patch IDs remain stable even when implementation priority changes.
 
-## Current base and policy
+## Current checkpoint and policy
 
-The r3 source baseline remains:
+The validated r3 source baseline remains:
 
 ```text
 upstream: ggml-org/llama.cpp
@@ -15,13 +15,26 @@ build: b11247
 commit: 0bc845d356f437d5ce4fe975c36428f7522829cb
 ```
 
-The base remains fixed while the current optimization sequence is measured.
-New upstream changes are evaluated as isolated A/B candidates when practical.
-A full upstream refresh is reconsidered only at explicit checkpoints.
+The r3 branch is now treated as a frozen comparison checkpoint after the
+COMMON-001/004/005 work and its validation documents are committed.
 
-## Completed foundation
+The next phase is a separate upstream-refresh branch. Do not rewrite r3 onto the
+new base. Establish a clean refreshed baseline first, then re-apply only the
+remaining downstream deltas that measurements justify.
 
-The current r3 branch now includes:
+Latest upstream master observed during the 2026-10-02 review:
+
+```text
+a868c3e3c56657f7e8a6231190dbbe90e7dd86c0
+```
+
+This SHA is an observation point, not yet the permanent refresh base. Pin the
+exact upstream SHA when the refresh branch is created and record it before
+benchmarking.
+
+## Completed r3 foundation
+
+The r3 checkpoint includes:
 
 - clean upstream-first b11247 Vulkan and ROCm baselines
 - COMMON-001 PLE16 loader support, validated through 256k on Vulkan and ROCm
@@ -83,8 +96,8 @@ Source tracing matched them to:
 1. full-context K/V Flash Attention on HIP, despite a sparse `n_kv_max` hint
 2. block-score-to-full-cell expansion before qwen4exp top-k
 
-This diagnostic gate selected COMMON-005 as the next patch and retained the
-score-expansion rewrite as COMMON-006.
+This diagnostic gate selected COMMON-005 as the next r3 patch and retained the
+score-expansion rewrite as the original COMMON-006 idea.
 
 ## Completed: COMMON-005 gather-based QSA decode
 
@@ -144,123 +157,207 @@ Interpretation:
 - ROCm: Gather ON is strongly beneficial and grows more valuable with context
 - Vulkan: existing sparse-FA is slightly faster at 64k/128k, Gather ON slightly
   faster at 256k
-- keep the runtime A/B control; do not infer a precise Vulkan crossover threshold
-  from only three depths
+- keep the r3 runtime A/B control as part of the reference checkpoint
 
 Detailed final validation is recorded in
 [COMMON005-VALIDATION-2026-10-02.md](COMMON005-VALIDATION-2026-10-02.md).
 
+## Why the plan changes here
+
+The 2026-10-02 upstream review crossed the refresh threshold that the previous
+roadmap had intentionally deferred.
+
+### COMMON-006 direction is now upstream
+
+Upstream PR #29751 (`llama: fix qwen4exp`, merge commit
+`66e0c17ee1741fef493312e17fe60a5d2cf5f7d5`) reworked the qwen4exp QSA/k-pool
+path. Current upstream qwen4exp now selects top pools/blocks before expanding
+them to cell indices:
+
+```text
+pool/block score
+  -> pool-domain top-k
+  -> expand selected pools to cell indices
+  -> append retained tail indices
+```
+
+This is materially the same direction as the planned COMMON-006. Building a
+second b11247 implementation immediately before refreshing upstream would add
+maintenance and validation work without a clean long-term target.
+
+Therefore COMMON-006 changes from `next implementation` to `upstream evaluation`.
+
+### MTP support also moved upstream
+
+Upstream PR #29761 (`Qwen4Exp: add MTP`) merged on 2026-10-01 and adds qwen4exp
+MTP conversion/tensor support plus the draft-model load-path fix.
+
+COMMON-002 should therefore start by testing the existing Unsloth MTP sidecar on
+the refreshed upstream. Only a remaining compatibility delta should be ported.
+
+### Relevant post-b11247 Vulkan work is already merged
+
+The refresh also brings several changes that were previously independent
+candidate ports, including:
+
+- #28501: 512-expert Vulkan row-id hoisting, measured as a Qwen3.8 prefill gain
+- #29182: MoE-aware Vulkan `mul_mat_id` tile selection
+- #29520: qwen4exp HC post-gate Vulkan fusion
+- #29599: PLE row prefetch; Windows behavior still needs real Evo-X2 validation
+
+This makes a clean refreshed baseline more informative than cherry-picking the
+same changes individually onto b11247.
+
+### COMMON-005 may still matter on ROCm
+
+Do not assume the refresh supersedes COMMON-005.
+
+Current upstream CUDA sparse Flash Attention code explicitly excludes HIP, so
+ROCm can still retain a full-context attention cost even with the newer model
+QSA/k-pool selection path. The r3 COMMON-005 result remains the reference for
+this question.
+
 ## Current execution order
 
-### 1. COMMON-006 - block-domain QSA selection - next
+### 1. Freeze r3 at this documentation checkpoint
 
-COMMON-006 is now the active common/model optimization target.
+After this roadmap/registry update is committed:
 
-Current qwen4exp selection flow:
+- keep `r3/upstream-first` as the validated b11247 reference
+- do not rebase it onto current upstream
+- use the committed COMMON-004/005 measurements and validation documents as the
+  comparison baseline for all refresh work
 
-```text
-block score
-  -> expand score to every KV cell through cell_blk
-  -> cell-level top-k
-```
+### 2. Create a separate upstream-refresh branch
 
-Candidate direction:
-
-```text
-block-domain selection
-  -> expand only selected blocks/cells
-```
-
-Why it is next:
-
-- COMMON-005 removed full-context ROCm Flash Attention scaling
-- the remaining repeated `k_get_rows_float` still scales ~2x from 128k to 256k
-- its nominal per-token increase accounts for roughly 64% of the measured
-  COMMON-005 ON 128k -> 256k ROCm latency increase
-
-The main risk is semantic. The design must preserve:
-
-- `indexer_top_k + compress_ratio - 1`
-- tail-block behavior
-- causal/visibility masking
-- tie and ordering behavior
-
-Keep COMMON-006 as a separate correctness-first A/B against the fixed
-COMMON-005 baseline.
-
-### 2. Evaluate selected post-b11247 upstream changes
-
-Do not replace the whole upstream base for these tests. Prefer isolated A/B work.
-
-Highest-value Vulkan candidate currently retained:
+Recommended branch name:
 
 ```text
-94a0ae3e7298127b74d5b31370e83a1b4f143070
-vulkan: MOE aware mat_mul_id tile selection (#29182)
+r4/upstream-refresh-20261002
 ```
 
-Also retained for targeted evaluation:
+At branch creation:
+
+1. fetch current `ggml-org/llama.cpp` master
+2. pin the exact upstream commit used for the branch
+3. record that SHA before adding downstream patches
+4. keep r3 available as the comparison branch
+
+Do not carry COMMON-001/004/005 into the initial refreshed source tree.
+
+### 3. Establish clean refreshed-upstream load/build baselines
+
+Build Vulkan and ROCm from the pinned refresh source before optimization work.
+
+First model-loading checks:
+
+1. try the original joined Unsloth Qwen3.8-Flash-Next model
+2. verify allocation/load on Vulkan and ROCm
+3. test whether the upstream PLE changes remove the practical reason COMMON-001
+   was needed
+4. only re-port PLE16 support if the joined path remains problematic or the
+   split model is still required operationally
+
+Also run the relevant backend tests and allocation-only smoke before long runs.
+
+### 4. Measure refreshed QSA baseline at 64k / 128k / 256k
+
+Use MTP off first so the main-model QSA path is isolated.
+
+Primary comparison:
 
 ```text
-5c200e0c8dfdbfa388f5d8f79ef7195dd4eb801e
-vulkan: Tune GDN kernel, fix Intel performance (#29476)
-
-748d4225b9016b17ce4bcfa69fdc2c39f473a965
-ggml-cuda: HIP: optimize packed byte subtraction (#29478)
+new upstream, no downstream QSA patches
+vs
+r3 COMMON-004 + COMMON-005 validated checkpoint
 ```
 
-Only keep a candidate if it produces a useful measured result or fixes a
-relevant correctness issue.
+Record PP and TG for Vulkan and ROCm at 64k, 128k, and 256k using the existing
+matrix/wrapper tooling.
 
-### 3. VULKAN-002 - grouped-union / sparse-FA PP re-evaluation
+Questions to answer:
 
-Historical r2 grouped-union remains a high-value PP candidate. The previous
-profile reconfirmed that it changes PP substantially but is essentially neutral
-for steady decode TG.
+- does upstream pool-domain selection remove the old COMMON-006
+  `k_get_rows_float` depth slope?
+- how does the new upstream pooled-key/k-pool path compare with COMMON-004?
+- is ROCm TG still materially behind the r3 COMMON-005 result at 128k/256k?
+- does Vulkan PP improve enough that historical grouped-union work becomes less
+  valuable?
 
-Before re-porting:
+### 5. Re-evaluate COMMON-005 on ROCm only if the refreshed baseline needs it
 
-1. keep COMMON-004 and COMMON-005 fixed
-2. evaluate COMMON-006
-3. finish selected small upstream Vulkan A/B tests
-4. check whether newer upstream Vulkan sparse-FA work can be adapted instead of
-   reviving a larger historical downstream implementation
-5. compare against the historical grouped-union implementation
-6. port only the required delta
-7. validate correctness before benchmarking
+If ROCm long-context TG still scales badly:
 
-128k and 256k remain the primary PP depths.
+1. profile 128k and 256k on the clean refreshed build
+2. confirm whether Flash Attention still sees the full KV depth
+3. if so, port the minimum COMMON-005 compact selected-K/V path onto the new QSA
+   structure
+4. A/B against the clean refreshed build
 
-### 4. COMMON-002 - Unsloth MTP compatibility
+Do not port COMMON-005 first and diagnose later.
 
-MTP remains important, but it stays after the current main-model QSA pass.
+For Vulkan, keep COMMON-005 out initially. Its r3 benefit was only a few percent
+and changed sign with context depth.
 
-The first r3 MTP port should remain minimal:
+### 6. Treat COMMON-006 as an upstream-validation gate
 
-- load the Unsloth MTP draft model
-- confirm draft residual-stream inputs match reference behavior
-- confirm recurrent rollback is used
+Do not write a downstream COMMON-006 unless measurement shows a remaining gap.
+
+Validation points:
+
+- pool-domain top-k is actually exercised by the real model
+- selected pool expansion and tail indices preserve expected output behavior
+- the old full-cell score expansion is gone or materially reduced
+- 128k -> 256k ROCm residual latency slope is re-accounted after the refresh
+
+If a new bottleneck remains, define a new downstream delta from the refreshed
+source rather than reviving the b11247 design verbatim.
+
+### 7. Re-evaluate COMMON-002 MTP on refreshed upstream
+
+Start without old r2/r3 compatibility patches.
+
+- load the existing Unsloth MTP draft model
+- confirm draft residual-stream inputs and recurrent rollback behavior
 - measure acceptance statistics
 - compare MTP on/off at short and long context
-- keep MTP-QSA out of the compatibility patch
+- measure long-context PP overhead
+- add only the compatibility change that is still demonstrably required
 
-Relevant post-b11247 speculative-decoding correctness fixes should be evaluated
-independently when this work resumes.
+Keep MTP-QSA outside this compatibility step.
 
-Revisit MTP-QSA only if ordinary MTP loses enough long-context benefit to justify
-its additional graph/cache complexity.
+### 8. Reconsider VULKAN-002 grouped-union only after refreshed PP data
 
-### 5. COMMON-003 and VULKAN-001 - ROCmFPx
+Historical grouped-union remains a useful reference, but the decision gate moves
+after the new upstream baseline because several Vulkan/QSA changes have already
+landed.
+
+Use 128k and 256k as the primary PP decision points. If refreshed upstream has
+already recovered most of the historical PP gap, do not re-port the larger r2
+implementation.
+
+### 9. COMMON-003 / VULKAN-001 ROCmFPx
 
 For the AgentionAI ROCmFP4-FAST model:
 
-1. identify what current upstream already supports
+1. identify what the pinned refreshed upstream already supports
 2. add only missing common format/core support as COMMON-003
 3. add Vulkan-specific ROCmFPx kernels as VULKAN-001 only if still required
 
+## Upstream items to watch during the refresh
+
+Do not mix unmerged work into the first clean baseline, but keep these visible:
+
+- #29824: qwen4exp mask-construction optimization
+- #29825: qwen4exp indexer score-memory reduction
+
+If either merges before the refresh SHA is pinned, document whether it is in the
+chosen base. If it merges after the base is pinned, evaluate it separately rather
+than silently moving the base.
+
 ## Independent follow-up candidates
 
-Keep these separate from COMMON-006 so attribution stays clean:
+After the refreshed main path is understood:
 
 - Laurent reverse-scan `get_prev_tokens` optimization if a meaningful
   depth-dependent CPU/cache scan remains
@@ -268,28 +365,23 @@ Keep these separate from COMMON-006 so attribution stays clean:
 - `GGML_VK_SHMEM_PAD` Windows driver-specific sweep
 - `GGML_VK_DENSE_WAVE32`
 - Strix Halo/RDNA matvec tuning
-- MMID row-list prepass for large-expert MoE prefill
-- later grouped-union scan/FA overlap and indexer-pipeline work
+- MMID row-list prepass if refreshed MoE prefill still warrants it
+- grouped-union scan/FA overlap and indexer-pipeline work only if profiling points there
 - per-row index Flash Attention prefill
 - persistent prompt-cache and PLE residency/mmap experiments
 
-## Current upstream-refresh decision
+## Refresh acceptance checkpoint
 
-Do not perform a full upstream replacement yet.
+Do not start re-porting the remaining historical patch stack until the refresh
+branch has all of the following recorded:
 
-Reasons:
+1. exact upstream base SHA
+2. successful Vulkan and ROCm builds
+3. relevant backend tests / allocation-only smoke
+4. model load result for the joined Unsloth model
+5. 64k/128k/256k PP/TG baseline where practical
+6. direct comparison against the r3 COMMON-004/005 checkpoint
+7. a written decision for COMMON-001, COMMON-004, COMMON-005, and COMMON-006
 
-- the b11247 r3 baseline is validated on Vulkan and ROCm
-- COMMON-001, COMMON-004, and COMMON-005 are now measured against that fixed base
-- selected post-b11247 changes can still be tested independently
-- moving the base now would make COMMON-006 attribution less clear
-
-Reconsider a new upstream base when one or more of these become true:
-
-1. upstream equivalents of COMMON-004/005 are merged or supersede the downstream patches
-2. COMMON-006 and selected small upstream A/B tests establish a new checkpoint
-3. qwen4exp/MTP correctness fixes accumulate enough to outweigh base stability
-4. a newer upstream base materially simplifies the remaining QSA work
-
-When refreshing the base, create a separate branch and establish new clean
-Vulkan/ROCm baselines before reapplying downstream patches.
+That checkpoint becomes the new basis for later MTP, grouped-union, and ROCmFPx
+work.

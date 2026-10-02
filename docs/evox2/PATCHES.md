@@ -4,7 +4,7 @@
 
 r3 applies downstream changes in small units on top of one exact upstream baseline.
 
-This file is the human-readable patch registry. It should answer:
+This file is the human-readable patch registry for the validated r3 checkpoint. It should answer:
 
 - what the patch changes
 - why it exists
@@ -12,6 +12,7 @@ This file is the human-readable patch registry. It should answer:
 - whether it is currently applied
 - how it is validated
 - what performance effect was measured
+- whether a newer upstream implementation changes the need to carry the patch forward
 
 Patch IDs are stable documentation identifiers. They do not need to match Git commit hashes.
 
@@ -27,26 +28,27 @@ status: validated
 
 Validation is recorded in [BASELINE.md](BASELINE.md).
 
+The r3 branch remains the fixed comparison point while a separate upstream-refresh
+branch is evaluated. A patch marked `validated` below means validated on this r3 base;
+it does not mean the patch should automatically be re-applied to the refresh branch.
+
 ## Registry
 
 | ID | Scope | Status | Purpose |
 |---|---|---|---|
-| COMMON-001 | common | validated | PLE16 model loading support |
-| COMMON-002 | common | planned | Unsloth MTP compatibility, after main-QSA work |
+| COMMON-001 | common | validated | PLE16 model loading support; re-evaluate need on refreshed upstream |
+| COMMON-002 | common | evaluate | validate refreshed upstream MTP against the existing Unsloth draft model before porting compatibility code |
 | COMMON-003 | common | evaluate | ROCmFPx format/core support only if still required by target models |
-| COMMON-004 | common | validated | incremental pooled-key cache for the QSA indexer |
-| COMMON-005 | common | validated | gather selected QSA K/V for long-context single-token decode |
-| COMMON-006 | common | next | move QSA selection closer to the block domain to avoid full cell-score expansion |
+| COMMON-004 | common | validated | incremental pooled-key cache for the QSA indexer; compare with refreshed upstream k-pool implementation |
+| COMMON-005 | common | validated | gather selected QSA K/V for long-context single-token decode; likely ROCm re-evaluation candidate after refresh |
+| COMMON-006 | common | evaluate | intended block-domain QSA selection now exists upstream; validate instead of implementing on b11247 |
 | VULKAN-001 | Vulkan | evaluate | ROCmFPx Vulkan kernels only if still required |
-| VULKAN-002 | Vulkan | evaluate | QSA grouped-union / sparse-FA PP optimization after COMMON decode work |
+| VULKAN-002 | Vulkan | evaluate | QSA grouped-union / sparse-FA PP optimization after refreshed-upstream baseline |
 | ROCM-001 | ROCm | none yet | reserved for a demonstrated ROCm-specific requirement |
 
-`planned` means the feature is expected to be ported or evaluated after its
-prerequisites are complete.
-
-`evaluate` means the feature existed or was relevant in earlier work, but r3 will first verify whether current upstream still needs it.
-
-`next` means it is the current implementation target.
+`evaluate` means the feature existed or was relevant in earlier work, but the next
+step is to verify what the refreshed upstream already provides before carrying a
+downstream implementation forward.
 
 Current execution order is tracked separately in [ROADMAP.md](ROADMAP.md).
 Patch IDs remain stable and are not renumbered when priorities change.
@@ -159,7 +161,10 @@ Known limitations:
 
 Upstream interaction:
 
-The patch is intentionally limited to qwen4exp PLE tensor naming, loading, and graph assembly so that later upstream changes can be compared or dropped independently.
+The r3 patch is intentionally limited to qwen4exp PLE tensor naming, loading, and
+graph assembly. On the refresh branch, first test the refreshed upstream with the
+original joined Unsloth model. Only re-port COMMON-001 if the joined path still has
+the stability/resource problem or if the PLE16 model remains operationally necessary.
 
 ## COMMON-004 - incremental pooled-key cache
 
@@ -305,7 +310,9 @@ compute-buffer expectation warning on successful pooled-cache runs.
 
 ROCm residual profiling after COMMON-004 identified two remaining O(n_kv)
 decode costs: full-context Flash Attention and block-score-to-full-cell
-expansion. That profiling motivated COMMON-005 and COMMON-006.
+expansion. That profiling motivated COMMON-005 and the original COMMON-006
+design. The refresh branch should compare this r3 implementation with the newer
+upstream k-pool path rather than blindly re-applying COMMON-004.
 
 Detailed RGP and source-trace notes are recorded in
 [ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
@@ -403,7 +410,7 @@ The remaining repeated `k_get_rows_float` still scales approximately 2x:
 256k ~= 907.13 us
 ```
 
-This is the post-COMMON-005 evidence for COMMON-006.
+This was the post-COMMON-005 evidence for the original COMMON-006 proposal.
 
 ### Vulkan validation
 
@@ -437,23 +444,28 @@ backend-dependent:
 - Vulkan: gather and the existing sparse-FA fallback are close; fallback wins
   slightly at 64k/128k and gather wins slightly at 256k
 
+The refreshed upstream must be measured before deciding whether COMMON-005 is
+still required. Current upstream CUDA code explicitly excludes HIP from sparse
+Flash Attention, so ROCm remains the highest-value place to look for a residual
+need for this downstream compact-K/V path.
+
 Detailed final results are recorded in
 [COMMON005-VALIDATION-2026-10-02.md](COMMON005-VALIDATION-2026-10-02.md).
 
-## COMMON-006 - block-domain QSA selection candidate
+## COMMON-006 - block-domain QSA selection upstream evaluation
 
 Status:
 
 ```text
-next
+evaluate
 ```
 
-Goal:
+Original r3 goal:
 
 Remove the remaining O(n_kv) score-expansion work in `build_qsa_top_k()` after
 COMMON-005 removed the full-context ROCm attention cost.
 
-Current qwen4exp selection flow:
+The b11247/r3 flow was:
 
 ```text
 block score
@@ -461,58 +473,84 @@ block score
   -> cell-level top-k
 ```
 
-Candidate direction:
+The intended downstream direction was:
 
 ```text
 block-domain selection
   -> expand only selected blocks to cell indices
 ```
 
-Post-COMMON-005 RGP strengthens the case: the repeated block-to-cell
-`k_get_rows_float` remains about 0.448 ms at 128k and 0.907 ms at 256k. With 12
-full-attention groups per token, the nominal increase accounts for roughly 64%
-of the measured COMMON-005 ON 128k -> 256k ROCm latency increase.
+Post-COMMON-005 RGP showed the repeated block-to-cell `k_get_rows_float` at
+about 0.448 ms at 128k and 0.907 ms at 256k. With 12 full-attention groups per
+token, its nominal increase accounts for roughly 64% of the measured
+COMMON-005 ON 128k -> 256k ROCm latency increase.
 
-The design must preserve qwen4exp reference semantics around:
+### Upstream checkpoint decision
 
-- `indexer_top_k + compress_ratio - 1`
+Do not implement COMMON-006 on the frozen b11247 base.
+
+Upstream PR #29751 (`llama: fix qwen4exp`, merge commit
+`66e0c17ee1741fef493312e17fe60a5d2cf5f7d5`) replaced the qwen4exp QSA/k-pool
+path. In the current upstream source observed on 2026-10-02, qwen4exp now:
+
+- computes `n_top_pool = min(n_pool, indexer_top_k / kpool)`
+- applies `ggml_top_k()` directly to the pool/block score
+- expands only the selected pool indices to cell indices
+- appends the retained tail indices separately
+
+That is materially the same optimization direction COMMON-006 was meant to
+explore. Implementing an independent b11247 version now would create a second
+lineage immediately before an upstream refresh.
+
+### Refresh-branch validation
+
+Treat COMMON-006 as an upstream validation item, not a downstream patch, until
+measurements say otherwise:
+
+- establish clean Vulkan and ROCm baselines on the pinned refresh commit
+- compare 64k/128k/256k PP and TG against the r3 COMMON-005 checkpoint
+- verify the old full-cell score-expansion `k_get_rows_float` slope is gone or
+  materially reduced
+- verify tail/causal/visibility behavior with real model output
+- only create a new downstream delta if the refreshed upstream leaves a measured
+  bottleneck or correctness gap on Evo-X2
+
+The historical semantic requirements remain useful as review checks:
+
+- `indexer_top_k` budget behavior
 - tail-block handling
 - causal/visibility masking
 - tie and ordering behavior
-
-Keep COMMON-006 as a separate correctness-first A/B so its effect is measured
-against the fixed COMMON-005 baseline.
 
 ## COMMON-002 - Unsloth MTP compatibility
 
 Status:
 
 ```text
-planned
+evaluate
 ```
 
 Goal:
 
-Load and run the Unsloth MTP draft model used in the earlier Evo-X2 tests.
+Load and run the existing Unsloth Qwen3.8-Flash-Next MTP draft model on the
+refreshed upstream, adding only the compatibility delta that is still missing.
 
-The r2 work required compatibility handling beyond the clean upstream baseline. r3 should port only the minimum compatibility change needed by the current upstream source.
+Upstream PR #29761 (`Qwen4Exp: add MTP`) merged on 2026-10-01. It adds qwen4exp
+MTP conversion/tensor support and fixes the draft-model load path, so the old
+r3 plan to port MTP support first is no longer the correct starting point.
 
-COMMON-002 is deliberately scheduled after the main-model QSA work so MTP
-measurements are not confounded by a moving target.
+Refresh-branch validation plan:
 
-Validation plan:
-
-- draft model allocation succeeds
-- short-context generation succeeds
-- MTP acceptance statistics are reported
+- test the existing Unsloth Q8_0 MTP sidecar without downstream MTP patches
+- confirm draft model allocation and short-context generation
+- confirm recurrent rollback behavior and no state-replay regression
+- report draft acceptance statistics
 - compare MTP on/off at short and long context
-- test whether long-context MTP benefit shrinks as draft dense-attention cost grows
 - separately measure long-context PP overhead
+- port only the minimum compatibility change if the existing sidecar still fails
 
-Do not combine this patch with MTP-QSA work.
-
-If ordinary MTP loses most or all of its long-context benefit, that becomes an
-explicit trigger to reconsider the frozen MTP-QSA prototype later.
+Do not combine this item with MTP-QSA work. Revisit MTP-QSA only if ordinary MTP
+loses enough long-context benefit to justify its additional graph/cache complexity.
 
 ## COMMON-003 - ROCmFPx format/core support
 
@@ -524,7 +562,8 @@ evaluate
 
 Earlier work used ROCmFP4-FAST model variants from AgentionAI.
 
-Before porting format/core changes, verify exactly what current upstream b11247 already supports and what the target model still requires.
+Before porting format/core changes, verify exactly what the pinned refresh
+upstream already supports and what the target model still requires.
 
 Only missing functionality should be carried forward.
 
@@ -555,25 +594,26 @@ is essentially neutral for steady decode TG.
 
 Before porting:
 
-1. keep COMMON-004 and COMMON-005 fixed
-2. evaluate COMMON-006
-3. complete selected small post-b11247 Vulkan A/B tests
-4. determine whether upstream Vulkan sparse-FA work can be enabled/adapted for
-   qwen4exp instead of reviving a larger historical downstream implementation
-5. compare that route with the historical grouped-union implementation
+1. establish the clean refreshed-upstream Vulkan baseline
+2. measure the refreshed qwen4exp QSA/k-pool path at 128k and 256k
+3. account for already-merged post-b11247 Vulkan changes before attributing a PP gap
+4. determine whether the refreshed sparse-FA/QSA path already replaces enough of
+   the historical grouped-union benefit
+5. compare against the historical grouped-union implementation only if a material
+   PP gap remains
 6. port only the required delta
-7. validate correctness before benchmarking
-8. use 128k and 256k as the primary PP decision points
+7. validate correctness before benchmarking the final candidate
 
 ## MTP-QSA prototype
 
-The earlier MTP-QSA prototype is intentionally outside the initial r3 patch stack.
+The earlier MTP-QSA prototype remains outside the initial refresh stack.
 
 It should only be reconsidered after:
 
-- COMMON-004 and COMMON-005 are validated
-- COMMON-006 is decided or the remaining main-QSA score-expansion cost is known
-- COMMON-002 is stable
+- the refreshed main-model QSA path is validated
+- COMMON-005 is re-evaluated on ROCm
+- COMMON-006 upstream behavior is measured
+- COMMON-002 upstream MTP compatibility is stable
 - normal MTP on/off measurements are complete
 - long-context MTP loses enough benefit to justify draft-QSA complexity, or a
   separate new performance case justifies the added graph/cache complexity
