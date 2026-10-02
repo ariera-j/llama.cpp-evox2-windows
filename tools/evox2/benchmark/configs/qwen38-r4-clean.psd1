@@ -1,0 +1,98 @@
+@{
+    SchemaVersion = 1
+    Name = 'qwen38-r4-clean'
+
+    # Pinned upstream: bed0a856606ee4a24a164066f73d2379447033f5.
+    # No downstream QSA patches. Run only after clean build/load smoke passes.
+    Settings = @{
+        CooldownSeconds = 10
+        ContinueOnError = $false
+    }
+
+    Defaults = @{
+        CliParameters = @{
+            KvType           = 'f16'
+            UBatch           = 1024
+            Batch            = 2048
+            Threads          = 4
+            GpuLayers        = 999
+            CpuMoe           = 0
+            FlashAttn        = 'auto'
+            Verbosity        = 4
+            GenerationTokens = 1024
+            PromptCacheMiB   = 0
+            Temperature      = 0.2
+            TopP             = 0.8
+            Reasoning        = 'off'
+            Fit              = 'off'
+            Mtp              = $false
+            ResourceMonitor  = $true
+
+            ExtraArgs = @(
+                '-tb'
+                '4'
+                '--ctx-checkpoints'
+                '0t'
+            )
+        }
+
+        # Clear inherited experiment overrides for each child; the runner
+        # restores the caller's environment afterward. These are not patches.
+        Environment = @{
+            LLAMA_QSA_NO_POOLED_CACHE       = $null
+            LLAMA_QSA_POOLED_MAX_TOKENS     = $null
+            QWEN4EXP_QSA_GATHER             = $null
+            GGML_VK_QSA_UNION_MIN_KV        = $null
+            LLAMA_MTP_QSA_MIN_KV            = $null
+            GGML_VK_DISABLE_GRAPH_OPTIMIZE  = $null
+            LLAMA_GRAPH_REUSE_DISABLE      = $null
+            GGML_VK_FUSE_UNARY_MUL          = $null
+            GGML_VK_SHMEM_PAD               = $null
+            GGML_VK_DENSE_WAVE32            = $null
+            EVOX2_AB_RUN                   = $null
+            EVOX2_ABBA_RUN                 = $null
+        }
+    }
+
+    Jobs = @(
+        @{
+            Name = 'r4-clean-longctx'
+            Tool = 'cli'
+
+            BuildKeys = @('R4Vulkan', 'R4ROCm')
+            ModelKeys = @('UnslothJoined')
+
+            # Gate with -OnlyCase 64k, then 128k, then 256k.
+            Cases = @(
+                @{
+                    Name = '64k'
+                    Parameters = @{
+                        Context  = 65536
+                        InputKey = '64k'
+                    }
+                }
+                @{
+                    Name = '128k'
+                    Parameters = @{
+                        Context  = 131072
+                        InputKey = '128k'
+                    }
+                }
+                @{
+                    Name = '256k'
+                    Parameters = @{
+                        Context  = 262144
+                        InputKey = '256k'
+                    }
+                }
+            )
+
+            Variants = @(
+                @{
+                    Name = 'clean-nomtp'
+                    Parameters = @{}
+                }
+            )
+        }
+    )
+}

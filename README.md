@@ -6,6 +6,7 @@ The current `r4` work is intentionally **upstream-first**. It starts from an exa
 
 ## Current r4 baseline
 
+- Development branch: `r4/upstream-refresh-20261002`
 - Upstream base: llama.cpp `b11352`
 - Commit: `bed0a856606ee4a24a164066f73d2379447033f5`
 - Windows Vulkan: LLVM/Clang 20.1.8 + Vulkan SDK 1.4.357.0
@@ -13,6 +14,10 @@ The current `r4` work is intentionally **upstream-first**. It starts from an exa
 - ROCm host toolchain: Visual Studio 2022 Build Tools / MSVC 14.44
 - GPU target: Radeon 8060S / `gfx1151`
 - The r4 clean Vulkan/ROCm baseline has not been measured yet.
+
+Imported docs/tooling come from the frozen r3 checkpoint
+`0a93fcbb8e5bcf51b331275c4f4b142d822168d6`; downstream inference patches are
+not imported. The current plan is `tools/evox2/benchmark/configs/qwen38-r4-clean.psd1`.
 
 ## Previous validated r3 baseline
 
@@ -24,7 +29,7 @@ The current `r4` work is intentionally **upstream-first**. It starts from an exa
 - GPU target: Radeon 8060S / `gfx1151`
 - Primary long-context baseline: Qwen3.8-Flash-Next UD-IQ3_XXS, 65,536 context, MTP off
 
-At the 61,789-token input used for the current 64k baseline:
+At the 61,789-token input used for the historical clean r3 64k baseline:
 
 | Build | PP | TG |
 |---|---:|---:|
