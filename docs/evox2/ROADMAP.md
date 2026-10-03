@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-03 (r3 frozen; r4 clean 64k/128k/256k recorded; Vulkan diagnosis next)
+Snapshot: 2026-10-03 (r3 frozen; r4 COMMON-001 validated through 256k; cached-pool follow-up / VULKAN-002 next)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -30,44 +30,57 @@ bed0a856606ee4a24a164066f73d2379447033f5
 ```
 
 Fork housekeeping is committed at `39f35efdfa135b36d0181a393178cc53719e5363`.
-Documentation and build/benchmark tools are imported separately from the r3
-frozen checkpoint. No COMMON-001/004/005 source implementation is imported.
-Windows builds and original-model 64k AllocationOnly passed. PLE16 loading
-failed on both backends. ROCm auto-test was 3985/3986 and manual retest was
-3986/3986; the discrepancy remains unresolved. See
-[R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md).
-Clean 64k/128k/256k runs pass on both backends; performance diagnosis remains open. Do not move the base silently
-or rewrite r3 onto it. Re-apply only downstream deltas justified by measurements.
+The clean refreshed-upstream baseline remains preserved as the comparison point.
+COMMON-001 has now been adapted to r4 and committed as:
 
-### Active order after the 64k MoE ABBA (user decision: 2026-10-03)
+```text
+a60a57879a9ffb4d51acd45d4de7e80d721548f9
+qwen4exp: restore split PLE n-gram tensor support
+```
+
+The joined Original model and split PLE16 model both load after the port.
+Vulkan/ROCm AllocationOnly and short inference pass, the matched 64k
+Original/PLE16 gate passes, and PLE16 completes 128k/256k on both backends.
+See [R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.md).
+Do not move the upstream base silently or rewrite r3 onto it. Re-apply only
+downstream deltas justified by measurements.
+
+### Active order after COMMON-001 validation (2026-10-03)
 
 This order supersedes the older refresh sequence below. The clean six-run
-baseline and the scoped 64k PP regression diagnosis are complete.
+baseline, scoped 64k PP regression diagnosis, GET_ROWS tensor breakdown, and
+COMMON-001 compatibility port are complete.
 
 1. **Completed:** capture tensor-level Vulkan GET_ROWS with Original 64k,
    before COMMON-001, fixing MoE legacy selection to 1. Windows run is OK:
    GET_ROWS 2.487 ms/token, including cached pool gather 1.662 ms (66.82%).
    Preserve b11377 / acf7fea2b and its logs as the pre-port reference.
-2. **COMMON-001 is the next implementation**, requested to align r3/r4 model
-   layout comparisons. Port the missing split-PLE16 loader support while
-   preserving upstream Original loading, then check load and 64k execution on
-   Vulkan/ROCm and compare Original/PLE16 with fixed MoE settings.
-3. Use the GET_ROWS breakdown and matched-layout results to decide whether a
-   small TG fix is justified. Do not restore COMMON-004 wholesale. If the fix
-   is broad, keep the measured reference and continue to the larger ports.
-4. VULKAN-002: adapt the missing grouped-union PP path after COMMON-001.
-   Current per-row sparse FA does not cover the observed 1024/349-query PP.
-5. COMMON-005: profile ROCm single-token decode and adapt compact selected K/V
-   gathering if confirmed. It can precede VULKAN-002 if diagnosis warrants it,
-   but the requested COMMON-001 compatibility/comparison work comes first.
+2. **Completed:** COMMON-001 adapted port. Split PLE16 compatibility is restored
+   while preserving the joined Original path. 64k matched-layout comparison and
+   PLE16 128k/256k validation pass on Vulkan and ROCm. The implementation commit
+   is `a60a57879a9ffb4d51acd45d4de7e80d721548f9`.
+3. **Decision gate:** inspect whether the cached-pool gather cost can be reduced
+   with a small, well-scoped change. Do not restore COMMON-004 wholesale. If the
+   fix requires a broad cache/layout rewrite, keep the measured reference and
+   move on rather than obscuring attribution.
+4. **VULKAN-002:** adapt the missing grouped-union PP path if the small TG gate
+   above does not justify an earlier patch. The current per-row sparse FA does
+   not cover the observed 1024/349-query PP. Use 128k/256k as the primary value
+   test because r4 TG is already near the historical r2 range while long-context
+   PP still trails the grouped-union reference materially.
+5. **COMMON-005:** profile ROCm single-token decode and adapt compact selected K/V
+   gathering if confirmed. It remains complementary to VULKAN-002 and can move
+   earlier if ROCm decode becomes the immediate priority.
 6. Resume MTP and other candidates after these decisions and validations.
 
-COMMON-001 is prioritized for comparable model layouts, not because Original
-failed: the clean Original baseline passes through 256k. Keep the current MoE
-switch opt-in, and preserve the original clean runs. Historical speed gaps are
-investigation signals, not gain forecasts.
+COMMON-001 is treated as a compatibility/layout patch, not a throughput
+optimization. ROCm clean Original and COMMON-001 PLE16 are effectively neutral
+across 64k/128k/256k. Vulkan COMMON-001 runs use legacy MoE tile selection, so
+the clean-to-COMMON-001 PP gain is not attributed to PLE16; the 64k delta closely
+matches the previously measured same-binary MoE A/B result.
 
 Instructions: [R4-GET-ROWS-PROFILE-2026-10-03.md](R4-GET-ROWS-PROFILE-2026-10-03.md).
+COMMON-001 result: [R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.md).
 Source evidence and historical decisions:
 [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md).
 
@@ -80,10 +93,9 @@ time 63.933 -> 47.807 s (legacy), with FA unchanged and steady TG essentially
 unchanged. Both modes pass 939/939 MUL_MAT_ID tests. Normal ABBA now confirms
 PP 248.475 -> 268.985 tok/s (+8.25%) with all four runs OK. This completes the
 64k PP diagnosis for the tested model/device/shapes. TG averages -2.50% with
-short, differing generations; do not claim no TG impact. Keep legacy opt-in,
-then capture tensor-level TG GET_ROWS timings and implement COMMON-001 first
-per the updated order above; defer the TG fix/optimization port decision until
-model layouts can be compared.
+short, differing generations; do not claim no TG impact. Keep legacy opt-in.
+The subsequent tensor-level TG GET_ROWS profile and COMMON-001 validation are
+now complete; use the active order above for the next decision.
 See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).
 
 The first logger run completed with 61 prefill and 127 decode timing blocks.
@@ -118,10 +130,11 @@ reference when evaluating the refreshed upstream:
 | 128k | 222.77 tok/s |
 | 256k | 177.01 tok/s |
 
-In the r4 refresh, compare clean upstream PP against these values before deciding
-whether VULKAN-002/grouped-union should be reintroduced. Do not add grouped-union
-to r3 merely to make the checkpoint faster; preserving the clean attribution of
-COMMON-001/004/005 is more valuable at this stage.
+The r4 COMMON-001 PLE16 validation with legacy MoE selection measures 268.79,
+178.99, and 132.99 tok/s at 64k/128k/256k respectively. The 64k gap is small,
+but the long-context gap remains material, which keeps VULKAN-002 relevant.
+Do not add grouped-union to r3 merely to make the checkpoint faster; preserving
+the clean attribution of COMMON-001/004/005 is more valuable at this stage.
 
 The 2026-10-02 observation `a868c3e3c56657f7e8a6231190dbbe90e7dd86c0`
 was a candidate only. The base was pinned on 2026-10-03 JST at `bed0a856...`
@@ -315,6 +328,10 @@ this question.
 
 ## Current execution order
 
+The numbered refresh sequence below records the original refresh plan. The
+**Active order after COMMON-001 validation** above supersedes it for current
+execution.
+
 ### 1. Freeze r3 at this documentation checkpoint (complete)
 
 The frozen checkpoint is `0a93fcbb8e5bcf51b331275c4f4b142d822168d6`:
@@ -469,16 +486,16 @@ After the refreshed main path is understood:
 
 ## Refresh acceptance checkpoint
 
-Do not start re-porting the remaining historical patch stack until the refresh
-branch has all of the following recorded:
+The refresh branch now has the clean baseline and COMMON-001 validation recorded.
+Before re-porting the remaining historical optimization stack, keep the following
+checkpoint items explicit:
 
 1. exact upstream base SHA
 2. successful Vulkan and ROCm builds
 3. relevant backend tests / allocation-only smoke
-4. model load result for the joined Unsloth model
+4. joined Original and split PLE16 load results
 5. 64k/128k/256k PP/TG baseline where practical
 6. direct comparison against the r3 COMMON-004/005 checkpoint
-7. a written decision for COMMON-001, COMMON-004, COMMON-005, and COMMON-006
+7. written decisions for COMMON-004, COMMON-005, COMMON-006, and VULKAN-002
 
-That checkpoint becomes the new basis for later MTP, grouped-union, and ROCmFPx
-work.
+That checkpoint becomes the basis for later MTP, grouped-union, and ROCmFPx work.
