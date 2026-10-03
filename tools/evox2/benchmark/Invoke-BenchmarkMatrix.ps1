@@ -736,6 +736,12 @@ if ($expanded.Count -gt $MaxRuns) {
     )
 }
 
+$LogRoot = Join-Path $RepoRoot 'evox2-logs'
+if ($Local.ContainsKey('LogRoot') -and
+    -not [string]::IsNullOrWhiteSpace([string]$Local.LogRoot)) {
+    $LogRoot = [string]$Local.LogRoot
+}
+
 Write-Host ''
 Write-Host '================ Expanded benchmark matrix ================'
 Write-Host "Plan             : $PlanName"
@@ -743,6 +749,7 @@ Write-Host "Selected tool    : $Tool"
 Write-Host "Runs             : $($expanded.Count)"
 Write-Host "CooldownSeconds  : $effectiveCooldown"
 Write-Host "ContinueOnError  : $ContinueOnError"
+Write-Host "LogRoot          : $LogRoot"
 Write-Host ''
 
 $expanded |
@@ -756,12 +763,6 @@ Write-Host ''
 if ($PlanOnly) {
     Write-Host 'PlanOnly: no benchmark processes were started.'
     return
-}
-
-$LogRoot = Join-Path $RepoRoot 'evox2-logs'
-if ($Local.ContainsKey('LogRoot') -and
-    -not [string]::IsNullOrWhiteSpace([string]$Local.LogRoot)) {
-    $LogRoot = [string]$Local.LogRoot
 }
 
 $matrixRoot = Join-Path $LogRoot 'matrix'

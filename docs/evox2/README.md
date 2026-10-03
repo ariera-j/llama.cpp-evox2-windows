@@ -15,7 +15,9 @@ branch: r4/upstream-refresh-20261002
 upstream base: bed0a856606ee4a24a164066f73d2379447033f5
 ```
 
-Windows build/load/PP/TG validation is pending. No COMMON-001/004/005 implementation is imported.
+Windows builds and original-model AllocationOnly passed. PP/TG is pending;
+ROCm had one automatic backend-test failure followed by a passing manual retest.
+No COMMON-001/004/005 implementation is imported.
 
 The same source revision is used for both Vulkan and ROCm. Backend differences are created by build configuration, not by maintaining separate permanent source trees.
 
@@ -98,7 +100,7 @@ tools/evox2/
 
 `model/` and `experiments/` remain on r3 and are not imported at this stage.
 The r4 plan is `benchmark/configs/qwen38-r4-clean.psd1`; older plans are historical definitions.
-Copy `local.example.psd1` to a new ignored `local.psd1`, set the r4 build paths and original joined model path, and reuse the actual input paths.
+Copy `local.example.psd1` to a new ignored `local.psd1`, set the r4 build paths and original model path (first GGUF shard), and reuse the actual input paths.
 
 Build wrappers write `evox2-build.json` manifests and can reuse a shared
 dependency cache outside the repository. Benchmark wrappers consume detected
@@ -112,6 +114,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md): ROCm 10.0 / TheRock build and runtime procedure
 - [BENCHMARKING.md](BENCHMARKING.md): measurement methodology and logging requirements
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
+- [R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md): build/load results and ROCm test discrepancy
 
 ## Historical documents
 

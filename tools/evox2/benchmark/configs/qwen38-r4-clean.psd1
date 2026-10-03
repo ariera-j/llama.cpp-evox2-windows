@@ -60,7 +60,9 @@
             Tool = 'cli'
 
             BuildKeys = @('R4Vulkan', 'R4ROCm')
-            ModelKeys = @('UnslothJoined')
+            # Original multi-file GGUF with joined PLE tensor layout; pass
+            # shard 00001. A single physically joined file is not required.
+            ModelKeys = @('UnslothOriginal')
 
             # Gate with -OnlyCase 64k, then 128k, then 256k.
             Cases = @(

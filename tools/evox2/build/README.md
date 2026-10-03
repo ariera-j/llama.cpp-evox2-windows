@@ -52,8 +52,9 @@ For ROCm, if the TheRock venv is active, the wrapper also resolves the ROCm
 SDK paths. If it is not active, manifest-only mode still works against an
 already self-contained binary directory.
 
-The default directories are `build-vulkan-r4` and `build-rocm-r4`. Runtime and
-performance validation on the pinned r4 upstream is pending.
+The default directories are `build-vulkan-r4` and `build-rocm-r4`. The initial
+r4 builds used explicit `build-vulkan-b11352` / `build-rocm-b11352` directories.
+Build and original-model allocation results are recorded; performance is pending.
 
 ## New Vulkan build
 
@@ -223,3 +224,16 @@ value:
 
 A build manifest records the cache root, expected dependency versions, reused
 sources, OpenMP seeding, and any dependency captured after configure.
+
+## Full ROCm backend-test diagnostics
+
+`-RunBackendTest` still returns an error when the native test exits nonzero.
+It now saves all captured output to a timestamped
+`evox2-backend-test-rocm-*.log` beside the executables, records its path as
+`Validation.BackendTestLogPath`, and prints failure/summary lines on failure.
+The compact manifest tail is retained. Logs from earlier invocations are not
+overwritten by a later successful retry.
+
+The initial r4 run had one real failed test (3985/3986), followed by a manual
+3986/3986 pass. No test threshold, native exit code, or inference source is
+changed to hide that failure.

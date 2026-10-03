@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-03 (r3 frozen; r4 upstream pinned; clean validation next)
+Snapshot: 2026-10-03 (r3 frozen; r4 upstream pinned; build/load recorded; clean PP/TG next)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -32,7 +32,11 @@ bed0a856606ee4a24a164066f73d2379447033f5
 Fork housekeeping is committed at `39f35efdfa135b36d0181a393178cc53719e5363`.
 Documentation and build/benchmark tools are imported separately from the r3
 frozen checkpoint. No COMMON-001/004/005 source implementation is imported.
-Windows build/load/performance gates are pending. Do not move the base silently
+Windows builds and original-model 64k AllocationOnly passed. PLE16 loading
+failed on both backends. ROCm auto-test was 3985/3986 and manual retest was
+3986/3986; the discrepancy remains unresolved. See
+[R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md).
+Performance gates are pending. Do not move the base silently
 or rewrite r3 onto it. Re-apply only downstream deltas justified by measurements.
 
 ### r2 grouped-union remains the long-context PP reference

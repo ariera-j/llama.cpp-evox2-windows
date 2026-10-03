@@ -43,7 +43,9 @@ tools/evox2/
 
 The next step is the clean r4 build/load baseline, then 64k/128k/256k PP/TG.
 No COMMON-001/004/005 implementation is imported. `model/` and `experiments/`
-remain on r3. All Windows r4 validation is pending.
+remain on r3. Windows builds and original-model allocation checks passed;
+long-context performance measurement is next. ROCm auto-test failure and manual
+retest results are recorded in the r4 validation document.
 
 ## PowerShell compatibility
 
@@ -106,6 +108,12 @@ Copy-Item `
 Edit `local.psd1` with machine-specific paths.
 
 `local.psd1` is ignored by Git.
+
+`LogRoot` overrides the script-derived worktree default. Copying a local config
+from r3 can therefore send r4 logs to r3. Set it to the r4 `evox2-logs` path,
+or leave it empty to use the active scripts' worktree. `RepoRoot` in the local
+file is descriptive; the scripts detect the real root from their own location.
+The CLI/bench preview and matrix `-PlanOnly` now show the effective `LogRoot`.
 
 It may contain:
 
@@ -172,7 +180,7 @@ With `local.psd1` configured:
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -InputKey 64k `
   -Context 65536 `
   -KvType f16 `
@@ -211,7 +219,7 @@ Use:
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -InputKey 64k `
   -Context 65536 `
   -DryRun
@@ -236,7 +244,7 @@ The local config is optional when direct paths are supplied:
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -Context 65536 `
   -AllocationOnly `
   -ResourceMonitor
@@ -469,7 +477,7 @@ The Phase 3 wrapper intentionally does not add MTP/speculative decoding. The b11
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -PromptTokens 512 `
   -GenerationTokens 128 `
   -Repetitions 3 `
@@ -481,7 +489,7 @@ The Phase 3 wrapper intentionally does not add MTP/speculative decoding. The b11
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -PromptTokens 512 `
   -GenerationTokens 128 `
   -Repetitions 3 `
@@ -493,7 +501,7 @@ The Phase 3 wrapper intentionally does not add MTP/speculative decoding. The b11
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -PromptTokens 512,4096,16384,32768,65536 `
   -GenerationTokens 0 `
   -Repetitions 3
@@ -504,7 +512,7 @@ The Phase 3 wrapper intentionally does not add MTP/speculative decoding. The b11
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -PromptTokens 0 `
   -GenerationTokens 128 `
   -Depths 0 `
@@ -516,7 +524,7 @@ The Phase 3 wrapper intentionally does not add MTP/speculative decoding. The b11
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
   -BuildKey R4ROCm `
-  -ModelKey UnslothJoined `
+  -ModelKey UnslothOriginal `
   -PromptTokens 0 `
   -GenerationTokens 128 `
   -Depths 65536 `
@@ -796,7 +804,7 @@ All detailed logs remain in the normal child run directories.
 
 `qwen38-r4-clean.psd1` is the current clean r4 plan:
 
-- R4Vulkan + R4ROCm, original joined model (`UnslothJoined`), MTP off
+- R4Vulkan + R4ROCm, original GGUF with joined PLE layout (`UnslothOriginal`), MTP off
 - 64k / 128k / 256k real-input CLI runs; stops on error
 - clears inherited r3 patch controls and known experimental backend overrides
 - use `-PlanOnly` first, then `-OnlyCase 64k` after load checks
@@ -852,7 +860,7 @@ An environment variable is not evidence that a binary implements or honors it.
 1. Copy `configs/local.example.psd1` to a new ignored `local.psd1` and edit actual
    build/model/input paths. The r3 machine-local file is not stored in Git or imported.
 2. Build Vulkan and ROCm in fresh `build-vulkan-r4` / `build-rocm-r4` directories.
-3. Run identity/device and backend checks, then AllocationOnly with `UnslothJoined`.
+3. Run identity/device and backend checks, then AllocationOnly with `UnslothOriginal`.
 4. Inspect the six-run matrix:
 
 ```powershell

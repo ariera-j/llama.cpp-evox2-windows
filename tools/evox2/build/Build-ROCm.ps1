@@ -360,6 +360,7 @@ try {
     }
 
     $backendTestCapture = $null
+    $backendTestLogPath = $null
     if ($RunBackendTest) {
         $backendTest = Join-Path $BinDir 'test-backend-ops.exe'
         if (-not (Test-Path -LiteralPath $backendTest -PathType Leaf)) {
@@ -370,6 +371,19 @@ try {
         $backendTestCapture = Invoke-Evox2NativeCapture `
             -FilePath $backendTest `
             -ArgumentList @('test', '-b', 'ROCm0', '-o', 'FLASH_ATTN_EXT')
+
+        # The failing case can occur far before the final summary. Preserve
+        # the complete native output as well as the compact manifest tail.
+        $backendTestLogPath = Save-Evox2CaptureLog `
+            -Capture $backendTestCapture `
+            -Path (Join-Path $BinDir ('evox2-backend-test-rocm-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff')))
+        Write-Host "Backend test log: $backendTestLogPath"
+
+        if ($backendTestCapture.ExitCode -ne 0) {
+            $backendTestCapture.Lines |
+                Where-Object { $_ -match 'ERR|FAIL|NaN|mismatch|failed|error|tests passed|backends passed' } |
+                ForEach-Object { Write-Host $_ }
+        }
     }
 
     $toolchain = [ordered]@{
@@ -405,6 +419,7 @@ try {
         Version = ConvertTo-Evox2CaptureRecord -Capture $versionCapture
         ListDevices = ConvertTo-Evox2CaptureRecord -Capture $deviceCapture
         BackendTestRequested = [bool]$RunBackendTest
+        BackendTestLogPath = $backendTestLogPath
         BackendTest = ConvertTo-Evox2CaptureRecord `
             -Capture $backendTestCapture `
             -TailLines 80
@@ -443,7 +458,7 @@ try {
     }
 
     if ($RunBackendTest -and $backendTestCapture.ExitCode -ne 0) {
-        throw "test-backend-ops failed with exit code $($backendTestCapture.ExitCode)."
+        throw "test-backend-ops failed with exit code $($backendTestCapture.ExitCode). Full log: $backendTestLogPath"
     }
 } finally {
     foreach ($name in $environmentNames) {

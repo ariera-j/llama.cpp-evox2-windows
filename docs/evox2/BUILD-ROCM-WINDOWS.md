@@ -299,7 +299,7 @@ After configuring `local.psd1`, also check the requested 64k allocation:
 
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
-  -BuildKey R4ROCm -ModelKey UnslothJoined `
+  -BuildKey R4ROCm -ModelKey UnslothOriginal `
   -Context 65536 -FlashAttn auto -AllocationOnly -ResourceMonitor
 ```
 

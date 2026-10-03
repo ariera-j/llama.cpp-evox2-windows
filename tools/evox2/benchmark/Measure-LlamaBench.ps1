@@ -331,6 +331,7 @@ $Preview = [PSCustomObject]@{
     ConditionId       = $ConditionId
     GitCommit         = $Identity.Git.Commit
     GitDirty          = $Identity.Git.Dirty
+    LogRoot           = $LogRoot
 }
 
 Write-Host ''

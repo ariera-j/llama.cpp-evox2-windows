@@ -3,7 +3,9 @@
     # local.psd1 is ignored by Git.
 
     RepoRoot = 'C:\llama-build\llama.cpp-evox2-windows-r4'
-    LogRoot  = 'C:\llama-build\llama.cpp-evox2-windows-r4\evox2-logs'
+    # Empty uses evox2-logs under the scripts' actual worktree automatically.
+    # An explicit path is honored, including a path copied from another worktree.
+    LogRoot  = ''
 
     # Manual test-condition label. This is intentionally not auto-detected.
     UmaLabel = '96GB'
@@ -24,14 +26,8 @@
     # Add those keys explicitly, pointing at the preserved r3 builds, if needed.
 
     Models = @{
-        # Primary r4 load/performance baseline: original joined PLE layout.
-        # Set Path to the joined GGUF actually used on this machine.
-        UnslothJoined = @{
-            Path  = 'C:\path\to\Qwen3.8-Flash-Next-UD-IQ3_XXS-joined.gguf'
-            Alias = 'unsloth-joined'
-        }
-
-        # Retained r3 model keys for historical plans; PLE16 is not an r4 baseline.
+        # Primary r4 baseline: original GGUF with joined PLE tensor layout.
+        # Use shard 00001; this does not require joining GGUF files physically.
         UnslothOriginal = @{
             Path  = 'C:\path\to\Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf'
             Alias = 'unsloth-original'

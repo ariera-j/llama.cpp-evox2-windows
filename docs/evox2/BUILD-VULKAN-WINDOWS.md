@@ -128,7 +128,7 @@ Confirm that the Radeon 8060S appears as the Vulkan device and that the build id
 & "$Bin\test-backend-ops.exe" test -b Vulkan0 -o FLASH_ATTN_EXT
 
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
-  -BuildKey R4Vulkan -ModelKey UnslothJoined `
+  -BuildKey R4Vulkan -ModelKey UnslothOriginal `
   -Context 65536 -FlashAttn auto -AllocationOnly -ResourceMonitor
 ```
 

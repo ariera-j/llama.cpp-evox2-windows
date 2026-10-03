@@ -1,6 +1,6 @@
 # r4 clean baseline and validation record
 
-Snapshot: 2026-10-03. Source pinned; Windows build/load/performance validation pending.
+Snapshot: 2026-10-03. Windows builds and original-model 64k allocation checks completed; PP/TG pending.
 
 ## Source identity
 
@@ -32,23 +32,31 @@ the pinned upstream SHA and the later tooling commit are different identities.
 
 | Gate | Vulkan | ROCm |
 |---|---|---|
-| Fresh build in `build-*-r4` | pending | pending |
-| `llama-cli --version` / `--list-devices` | pending | pending |
-| Relevant backend tests | pending | pending |
-| Original joined model load / AllocationOnly | pending | pending |
+| Fresh build (`build-*-b11352`) | passed | passed |
+| `llama-cli --version` / `--list-devices` | passed, b11372 / 94b877457 | passed, b11372 / 94b877457 |
+| Relevant backend tests | manual OK (user report) | auto 3985/3986, manual 3986/3986; cause unresolved |
+| Original GGUF / AllocationOnly, 64k | OK | OK |
+| PLE16-converted model load | failed: joined tensor absent | failed: joined tensor absent |
 | Real-input 64k | pending | pending |
 | Real-input 128k | pending | pending |
 | Real-input 256k | pending | pending |
 
-Tooling checks do not establish any of these Windows/GPU validation results.
+The attached manifests and AllocationOnly console log establish the Windows
+build/load results above. Details are in
+[R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md).
 Use [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md) and
 [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md), then proceed through the gates in order.
 
 ## Model and measurement plan
 
-Use the original joined Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model first, with
-MTP off. `UnslothJoined` in `configs/local.psd1` must point to the actual joined
-GGUF on the Evo-X2. Do not substitute the PLE16-converted model silently.
+Use the original Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model with MTP off.
+`UnslothOriginal` points to the existing `00001-of-00003.gguf` shard. The
+original joined PLE tensor layout does not require physically joining GGUF
+shards. The PLE16-converted file does not load on this pinned upstream.
+
+The measured executable identifies itself as b11372 / `94b877457`, while the
+existing build directories retain `b11352` in their names. Keep the actual
+paths from `local.psd1`; directory labels are not executable identities.
 
 The new `qwen38-r4-clean.psd1` plan uses `R4Vulkan` / `R4ROCm`, f16 K/V,
 2048 batch, 1024 ubatch, four threads, FA auto, 1024 generated-token limit,
@@ -56,8 +64,8 @@ fit off, reasoning off, and zero prompt-cache RAM. It retains the r3 COMMON-005
 CLI settings (`-tb 4`, `--ctx-checkpoints 0t`) but clears the old patch controls.
 Actual prompt and generated-token counts must be recorded for comparisons.
 
-First run AllocationOnly directly with each backend and no input key. After load
-validation, inspect the matrix without launching inference:
+AllocationOnly has passed on both backends. Before the initial performance run,
+correct `local.psd1` RepoRoot/LogRoot to r4 and inspect the matrix:
 
 ```powershell
 .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `

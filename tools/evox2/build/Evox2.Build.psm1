@@ -63,6 +63,30 @@ function ConvertTo-Evox2CaptureRecord {
     }
 }
 
+function Save-Evox2CaptureLog {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Capture,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $header = @(
+        "CapturedAt: $((Get-Date).ToString('o'))",
+        "Executable: $($Capture.FilePath)",
+        "Arguments: $($Capture.Arguments -join ' ')",
+        "ExitCode: $($Capture.ExitCode)",
+        ''
+    )
+    $text = (@($header) + @($Capture.Lines)) -join [Environment]::NewLine
+    [IO.File]::WriteAllText($fullPath, $text + [Environment]::NewLine, $utf8NoBom)
+    return $fullPath
+}
+
 function Get-Evox2BuildArtifactIdentities {
     [CmdletBinding()]
     param(
@@ -193,6 +217,7 @@ function Write-Evox2BuildManifest {
 Export-ModuleMember -Function @(
     'Get-Evox2ToolIdentity',
     'ConvertTo-Evox2CaptureRecord',
+    'Save-Evox2CaptureLog',
     'Get-Evox2BuildArtifactIdentities',
     'Write-Evox2BuildManifest'
 )
