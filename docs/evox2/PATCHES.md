@@ -49,7 +49,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Pinned-source review complete: native MTP sidecar loading, draft QSA and bounded recurrent rollback exist | Next: existing Q8_0 sidecar allocation smoke, short generation/rollback, then Vulkan MTP OFF/ON; runtime compatibility remains untested |
+| COMMON-002 | Native MTP loading exists; existing Q8_0 sidecar has dense MTP ratio zero; first smoke fails on unused pool inputs | Scoped MTP pool-input guard fix implemented; rebuild/repeat allocation smoke before generation/rollback and MTP OFF/ON validation |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -639,7 +639,9 @@ r3 plan to port MTP support first is no longer the correct starting point.
 Current priority (2026-10-04): next after validated VULKAN-002; COMMON-005
 ROCm work is deferred. Pinned-source inspection is complete: native sidecar
 loading, HC-wide hidden transfer, MTP-layer QSA and bounded recurrent rollback
-are present. Existing sidecar/runtime compatibility is still untested. See
+are present. The existing sidecar loads but its dense-MTP allocation smoke fails
+on unused QSA inputs; a layer-ratio guard fix is implemented and awaits Windows
+rebuild/retest. Runtime compatibility is not yet validated. See
 [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md)
 for source evidence and the initial allocation/short-generation commands.
 

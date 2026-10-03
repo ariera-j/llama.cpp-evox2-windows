@@ -1,7 +1,8 @@
 # r4 COMMON-002: pinned-upstream MTP review
 
-Recorded: 2026-10-04 JST. Status: source review complete; existing sidecar
-allocation, generation, rollback and performance are not yet validated in r4.
+Recorded: 2026-10-04 JST. Status: source review complete; first allocation smoke
+failed after loading. Dense-MTP pool-input fix implemented; Windows rebuild and
+repeat smoke are pending. Generation, rollback and performance remain unvalidated.
 
 ## Decision
 
@@ -24,8 +25,9 @@ with the merge itself as merge base. Therefore the pinned r4 base includes it.
 
 Blob identities match the pin for the speculative driver, converter, CLI
 arguments, model loader/context/memory factory, hybrid/indexer/recurrent memory,
-and server verification implementation. The Qwen4Exp MTP graph constructor and
-convolution-history function also match byte-for-byte despite other downstream
+and server verification implementation. At the reviewed `5814fbe99...`, the
+Qwen4Exp MTP graph constructor and convolution-history function also match
+byte-for-byte despite other downstream
 changes in that file. The architecture's rollback-support function is unchanged.
 COMMON-001 adds split-PLE loading; VULKAN-002 changes the shared QSA attention
 helper to expose selected cell ids. Both main and MTP graphs call that helper,
@@ -89,11 +91,13 @@ assessment even on UMA.
 ## Existing sidecar: runtime questions still open
 
 No MTP-enabled r4 logs or sidecar GGUF header were supplied in the union results.
+The subsequent allocation smoke and header inspection are recorded below.
 The main GGUF reports 48 trunk blocks and `n_embd_out=10240`; the sidecar's
 metadata/tensors must be checked independently. Verify architecture, total
 block count and NextN count/index, HC width, required projection/norm/attention/
-MoE/head tensors, matching vocabulary/token mapping, and positive MTP compression
-ratio with indexer tensors. Missing or incompatible metadata is a reason to
+MoE/head tensors and matching vocabulary/token mapping. A positive MTP compression
+ratio with indexer tensors enables QSA; ratio zero must retain dense attention.
+Missing or incompatible metadata is a reason to
 identify a minimal compatibility delta, not to restore all old patches.
 
 Do not change GGUF data or reconvert the model before the initial load attempt.
@@ -104,7 +108,9 @@ Record the sidecar identity and loader error verbatim if it fails.
 Use `R4QsaUnionVulkan`, `UnslothPle16` and `UnslothMtp` from the existing local
 configuration. The measured executable is b11390, source `5814fbe99...`, CLI
 SHA256 `b35dfe13df8d74224dbe6bde5577f78ec50cf5fa03c6f8019b5cddcf5a05fb05`.
-These documentation commits need no rebuild. Keep f16 K/V, ubatch 1024, batch
+The original review commits needed no rebuild. The dense-MTP input fix below
+changes runtime code and requires a rebuild before repeating gate 1.
+Keep f16 K/V, ubatch 1024, batch
 2048, threads/batch threads 4, ngl 999, CPU MoE 0, FA auto and fit off.
 
 Keep legacy MoE tile selection=1, GET_ROWS 128x4=0 and union=1 fixed; profiler
@@ -161,7 +167,65 @@ gain is required from an unrelated upstream device/model benchmark. Tune draft
 maximum/p-min only after compatibility and a fixed baseline are established.
 The upstream `test-recurrent-state-rollback` target also exists for an additional
 state/logit check if the smoke/trace reveals ambiguity; its model/backend pass
-is not asserted here. No runtime code or measurement scripts were changed.
+is not asserted here. The initial source review changed no runtime code or
+measurement scripts; the subsequent scoped runtime fix is recorded below.
+
+## Allocation failure and dense-MTP input fix
+
+Supplied run: `20261004-003447-112-cli-vulkan-b11390-ctx32768-50108d5463b6`,
+2026-10-04 00:34:47-00:35:29 JST. Allocation short prompt, MTP ON, DraftMax=2,
+p-min=0, greedy, f16 main/draft caches, union=1, legacy MoE=1, GET_ROWS 128x4=0.
+Same b11390 executable/source/hash as the union baseline. Status FAILED,
+exit 3221226505 (`0xC0000409`), no prompt/generation or acceptance result.
+
+Loading succeeds for the main PLE16 model and the 4137429120-byte Q8_0 sidecar
+(34 tensors). Sidecar metadata reports 49 total blocks, NextN=1, HC count=4,
+embedding width=2560, output hidden width=10240, matching the target. Draft
+context reserves attention KV 64 MiB and indexer KV 16 MiB; target requests two
+recurrent rollback snapshots. The driver registers `draft-mtp`, then initialization
+aborts at `ggml-backend.cpp:345: GGML_ASSERT(buffer)` before serving the prompt.
+No missing-tensor, allocation-failed or Vulkan error is logged.
+
+The user's read-only GGUF inspection confirms compression ratios
+`[0,0,0,4]` repeated 12 times, followed by `0`: MTP block 48 has ratio zero.
+Consequently this existing sidecar requests **dense MTP attention**. Upstream's
+new converter can export QSA MTP, but that does not establish QSA activation in
+this older file. Do not change its metadata to force QSA during compatibility work.
+
+The MTP graph previously created k-pool inputs whenever an indexer cache and a
+positive model-wide pool size existed. The trunk's ratios provide that pool size
+even when the MTP block's ratio is zero. `build_layer_attn` then takes the dense
+path and leaves pool index/update inputs unreferenced. Registered
+`llm_graph_input_kpool::set_input` still writes them; its first index setter calls
+`ggml_backend_buffer_is_host` on the unallocated index tensor, which reaches the
+reported buffer assertion. The log has no backtrace; this source-path diagnosis
+and confirmed metadata must be validated by the repeat Windows smoke.
+
+The minimal COMMON-002 delta adds the current MTP layer's positive compression
+ratio to the pool-input creation guard in `graph_mtp`. Ratio zero registers no
+k-pool input setter and keeps dense attention. Positive-ratio MTP retains the
+native QSA path and the existing cache alignment assertion. Main graph pool
+creation, selector/union thresholds, tensor loading, recurrent snapshots and
+GGUF data are unchanged. Existing draft indexer memory remains allocated; removing
+that unused memory is outside this fix.
+
+Validation here: reviewed the ratio-zero and positive-ratio source paths; verified
+the main graph constructor is unchanged and the shared attention predicate agrees
+with the new MTP guard; `git diff --check` passes. This environment cannot run
+the Windows/Vulkan model build or repeat GPU smoke. No pass or speedup is claimed.
+
+Rebuild the existing measured build directory, preserving its CMake options and
+refreshing the manifest, then repeat the same allocation command above:
+
+```powershell
+git pull --ff-only
+& .\tools\evox2\build\Build-Vulkan.ps1 `
+    -BuildDir .\build-vulkan-r4-qsa-union -BuildOnly
+```
+
+Check the new executable commit/build manifest before the run. Keep the same
+environment and draft settings; no diagnostic optimizer/sampling disable switch
+is needed for this repair. Review the repeated allocation archive before gate 2.
 
 ## Pinned source references
 
