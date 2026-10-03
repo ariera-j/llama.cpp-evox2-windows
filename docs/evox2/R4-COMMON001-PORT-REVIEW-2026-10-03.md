@@ -1,26 +1,72 @@
-# COMMON-001: r4移植可否の確認
+# COMMON-001: r4移植レビューと検証
 
-確認日: 2026-10-03 JST。実装前のソースレビュー。
+確認日: 2026-10-03 JST。実装前レビューと同日実機validationを記録する。
 
-状態: **実装可能 / Ready**。この文書を実装前の固定判断として扱う。
+状態: **Validated**。
 
 - 移植元: r3 `902e9f4a762cc0fe89d613868c35e4861610081e`。
 - 移植先レビュー時点: r4 `b9dce8192fa28887e7bcd17a8fd49576ad1710d4`。
+- 実装commit: `a60a57879a9ffb4d51acd45d4de7e80d721548f9`。
 - 固定upstream: `bed0a856606ee4a24a164066f73d2379447033f5`。
-- r4にはMoE旧タイル選択とGET_ROWS診断を含む。COMMON-001は未実装。
-- pre-port基準はOriginal 64k / Vulkan / MoE legacy=1で取得済み。COMMON-001はモデルlayoutを揃えた比較のため次に実装する。
+- pre-port基準はOriginal 64k / Vulkan / MoE legacy=1で取得済み。
+- 詳細な実測値と比較は
+  [R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.md)
+  に記録する。
 
-## 結論
+## 実装後の検証結果
 
-**無修正の移植は不可。ただし、r3の基本方式を維持した小規模な適応移植が可能と判断する。**
+r3方式を現在のr4 qwen4exp loader/graphへ適応し、joined PLEを維持したまま
+split PLE16を追加した。変更は予定どおり次の4ファイルに限定した。
+
+```text
+src/llama-arch.h
+src/llama-arch.cpp
+src/models/models.h
+src/models/qwen4exp.cpp
+```
+
+Vulkan/ROCmともOriginalとPLE16のAllocationOnly・短い推論に成功。
+64kでは同一post-port binaryでOriginal/PLE16を比較し、128k/256kではPLE16を
+両backendで完走した。MTPは全runでOFF。
+
+| Backend | Model | Context | PP tok/s | TG tok/s | Result |
+|---|---|---:|---:|---:|---|
+| Vulkan | Original | 64k | 267.51 | 24.53 | OK |
+| Vulkan | PLE16 | 64k | 268.79 | 25.46 | OK |
+| ROCm | Original | 64k | 370.32 | 21.17 | OK |
+| ROCm | PLE16 | 64k | 370.37 | 21.16 | OK |
+| Vulkan | PLE16 | 128k | 178.99 | 23.24 | OK |
+| ROCm | PLE16 | 128k | 279.80 | 17.13 | OK |
+| Vulkan | PLE16 | 256k | 132.99 | 19.56 | OK |
+| ROCm | PLE16 | 256k | 185.90 | 12.41 | OK |
+
+COMMON-001の互換性移植による大きな性能退行は観測していない。
+ROCmはr4 clean Originalと64k～256kでほぼ同速。Vulkanのclean baselineとの差は、
+今回legacy MoE tile selectionを固定した条件差が主因と考える。64kの+8.2% PPは
+既存のMoE same-binary A/B (+8.25%) とほぼ一致し、post-port Original/PLE16差は
+約+0.5%に留まる。
+
+VulkanではPLE16 split tensorがGPU側へ配置される一方、ROCmでは約27.5 GiBが
+CPU側に残る。これはr3でも観測済みのbackend固有配置差であり、今回のr4移植で
+新規に発生した挙動とは扱わない。
+
+以上によりCOMMON-001はr4 checkpointで完了とする。cached pool gatherの小規模修正
+可否を別件として確認し、大きな変更が必要ならVULKAN-002へ進む。
+
+## 実装前レビュー（履歴）
+
+以下は実装前に固定した設計判断であり、validation後も移植意図の記録として残す。
+
+### 結論
+
+**無修正の移植は不可。ただし、r3の基本方式を維持した小規模な適応移植が可能と判断した。**
 split PLE16対応はupstreamで代替されていない。新しいkernelやCOMMON-004の移植は不要。
-変更先は原則として旧パッチと同じ4ファイルで足りる見込み。
-Windowsビルド・実モデル検証前なので、動作保証や速度改善の確定ではない。
+変更先は原則として旧パッチと同じ4ファイルで足りる見込みとした。
 
 旧commitには当時のPATCHESとmodel READMEの変更も含まれるため、commit全体の
-cherry-pickより、現在のソースへコード差分だけを移す。
+cherry-pickより、現在のソースへコード差分だけを移す方針とした。
 
-## 適用チェック
+### 適用チェック
 
 旧commitから次の4ファイルだけを抽出し、作業ツリーを変更せず確認した。
 
@@ -33,7 +79,7 @@ cherry-pickより、現在のソースへコード差分だけを移す。
 
 3-wayの終了コードは1。これはコード差分のマージ確認であり、コンパイル試験ではない。
 
-## そのまま使える設計
+### そのまま使える設計
 
 - `LLM_TENSOR_PLE_NGRAM_EMBD` と `ple_ngram_embd.%d` の登録。
 - qwen4expモデルの `std::vector<ggml_tensor *> ple_ngram_embd`。
@@ -48,9 +94,9 @@ joinedの並びはtokenごとにhead 0, 1, …となる。
 splitの各gatherは `[head_dim, n_tokens]` で、dim 0への結合が同じtoken内のhead順を再現する。
 hash計算、EOS処理、KV履歴の取得は現行upstreamの実装を使う。
 
-## 必要な調整
+### 必要な調整
 
-### 1. 現行PLE入力クラスへの接続
+#### 1. 現行PLE入力クラスへの接続
 
 現行r4では入力クラスが `llm_graph_input_qwen4exp_ple` となり、保持する参照は
 `const llama_model_qwen4exp &` ではなく `const llama_model & model` になっている。
@@ -61,7 +107,7 @@ hash計算、EOS処理、KV履歴の取得は現行upstreamの実装を使う。
 `ple_ngram_embd.empty()` によってjoined/splitのindex layoutを分岐する。
 `can_reuse()` が更新するKV contextとtoken数判定は維持する。
 
-### 2. Originalのlazy load/prefetchを保持
+#### 2. Originalのlazy load/prefetchを保持
 
 joinedは現行の `TENSOR_READ_LAZY`、global index、`model.can_prefetch` による
 `llama_prefetch_rows()` を維持する。
@@ -73,7 +119,7 @@ split時にjoinedがnullなら現状の集合判定でもprefetchは呼ばれな
 ただし移植時はjoined経路に限定する条件を明示する。
 splitへのlazy/prefetch追加は別の挙動変更になるため、この移植には含めない。
 
-### 3. metadata-only / virtual model構築を壊さない
+#### 3. metadata-only / virtual model構築を壊さない
 
 旧パッチの「joinedの `get_weight()` がnullならsplitを必須にする」だけでは不十分。
 現行loaderには `files.empty()` のvirtual/metadata-only経路があり、実ファイルもweights mapもない場合は
@@ -88,7 +134,7 @@ splitへのlazy/prefetch追加は別の挙動変更になるため、この移�
 壊れた実GGUFをmetadata合成fallbackで隠さない。
 `no_alloc` は実ファイルのmemory-fitでも使われるため、これだけでvirtual経路と判定しない。
 
-### 4. r4のQSA・MTP・診断変更を保持
+#### 4. r4のQSA・MTP・診断変更を保持
 
 r4ではQSA/k-poolとMTPのloader/graphがr3当時から更新されている。
 これらが旧パッチの文脈と異なるが、split PLE方式を根本変更する理由ではない。
@@ -97,7 +143,7 @@ r4ではQSA/k-poolとMTPのloader/graphがr3当時から更新されている。
 既存の `ple_embedding_rows` 診断名はjoinedに残し、splitの各GET_ROWSにもhead別の名前を付ける。
 QSA側のGET_ROWS名、incremental pool cache、MoE選択スイッチは維持する。
 
-### 5. head番号を配置用layer番号として使う前提
+#### 5. head番号を配置用layer番号として使う前提
 
 r3はsplit tensorを `LLM_TENSOR_LAYER_REPEATING` に登録し、head番号を `tn.bid` に渡す。
 現行の `llama_model_base::create_tensor()` もlayer配置表を `tn.bid` で参照する。
@@ -106,7 +152,7 @@ r3はsplit tensorを `LLM_TENSOR_LAYER_REPEATING` に登録し、head番号を `
 一般化する場合は `ple_n_heads <= n_layer_all` の前提を検査する必要がある。
 部分offload・複数GPUでは先頭側layerの配置に従うため、今回の全層offload検証と同一とは扱わない。
 
-## 実装境界
+### 実装境界
 
 今回のCOMMON-001で変更するのは次の4ファイルに限定する。
 
@@ -128,7 +174,7 @@ src/models/qwen4exp.cpp
 
 このcommitではCOMMON-004/005、VULKAN-002、split側lazy load、MTP-QSAを同時に持ち込まない。
 
-## 実装後の検証順序
+### 実装後の検証順序（計画時）
 
 1. ソース差分を確認し、変更が上記4ファイルのPLE箇所に限定されていることを確認。
 2. 可能なら小さいsynthetic入力でjoined/splitのgather結果一致を確認。
@@ -141,11 +187,6 @@ src/models/qwen4exp.cpp
    Original導入前後も比較し、layout差と移植による退行を区別する。
 5. 64kが正常なら128k/256kへ進む。r3での成功をr4の検証済み扱いにはしない。
 
-PLE16化で今回のcached pool gather 1.662 ms/tokenが消えるわけではない。
+PLE16化でpre-portのcached pool gather 1.662 ms/tokenが消えるわけではない。
 COMMON-001は比較するモデルlayoutを揃える互換性作業として先行し、
-TGの残存コストはその後に評価する。
-
-## 実装開始条件
-
-このレビュー時点で、r4 HEAD、upstream pin、pre-port GET_ROWS基準、移植対象4ファイル、
-virtual/joined/splitの分岐条件が確定したため、COMMON-001の適応移植を開始してよい。
+TGの残存コストはその後に評価する方針とした。
