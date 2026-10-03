@@ -3,8 +3,10 @@
 調査日: 2026-10-03 JST。11:22 JSTに256k clean baselineが両backendで完了。
 以下のprofile比較を最新判断とし、256k・128k時点の分析も保持する。
 対象は固定upstream `bed0a856606ee4a24a164066f73d2379447033f5`。
-ローカルの `git diff <base> -- src ggml common` は空であり、以下は実際に
-ビルドしたr4の推論ソースの判定。以後のupstream master全般についての判定ではない。
+計測時の `git diff <base> -- src ggml common` は空であり、以下のprofile分析は
+そのclean r4を対象とする。以後のupstream master全般についての判定ではない。
+後続作業として[MoEタイル選択の診断スイッチと比較plan](R4-MOE-TILE-AB-2026-10-03.md)
+を実装済み。既定の選択は維持し、Windows/GPUでの検証は未実施。
 
 ## 64k Vulkan profile取得後の更新
 

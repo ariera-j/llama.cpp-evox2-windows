@@ -16,6 +16,12 @@
             ExpectedBackend = 'Vulkan'
         }
 
+        # Optional PP MoE tile-selection diagnostic build; preserves R4Vulkan.
+        R4MoeTileVulkan = @{
+            BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-vulkan-r4-moe-tile\bin\Release'
+            ExpectedBackend = 'Vulkan'
+        }
+
         R4ROCm = @{
             BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-rocm-r4\bin\Release'
             ExpectedBackend = 'ROCm'

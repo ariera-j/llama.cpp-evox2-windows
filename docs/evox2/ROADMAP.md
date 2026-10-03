@@ -74,6 +74,11 @@ source traces: [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-0
 
 ### First r4 Vulkan profile (64k)
 
+The next PP diagnostic is implemented as an opt-in MoE tile-selection switch,
+with one binary for current/legacy A/B and separate profile/normal matrix jobs.
+Default selection remains upstream; Windows build/GPU measurements are pending.
+See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).
+
 The first logger run completed with 61 prefill and 127 decode timing blocks.
 Prefill FA accounts for 43.0% of measured GPU operator time (62.5% at the last
 full ubatch). The current Vulkan sparse dispatch excludes the observed 1024/349

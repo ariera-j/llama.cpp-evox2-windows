@@ -3,7 +3,10 @@
 ## Current r4 status
 
 The r4 base is pinned at `bed0a856606ee4a24a164066f73d2379447033f5` on
-`r4/upstream-refresh-20261002`. No downstream inference patch is applied.
+`r4/upstream-refresh-20261002`. A diagnostic Vulkan MoE tile-selection switch is
+now prepared; its default preserves the upstream selection. No COMMON/QSA
+optimization port is applied. Windows build and GPU validation are pending.
+See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).
 Clean 64k/128k/256k runs now pass on both backends.
 COMMON-006 remains an upstream-validation gate. The registry and measurements below
 are the historical r3 checkpoint frozen at

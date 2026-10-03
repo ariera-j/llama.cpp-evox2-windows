@@ -49,6 +49,8 @@
             GGML_VK_FUSE_UNARY_MUL          = $null
             GGML_VK_SHMEM_PAD               = $null
             GGML_VK_DENSE_WAVE32            = $null
+            GGML_VK_MOE_LEGACY_TILE_SELECTION = $null
+            GGML_VK_MOE_TILE_LOG              = $null
             EVOX2_AB_RUN                   = $null
             EVOX2_ABBA_RUN                 = $null
         }

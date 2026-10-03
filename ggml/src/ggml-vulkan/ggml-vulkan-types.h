@@ -741,6 +741,10 @@ struct vk_device_struct {
     // 0: default, 1: force mmvq, -1: disable mmvq
     int32_t mmvq_mode;
 
+    // Diagnostic A/B for the pre-94a0ae3e7 MoE tile/alignment selector.
+    bool moe_legacy_tile_selection = false;
+    bool moe_tile_log = false;
+
     bool subgroup_size_control;
     uint32_t subgroup_min_size;
     uint32_t subgroup_max_size;
@@ -1245,6 +1249,9 @@ struct ggml_backend_vk_context {
     std::string name;
 
     vk_device device;
+
+    // Bounded, per-context diagnostic log; unused when moe_tile_log is false.
+    std::set<std::string> moe_tile_log_seen;
 
     size_t semaphore_idx, event_idx;
     ggml_vk_garbage_collector gc;

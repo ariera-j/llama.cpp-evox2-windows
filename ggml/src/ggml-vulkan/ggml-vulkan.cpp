@@ -4928,6 +4928,15 @@ vk_device ggml_vk_get_device(size_t idx) {
             device->mmvq_mode = 1;
         }
 
+        // Explicit "1" only: unset and "0" retain the upstream selector.
+        const char * moe_legacy = getenv("GGML_VK_MOE_LEGACY_TILE_SELECTION");
+        const char * moe_tile_log = getenv("GGML_VK_MOE_TILE_LOG");
+        device->moe_legacy_tile_selection = moe_legacy && strcmp(moe_legacy, "1") == 0;
+        device->moe_tile_log = moe_tile_log && strcmp(moe_tile_log, "1") == 0;
+        GGML_LOG_INFO("ggml_vulkan: MoE tile selection = %s; tile log = %s\n",
+                      device->moe_legacy_tile_selection ? "legacy-token-count" : "upstream-per-expert",
+                      device->moe_tile_log ? "on (max 64 unique entries per context)" : "off");
+
         return device;
     }
 
@@ -7435,13 +7444,29 @@ static void ggml_vk_mul_mat_id_q_f16(ggml_backend_vk_context * ctx, vk_context& 
     GGML_ASSERT(mmp_map != nullptr);
 
     const uint32_t n_per_expert = (uint32_t)CEIL_DIV(nei0 * nei1, n_as);
-    const uint32_t kpad = quantize_y ? 0 : ggml_vk_align_size(ne10, ggml_vk_guess_matmul_pipeline_align_map(ctx, *mmp_map, ne01, n_per_expert, true));
-    const bool aligned = !quantize_y && ne10 == kpad && ne01 > 8 && n_per_expert > 8;
+    // Change only the selector input, including its alignment decision. Actual
+    // dispatch dimensions and expert routing remain unchanged in both modes.
+    const uint32_t tile_n = ctx->device->moe_legacy_tile_selection ? (uint32_t)nei1 : n_per_expert;
+    const uint32_t kpad = quantize_y ? 0 : ggml_vk_align_size(ne10, ggml_vk_guess_matmul_pipeline_align_map(ctx, *mmp_map, ne01, tile_n, true));
+    const bool aligned = !quantize_y && ne10 == kpad && ne01 > 8 && tile_n > 8;
 
-    vk_pipeline pipeline = ggml_vk_guess_matmul_pipeline_map(ctx, *mmp_map, ne01, n_per_expert, aligned, true);
+    vk_pipeline pipeline = ggml_vk_guess_matmul_pipeline_map(ctx, *mmp_map, ne01, tile_n, aligned, true);
 
     if (ggml_nbytes(src0) > ctx->device->properties.limits.maxStorageBufferRange) {
         pipeline = ggml_vk_get_64b_indexing_pipeline(ctx, pipeline);
+    }
+    if (ctx->device->moe_tile_log && ctx->moe_tile_log_seen.size() < 64) {
+        std::ostringstream entry;
+        entry << "type=" << ggml_type_name(src0->type)
+              << " m=" << ne01 << " k=" << ne10
+              << " tokens=" << nei1 << " selected=" << nei0 << " experts=" << n_as
+              << " tile_n=" << tile_n << " aligned=" << aligned << " mmq=" << quantize_y
+              << " pipeline=" << pipeline->name
+              << " wg_denoms=" << pipeline->wg_denoms[0] << "," << pipeline->wg_denoms[1]
+              << "," << pipeline->wg_denoms[2];
+        if (ctx->moe_tile_log_seen.insert(entry.str()).second) {
+            GGML_LOG_INFO("ggml_vulkan: MoE tile %s\n", entry.str().c_str());
+        }
     }
     const uint64_t x_ne = ggml_nelements(src0);
     const uint64_t y_ne = (uint64_t)y_staged_row_stride * ne11 * ne12 * ne13;
