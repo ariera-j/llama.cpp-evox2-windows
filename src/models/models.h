@@ -2443,6 +2443,7 @@ struct llama_model_qwen4exp : public llama_model_base {
                     ggml_tensor * k_cur,
                     ggml_tensor * v_cur,
                     ggml_tensor * sel,
+                    ggml_tensor * selected_rows,
                         int64_t   n_sel,
                           float   kq_scale,
                             int   il);
@@ -2453,6 +2454,7 @@ struct llama_model_qwen4exp : public llama_model_base {
         // QSA: the additive mask [n_kv, n_tokens] of the top blocks and the tail, kq_mask included
         ggml_tensor * build_qsa_sel(
   const llama_memory_hybrid_idx_context * mctx_hyb,
+                   ggml_tensor ** selected_rows,
           llm_graph_input_kpool * inp_kpool,
                     ggml_tensor * cur,
                     ggml_tensor * inp_pos,

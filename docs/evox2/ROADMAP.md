@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-03 (r3 frozen; r4 COMMON-001 validated through 256k; cached-gather 128x4 gate closed; VULKAN-002 next)
+Snapshot: 2026-10-03 (r3 frozen; r4 COMMON-001 validated through 256k; cached-gather 128x4 gate closed; VULKAN-002 implemented default OFF, GPU validation pending)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -72,7 +72,7 @@ COMMON-001 compatibility port are complete.
    logs were not supplied in that archive; no value-test pass is asserted.
    Do not broaden this gate into cache/layout or gather/matmul-fusion work.
    See [R4-GET-ROWS-128X4-AB-2026-10-03.md](R4-GET-ROWS-128X4-AB-2026-10-03.md).
-4. **VULKAN-002 is next:** inspect and adapt the missing grouped-union PP path
+4. **VULKAN-002 GPU validation is next:** the grouped-union PP path is implemented
    after the small TG gate above closed without promotion. The current per-row sparse FA does
    not cover the observed 1024/349-query PP. Use 128k/256k as the primary value
    test because r4 TG is already near the historical r2 range while long-context
@@ -81,7 +81,9 @@ COMMON-001 compatibility port are complete.
    token-cell ids, preserve the r4 pool-domain selector and per-row sparse path,
    and adapt the dynamic-KV flag separately from r4 sparse bit 16. The proposed
    opt-in port spans QSA-to-FA metadata, union/gather dispatch and current FA
-   initialization; implementation/GPU validation remain pending. See
+   initialization; implementation and host syntax checks are complete, while
+   Windows build/GPU validation remain pending. Follow
+   [R4-VULKAN002-IMPLEMENTATION-2026-10-03.md](R4-VULKAN002-IMPLEMENTATION-2026-10-03.md). See
    [R4-VULKAN002-PORT-REVIEW-2026-10-03.md](R4-VULKAN002-PORT-REVIEW-2026-10-03.md).
 5. **COMMON-005:** profile ROCm single-token decode and adapt compact selected K/V
    gathering if confirmed. It remains complementary to VULKAN-002 and can move

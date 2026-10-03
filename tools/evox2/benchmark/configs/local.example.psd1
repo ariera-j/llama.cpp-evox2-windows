@@ -34,6 +34,12 @@
             ExpectedBackend = 'Vulkan'
         }
 
+        # VULKAN-002 opt-in grouped-union build; OFF/ON use the same binary.
+        R4QsaUnionVulkan = @{
+            BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-vulkan-r4-qsa-union\bin\Release'
+            ExpectedBackend = 'Vulkan'
+        }
+
         R4ROCm = @{
             BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-rocm-r4\bin\Release'
             ExpectedBackend = 'ROCm'

@@ -8144,6 +8144,69 @@ struct test_flash_attn_ext : public test_case {
     }
 };
 
+// Final KV-cell ids, rather than pool ids. Dense CPU attention remains the reference.
+struct test_flash_attn_ext_qsa_union : public test_flash_attn_ext {
+    const bool hint;
+    const int64_t slots;
+
+    test_flash_attn_ext_qsa_union(int64_t queries, int64_t kv_cells, int64_t head_size = 64,
+            int64_t kv_heads = 1, int64_t repeat = 2, bool hint = true, bool sinks = false,
+            float bias = 0.0f, float softcap = 0.0f, bool permuted = false, int64_t slots = 8,
+            int64_t streams = 1, ggml_type kv_type = GGML_TYPE_F16)
+        : test_flash_attn_ext(head_size, head_size, kv_heads, {repeat, streams}, kv_cells, queries,
+              true, sinks, bias, softcap, GGML_PREC_F32, kv_type, kv_type,
+              permuted ? std::array<int32_t, 4>{0, 2, 1, 3} : std::array<int32_t, 4>{0, 1, 2, 3},
+              true, false, 0), hint(hint), slots(slots) {}
+
+    std::string vars() override {
+        return test_flash_attn_ext::vars() + ",qsa_union=1,hint=" + std::to_string(hint) +
+            ",slots=" + std::to_string(slots);
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * out = test_flash_attn_ext::build_graph(ctx);
+        if (hint) {
+            ggml_tensor * ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, slots, nb);
+            ggml_set_name(ids, "qsa_ids");
+            ggml_flash_attn_ext_set_selected_rows(out, ids);
+        }
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        std::vector<int32_t> ids(slots * nb);
+        std::vector<ggml_fp16_t> values(kv * nb * nr23[1], ggml_fp32_to_fp16(-INFINITY));
+        for (int64_t query = 0; query < nb; ++query) {
+            // Include the last KV cell and the 131072 bitmap boundary, duplicates,
+            // negative/dump ids, and a query-dependent tail. Shuffle the slots.
+            const int32_t row[] = {int32_t(kv - 1), 0, int32_t(kv - 1), -1,
+                int32_t(kv), int32_t(kv > 131072 ? 131072 : kv / 2),
+                int32_t((query * 17 + 13) % kv), int32_t((query * 17 + 14) % kv)};
+            for (int64_t slot = 0; slot < slots; ++slot) {
+                const int32_t cell = slot < 8 ? row[(slot + query) % 8] : int32_t((query * 17 + slot) % kv);
+                ids[query * slots + slot] = cell;
+                if (cell >= 0 && cell < kv && (slot % 3 != 0 || cell == kv - 1)) {
+                    // Finite additive bias plus -inf query-specific visibility.
+                    values[query * kv + cell] = ggml_fp32_to_fp16(-0.125f * float(slot % 5));
+                }
+            }
+        }
+        for (int64_t stream = 1; stream < nr23[1]; ++stream) {
+            std::copy_n(values.begin(), kv * nb, values.begin() + stream * kv * nb);
+        }
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t; t = ggml_get_next_tensor(ctx, t)) {
+            if (strcmp(t->name, "qsa_ids") == 0) {
+                ggml_backend_tensor_set(t, ids.data(), 0, ids.size() * sizeof(int32_t));
+            } else if (strcmp(t->name, "m") == 0) {
+                ggml_backend_tensor_set(t, values.data(), 0, values.size() * sizeof(ggml_fp16_t));
+            } else {
+                init_tensor_uniform(t, strcmp(t->name, "s") == 0 ? -10.0f : -1.0f,
+                                       strcmp(t->name, "s") == 0 ? 10.0f : 1.0f);
+            }
+        }
+    }
+};
+
 // large Q values, so the online softmax has to rescale the partial results
 struct test_flash_attn_ext_large_logits : public test_flash_attn_ext {
     static constexpr int q_range = 20;
@@ -11190,6 +11253,24 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     // asymmetric head_dim (hsk != hsv) with one or both sides not 64-aligned
+    // VULKAN-002: select with -o FLASH_ATTN_EXT -p 'qsa_union=1'.
+    // 18 cases: group/tail boundaries, high ids, capacity > 256 and fallback paths.
+    for (int64_t queries : {2, 63, 64, 65, 349, 1024}) {
+        test_cases.emplace_back(new test_flash_attn_ext_qsa_union(queries, 32768));
+    }
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 131073));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 262144, 128, 2, 3));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 256, 2, 6, true, false, 0, 0, true));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, true, false, 0, 0, false, 32));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(1, 32768));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32767));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, false));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, true, true));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, true, false, 8.0f));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, true, false, 0, 30.0f));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, true, false, 0, 0, false, 8, 2));
+    test_cases.emplace_back(new test_flash_attn_ext_qsa_union(65, 32768, 64, 1, 2, true, false, 0, 0, false, 8, 1, GGML_TYPE_F32));
+
     test_cases.emplace_back(new test_flash_attn_ext(72, 64, 4, {1, 1}, 256, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(64, 72, 4, {1, 1}, 256, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(65, 67, 4, {1, 1}, 113, 75, true, true, 8.0f, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));

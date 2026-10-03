@@ -184,3 +184,10 @@ gap to grouped-union or require an adapted r4 candidate to reproduce r2 values.
 
 No r4 grouped-union code, GPU test or speed result is claimed by this source
 review. The next step is the adapted opt-in implementation in the order above.
+
+## Implementation follow-up
+
+The approved plan has now been implemented as a default-OFF experiment. This
+source-review document records the pre-implementation findings. See
+[R4-VULKAN002-IMPLEMENTATION-2026-10-03.md](R4-VULKAN002-IMPLEMENTATION-2026-10-03.md)
+for the actual changes, completed host checks and pending Windows/GPU gates.

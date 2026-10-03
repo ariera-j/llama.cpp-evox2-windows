@@ -832,6 +832,7 @@ struct vk_device_struct {
     vk_pipeline pipeline_get_rows_f32[GGML_TYPE_COUNT];
     vk_pipeline pipeline_get_rows_f16_f32_128x4;
     vk_pipeline pipeline_get_rows_back_f32;
+    vk_pipeline pipeline_qsa_union, pipeline_qsa_gather;
     vk_pipeline pipeline_acc_f32;
     vk_pipeline pipeline_set_f32;
 
@@ -1259,6 +1260,8 @@ struct ggml_backend_vk_context {
 
     // Bounded, per-context diagnostic log; unused when moe_tile_log is false.
     std::set<std::string> moe_tile_log_seen;
+    bool qsa_union_active_logged = false;
+    bool qsa_union_fallback_logged = false;
 
     size_t semaphore_idx, event_idx;
     ggml_vk_garbage_collector gc;

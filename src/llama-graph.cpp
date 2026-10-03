@@ -2631,7 +2631,8 @@ ggml_tensor * llm_graph_context::build_attn_mha(
          ggml_tensor * v_mla,
              int64_t   n_kv_max,
                float   kq_scale,
-                 int   il) const {
+                 int   il,
+        ggml_tensor * selected_rows) const {
     const bool v_trans = v->nb[1] > v->nb[2];
 
     // split the batch into streams if needed
@@ -2672,6 +2673,10 @@ ggml_tensor * llm_graph_context::build_attn_mha(
         ggml_flash_attn_ext_add_sinks(cur, sinks);
         GGML_ASSERT(n_kv_max >= 0 && n_kv_max <= INT32_MAX);
         ggml_flash_attn_ext_set_n_kv_max(cur, static_cast<int32_t>(n_kv_max));
+        // Selected ids are flattened across tokens; multi-stream attention uses a different query layout.
+        if (selected_rows && q->ne[3] == 1 && selected_rows->ne[1] == q->ne[1]) {
+            ggml_flash_attn_ext_set_selected_rows(cur, selected_rows);
+        }
         ggml_prec_set_acc(cur, GGML_PREC_F32);
 
         if (v_mla) {

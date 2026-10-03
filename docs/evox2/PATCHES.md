@@ -676,16 +676,16 @@ evaluate
 Earlier r2 measurements showed a large long-context prefill benefit from a grouped-union QSA path.
 
 Current r4 order (2026-10-03): COMMON-001 is validated and the small cached-gather
-128x4 profile gate is closed without a useful gain. VULKAN-002 is the next
-source-review/port candidate; it is not yet implemented in r4. Preserve the
+128x4 profile gate is closed without a useful gain. VULKAN-002 is now implemented as a default-OFF r4 experiment;
+Windows build and GPU acceptance are pending. Preserve the
 upstream sparse-FA paths and isolate the missing PP delta, targeting 128k/256k
 after correctness and a 64k execution check. See ROADMAP for the active order.
 
 The r2/r4 source review is complete at r4 `569d9f77...`. The scoped plan retains
 the r4 selector/cache and sparse-decode implementation, exposes final remapped
 token ids as optional FA metadata, and adapts the 64-query union/gather plus
-dynamic-KV mode without colliding with sparse flag bit 16. No r4 port code or
-GPU result is claimed yet. See
+dynamic-KV mode without colliding with sparse flag bit 16. The adapted r4 code and 18-case GPU test gate are implemented; no GPU
+result or speedup is claimed. See
 [R4-VULKAN002-PORT-REVIEW-2026-10-03.md](R4-VULKAN002-PORT-REVIEW-2026-10-03.md).
 
 The 64k r2/r3 pre-implementation profile confirms that grouped-union changes PP but
@@ -702,6 +702,9 @@ Before porting:
    PP gap remains
 6. port only the required delta
 7. validate correctness before benchmarking the final candidate
+
+Implementation, build/test commands and staged OFF/ON measurement gates:
+[R4-VULKAN002-IMPLEMENTATION-2026-10-03.md](R4-VULKAN002-IMPLEMENTATION-2026-10-03.md).
 
 ## MTP-QSA prototype
 

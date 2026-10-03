@@ -940,6 +940,8 @@ void process_shaders() {
     string_to_spv("fa_decode_ph2", "flash_attn_decode_phase_2.comp", {}, true, true, false, false);
 #endif
 
+    string_to_spv("qsa_union", "qsa_union.comp", {});
+    string_to_spv("qsa_gather", "qsa_gather.comp", {});
     string_to_spv("fa_sparse_compact", "flash_attn_sparse_compact.comp", {});
     string_to_spv("fa_sparse_compact_subgroup", "flash_attn_sparse_compact.comp", {{"USE_SUBGROUPS", "1"}});
 

@@ -2508,6 +2508,14 @@ extern "C" {
             struct ggml_tensor * a,
             int32_t              n_kv_max);
 
+    // Optional selected KV cell ids [slots, queries], i32. The rows must cover
+    // every finite mask entry per query (a superset is allowed). Out-of-KV ids
+    // are ignored by optimized backends. The mask remains authoritative.
+    // Backends without this optimization compute the original masked operator.
+    GGML_API void ggml_flash_attn_ext_set_selected_rows(
+            struct ggml_tensor * a,
+            struct ggml_tensor * rows);
+
     GGML_API void ggml_flash_attn_ext_add_sinks(
             struct ggml_tensor * a,
             struct ggml_tensor * sinks);
