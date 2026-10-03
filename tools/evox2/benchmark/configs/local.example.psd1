@@ -28,6 +28,12 @@
             ExpectedBackend = 'Vulkan'
         }
 
+        # Optional cached-pool GET_ROWS 128x4 A/B build, after COMMON-001.
+        R4GetRows128x4Vulkan = @{
+            BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-vulkan-r4-getrows-128x4\bin\Release'
+            ExpectedBackend = 'Vulkan'
+        }
+
         R4ROCm = @{
             BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-rocm-r4\bin\Release'
             ExpectedBackend = 'ROCm'

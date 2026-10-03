@@ -745,6 +745,9 @@ struct vk_device_struct {
     bool moe_legacy_tile_selection = false;
     bool moe_tile_log = false;
 
+    // Opt-in narrow f16 -> f32 GET_ROWS workgroup layout.
+    bool get_rows_128x4 = false;
+
     bool subgroup_size_control;
     uint32_t subgroup_min_size;
     uint32_t subgroup_max_size;
@@ -827,6 +830,7 @@ struct vk_device_struct {
     vk_pipeline pipeline_mul_mat_vec_nc_f16_f32;
     vk_pipeline pipeline_get_rows[GGML_TYPE_COUNT];
     vk_pipeline pipeline_get_rows_f32[GGML_TYPE_COUNT];
+    vk_pipeline pipeline_get_rows_f16_f32_128x4;
     vk_pipeline pipeline_get_rows_back_f32;
     vk_pipeline pipeline_acc_f32;
     vk_pipeline pipeline_set_f32;

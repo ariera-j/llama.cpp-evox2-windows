@@ -2441,6 +2441,42 @@ struct test_get_rows : public test_case {
     }
 };
 
+// Cached qwen4exp pool reads: f16 raw | pooled storage with non-contiguous
+// pooled rows, column/row view offsets, shuffled reps and repeated padding ids.
+// Also exercise both sides of the 256-row gate and a partial four-row tile.
+struct test_get_rows_cached_pool : public test_get_rows {
+    test_get_rows_cached_pool(int r, bool ids_view = false)
+        : test_get_rows(GGML_TYPE_F16, 128, 65536, r, 1, 1, ids_view, true, 128) {}
+
+    std::string vars() override {
+        return test_get_rows::vars() + ",cached_pool=1";
+    }
+
+    double max_nmse_err() override { return 0.0; }
+    double max_nmse_err(ggml_backend_t) override { return 0.0; }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_get_rows::initialize_tensors(ctx);
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
+            if (t->op != GGML_OP_NONE || t->type != GGML_TYPE_I32 || strcmp(t->name, "rows") != 0) {
+                continue;
+            }
+            std::vector<int32_t> data(ggml_nelements(t));
+            const size_t n_pool = (size_t) m / 4;
+            for (size_t i = 0; i < data.size(); ++i) {
+                // Valid representative cells, permuted rather than in storage order.
+                data[i] = (int32_t) (3 + 4*((i*7919) % n_pool));
+                if (i % 17 == 0 || i + 64 >= data.size()) {
+                    data[i] = 0; // repeated dummy/padding cell
+                } else if (i % 17 == 1) {
+                    data[i] = m - 1; // highest valid cell
+                }
+            }
+            ggml_backend_tensor_set(t, data.data(), 0, data.size()*sizeof(int32_t));
+        }
+    }
+};
+
 // GGML_OP_GET_ROWS_BACK
 struct test_get_rows_back : public test_case {
     const ggml_type type;
@@ -9376,6 +9412,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
     test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 256, 8, 2, 1, 1, false, true, 3));
+
+    for (int r : {4, 255, 256, 257, 15488, 15491, 70003}) {
+        test_cases.emplace_back(new test_get_rows_cached_pool(r));
+    }
+    test_cases.emplace_back(new test_get_rows_cached_pool(515, true)); // 257 ids at a nonzero view offset
+    // Neighbouring widths, another type and batched ids must keep the generic path.
+    test_cases.emplace_back(new test_get_rows(GGML_TYPE_F16, 127, 257, 257, 1, 1, false, true, 128));
+    test_cases.emplace_back(new test_get_rows(GGML_TYPE_F16, 129, 257, 257, 1, 1, false, true, 128));
+    test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 128, 257, 257, 1, 1, false, true, 128));
+    test_cases.emplace_back(new test_get_rows(GGML_TYPE_F16, 128, 257, 257, 2, 1, false, true, 128));
 
     test_cases.emplace_back(new test_get_rows_back(GGML_TYPE_F32, 1, 8, 2, 1, false));
     test_cases.emplace_back(new test_get_rows_back(GGML_TYPE_F32, 1, 70000, 4, 1, false)); // row count > CUDA grid-y limit (65535)

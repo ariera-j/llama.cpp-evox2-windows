@@ -63,6 +63,14 @@ COMMON-001 compatibility port are complete.
    with a small, well-scoped change. Do not restore COMMON-004 wholesale. If the
    fix requires a broad cache/layout rewrite, keep the measured reference and
    move on rather than obscuring attribution.
+   Source inspection is complete at `43feb226...`: direct view replacement is
+   constrained by variable cell ids, padding, graph reshapes, and backend copies.
+   A scoped Vulkan GET_ROWS `128 x 4` workgroup candidate is now implemented behind
+   `GGML_VK_GET_ROWS_128X4=1`, default OFF. CPU-side source-derived checks pass;
+   Windows shader/backend correctness and 64k profile/normal A/B are pending.
+   Test only this candidate before deciding whether to advance to VULKAN-002;
+   do not broaden it into a cache/layout or gather/matmul-fusion rewrite.
+   See [R4-GET-ROWS-128X4-AB-2026-10-03.md](R4-GET-ROWS-128X4-AB-2026-10-03.md).
 4. **VULKAN-002:** adapt the missing grouped-union PP path if the small TG gate
    above does not justify an earlier patch. The current per-row sparse FA does
    not cover the observed 1024/349-query PP. Use 128k/256k as the primary value

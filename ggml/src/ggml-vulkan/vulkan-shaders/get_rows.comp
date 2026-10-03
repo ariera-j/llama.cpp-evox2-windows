@@ -3,7 +3,14 @@
 #include "types.glsl"
 #include "generic_binary_head.glsl"
 
-layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+#ifndef GET_ROWS_WG_X
+#define GET_ROWS_WG_X 512
+#endif
+#ifndef GET_ROWS_WG_Y
+#define GET_ROWS_WG_Y 1
+#endif
+
+layout(local_size_x = GET_ROWS_WG_X, local_size_y = GET_ROWS_WG_Y, local_size_z = 1) in;
 
 void main() {
     const uint i00 = gl_GlobalInvocationID.x;

@@ -3149,6 +3149,7 @@ void ggml_vk_load_shaders(vk_device& device, vk_pipeline requested) {
 
     ggml_vk_create_pipeline(device, device->pipeline_get_rows_f32[GGML_TYPE_F32 ], "get_rows_f32_f32",  get_rows_f32_f32_len,  get_rows_f32_f32_data,  "main", 3, sizeof(vk_op_binary_push_constants), { 512, 1, 1}, {}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_get_rows_f32[GGML_TYPE_F16 ], "get_rows_f16_f32",  get_rows_f16_f32_len,  get_rows_f16_f32_data,  "main", 3, sizeof(vk_op_binary_push_constants), { 512, 1, 1}, {}, 1);
+    ggml_vk_create_pipeline(device, device->pipeline_get_rows_f16_f32_128x4, "get_rows_f16_f32_128x4", get_rows_f16_f32_128x4_len, get_rows_f16_f32_128x4_data, "main", 3, sizeof(vk_op_binary_push_constants), { 128, 4, 1}, {}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_get_rows_f32[GGML_TYPE_BF16], "get_rows_bf16_f32", get_rows_bf16_f32_len, get_rows_bf16_f32_data, "main", 3, sizeof(vk_op_binary_push_constants), { 512, 1, 1}, {}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_get_rows_f32[GGML_TYPE_Q1_0], "get_rows_q1_0_f32", get_rows_q1_0_f32_len, get_rows_q1_0_f32_data, "main", 3, sizeof(vk_op_binary_push_constants), {1024, 1, 1}, {}, 1);
     ggml_vk_create_pipeline(device, device->pipeline_get_rows_f32[GGML_TYPE_Q2_0], "get_rows_q2_0_f32", get_rows_q2_0_f32_len, get_rows_q2_0_f32_data, "main", 3, sizeof(vk_op_binary_push_constants), {1024, 1, 1}, {}, 1);
@@ -4933,6 +4934,10 @@ vk_device ggml_vk_get_device(size_t idx) {
         const char * moe_tile_log = getenv("GGML_VK_MOE_TILE_LOG");
         device->moe_legacy_tile_selection = moe_legacy && strcmp(moe_legacy, "1") == 0;
         device->moe_tile_log = moe_tile_log && strcmp(moe_tile_log, "1") == 0;
+        const char * get_rows_128x4 = getenv("GGML_VK_GET_ROWS_128X4");
+        device->get_rows_128x4 = get_rows_128x4 && strcmp(get_rows_128x4, "1") == 0;
+        GGML_LOG_INFO("ggml_vulkan: GET_ROWS 128x4 = %s (f16 -> f32, 128 columns, 1D ids, >=256 rows)\n",
+                      device->get_rows_128x4 ? "on" : "off");
         GGML_LOG_INFO("ggml_vulkan: MoE tile selection = %s; tile log = %s\n",
                       device->moe_legacy_tile_selection ? "legacy-token-count" : "upstream-per-expert",
                       device->moe_tile_log ? "on (max 64 unique entries per context)" : "off");
@@ -8645,6 +8650,14 @@ static vk_pipeline ggml_vk_op_get_pipeline(ggml_backend_vk_context * ctx, const 
             return ctx->device->pipeline_get_rows[src0->type];
         }
         if (dst->type == GGML_TYPE_F32) {
+            // Opt-in, shape-based routing only. Keep arbitrary source row strides
+            // and view offsets, but leave small decode updates and batched ids alone.
+            if (ctx->device->get_rows_128x4 && src0->type == GGML_TYPE_F16 &&
+                src0->ne[0] == 128 && src0->nb[0] == sizeof(ggml_fp16_t) &&
+                src1->ne[0] >= 256 && src1->ne[1] == 1 && src1->ne[2] == 1 && src1->ne[3] == 1 &&
+                src1->nb[0] == sizeof(int32_t) && ggml_is_contiguous(dst)) {
+                return ctx->device->pipeline_get_rows_f16_f32_128x4;
+            }
             return ctx->device->pipeline_get_rows_f32[src0->type];
         }
         return nullptr;
