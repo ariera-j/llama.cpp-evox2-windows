@@ -31,9 +31,16 @@ COMMON-006 remains an upstream-validation gate. The registry and measurements be
 are the historical r3 checkpoint frozen at
 `0a93fcbb8e5bcf51b331275c4f4b142d822168d6`, not r4 validation.
 
+VULKAN-002 `5814fbe99...` now passes the Windows build, 18/18 GPU OFF/ON tests,
+64k profile/normal ABBA and PLE16 128k/256k ABBA. Normal PP gains reach +65.2% /
++100.6%, with TG effectively unchanged. Keep the default OFF; validated target
+runs explicitly enable union. COMMON-002 upstream MTP investigation is next,
+and COMMON-005 ROCm decode work is deferred by user priority. See
+[R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
+
 See [BASELINE.md](BASELINE.md) for the current r4 gates.
 
-## Provisional r4 decisions through 256k (2026-10-03)
+## Provisional r4 decisions through 256k (updated 2026-10-04)
 
 These decisions apply to the pinned r4 source, not moving upstream master.
 Historical r3 `validated` statuses below remain unchanged.
@@ -42,8 +49,9 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | After COMMON-001: profile ROCm decode, then adapt compact selected-K/V gathering if confirmed |
-| VULKAN-002 | Per-mask-row sparse FA exists; r2 grouped-union PP is not reproduced | Next after the closed cached-gather gate: inspect and port only the missing grouped-union PP delta |
+| COMMON-002 | qwen4exp MTP support is present upstream; existing sidecar compatibility remains untested in r4 | Next: inspect pinned upstream, then allocate/load and measure ordinary MTP on Vulkan |
+| COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
+| VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
 The following historical regression gate led to the completed MoE diagnosis
 above. The new user-directed order (GET_ROWS reference, COMMON-001, then TG/QSA
@@ -405,6 +413,9 @@ Detailed RGP and source-trace notes are recorded in
 
 ## COMMON-005 - gather-based QSA decode
 
+Current r4 priority (2026-10-04): deferred while Vulkan/COMMON-002 MTP is
+prioritized. The validated status and implementation below describe r3.
+
 Status:
 
 ```text
@@ -625,6 +636,10 @@ Upstream PR #29761 (`Qwen4Exp: add MTP`) merged on 2026-10-01. It adds qwen4exp
 MTP conversion/tensor support and fixes the draft-model load path, so the old
 r3 plan to port MTP support first is no longer the correct starting point.
 
+Current priority (2026-10-04): next after validated VULKAN-002; COMMON-005
+ROCm work is deferred. Begin with pinned-source inspection, then test the
+existing sidecar without restoring historical MTP patches.
+
 Refresh-branch validation plan:
 
 - test the existing Unsloth Q8_0 MTP sidecar without downstream MTP patches
@@ -667,44 +682,35 @@ Keep format/core support and Vulkan kernel support as separate reviewable change
 
 ## VULKAN-002 - QSA grouped-union / sparse-FA PP optimization
 
-Status:
+r4 status:
 
 ```text
-evaluate
+validated opt-in on Evo-X2 through 256k; default OFF
 ```
 
-Earlier r2 measurements showed a large long-context prefill benefit from a grouped-union QSA path.
+Implementation `5814fbe99e9249e8ac2c4c2e9b977c05735b0912` adapts the r2
+64-query grouped-union/gather path to current FA, with final remapped cell-id
+metadata, device-local counts and dynamic flag 32 separate from sparse bit 16.
+It preserves the current selector/cache and one-query sparse/decode fallback.
 
-Current r4 order (2026-10-03): COMMON-001 is validated and the small cached-gather
-128x4 profile gate is closed without a useful gain. VULKAN-002 is now implemented as a default-OFF r4 experiment;
-Windows build and GPU acceptance are pending. Preserve the
-upstream sparse-FA paths and isolate the missing PP delta, targeting 128k/256k
-after correctness and a 64k execution check. See ROADMAP for the active order.
+Windows build and 18/18 GPU tests pass OFF/ON. Profile and normal 64k gates pass,
+and PLE16 normal ABBA at 128k/256k yields PP 178.97 -> 295.68 and
+132.96 -> 266.75 tok/s (+65.2%/+100.6%), with effectively neutral TG.
+The recorded earlier ROCm PP is 279.80/185.90, so Vulkan now leads this tested
+long-context workload. Source defaults stay OFF; broader device/model/default
+promotion and ordinary MTP validation remain separate.
 
-The r2/r4 source review is complete at r4 `569d9f77...`. The scoped plan retains
-the r4 selector/cache and sparse-decode implementation, exposes final remapped
-token ids as optional FA metadata, and adapts the 64-query union/gather plus
-dynamic-KV mode without colliding with sparse flag bit 16. The adapted r4 code and 18-case GPU test gate are implemented; no GPU
-result or speedup is claimed. See
-[R4-VULKAN002-PORT-REVIEW-2026-10-03.md](R4-VULKAN002-PORT-REVIEW-2026-10-03.md).
+The two Vulkan-specific switches in the tested baseline are legacy MoE tile
+selection=1 (already used at COMMON-001) and union=1. GET_ROWS 128x4 remains 0.
+These switches do not provide ROCm acceleration. COMMON-001 is a common layout
+compatibility patch; optional FA metadata does not replace ROCm's algorithm.
 
-The 64k r2/r3 pre-implementation profile confirms that grouped-union changes PP but
-is essentially neutral for steady decode TG.
-
-Before porting:
-
-1. establish the clean refreshed-upstream Vulkan baseline
-2. measure the refreshed qwen4exp QSA/k-pool path at 128k and 256k
-3. account for already-merged post-b11247 Vulkan changes before attributing a PP gap
-4. determine whether the refreshed sparse-FA/QSA path already replaces enough of
-   the historical grouped-union benefit
-5. compare against the historical grouped-union implementation only if a material
-   PP gap remains
-6. port only the required delta
-7. validate correctness before benchmarking the final candidate
-
-Implementation, build/test commands and staged OFF/ON measurement gates:
-[R4-VULKAN002-IMPLEMENTATION-2026-10-03.md](R4-VULKAN002-IMPLEMENTATION-2026-10-03.md).
+- Results and comparison limits:
+  [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
+- Implementation and original execution gates:
+  [R4-VULKAN002-IMPLEMENTATION-2026-10-03.md](R4-VULKAN002-IMPLEMENTATION-2026-10-03.md).
+- Historical donor/source review:
+  [R4-VULKAN002-PORT-REVIEW-2026-10-03.md](R4-VULKAN002-PORT-REVIEW-2026-10-03.md).
 
 ## MTP-QSA prototype
 

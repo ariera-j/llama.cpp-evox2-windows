@@ -1,7 +1,8 @@
 # r4 VULKAN-002 implementation and validation
 
 Date: 2026-10-03. Base: `78dac7895ac9f253169f5ac5c6c189ad0f46773d`.
-Status: implemented, default OFF; Windows build and GPU acceptance pending.
+Status updated 2026-10-04: validated opt-in on Evo-X2 through 256k; default OFF.
+Measured results: [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
 
 ## Implemented behavior
 
@@ -70,10 +71,12 @@ All-fallback or skipped runs fail the gate. Default backend is Vulkan0.
   and clear preserve sinks, precision, sparse bound and all other tensor fields.
 - Whitespace/diff checks: passed.
 
-This environment has no Vulkan SDK/glslc, GPU backend or PowerShell. Shader/SPIR-V
-compilation, full Vulkan C++ compilation, PowerShell execution, the 18 GPU values
-and model performance are pending. A successful syntax/host check is not GPU
-acceptance, and no speedup is claimed.
+At implementation time this environment had no Vulkan SDK/glslc, GPU backend or
+PowerShell; only host checks were available here. The subsequent user-supplied
+Windows build, PowerShell test gate and 18/18 GPU OFF/ON results pass, followed
+by 64k/128k/256k measurement validation. See the linked validation report for
+actual performance and remaining coverage limits; host checks alone did not
+establish GPU acceptance.
 
 ## Windows execution order
 
@@ -110,3 +113,9 @@ and graph reuse must remain correct; device/stride fallback must be visible
 when exercising unsupported shapes. Stop on correctness failure or regression.
 Keep default OFF until these results are reviewed; historical r2 numbers are
 context, not a required reproduction target.
+
+## Measurement follow-up (2026-10-04)
+
+The execution gates above are complete for the supplied Evo-X2 results. Preserve
+these commands as reproducible gates; the next priority is COMMON-002 MTP
+inspection at the pinned upstream. Source default remains OFF.

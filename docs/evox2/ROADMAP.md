@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-03 (r3 frozen; r4 COMMON-001 validated through 256k; cached-gather 128x4 gate closed; VULKAN-002 implemented default OFF, GPU validation pending)
+Snapshot: 2026-10-04 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; union default OFF; COMMON-002 MTP next; COMMON-005 deferred)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -45,7 +45,7 @@ See [R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.m
 Do not move the upstream base silently or rewrite r3 onto it. Re-apply only
 downstream deltas justified by measurements.
 
-### Active order after COMMON-001 validation (2026-10-03)
+### Active order after VULKAN-002 validation (2026-10-04)
 
 This order supersedes the older refresh sequence below. The clean six-run
 baseline, scoped 64k PP regression diagnosis, GET_ROWS tensor breakdown, and
@@ -72,23 +72,25 @@ COMMON-001 compatibility port are complete.
    logs were not supplied in that archive; no value-test pass is asserted.
    Do not broaden this gate into cache/layout or gather/matmul-fusion work.
    See [R4-GET-ROWS-128X4-AB-2026-10-03.md](R4-GET-ROWS-128X4-AB-2026-10-03.md).
-4. **VULKAN-002 GPU validation is next:** the grouped-union PP path is implemented
-   after the small TG gate above closed without promotion. The current per-row sparse FA does
-   not cover the observed 1024/349-query PP. Use 128k/256k as the primary value
-   test because r4 TG is already near the historical r2 range while long-context
-   PP still trails the grouped-union reference materially.
-   The source review is complete against r2 `23c316fb...`: use final remapped
-   token-cell ids, preserve the r4 pool-domain selector and per-row sparse path,
-   and adapt the dynamic-KV flag separately from r4 sparse bit 16. The proposed
-   opt-in port spans QSA-to-FA metadata, union/gather dispatch and current FA
-   initialization; implementation and host syntax checks are complete, while
-   Windows build/GPU validation remain pending. Follow
-   [R4-VULKAN002-IMPLEMENTATION-2026-10-03.md](R4-VULKAN002-IMPLEMENTATION-2026-10-03.md). See
-   [R4-VULKAN002-PORT-REVIEW-2026-10-03.md](R4-VULKAN002-PORT-REVIEW-2026-10-03.md).
-5. **COMMON-005:** profile ROCm single-token decode and adapt compact selected K/V
-   gathering if confirmed. It remains complementary to VULKAN-002 and can move
-   earlier if ROCm decode becomes the immediate priority.
-6. Resume MTP and other candidates after these decisions and validations.
+4. **Completed: VULKAN-002 opt-in validation.** Implementation `5814fbe99...`
+   passes the Windows build and 18/18 GPU cases in OFF and ON. 64k profile and
+   normal ABBA pass on Original/PLE16; PLE16 128k/256k ABBA also passes. PP gains
+   are +24.9% at 64k PLE16, +65.2% at 128k and +100.6% at 256k; TG is neutral.
+   Vulkan ON PP 295.68/266.75 tok/s exceeds earlier COMMON-001 ROCm
+   279.80/185.90. Keep source default OFF and explicitly enable it for the
+   validated Vulkan baseline; broader/default promotion is separate. See
+   [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
+5. **COMMON-002 MTP is next.** Inspect MTP support at pinned upstream
+   `bed0a856606ee4a24a164066f73d2379447033f5`, then test the existing Unsloth
+   Q8_0 sidecar with the current r4 Vulkan build. Do not move upstream or restore
+   old compatibility code before checking remaining gaps. Loading/allocation,
+   short generation, draft acceptance/rollback and long-context PP overhead
+   are separate gates; ordinary MTP precedes MTP-QSA.
+6. **COMMON-005 deferred.** Its residual target is mainly ROCm decode. Vulkan
+   now leads the recorded PP/TG comparisons for the tested 96GB, PLE16, MTP-OFF
+   workload. Prioritize Vulkan; retain ROCm as a comparison/alternative backend
+   and resume its compact K/V port only when that use case becomes a priority.
+7. Resume other candidates after ordinary MTP compatibility is established.
 
 COMMON-001 is treated as a compatibility/layout patch, not a throughput
 optimization. ROCm clean Original and COMMON-001 PLE16 are effectively neutral
