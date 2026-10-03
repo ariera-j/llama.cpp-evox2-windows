@@ -44,10 +44,10 @@ or rewrite r3 onto it. Re-apply only downstream deltas justified by measurements
 This order supersedes the older refresh sequence below. The clean six-run
 baseline and the scoped 64k PP regression diagnosis are complete.
 
-1. Capture one tensor-level Vulkan GET_ROWS profile with Original 64k, before
-   COMMON-001, fixing MoE legacy selection to 1. The diagnostic code and plan
-   are prepared; Windows build/profile validation is pending. Preserve this
-   binary and its logs as the pre-port reference.
+1. **Completed:** capture tensor-level Vulkan GET_ROWS with Original 64k,
+   before COMMON-001, fixing MoE legacy selection to 1. Windows run is OK:
+   GET_ROWS 2.487 ms/token, including cached pool gather 1.662 ms (66.82%).
+   Preserve b11377 / acf7fea2b and its logs as the pre-port reference.
 2. **COMMON-001 is the next implementation**, requested to align r3/r4 model
    layout comparisons. Port the missing split-PLE16 loader support while
    preserving upstream Original loading, then check load and 64k execution on

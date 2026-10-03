@@ -110,4 +110,81 @@ conditions.jsonにも詳細スイッチが残る。ログ一式はlocal.psd1のL
 tensor別分離、既定ラベル維持、Total time維持、重複加算なし、fusion prefix、
 名前escapeとnull metadataを確認した。GPU計算の検証ではない。
 PowerShellの実runnerでPlanOnlyが1回に展開すること、環境設定・自動収集・
-他planでの解除も確認。Windowsでの全体ビルド・実GPU profileは未実施。
+他planでの解除も確認。後続のWindowsビルド・実GPU profileは以下の提供ログで確認した。
+
+## 2026-10-03 14:29 JST: 導入前64k診断結果
+
+ZIP: `20261003-142128-968-qwen38-r4-getrows-64k.zip`。
+子run: `20261003-142130-807-cli-vulkan-b11377-ctx65536-36b2b463f2e2`。
+
+- b11377 / `acf7fea2b`、manifest Source.Dirty=false、Status OK / exit0。
+- 実行ファイルSHA-256:
+  `c7996060fbf5cab1c522644c313405307bab0c11a6c5005cecc4b278f59dc521`。
+- Original・61,789 prompt tokens・128 generated tokens。
+  前回MoE profileのB1-legacyとModelIdentity/InputIdentityが一致し、
+  EffectiveConditionの差はExecutableと診断用Environmentのみ。
+- MoE legacy=1、GET_ROWS details=1、perf logger=1/frequency1、concurrent未設定。
+  起動ログでも詳細ON・legacy選択を確認。
+- 190個のtiming blockを解析し、行合計とTotal timeの一致を丸め範囲で確認。
+  warmup2、PP61（1024×60+349）、decode127。最初のdecodeを除く126をsteady集計。
+
+### TG: cached pool gatherがGET_ROWSの約67%
+
+単位はsteady平均ms/token。全GET_ROWS 124回/tokenを以下で網羅した。
+
+| 分類 | 回数/token | ms/token | GET_ROWS内割合 |
+|---|---:|---:|---:|
+| `indexer_pool_cached_rows-*` | 12 | 1.66209 | 66.82% |
+| recurrent state `cache_s_l*` | 36 | 0.59045 | 23.74% |
+| recurrent state `cache_r_l*` | 36 | 0.10929 | 4.39% |
+| `indexer_selected_score_rows-*` | 12 | 0.04216 | 1.69% |
+| `indexer_selected_pool_rows-*` | 12 | 0.03608 | 1.45% |
+| `indexer_pool_raw_rows-*` | 12 | 0.03014 | 1.21% |
+| `cache_ple_r_l1` | 1 | 0.01171 | 0.47% |
+| 出力選択（attn_output / l_last / hc_inject） | 3 | 0.00535 | 0.22% |
+| 合計 | 124 | 2.48727 | 100% |
+
+分類は行頭の実演算ラベルを使う。src0 metadataの`op=MUL_MAT`を検出して
+GET_ROWSをmatmulへ誤分類しない。今回のGET_ROWS行にはfusion prefixはなかった。
+
+全GPU演算のsteady平均は40.671 ms/token（中央値40.504、範囲40.187〜41.329）。
+GET_ROWSは全体の約6.12%、cached pool gatherだけで約4.09%を占める。
+前回legacy profileの40.582 ms/token、GET_ROWS 2.48236 ms/tokenと近い水準で、
+詳細化後も集計値は概ね整合する。表示上のTGは3.90 tok/sだが、詳細ログの大量出力と
+同期を含むprofileの値であり、通常推論の退行としては扱わない。
+
+### キャッシュがないのではなく、読み出し・型変換が残る
+
+全12 QSA layerでcached gatherの形状は次のとおり。
+
+- src0: `cache_idx_k_lN (view)`、f16、`ne=(128,65536,1,1)`。
+  byte stride `nb=(2,512,33554432,33554432)`、view offset256。
+- ids: i32、`ne=(15488,1,1,1)`。
+- dst: `indexer_pool_cached_rows-N`、f32、`ne=(128,15488,1,1)`。
+  `nb=(4,512,7929856,7929856)`。
+
+`kpool_access`のraw key | pooled key共有storageからpool_cellsでgatherし、
+連続したf32のindexer入力へ展開する処理と一致する。dstの論理サイズは1 layerあたり
+約7.56 MiB、12 layer合計90.75 MiB/token。これは出力tensorサイズの合計であり、
+物理DRAM転送量やGPU帯域の実測ではない。
+
+一方raw更新側はdst `ne=(128,4,1,1)` で12回合計0.03014 ms/token。
+差分更新は小さく、全poolのnorm/RoPE再計算に戻っている証拠はない。
+保存済みpoolの読出しが残存コストとして特定できた。
+今後の修正候補はこのgatherを減らすcache配置/参照方法やカーネルであり、
+COMMON-004全体の無条件再移植ではない。可変cell配置・sequenceの正しさを保つ必要がある。
+
+1.662 msを全て除去できるとは限らず、r3とのTG差全体の原因や改善量が確定したわけではない。
+旧r3のQSA融合/選択処理との構成差もあるため、単独差分のA/Bで評価する。
+
+### PPと次の作業
+
+PP GPU合計231.606秒、MoE47.483秒、FA109.068秒。
+GET_ROWS全体は1.334秒（PP GPU全体の約0.58%）で、そのうち
+selected scoreが1.049秒、cached pool gatherは0.061秒。
+cached gatherは今回のTG側の候補であり、PPの主要ボトルネックとは分ける。
+
+導入前の診断ゲートは完了。**次は指定どおりCOMMON-001を先行**し、
+Original/PLE16を同じr4で比較できる状態を作る。追加のGET_ROWS計測や
+gather最適化は先行させず、このbuild/logをCOMMON-001導入前の基準として保持する。
+本更新は結果の分析とドキュメント更新のみ。

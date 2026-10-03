@@ -11,8 +11,11 @@ PP GPU time by 8.82%. Normal 64k ABBA also passes: PP mean 248.475 -> 268.985
 tok/s (+8.25%, 18.959 s less prompt time). TG mean is 25.195 -> 24.565 (-2.50%);
 two short generations per mode do not establish TG equivalence or regression.
 The scoped PP diagnosis is complete; keep the opt-in switch. Tensor-level
-GET_ROWS diagnostics are now prepared (timing labels and QSA tensor names only).
-After capturing this pre-port reference, COMMON-001 is the next implementation
+GET_ROWS diagnostics passed on Windows: steady GPU 40.671 ms/token, including
+2.487 ms GET_ROWS across 124 calls. Cached pooled-key gathering contributes
+1.662 ms (66.82% of GET_ROWS); incremental raw-key gathering is only 0.030 ms.
+This isolates a residual cache-read cost, not missing incremental caching.
+The pre-port reference is now captured. COMMON-001 is the next implementation
 per the user's 2026-10-03 decision, to align Original/PLE16 comparisons.
 See [R4-GET-ROWS-PROFILE-2026-10-03.md](R4-GET-ROWS-PROFILE-2026-10-03.md).
 See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).

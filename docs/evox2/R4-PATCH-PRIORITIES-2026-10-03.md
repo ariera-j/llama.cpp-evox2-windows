@@ -16,6 +16,11 @@ TG平均は25.195→24.565（-2.50%）だが、生成128tokens・各2回・本�
 
 ## 14:02 JST: ユーザー指定による順序更新
 
+14:29 JST追記: GET_ROWS詳細診断はWindowsで完了。124回/token、合計2.487 msのうち
+cached pool gatherが1.662 ms（66.82%）、raw更新用gatherは0.030 ms。
+全pool再計算ではなく保存済みpool読出しのコストを特定した。
+導入前ログは確保できたので、追加計測やTG修正を先行させずCOMMON-001へ進む。
+
 GET_ROWSをtensor別に分ける診断コード・64k単発planを作成。
 [手順](R4-GET-ROWS-PROFILE-2026-10-03.md)に従い、MoE旧方式固定で導入前ログを取得する。
 **次の移植はCOMMON-001を先行**し、Original/PLE16を同じr4条件で比較できるようにする。
