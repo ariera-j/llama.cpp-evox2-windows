@@ -1,6 +1,6 @@
 # r4 clean baseline and validation record
 
-Snapshot: 2026-10-03. Windows builds and original-model 64k/128k/256k real-input runs completed on both backends; performance diagnosis remains open.
+Snapshot: 2026-10-03. Windows builds and original-model 64k/128k/256k real-input runs completed on both backends. The clean baseline is preserved below; subsequent COMMON-001 validation is recorded separately in the post-baseline section.
 
 ## Source identity
 
@@ -14,11 +14,13 @@ r3 frozen checkpoint: 0a93fcbb8e5bcf51b331275c4f4b142d822168d6
 ```
 
 The pure-upstream branch was created at the pinned base, then README/repository
-metadata housekeeping was committed separately. The following import carries
-only Evo-X2 documentation and build/benchmark infrastructure. COMMON-001/004/005,
-r2 grouped-union, and MTP-QSA are not ported into the r4 inference source.
+metadata housekeeping was committed separately. At the clean-baseline checkpoint,
+the following import carried only Evo-X2 documentation and build/benchmark
+infrastructure. COMMON-001/004/005, r2 grouped-union, and MTP-QSA were not
+ported into the r4 inference source at that point.
 
-Before building, confirm the working tree is clean and this source-only diff is empty:
+Before building the clean baseline, confirm the working tree is clean and this
+source-only diff is empty:
 
 ```powershell
 git status --short
@@ -29,6 +31,8 @@ Record the actual r4 HEAD and executable identity in the build/run manifests;
 the pinned upstream SHA and the later tooling commit are different identities.
 
 ## Validation gates
+
+These gates describe the **pure refreshed-upstream baseline before COMMON-001**.
 
 | Gate | Vulkan | ROCm |
 |---|---|---|
@@ -52,7 +56,8 @@ Use [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md) and
 Use the original Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model with MTP off.
 `UnslothOriginal` points to the existing `00001-of-00003.gguf` shard. The
 original joined PLE tensor layout does not require physically joining GGUF
-shards. The PLE16-converted file does not load on this pinned upstream.
+shards. The PLE16-converted file does not load on the pinned pure upstream
+without COMMON-001.
 
 The measured executable identifies itself as b11372 / `94b877457`, while the
 existing build directories retain `b11352` in their names. Keep the actual
@@ -127,9 +132,61 @@ are readable Japanese summaries; factual coverage has not been scored.
   sustained RAM exhaustion as the cause of the TG gap.
 - Graph reuse counts: 550 / 443 for 555 / 448 generated tokens.
 
-Original-model completion through 256k removes an immediate load/stability reason
+Original-model completion through 256k removed an immediate load/stability reason
 to port COMMON-001 for this workload; PLE16 compatibility and matched-layout
-performance comparisons remain separate reasons to consider it.
+performance comparisons remained separate reasons to evaluate it.
+
+## Post-baseline COMMON-001 validation
+
+COMMON-001 was subsequently adapted to r4 and committed as:
+
+```text
+a60a57879a9ffb4d51acd45d4de7e80d721548f9
+qwen4exp: restore split PLE n-gram tensor support
+```
+
+The port restores the split PLE16 layout while preserving the joined Original
+path. Vulkan and ROCm both pass AllocationOnly/short inference with PLE16, and
+PLE16 real-input validation now completes through 256k on both backends.
+
+64k matched post-port comparison:
+
+| Backend | Model | PP tok/s | TG tok/s |
+|---|---|---:|---:|
+| Vulkan | Original joined | 267.51 | 24.53 |
+| Vulkan | PLE16 | 268.79 | 25.46 |
+| ROCm | Original joined | 370.32 | 21.17 |
+| ROCm | PLE16 | 370.37 | 21.16 |
+
+Long-context PLE16 validation:
+
+| Backend | Context | PP tok/s | TG tok/s | Result |
+|---|---:|---:|---:|---|
+| Vulkan | 128k | 178.99 | 23.24 | OK |
+| ROCm | 128k | 279.80 | 17.13 | OK |
+| Vulkan | 256k | 132.99 | 19.56 | OK |
+| ROCm | 256k | 185.90 | 12.41 | OK |
+
+The Vulkan COMMON-001 measurements use
+`GGML_VK_MOE_LEGACY_TILE_SELECTION=1` to match the pre-port diagnostic reference,
+whereas the pure clean baseline above used the upstream-default MoE policy.
+Therefore the Vulkan clean-to-COMMON-001 PP gain is not attributed to the PLE16
+port. At 64k, the +8.2% clean-to-PLE16 PP difference closely matches the earlier
+same-binary MoE legacy A/B gain (+8.25%), while the post-port Original/PLE16 PP
+difference is only about +0.5%.
+
+ROCm is effectively performance-neutral between the clean Original baseline and
+the COMMON-001 PLE16 runs across 64k/128k/256k. COMMON-001 is therefore treated
+as a compatibility/layout patch, not a throughput optimization.
+
+Detailed validation, r3/r2 comparisons, and next-step interpretation are in
+[R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.md).
+The exact matrix plans are:
+
+```text
+tools/evox2/benchmark/configs/qwen38-r4-common001-64k.psd1
+tools/evox2/benchmark/configs/qwen38-r4-common001-longctx.psd1
+```
 
 The provisional patch decisions and revision gates are in
 [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md).
@@ -141,10 +198,10 @@ The provisional patch decisions and revision gates are in
 - [COMMON005-VALIDATION-2026-10-02.md](COMMON005-VALIDATION-2026-10-02.md): final r3 comparison.
 - [COMMON005-ROCM-VALIDATION-2026-10-02.md](COMMON005-ROCM-VALIDATION-2026-10-02.md): detailed ROCm validation.
 
-No r3 throughput value is an r4 measurement. Model PLE layout differs between the
-primary joined r4 baseline and the converted r3 checkpoint; record this condition
-when interpreting PP/TG and memory behavior. If a matched-layout comparison is
-needed later, define it as a separate experiment.
+No r3 throughput value is an r4 measurement. The original clean r4 baseline and
+r3 checkpoint used different PLE layouts; the subsequent COMMON-001 validation
+now supplies the matched r4 Original/PLE16 comparison needed to separate layout
+compatibility from the larger performance topics.
 
 The refresh acceptance checkpoint additionally requires the comparisons and
 COMMON-001/004/005/006 decisions listed in [ROADMAP.md](ROADMAP.md).
