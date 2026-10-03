@@ -86,10 +86,13 @@ COMMON-001 compatibility port are complete.
    old compatibility code before checking remaining gaps. Loading/allocation,
    short generation, draft acceptance/rollback and long-context PP overhead
    are separate gates. Source review is complete: native MTP loading, HC state
-   transfer, draft QSA and bounded recurrent rollback already exist. First run
-   the existing sidecar allocation smoke; it loaded but failed on unused QSA
-   inputs with MTP ratio zero. A scoped layer-ratio guard fix is implemented;
-   rebuild/repeat the smoke before 32k generation. Old MTP-QSA code needs a fresh
+   transfer, draft QSA and bounded recurrent rollback already exist. The dense
+   sidecar's unused QSA-input assertion was fixed; rebuilt Vulkan allocation and
+   32k OFF/ON generation pass. First-pair TG improves but 128-token total latency
+   increases. At the user's request, prepare serial overnight ABBA collection:
+   Vulkan 64k/128k/256k and ROCm 32k/64k/128k/256k, 512 generated tokens.
+   Review all failures, output and total latency the next morning; this collection
+   does not establish each gate in advance. Old MTP-QSA code needs a fresh
    delta review, not automatic restoration. See
    [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
 6. **COMMON-005 deferred.** Its residual target is mainly ROCm decode. Vulkan

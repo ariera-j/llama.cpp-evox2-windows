@@ -1,8 +1,9 @@
 # r4 COMMON-002: pinned-upstream MTP review
 
-Recorded: 2026-10-04 JST. Status: source review complete; first allocation smoke
-failed after loading. Dense-MTP pool-input fix implemented; Windows rebuild and
-repeat smoke are pending. Generation, rollback and performance remain unvalidated.
+Recorded: 2026-10-04 JST. Status: source review complete; dense-MTP input fix
+validated by repeated Vulkan allocation smoke and a 32k OFF/ON generation pair.
+Exploratory overnight Vulkan/ROCm matrix prepared; results and broader output/
+rollback correctness validation remain pending.
 
 ## Decision
 
@@ -226,6 +227,84 @@ git pull --ff-only
 Check the new executable commit/build manifest before the run. Keep the same
 environment and draft settings; no diagnostic optimizer/sampling disable switch
 is needed for this repair. Review the repeated allocation archive before gate 2.
+
+## Post-fix Windows smoke and 32k pair
+
+The user rebuilt from clean source `e8f3be2e9ff9e3b7b3fbfe2aaa08cf4158f55bf7`.
+The manifest records that source; the incremental executable still reports
+b11390/`5814fbe99`, so that embedded label alone does not identify this rebuild.
+Measured executable SHA-256 is
+`00af95d17e7a340db7b901d9d7f65c7da97db75c523de92abeda20216b60a474`,
+different from the failed smoke's executable.
+
+| Run ID | MTP | Workload | Result |
+|---|---|---|---|
+| `20261004-010444-032-cli-vulkan-b11390-ctx32768-31b5b4ea3249` | ON | Allocation short prompt | Exit 0, 32 generated tokens; 13/34 drafts accepted (38.2%) |
+| `20261004-010922-561-cli-vulkan-b11390-ctx32768-055677984739` | OFF | Allocation short prompt | Exit 0, 32 generated tokens |
+| `20261004-011255-237-cli-vulkan-b11390-ctx32768-c0aef985e37e` | OFF | 32k input, 128 generated tokens | Exit 0, no reported assert/NaN/Vulkan error |
+| `20261004-011450-457-cli-vulkan-b11390-ctx32768-84e3d65f27e7` | ON | 32k input, 128 generated tokens | Exit 0, 75/102 drafts accepted (73.5%) |
+
+Both allocation outputs continue after "OK"; both use `--ignore-eos` and a
+fixed 32-token limit. This is not specific to MTP and does not test exact
+one-word instruction compliance.
+
+The 32k pair uses the same executable, main model identity, input SHA-256,
+backend, environment and ordinary inference settings; only MTP/draft settings
+change. Actual prompt length is 29557 tokens. Temperature is 0, top-p 0.8,
+seed 1234, ignore-eos, f16 caches, batch 2048, ubatch 1024, threads/tb 4.
+Union=1, legacy MoE=1, GET_ROWS 128x4=0; profiler off.
+
+| Metric | OFF | ON | ON relative to OFF |
+|---|---:|---:|---:|
+| PP (tok/s) | 406.81 | 377.78 | -7.1% |
+| TG (tok/s) | 26.39 | 35.06 | +32.9% |
+| Prompt time (s) | 72.655 | 78.238 | +5.583 s |
+| Generation time (s) | 4.813 | 3.622 | -1.190 s |
+| Prompt + generation (s) | 77.468 | 81.860 | +5.7% |
+
+The first generated paragraph matches; later wording differs, with readable
+Japanese in both outputs. Basic generation passes, but exact output equivalence
+and logit/state correctness are not established by this pair. The ON context
+reports bounded partial sequence removal with two target recurrent snapshots,
+and some drafts are rejected; no checkpoint replay is reported. This is runtime
+evidence, not an exhaustive rollback correctness test. Prompt echo is shortened
+by the CLI display; task logs show the full 29557 tokens processed.
+
+## User-requested overnight matrix
+
+The user elected to collect the remaining contexts overnight rather than wait
+for a review after each context. Use
+`tools/evox2/benchmark/configs/qwen38-r4-mtp-overnight.psd1` with the existing
+`Invoke-BenchmarkMatrix.ps1`; no runtime or runner changes are needed.
+
+| Backend/build key | Contexts | Order at each context | Runs |
+|---|---|---|---:|
+| Vulkan / R4QsaUnionVulkan | 64k, 128k, 256k | OFF, ON, ON, OFF | 12 |
+| ROCm / R4ROCm | 32k, 64k, 128k, 256k | OFF, ON, ON, OFF | 16 |
+
+All 28 runs use PLE16, 512 generated tokens, temperature 0.2, top-p 0.8,
+seed 1234, ignore-eos, draft maximum 2/p-min 0 when ON, and the same cache/
+batch/thread settings as above. Vulkan fixes legacy MoE=1, GET_ROWS 128x4=0
+and union=1; ROCm clears those environment variables. Both clear the known
+profiler/experimental overrides. Runs are serial with a 10-second cooldown.
+Distinct ABBA environment labels preserve repetitions under the runner's
+duplicate-condition check.
+
+Refresh the existing R4ROCm build directory with `Build-ROCm.ps1 -BuildOnly`
+in the usual activated TheRock/VS build shell. Obtain its path from
+`local.psd1`'s `Builds.R4ROCm.BinDir` instead of assuming a directory name.
+The shared dense-MTP guard fix must be included; no ROCm performance patch is
+added here. The already-tested Vulkan binary does not require another rebuild
+for this configuration/documentation-only commit.
+
+`ContinueOnError=$true` records a failed run and attempts the rest; it does
+not validate later contexts or discard failures. This is exploratory collection,
+and morning review must check errors, output, acceptance, PP/TG, total latency
+and memory before interpreting performance. Completed runs are saved individually;
+the runner updates `matrix-runs.csv`, `matrix-results.csv` and
+`matrix-result.json` after each run under `evox2-logs/matrix` (or the configured
+LogRoot). A process that hangs cannot be recovered by ContinueOnError; the
+existing runner provides no per-run timeout.
 
 ## Pinned source references
 
