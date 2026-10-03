@@ -41,6 +41,25 @@ These cross-version/layout gaps support continued investigation, not gain foreca
 See [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md)
 for source evidence, comparison limits, and implementation gates.
 
+### First r4 Vulkan profile (64k)
+
+The first logger run completed with 61 prefill and 127 decode timing blocks.
+Prefill FA accounts for 43.0% of measured GPU operator time (62.5% at the last
+full ubatch). The current Vulkan sparse dispatch excludes the observed 1024/349
+query prefill batches. Steady decode averages 40.60 ms of GPU operator timings;
+pool norm shapes support incremental updates rather than full-pool recomputation.
+See [R4-VULKAN-PROFILE-64K-2026-10-03.md](R4-VULKAN-PROFILE-64K-2026-10-03.md).
+
+The matched COMMON-004 + Original profile is now available. GPU operator time
+increases from 233.203 to 251.893 s for PP and 39.022 to 40.597 ms/token for
+steady TG. PP MoE matmul accounts for +16.634 s; FA changes by only +0.735 s.
+First isolate upstream `94a0ae3e7` (MoE tile selection) with a targeted A/B.
+TG GET_ROWS + QSA fused/top-k timing increases by 1.022 ms/token; obtain tensor
+names/shapes before assigning this to pooled-key gathering. Keep the incremental
+cache and pool-domain selection; neither wholesale COMMON-004 restoration nor
+VULKAN-002 explains the measured regression yet. Confirm fixes with the logger off.
+See [R4-COMMON004-VULKAN-COMPARISON-64K-2026-10-03.md](R4-COMMON004-VULKAN-COMPARISON-64K-2026-10-03.md).
+
 ## Purpose
 
 r3 applies downstream changes in small units on top of one exact upstream baseline.

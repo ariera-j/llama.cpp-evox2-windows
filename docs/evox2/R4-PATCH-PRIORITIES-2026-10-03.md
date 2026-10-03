@@ -1,10 +1,24 @@
 # r4: 256kまでの結果による再移植判定と暫定優先順位
 
 調査日: 2026-10-03 JST。11:22 JSTに256k clean baselineが両backendで完了。
-以下の「256k結果による更新」を最新判断とし、それ以前の128k時点の分析も保持する。
+以下のprofile比較を最新判断とし、256k・128k時点の分析も保持する。
 対象は固定upstream `bed0a856606ee4a24a164066f73d2379447033f5`。
 ローカルの `git diff <base> -- src ggml common` は空であり、以下は実際に
 ビルドしたr4の推論ソースの判定。以後のupstream master全般についての判定ではない。
+
+## 64k Vulkan profile取得後の更新
+
+[R4-VULKAN-PROFILE-64K-2026-10-03.md](R4-VULKAN-PROFILE-64K-2026-10-03.md)に集計を記録。
+PPのFAはGPU演算時間の43.0%。今回の1024/349-query PPはupstream sparse FA分岐の対象外。
+TGでは小さいpool normとpool領域TOP_Kが観測され、差分cache更新の裏付けが得られた。
+COMMON-004版＋Originalの比較profileも取得済み。
+[比較結果](R4-COMMON004-VULKAN-COMPARISON-64K-2026-10-03.md)ではr4のGPU演算時間が
+PPで+8.01%、TGで+4.04%。PPはMoEが47.051→63.685秒と増え、FAはほぼ同程度。
+次はupstream `94a0ae3e7` のMoEタイル選択変更だけを切り分けるA/Bを最優先とする。
+TGはGET_ROWS＋QSA融合/TOP_Kの小計が+1.022 ms/token。tensor名・shape別計測で
+pool gatherと選択/mask構築を分ける。通常TGの5〜8%差を完全に説明したとはしない。
+128k profile追加やCOMMON-004全体の再移植より、この2点の診断を先行し、
+logger無効で改善を確認してからVULKAN-002 / COMMON-005へ進む。
 
 ## 256k結果による更新
 
@@ -181,7 +195,7 @@ OriginalとPLE16の両方をloadし、同じr4バイナリで比較してから�
 これは単にk-poolという名称があるだけでなく、旧COMMON-004の主要目的である
 「過去の全poolに対するnorm/RoPE再計算をdecodeごとに繰り返さない」構造である。
 今回の単一sequence・MTP OFFでは、このcacheを使える構造になっている。
-ただし実ログにはcache-safe/n_newの実行時値がなく、GPU profileでの最終確認は未実施。
+ただしcache-safe/n_newの実行時値は未記録。後続64k GPU profileでは差分更新を支持する小さいnorm形状を確認したが、性能同等性は未達（冒頭の比較を参照）。
 
 全poolのgatherやscore計算は今も残る。残存するO(n_pool)処理を見つけても、
 直ちにcache全体が未実装とは判断しない。旧COMMON-004の二重導入は避ける。
