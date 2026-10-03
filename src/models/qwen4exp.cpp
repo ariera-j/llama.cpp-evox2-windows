@@ -772,6 +772,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
 
     // pool only the blocks this ubatch completes or regroups
     ggml_tensor * rows = kpool_cache.gather_key_gate(ggml_reshape_1d(ctx0, inp_kpool->new_pool_idxs, kpool*n_new));
+    ggml_format_name(rows, "indexer_pool_raw_rows-%d", il);
     rows = ggml_reshape_3d(ctx0, rows, idx_dim, kpool, n_new);
 
     // mean over the members; kpool is small, so summing slices beats a transpose plus sum_rows
@@ -795,6 +796,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
         // write before the pool gather
         ggml_build_forward_expand(gf, kpool_cache.scatter_pooled(pooled_new, inp_kpool->new_pool_rep));
         pooled = kpool_cache.gather_pooled(inp_kpool->pool_cells);
+        ggml_format_name(pooled, "indexer_pool_cached_rows-%d", il);
     } else {
         // shared cells re-pool every pool, in layout order
         GGML_ASSERT(n_new < n_pool);
@@ -835,6 +837,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
     // the top blocks, then the incomplete tail with n_kv for missing cells
     ggml_tensor * sel_idx = ggml_get_rows(ctx0, inp_kpool->pool_idxs,
             ggml_reshape_1d(ctx0, top_k, n_top_pool*n_tokens)); // [kpool, n_top_pool*n_tokens]
+    ggml_format_name(sel_idx, "indexer_selected_pool_rows-%d", il);
     sel_idx = ggml_reshape_2d(ctx0, sel_idx, kpool*n_top_pool, n_tokens);
     sel_idx = ggml_concat(ctx0, sel_idx, inp_kpool->tail_idxs, 0);
     const int64_t n_sel = sel_idx->ne[0];
@@ -863,6 +866,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
     // some cells from several threads: map every dead slot to its own dump row, idx = dump + live*(idx - dump)
     // a picked pool is live when visible: a visible score is a rectified sum >= 0, an invisible one is -inf
     ggml_tensor * top_score = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, score, 1, n_pool, n_tokens), top_k); // [1, n_top_pool, n_tokens]
+    ggml_format_name(top_score, "indexer_selected_score_rows-%d", il);
     ggml_tensor * live_pool = ggml_clamp(ctx0, ggml_scale_bias(ctx0, top_score, 1.0f, 1.0f), 0.0f, 1.0f);
     live_pool = ggml_reshape_2d(ctx0, ggml_repeat_4d(ctx0, live_pool, kpool, n_top_pool, n_tokens, 1), kpool*n_top_pool, n_tokens);
     // a tail cell is live unless it is the n_kv sentinel
@@ -1381,6 +1385,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_inp_ple(
 
     // gather then flatten the heads: get_rows lays the head dimension out slowest, as the reference does
     ggml_tensor * emb = ggml_get_rows(ctx0, model.per_layer_tok_embd, rows);
+    ggml_set_name(emb, "ple_embedding_rows");
     emb = ggml_reshape_2d(ctx0, emb, hparams.ple_head_dim * n_heads, n_tokens);
     cb(emb, "ple_embd", -1);
 

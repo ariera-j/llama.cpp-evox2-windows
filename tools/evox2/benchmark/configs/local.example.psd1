@@ -22,6 +22,12 @@
             ExpectedBackend = 'Vulkan'
         }
 
+        # Optional tensor-level GET_ROWS profile build, before COMMON-001.
+        R4GetRowsVulkan = @{
+            BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-vulkan-r4-getrows\bin\Release'
+            ExpectedBackend = 'Vulkan'
+        }
+
         R4ROCm = @{
             BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r4\build-rocm-r4\bin\Release'
             ExpectedBackend = 'ROCm'

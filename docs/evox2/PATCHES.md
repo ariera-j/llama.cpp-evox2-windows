@@ -5,7 +5,16 @@
 The r4 base is pinned at `bed0a856606ee4a24a164066f73d2379447033f5` on
 `r4/upstream-refresh-20261002`. A diagnostic Vulkan MoE tile-selection switch is
 now prepared; its default preserves the upstream selection. No COMMON/QSA
-optimization port is applied. Windows build and GPU validation are pending.
+optimization port is applied. Windows profile A/B and both 939/939 MUL_MAT_ID
+test runs pass. Legacy selection reduces PP MoE GPU time by 25.22% and total
+PP GPU time by 8.82%. Normal 64k ABBA also passes: PP mean 248.475 -> 268.985
+tok/s (+8.25%, 18.959 s less prompt time). TG mean is 25.195 -> 24.565 (-2.50%);
+two short generations per mode do not establish TG equivalence or regression.
+The scoped PP diagnosis is complete; keep the opt-in switch. Tensor-level
+GET_ROWS diagnostics are now prepared (timing labels and QSA tensor names only).
+After capturing this pre-port reference, COMMON-001 is the next implementation
+per the user's 2026-10-03 decision, to align Original/PLE16 comparisons.
+See [R4-GET-ROWS-PROFILE-2026-10-03.md](R4-GET-ROWS-PROFILE-2026-10-03.md).
 See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).
 Clean 64k/128k/256k runs now pass on both backends.
 COMMON-006 remains an upstream-validation gate. The registry and measurements below
@@ -21,10 +30,14 @@ Historical r3 `validated` statuses below remain unchanged.
 
 | ID | Upstream coverage in r4 | Provisional action |
 |---|---|---|
-| COMMON-001 | Joined-PLE lazy loading/prefetch exists; split PLE16 loading does not | Conditional compatibility/comparison port; original model passes through 256k |
+| COMMON-001 | Joined-PLE lazy loading/prefetch exists; split PLE16 loading does not | Next implementation after the GET_ROWS reference: user-requested split-PLE16 compatibility for matched comparisons |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; validate the upstream path and profile any remaining cost |
-| COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Priority 2: profile ROCm decode, then adapt compact selected-K/V gathering if confirmed |
-| VULKAN-002 | Per-mask-row sparse FA exists; r2 grouped-union PP is not reproduced | Priority 1: profile Vulkan prefill, then port only the missing grouped-union delta |
+| COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | After COMMON-001: profile ROCm decode, then adapt compact selected-K/V gathering if confirmed |
+| VULKAN-002 | Per-mask-row sparse FA exists; r2 grouped-union PP is not reproduced | After COMMON-001: port only the missing grouped-union PP delta |
+
+The following historical regression gate led to the completed MoE diagnosis
+above. The new user-directed order (GET_ROWS reference, COMMON-001, then TG/QSA
+work) supersedes the earlier priority discussion below.
 
 Before the optimization ports, investigate the Vulkan r3-to-r4 slowdown:
 64k original-model PP is down 6.3%; TG versus the initial COMMON-004 ON

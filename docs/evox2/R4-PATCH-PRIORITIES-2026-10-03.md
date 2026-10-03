@@ -1,14 +1,35 @@
 # r4: 256kまでの結果による再移植判定と暫定優先順位
 
 調査日: 2026-10-03 JST。11:22 JSTに256k clean baselineが両backendで完了。
-以下のprofile比較を最新判断とし、256k・128k時点の分析も保持する。
+以下のprofile・通常ABBA比較を最新判断とし、256k・128k時点の分析も保持する。
 対象は固定upstream `bed0a856606ee4a24a164066f73d2379447033f5`。
-計測時の `git diff <base> -- src ggml common` は空であり、以下のprofile分析は
-そのclean r4を対象とする。以後のupstream master全般についての判定ではない。
+初期baseline/profile時の `git diff <base> -- src ggml common` は空だった。
+後続MoE A/Bは診断変更を加えた `c81b8bf78` を対象とし、区別して記録する。
+以後のupstream master全般についての判定ではない。
 後続作業として[MoEタイル選択の診断スイッチと比較plan](R4-MOE-TILE-AB-2026-10-03.md)
-を実装済み。既定の選択は維持し、Windows/GPUでの検証は未実施。
+を実装済み。Windows profile A/BでlegacyのMoE時間が25.22%短縮し、
+両モードのMUL_MAT_IDテスト939/939成功を確認。通常ABBAも完了し、PP平均が
+248.475→268.985 tok/s（+8.25%）、prompt evalが18.959秒短縮した。
+TG平均は25.195→24.565（-2.50%）だが、生成128tokens・各2回・本文も異なるため
+安定した退行か変動かは未確定。この条件のPP原因切り分けは完了し、旧方式の明示選択を維持。
+次はTG GET_ROWSのtensor別診断を行い、修正が大きければVULKAN-002へ進む。
+
+## 14:02 JST: ユーザー指定による順序更新
+
+GET_ROWSをtensor別に分ける診断コード・64k単発planを作成。
+[手順](R4-GET-ROWS-PROFILE-2026-10-03.md)に従い、MoE旧方式固定で導入前ログを取得する。
+**次の移植はCOMMON-001を先行**し、Original/PLE16を同じr4条件で比較できるようにする。
+これはOriginalの安定性不足ではなく、r3/r4の比較条件を揃えるためのユーザーの選択。
+両backendのload・64k動作を確認後、TGの小さい修正とVULKAN-002/COMMON-005の順序を判断。
+以下の以前の「COMMON-001は条件付き」「VULKAN-002優先」は、この指定で更新する。
 
 ## 64k Vulkan profile取得後の更新
+
+最新の同一バイナリA/Bでは、MoEタイルが32×32から64×64へ切り替わり、
+MoE 63.933→47.807秒、PP GPU全体253.097→230.763秒。FAとsteady TGはほぼ不変。
+PPの主要因としてタイル選択変更を強く支持し、後続normal ABBAでも通常PP改善を
+確認済み（[結果詳細](R4-MOE-TILE-AB-2026-10-03.md)）。
+以下のCOMMON-004との比較は、この診断A/B以前の調査記録。
 
 [R4-VULKAN-PROFILE-64K-2026-10-03.md](R4-VULKAN-PROFILE-64K-2026-10-03.md)に集計を記録。
 PPのFAはGPU演算時間の43.0%。今回の1024/349-query PPはupstream sparse FA分岐の対象外。

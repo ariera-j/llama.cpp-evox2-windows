@@ -56,6 +56,7 @@
             GGML_VK_DISABLE_MMVQ           = $null
             GGML_VK_MOE_LEGACY_TILE_SELECTION = $null
             GGML_VK_MOE_TILE_LOG              = $null
+            GGML_VK_PERF_GET_ROWS_DETAILS      = $null
             EVOX2_AB_RUN                   = $null
             EVOX2_ABBA_RUN                 = $null
         }

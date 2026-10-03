@@ -1206,6 +1206,8 @@ inline std::mutex vk_memory_logger::log_mutex;
 
 class vk_perf_logger {
   public:
+    explicit vk_perf_logger(bool get_rows_details = false) : get_rows_details(get_rows_details) {}
+
     void print_timings(bool force = false);
 
 
@@ -1240,6 +1242,7 @@ class vk_perf_logger {
     }
 
   private:
+    bool get_rows_details;
     std::map<std::string, std::vector<uint64_t>> timings;
     std::map<std::string, std::vector<uint64_t>> flops;
     uint32_t print_count {};

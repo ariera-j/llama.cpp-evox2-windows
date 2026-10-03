@@ -39,44 +39,51 @@ failed on both backends. ROCm auto-test was 3985/3986 and manual retest was
 Clean 64k/128k/256k runs pass on both backends; performance diagnosis remains open. Do not move the base silently
 or rewrite r3 onto it. Re-apply only downstream deltas justified by measurements.
 
-### Active provisional order after the 256k baseline
+### Active order after the 64k MoE ABBA (user decision: 2026-10-03)
 
-This order supersedes the older numbered refresh sequence below for the next
-implementation work. The clean six-run baseline is now complete.
+This order supersedes the older refresh sequence below. The clean six-run
+baseline and the scoped 64k PP regression diagnosis are complete.
 
-1. Preserve the completed clean 64k/128k/256k baselines. Before either
-   optimization port, diagnose the Vulkan regressions: 64k PP is 6.3% below
-   the original-model r3 baseline; TG is about 5% below the r3 COMMON-004 ON
-   checkpoint at 64k/128k, and 8.4% below it at 256k. Confirm repeatability with available r3 binaries
-   and matched settings, then profile PP and TG. Functional upstream replacement
-   of COMMON-004 does not establish performance parity. Fix a demonstrated
-   residual cost first; use COMMON-001 early if PLE layout blocks attribution.
-2. VULKAN-002: profile long-context prefill, then adapt only the missing
-   grouped-union PP path. Existing upstream per-row sparse FA is not equivalent.
-3. COMMON-005: profile ROCm single-token decode, then adapt selected K/V/mask
-   gathering to the new pool-domain selection, if the full-K/V cost remains.
-   This diagnostic can precede step 2; a small confirmed port may move first.
-4. COMMON-001: restore split-PLE16 compatibility if needed operationally or for
-   a matched-layout diagnosis. Original has now passed through 256k; no immediate
-   load/stability prerequisite for either QSA optimization was demonstrated.
-5. COMMON-004: validate the upstream persistent incremental k-pool cache; do not
-   reintroduce the r3 implementation by default. Profile residual pool costs
-   separately if they remain material.
-6. Resume MTP compatibility and newly researched optimization candidates after
-   these four items have an explicit decision and the justified deltas are tested.
+1. Capture one tensor-level Vulkan GET_ROWS profile with Original 64k, before
+   COMMON-001, fixing MoE legacy selection to 1. The diagnostic code and plan
+   are prepared; Windows build/profile validation is pending. Preserve this
+   binary and its logs as the pre-port reference.
+2. **COMMON-001 is the next implementation**, requested to align r3/r4 model
+   layout comparisons. Port the missing split-PLE16 loader support while
+   preserving upstream Original loading, then check load and 64k execution on
+   Vulkan/ROCm and compare Original/PLE16 with fixed MoE settings.
+3. Use the GET_ROWS breakdown and matched-layout results to decide whether a
+   small TG fix is justified. Do not restore COMMON-004 wholesale. If the fix
+   is broad, keep the measured reference and continue to the larger ports.
+4. VULKAN-002: adapt the missing grouped-union PP path after COMMON-001.
+   Current per-row sparse FA does not cover the observed 1024/349-query PP.
+5. COMMON-005: profile ROCm single-token decode and adapt compact selected K/V
+   gathering if confirmed. It can precede VULKAN-002 if diagnosis warrants it,
+   but the requested COMMON-001 compatibility/comparison work comes first.
+6. Resume MTP and other candidates after these decisions and validations.
 
-VULKAN-002 is first for long-context wall-clock impact; COMMON-005 is first for
-ROCm decode-specific benefit. Historical performance gaps are investigation
-signals, not promised gains. At 256k, Vulkan PP is 126.76 versus r2 union
-177.01; ROCm TG is 12.23 versus r3 Gather ON 17.37. Keep both candidates,
-with Vulkan regression diagnosis first. Details and
-source traces: [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md).
+COMMON-001 is prioritized for comparable model layouts, not because Original
+failed: the clean Original baseline passes through 256k. Keep the current MoE
+switch opt-in, and preserve the original clean runs. Historical speed gaps are
+investigation signals, not gain forecasts.
+
+Instructions: [R4-GET-ROWS-PROFILE-2026-10-03.md](R4-GET-ROWS-PROFILE-2026-10-03.md).
+Source evidence and historical decisions:
+[R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md).
 
 ### First r4 Vulkan profile (64k)
 
 The next PP diagnostic is implemented as an opt-in MoE tile-selection switch,
 with one binary for current/legacy A/B and separate profile/normal matrix jobs.
-Default selection remains upstream; Windows build/GPU measurements are pending.
+Default selection remains upstream. Windows A/B profiles now show PP MoE GPU
+time 63.933 -> 47.807 s (legacy), with FA unchanged and steady TG essentially
+unchanged. Both modes pass 939/939 MUL_MAT_ID tests. Normal ABBA now confirms
+PP 248.475 -> 268.985 tok/s (+8.25%) with all four runs OK. This completes the
+64k PP diagnosis for the tested model/device/shapes. TG averages -2.50% with
+short, differing generations; do not claim no TG impact. Keep legacy opt-in,
+then capture tensor-level TG GET_ROWS timings and implement COMMON-001 first
+per the updated order above; defer the TG fix/optimization port decision until
+model layouts can be compared.
 See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).
 
 The first logger run completed with 61 prefill and 127 decode timing blocks.

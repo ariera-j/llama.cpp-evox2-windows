@@ -5478,7 +5478,14 @@ void ggml_vk_init(ggml_backend_vk_context * ctx, size_t idx) {
     }
 
     if (vk_perf_logger_enabled) {
-        ctx->perf_logger = std::unique_ptr<vk_perf_logger>(new vk_perf_logger());
+        const char * details_env = getenv("GGML_VK_PERF_GET_ROWS_DETAILS");
+        const bool requested = details_env && strcmp(details_env, "1") == 0;
+        const bool details = requested && !vk_perf_logger_concurrent;
+        ctx->perf_logger = std::unique_ptr<vk_perf_logger>(new vk_perf_logger(details));
+        if (requested && vk_perf_logger_concurrent) {
+            GGML_LOG_WARN("ggml_vulkan: GET_ROWS tensor details disabled: unset GGML_VK_PERF_LOGGER_CONCURRENT for per-op timings\n");
+        }
+        GGML_LOG_INFO("ggml_vulkan: GET_ROWS tensor timing details = %s\n", details ? "on" : "off");
     }
 
 #ifdef GGML_VULKAN_CHECK_RESULTS
@@ -16464,11 +16471,46 @@ void vk_perf_logger::print_timings(bool force) {
     flops.clear();
 }
 
+// Tensor metadata only: never read device data or include transient addresses.
+static std::string ggml_vk_perf_tensor_desc(const char * role, const ggml_tensor * tensor) {
+    std::ostringstream out;
+    out << " " << role << "{";
+    if (!tensor) {
+        out << "null}";
+        return out.str();
+    }
+    std::string name = tensor->name;
+    for (char & c : name) {
+        if (static_cast<unsigned char>(c) < 32 || static_cast<unsigned char>(c) == 127) {
+            c = '?'; // Keep one timing entry on one line, including user-provided names.
+        }
+    }
+    out << "name=" << std::quoted(name) << " op=" << ggml_op_name(tensor->op)
+        << " type=" << ggml_type_name(tensor->type) << " ne=(";
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+        out << (i ? "," : "") << tensor->ne[i];
+    }
+    out << ") nb=(";
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+        out << (i ? "," : "") << tensor->nb[i];
+    }
+    out << ") view_offs=" << tensor->view_offs << "}";
+    return out.str();
+}
+
 std::string vk_perf_logger::get_node_fusion_name(const ggml_tensor * node, const char *fusion_name, uint64_t *n_flops) {
     *n_flops = ggml_vk_get_node_flops(node);
     std::string fusion_str;
     if (fusion_name) {
         fusion_str = fusion_name + std::string(" ");
+    }
+    if (get_rows_details && node->op == GGML_OP_GET_ROWS) {
+        // Retain a fusion prefix: its timestamp covers the whole fusion, not
+        // just the leading GET_ROWS. Do not also emit an aggregate timing row.
+        return fusion_str + ggml_op_name(node->op) +
+            ggml_vk_perf_tensor_desc("dst", node) +
+            ggml_vk_perf_tensor_desc("src0", node->src[0]) +
+            ggml_vk_perf_tensor_desc("ids", node->src[1]);
     }
     if (node->op == GGML_OP_UNARY) {
         return fusion_str + ggml_unary_op_name(ggml_get_unary_op(node));

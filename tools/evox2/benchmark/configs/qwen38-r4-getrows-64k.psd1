@@ -1,9 +1,9 @@
 @{
     SchemaVersion = 1
-    Name = 'qwen38-r4-clean'
+    Name = 'qwen38-r4-getrows-64k'
 
-    # Pinned upstream: bed0a856606ee4a24a164066f73d2379447033f5.
-    # No downstream QSA patches. Run only after clean build/load smoke passes.
+    # One detailed profile before COMMON-001; original model, legacy MoE fixed.
+    # This changes timing labels only, not graph fusion or kernel dispatch.
     Settings = @{
         CooldownSeconds = 10
         ContinueOnError = $false
@@ -19,7 +19,7 @@
             CpuMoe           = 0
             FlashAttn        = 'auto'
             Verbosity        = 4
-            GenerationTokens = 1024
+            GenerationTokens = 128
             PromptCacheMiB   = 0
             Temperature      = 0.2
             TopP             = 0.8
@@ -37,7 +37,7 @@
         }
 
         # Clear inherited experiment overrides for each child; the runner
-        # restores the caller's environment afterward. These are not patches.
+        # restores the caller's environment afterward.
         Environment = @{
             LLAMA_QSA_NO_POOLED_CACHE       = $null
             LLAMA_QSA_POOLED_MAX_TOKENS     = $null
@@ -49,9 +49,14 @@
             GGML_VK_FUSE_UNARY_MUL          = $null
             GGML_VK_SHMEM_PAD               = $null
             GGML_VK_DENSE_WAVE32            = $null
-            GGML_VK_MOE_LEGACY_TILE_SELECTION = $null
+            GGML_VK_PERF_LOGGER            = '1'
+            GGML_VK_PERF_LOGGER_FREQUENCY  = '1'
+            GGML_VK_PERF_LOGGER_CONCURRENT = $null
+            GGML_VK_FORCE_MMVQ             = $null
+            GGML_VK_DISABLE_MMVQ           = $null
+            GGML_VK_MOE_LEGACY_TILE_SELECTION = '1'
             GGML_VK_MOE_TILE_LOG              = $null
-            GGML_VK_PERF_GET_ROWS_DETAILS      = $null
+            GGML_VK_PERF_GET_ROWS_DETAILS      = '1'
             EVOX2_AB_RUN                   = $null
             EVOX2_ABBA_RUN                 = $null
         }
@@ -59,44 +64,18 @@
 
     Jobs = @(
         @{
-            Name = 'r4-clean-longctx'
+            Name = 'getrows-profile'
             Tool = 'cli'
-
-            BuildKeys = @('R4Vulkan', 'R4ROCm')
-            # Original multi-file GGUF with joined PLE tensor layout; pass
-            # shard 00001. A single physically joined file is not required.
+            BuildKeys = @('R4GetRowsVulkan')
             ModelKeys = @('UnslothOriginal')
-
-            # Gate with -OnlyCase 64k, then 128k, then 256k.
             Cases = @(
                 @{
                     Name = '64k'
-                    Parameters = @{
-                        Context  = 65536
-                        InputKey = '64k'
-                    }
-                }
-                @{
-                    Name = '128k'
-                    Parameters = @{
-                        Context  = 131072
-                        InputKey = '128k'
-                    }
-                }
-                @{
-                    Name = '256k'
-                    Parameters = @{
-                        Context  = 262144
-                        InputKey = '256k'
-                    }
+                    Parameters = @{ Context = 65536; InputKey = '64k' }
                 }
             )
-
             Variants = @(
-                @{
-                    Name = 'clean-nomtp'
-                    Parameters = @{}
-                }
+                @{ Name = 'tensor-details-legacy-moe'; Parameters = @{} }
             )
         }
     )
