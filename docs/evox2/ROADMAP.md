@@ -85,7 +85,11 @@ COMMON-001 compatibility port are complete.
    Q8_0 sidecar with the current r4 Vulkan build. Do not move upstream or restore
    old compatibility code before checking remaining gaps. Loading/allocation,
    short generation, draft acceptance/rollback and long-context PP overhead
-   are separate gates; ordinary MTP precedes MTP-QSA.
+   are separate gates. Source review is complete: native MTP loading, HC state
+   transfer, draft QSA and bounded recurrent rollback already exist. First run
+   the existing sidecar allocation smoke; old MTP-QSA code needs a fresh delta
+   review, not automatic restoration. See
+   [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
 6. **COMMON-005 deferred.** Its residual target is mainly ROCm decode. Vulkan
    now leads the recorded PP/TG comparisons for the tested 96GB, PLE16, MTP-OFF
    workload. Prioritize Vulkan; retain ROCm as a comparison/alternative backend

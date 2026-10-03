@@ -49,7 +49,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | qwen4exp MTP support is present upstream; existing sidecar compatibility remains untested in r4 | Next: inspect pinned upstream, then allocate/load and measure ordinary MTP on Vulkan |
+| COMMON-002 | Pinned-source review complete: native MTP sidecar loading, draft QSA and bounded recurrent rollback exist | Next: existing Q8_0 sidecar allocation smoke, short generation/rollback, then Vulkan MTP OFF/ON; runtime compatibility remains untested |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -637,8 +637,11 @@ MTP conversion/tensor support and fixes the draft-model load path, so the old
 r3 plan to port MTP support first is no longer the correct starting point.
 
 Current priority (2026-10-04): next after validated VULKAN-002; COMMON-005
-ROCm work is deferred. Begin with pinned-source inspection, then test the
-existing sidecar without restoring historical MTP patches.
+ROCm work is deferred. Pinned-source inspection is complete: native sidecar
+loading, HC-wide hidden transfer, MTP-layer QSA and bounded recurrent rollback
+are present. Existing sidecar/runtime compatibility is still untested. See
+[R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md)
+for source evidence and the initial allocation/short-generation commands.
 
 Refresh-branch validation plan:
 
@@ -650,8 +653,9 @@ Refresh-branch validation plan:
 - separately measure long-context PP overhead
 - port only the minimum compatibility change if the existing sidecar still fails
 
-Do not combine this item with MTP-QSA work. Revisit MTP-QSA only if ordinary MTP
-loses enough long-context benefit to justify its additional graph/cache complexity.
+Keep historical downstream MTP-QSA changes outside this compatibility gate.
+Ordinary upstream MTP already uses QSA when its pool/compression metadata is
+present; any additional prototype must demonstrate a missing delta and value.
 
 ## COMMON-003 - ROCmFPx format/core support
 
@@ -714,17 +718,14 @@ compatibility patch; optional FA metadata does not replace ROCm's algorithm.
 
 ## MTP-QSA prototype
 
-The earlier MTP-QSA prototype remains outside the initial refresh stack.
+The historical downstream MTP-QSA prototype remains outside the refresh stack.
+Pinned upstream's ordinary MTP graph already builds its own QSA/indexer path.
+The old assumption that draft QSA must first be added no longer applies.
 
-It should only be reconsidered after:
-
-- the refreshed main-model QSA path is validated
-- COMMON-005 is re-evaluated on ROCm
-- COMMON-006 upstream behavior is measured
-- COMMON-002 upstream MTP compatibility is stable
-- normal MTP on/off measurements are complete
-- long-context MTP loses enough benefit to justify draft-QSA complexity, or a
-  separate new performance case justifies the added graph/cache complexity
+Reconsider a prototype only after COMMON-002 sidecar compatibility, actual QSA
+activation and normal MTP OFF/ON/long-context overhead are measured. Identify a
+concrete gap relative to the pinned implementation and validate only that delta.
+Deferred ROCm COMMON-005 work is not a prerequisite for ordinary Vulkan MTP.
 
 ## Patch documentation template
 
