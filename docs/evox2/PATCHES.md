@@ -4,12 +4,42 @@
 
 The r4 base is pinned at `bed0a856606ee4a24a164066f73d2379447033f5` on
 `r4/upstream-refresh-20261002`. No downstream inference patch is applied.
-COMMON-001/004/005 decisions are pending clean build/load/performance results;
-COMMON-006 is an upstream-validation gate. The registry and measurements below
+Clean 64k/128k/256k runs now pass on both backends.
+COMMON-006 remains an upstream-validation gate. The registry and measurements below
 are the historical r3 checkpoint frozen at
 `0a93fcbb8e5bcf51b331275c4f4b142d822168d6`, not r4 validation.
 
 See [BASELINE.md](BASELINE.md) for the current r4 gates.
+
+## Provisional r4 decisions through 256k (2026-10-03)
+
+These decisions apply to the pinned r4 source, not moving upstream master.
+Historical r3 `validated` statuses below remain unchanged.
+
+| ID | Upstream coverage in r4 | Provisional action |
+|---|---|---|
+| COMMON-001 | Joined-PLE lazy loading/prefetch exists; split PLE16 loading does not | Conditional compatibility/comparison port; original model passes through 256k |
+| COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; validate the upstream path and profile any remaining cost |
+| COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Priority 2: profile ROCm decode, then adapt compact selected-K/V gathering if confirmed |
+| VULKAN-002 | Per-mask-row sparse FA exists; r2 grouped-union PP is not reproduced | Priority 1: profile Vulkan prefill, then port only the missing grouped-union delta |
+
+Before the optimization ports, investigate the Vulkan r3-to-r4 slowdown:
+64k original-model PP is down 6.3%; TG versus the initial COMMON-004 ON
+checkpoint is down 5.2% at 64k, 5.0% at 128k, and 8.4% at 256k. Neither r3 nor r4 has
+VULKAN-002, so its absence does not explain this regression signal.
+COMMON-004 is functionally covered but performance parity remains unverified.
+A matched rerun/profile gate now precedes implementation priority 1.
+
+Priority favors long-context wall-clock time: 128k Vulkan prompt evaluation
+is 751 s versus 20 s of generation. COMMON-005 remains the strongest decode
+candidate, and may move first if its residual bottleneck is confirmed and the
+Vulkan port needs substantial investigation. COMMON-001 moves first if the
+joined-layout comparison is needed or PLE16 is required. The 256k clean run passed.
+At 256k, ROCm TG is 12.23 versus r3 Gather OFF 11.68 / ON 17.37;
+Vulkan PP is 126.76 versus the r2 grouped-union reference 177.01.
+These cross-version/layout gaps support continued investigation, not gain forecasts.
+See [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md)
+for source evidence, comparison limits, and implementation gates.
 
 ## Purpose
 

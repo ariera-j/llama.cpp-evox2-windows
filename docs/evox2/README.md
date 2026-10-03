@@ -15,9 +15,9 @@ branch: r4/upstream-refresh-20261002
 upstream base: bed0a856606ee4a24a164066f73d2379447033f5
 ```
 
-Windows builds and original-model AllocationOnly passed. PP/TG is pending;
+Windows builds, original-model AllocationOnly, and clean 64k/128k/256k PP/TG runs passed;
 ROCm had one automatic backend-test failure followed by a passing manual retest.
-No COMMON-001/004/005 implementation is imported.
+No COMMON-001/004/005 implementation is imported. Vulkan PP/TG regression diagnosis is next.
 
 The same source revision is used for both Vulkan and ROCm. Backend differences are created by build configuration, not by maintaining separate permanent source trees.
 
@@ -128,3 +128,9 @@ Older r1/r2/r3 Evo-X2 documents are historical records. They may refer to:
 - r2 QSA grouped-union experiments
 
 Use the r4 build guides for current commands. The dated r3 validation/profiling documents and R3-BASELINE.md are retained as historical comparison evidence.
+
+## Current performance decisions
+
+- [BASELINE.md](BASELINE.md): completed six-run clean baseline through 256k.
+- [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md): source audit, historical comparisons, and Vulkan diagnosis before optimization ports.
+- [PERFORMANCE-CANDIDATES-2026-10-03.md](PERFORMANCE-CANDIDATES-2026-10-03.md): external engine survey and additional candidates, after the existing patch decisions.

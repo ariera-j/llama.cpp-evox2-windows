@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-03 (r3 frozen; r4 upstream pinned; build/load recorded; clean PP/TG next)
+Snapshot: 2026-10-03 (r3 frozen; r4 clean 64k/128k/256k recorded; Vulkan diagnosis next)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -36,8 +36,41 @@ Windows builds and original-model 64k AllocationOnly passed. PLE16 loading
 failed on both backends. ROCm auto-test was 3985/3986 and manual retest was
 3986/3986; the discrepancy remains unresolved. See
 [R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md).
-Performance gates are pending. Do not move the base silently
+Clean 64k/128k/256k runs pass on both backends; performance diagnosis remains open. Do not move the base silently
 or rewrite r3 onto it. Re-apply only downstream deltas justified by measurements.
+
+### Active provisional order after the 256k baseline
+
+This order supersedes the older numbered refresh sequence below for the next
+implementation work. The clean six-run baseline is now complete.
+
+1. Preserve the completed clean 64k/128k/256k baselines. Before either
+   optimization port, diagnose the Vulkan regressions: 64k PP is 6.3% below
+   the original-model r3 baseline; TG is about 5% below the r3 COMMON-004 ON
+   checkpoint at 64k/128k, and 8.4% below it at 256k. Confirm repeatability with available r3 binaries
+   and matched settings, then profile PP and TG. Functional upstream replacement
+   of COMMON-004 does not establish performance parity. Fix a demonstrated
+   residual cost first; use COMMON-001 early if PLE layout blocks attribution.
+2. VULKAN-002: profile long-context prefill, then adapt only the missing
+   grouped-union PP path. Existing upstream per-row sparse FA is not equivalent.
+3. COMMON-005: profile ROCm single-token decode, then adapt selected K/V/mask
+   gathering to the new pool-domain selection, if the full-K/V cost remains.
+   This diagnostic can precede step 2; a small confirmed port may move first.
+4. COMMON-001: restore split-PLE16 compatibility if needed operationally or for
+   a matched-layout diagnosis. Original has now passed through 256k; no immediate
+   load/stability prerequisite for either QSA optimization was demonstrated.
+5. COMMON-004: validate the upstream persistent incremental k-pool cache; do not
+   reintroduce the r3 implementation by default. Profile residual pool costs
+   separately if they remain material.
+6. Resume MTP compatibility and newly researched optimization candidates after
+   these four items have an explicit decision and the justified deltas are tested.
+
+VULKAN-002 is first for long-context wall-clock impact; COMMON-005 is first for
+ROCm decode-specific benefit. Historical performance gaps are investigation
+signals, not promised gains. At 256k, Vulkan PP is 126.76 versus r2 union
+177.01; ROCm TG is 12.23 versus r3 Gather ON 17.37. Keep both candidates,
+with Vulkan regression diagnosis first. Details and
+source traces: [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md).
 
 ### r2 grouped-union remains the long-context PP reference
 

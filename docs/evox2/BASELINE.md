@@ -1,6 +1,6 @@
 # r4 clean baseline and validation record
 
-Snapshot: 2026-10-03. Windows builds and original-model 64k allocation checks completed; PP/TG pending.
+Snapshot: 2026-10-03. Windows builds and original-model 64k/128k/256k real-input runs completed on both backends; performance diagnosis remains open.
 
 ## Source identity
 
@@ -37,9 +37,9 @@ the pinned upstream SHA and the later tooling commit are different identities.
 | Relevant backend tests | manual OK (user report) | auto 3985/3986, manual 3986/3986; cause unresolved |
 | Original GGUF / AllocationOnly, 64k | OK | OK |
 | PLE16-converted model load | failed: joined tensor absent | failed: joined tensor absent |
-| Real-input 64k | pending | pending |
-| Real-input 128k | pending | pending |
-| Real-input 256k | pending | pending |
+| Real-input 64k | OK, exit 0 | OK, exit 0 |
+| Real-input 128k | OK, exit 0 | OK, exit 0 |
+| Real-input 256k | OK, exit 0 | OK, exit 0 |
 
 The attached manifests and AllocationOnly console log establish the Windows
 build/load results above. Details are in
@@ -77,6 +77,62 @@ For the first real-input gate, use the same command with `-OnlyCase 64k` in plac
 of `-PlanOnly`. After both backends pass, select `-OnlyCase 128k` and then
 `-OnlyCase 256k`. `-OnlyBuild R4Vulkan` or `R4ROCm` selects one backend.
 The full plan contains six runs and stops on an error. It does not run automatically.
+
+## Clean performance through 256k
+
+Each row is one run, MTP off, original joined-PLE Unsloth UD-IQ3_XXS,
+manual UMA 96 GB, with the plan settings above. Both binaries report
+b11372 / `94b877457`; subsequent tooling changes do not change the inference source.
+All six runs returned status OK and exit code 0. Log paths point to r4.
+
+| Backend | Context | Prompt tokens | Generated tokens | PP tok/s | TG tok/s | Run seconds |
+|---|---:|---:|---:|---:|---:|---:|
+| Vulkan | 64k | 61,789 | 593 | 248.38 | 24.61 | 318.034 |
+| ROCm | 64k | 61,789 | 578 | 369.72 | 20.98 | 234.448 |
+| Vulkan | 128k | 126,253 | 463 | 168.09 | 22.81 | 816.551 |
+| ROCm | 128k | 126,253 | 533 | 275.00 | 17.13 | 533.015 |
+| Vulkan | 256k | 255,181 | 555 | 126.76 | 19.26 | 2089.375 |
+| ROCm | 256k | 255,181 | 448 | 185.95 | 12.23 | 1451.543 |
+
+Source archives (user-supplied; not committed):
+
+- `20261003-093152-929-qwen38-r4-clean.zip`
+- `20261003-094849-992-qwen38-r4-clean.zip`
+- `20261003-102327-930-qwen38-r4-clean.zip`
+
+128k prompt-evaluation times are 751.087 s (Vulkan) and 459.098 s (ROCm);
+generation-evaluation times are 20.257 s and 31.062 s. Peak sampled system
+commit is 94.443 GiB and 93.430 GiB respectively; these are system totals,
+not per-process resident memory. No error/warning lines were found in the
+128k engine stderr logs. Successful exit is not a semantic-quality validation.
+
+256k completed with the same binary hashes and inference settings as 64k/128k.
+The matrix completed 2/2 runs in 59.256 minutes. Vulkan prompt evaluation took
+2013.150 s and generation 28.767 s; ROCm took 1372.284 s and 36.545 s.
+Both engine stderr logs contain no error/warning matches. The generated answers
+are readable Japanese summaries; factual coverage has not been scored.
+
+256k resource observations (Vulkan / ROCm):
+
+- Peak sampled system commit: 100.184 / 99.053 GiB (78.5% / 77.6%).
+- Peak process GPU shared memory: 1.272 / 1.355 GiB.
+- KV buffers: 6144 + 1536 MiB on each backend.
+- GPU compute buffers: 3162.15 / 2977.18 MiB; host compute: 802.12 MiB each.
+- Free RAM briefly reaches 0.041 / 0.064 GiB during the first 60 seconds, which
+  include model loading and early prefill. Large page-in/disk-read peaks occur
+  in that interval. Page-ins include file-backed reads, not just pagefile I/O.
+- Excluding the first and last 60 seconds, median free RAM is 18.457 / 17.978 GiB,
+  with median disk reads and page-ins zero. Some read bursts remain; system-wide
+  counters alone do not identify their process or file. The data do not establish
+  sustained RAM exhaustion as the cause of the TG gap.
+- Graph reuse counts: 550 / 443 for 555 / 448 generated tokens.
+
+Original-model completion through 256k removes an immediate load/stability reason
+to port COMMON-001 for this workload; PLE16 compatibility and matched-layout
+performance comparisons remain separate reasons to consider it.
+
+The provisional patch decisions and revision gates are in
+[R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md).
 
 ## Historical comparison records
 
