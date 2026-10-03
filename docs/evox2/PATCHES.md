@@ -4,8 +4,9 @@
 
 The r4 base is pinned at `bed0a856606ee4a24a164066f73d2379447033f5` on
 `r4/upstream-refresh-20261002`. A diagnostic Vulkan MoE tile-selection switch is
-now prepared; its default preserves the upstream selection. No COMMON/QSA
-optimization port is applied. Windows profile A/B and both 939/939 MUL_MAT_ID
+now prepared; its default preserves the upstream selection. COMMON-001 split-PLE16
+compatibility is validated through 256k; the historical COMMON-004/005 optimization
+ports remain deferred. Windows profile A/B and both 939/939 MUL_MAT_ID
 test runs pass. Legacy selection reduces PP MoE GPU time by 25.22% and total
 PP GPU time by 8.82%. Normal 64k ABBA also passes: PP mean 248.475 -> 268.985
 tok/s (+8.25%, 18.959 s less prompt time). TG mean is 25.195 -> 24.565 (-2.50%);
@@ -15,8 +16,14 @@ GET_ROWS diagnostics passed on Windows: steady GPU 40.671 ms/token, including
 2.487 ms GET_ROWS across 124 calls. Cached pooled-key gathering contributes
 1.662 ms (66.82% of GET_ROWS); incremental raw-key gathering is only 0.030 ms.
 This isolates a residual cache-read cost, not missing incremental caching.
-The pre-port reference is now captured. COMMON-001 is the next implementation
-per the user's 2026-10-03 decision, to align Original/PLE16 comparisons.
+The pre-port reference is preserved. COMMON-001 was committed at `a60a57879...`
+and the subsequent small GET_ROWS 128x4 candidate at `109e238b...` was profiled
+on Windows. Steady cached gather is 1.658893 -> 1.671003 ms/token and GPU total
+40.688344 -> 40.716906 ms/token (OFF -> ON), with both runs OK. No useful gain
+was observed: keep default OFF, skip normal ABBA and long-context expansion for
+this candidate, and advance to VULKAN-002. Dedicated value-test logs were not
+included in that profile archive; no numerical pass is asserted.
+See [R4-GET-ROWS-128X4-AB-2026-10-03.md](R4-GET-ROWS-128X4-AB-2026-10-03.md).
 See [R4-GET-ROWS-PROFILE-2026-10-03.md](R4-GET-ROWS-PROFILE-2026-10-03.md).
 See [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md).
 Clean 64k/128k/256k runs now pass on both backends.
@@ -33,10 +40,10 @@ Historical r3 `validated` statuses below remain unchanged.
 
 | ID | Upstream coverage in r4 | Provisional action |
 |---|---|---|
-| COMMON-001 | Joined-PLE lazy loading/prefetch exists; split PLE16 loading does not | Next implementation after the GET_ROWS reference: user-requested split-PLE16 compatibility for matched comparisons |
-| COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; validate the upstream path and profile any remaining cost |
+| COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
+| COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | After COMMON-001: profile ROCm decode, then adapt compact selected-K/V gathering if confirmed |
-| VULKAN-002 | Per-mask-row sparse FA exists; r2 grouped-union PP is not reproduced | After COMMON-001: port only the missing grouped-union PP delta |
+| VULKAN-002 | Per-mask-row sparse FA exists; r2 grouped-union PP is not reproduced | Next after the closed cached-gather gate: inspect and port only the missing grouped-union PP delta |
 
 The following historical regression gate led to the completed MoE diagnosis
 above. The new user-directed order (GET_ROWS reference, COMMON-001, then TG/QSA
@@ -667,6 +674,12 @@ evaluate
 ```
 
 Earlier r2 measurements showed a large long-context prefill benefit from a grouped-union QSA path.
+
+Current r4 order (2026-10-03): COMMON-001 is validated and the small cached-gather
+128x4 profile gate is closed without a useful gain. VULKAN-002 is the next
+source-review/port candidate; it is not yet implemented in r4. Preserve the
+upstream sparse-FA paths and isolate the missing PP delta, targeting 128k/256k
+after correctness and a 64k execution check. See ROADMAP for the active order.
 
 The 64k r2/r3 pre-implementation profile confirms that grouped-union changes PP but
 is essentially neutral for steady decode TG.

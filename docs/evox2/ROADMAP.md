@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-03 (r3 frozen; r4 COMMON-001 validated through 256k; cached-pool follow-up / VULKAN-002 next)
+Snapshot: 2026-10-03 (r3 frozen; r4 COMMON-001 validated through 256k; cached-gather 128x4 gate closed; VULKAN-002 next)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -59,20 +59,21 @@ COMMON-001 compatibility port are complete.
    while preserving the joined Original path. 64k matched-layout comparison and
    PLE16 128k/256k validation pass on Vulkan and ROCm. The implementation commit
    is `a60a57879a9ffb4d51acd45d4de7e80d721548f9`.
-3. **Decision gate:** inspect whether the cached-pool gather cost can be reduced
-   with a small, well-scoped change. Do not restore COMMON-004 wholesale. If the
-   fix requires a broad cache/layout rewrite, keep the measured reference and
-   move on rather than obscuring attribution.
+3. **Completed, candidate not promoted:** investigate a small cached-pool gather
+   fix without restoring COMMON-004 or rewriting cache/layout management.
    Source inspection is complete at `43feb226...`: direct view replacement is
    constrained by variable cell ids, padding, graph reshapes, and backend copies.
    A scoped Vulkan GET_ROWS `128 x 4` workgroup candidate is now implemented behind
-   `GGML_VK_GET_ROWS_128X4=1`, default OFF. CPU-side source-derived checks pass;
-   Windows shader/backend correctness and 64k profile/normal A/B are pending.
-   Test only this candidate before deciding whether to advance to VULKAN-002;
-   do not broaden it into a cache/layout or gather/matmul-fusion rewrite.
+   `GGML_VK_GET_ROWS_128X4=1`, default OFF. The b11387 / `109e238b...` Windows
+   64k profile pair completed OK: steady cached gather 1.658893 -> 1.671003
+   ms/token and GPU total 40.688344 -> 40.716906 ms/token (OFF -> ON).
+   No useful improvement was observed. Skip normal ABBA and 128k/256k for this
+   candidate; keep default OFF and close this gate. Dedicated GPU correctness
+   logs were not supplied in that archive; no value-test pass is asserted.
+   Do not broaden this gate into cache/layout or gather/matmul-fusion work.
    See [R4-GET-ROWS-128X4-AB-2026-10-03.md](R4-GET-ROWS-128X4-AB-2026-10-03.md).
-4. **VULKAN-002:** adapt the missing grouped-union PP path if the small TG gate
-   above does not justify an earlier patch. The current per-row sparse FA does
+4. **VULKAN-002 is next:** inspect and adapt the missing grouped-union PP path
+   after the small TG gate above closed without promotion. The current per-row sparse FA does
    not cover the observed 1024/349-query PP. Use 128k/256k as the primary value
    test because r4 TG is already near the historical r2 range while long-context
    PP still trails the grouped-union reference materially.
