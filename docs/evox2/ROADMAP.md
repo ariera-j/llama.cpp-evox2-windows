@@ -77,6 +77,12 @@ COMMON-001 compatibility port are complete.
    not cover the observed 1024/349-query PP. Use 128k/256k as the primary value
    test because r4 TG is already near the historical r2 range while long-context
    PP still trails the grouped-union reference materially.
+   The source review is complete against r2 `23c316fb...`: use final remapped
+   token-cell ids, preserve the r4 pool-domain selector and per-row sparse path,
+   and adapt the dynamic-KV flag separately from r4 sparse bit 16. The proposed
+   opt-in port spans QSA-to-FA metadata, union/gather dispatch and current FA
+   initialization; implementation/GPU validation remain pending. See
+   [R4-VULKAN002-PORT-REVIEW-2026-10-03.md](R4-VULKAN002-PORT-REVIEW-2026-10-03.md).
 5. **COMMON-005:** profile ROCm single-token decode and adapt compact selected K/V
    gathering if confirmed. It remains complementary to VULKAN-002 and can move
    earlier if ROCm decode becomes the immediate priority.
