@@ -6,6 +6,13 @@ Do not start suffix reuse or MTP PP changes before reviewing these results.
 Source default stays OFF and upstream remains pinned. The plan adds benchmark
 configurations only; no inference/runtime implementation changes.
 
+Status after the23:47 submission: both ROCm native model gates are Complete
+and all8 allocation/short CLI runs are OK with matched A/B output/acceptance
+and intended invalidation suppression. Proceed to step3, the256k three-run
+normal plan, with the current b11420/131288531 binaries; no rebuild is needed.
+B-normal short PP48.16 is an unexplained outlier and remains a follow-up in
+the long results. See [native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
+
 ## 1. Build ROCm and validate native behavior
 
 Use the previously working TheRock venv/SDK setup. Build scripts already include
@@ -198,7 +205,8 @@ Only after ROCm and bench review, choose among MTP PP attribution, residual
 target suffix rebuilds, ROCm long-context PP scaling, or focused128k validation.
 Reuse existing diagnostics for the chosen question; avoid restarting every
 profile/context. COMMON-005 decode remains deferred and defaults stay OFF.
-This does not promise CLI/bench numeric equality or mark ROCm model/performance
-validation complete before the Windows results arrive.
+This does not promise CLI/bench numeric equality. Native ROCm model validation
+is now Complete; long-context ROCm performance and CLI/bench comparison remain
+pending until their Windows results arrive.
 
 See [Vulkan normal ABBA results](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md).

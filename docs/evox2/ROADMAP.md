@@ -134,8 +134,11 @@ COMMON-001 compatibility port are complete.
    5.529702->2.436146 s. Wall TG19.96->22.71 (+13.78%), PP unchanged. Normal
    ABBA now passes4/4: mean TG20.205->22.830 (+12.99%), matched response and
    aggregate acceptance, mean PP229.940->229.565 (-0.16%). Source default stays
-   OFF. At user request, next are ROCm build/measurement, CLI/bench comparison,
-   then a decision on the next optimization. See
+   OFF. ROCm native model gates and all8 allocation/short CLI runs now pass
+   with matching A/B output/acceptance and full rebuilds58->36. Short B-normal
+   PP48.16 is an explicit unexplained outlier. Next are three ROCm256k normal
+   controls, CLI/bench comparison, then the next optimization decision. See
+   [ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md) and
    [no-op normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
    [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md) and
    [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
@@ -174,7 +177,7 @@ current same-binary no-op comparison. See [normal results](R4-COMMON002-QSA-NOOP
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | ROCm coverage of current MTP candidates | Rebuild R4ROCm with both native targets; pass both native model/state/rollback gates, three allocation smokes and five short runs. Then focused256k normal OFF/A/B (dense omission1 fixed in A/B, target0/1). Record startup/runtime evidence, output/acceptance, PP/TG and total evaluation. Add repetitions/attribution only for unresolved uncertainty. |
+| 1 | ROCm coverage of current MTP candidates | Both native model/state/rollback gates and all8 allocation/short runs pass with Verified b11420/131288531 runtime, matched A/B output/acceptance, 23 no-op suppressions and 36 real removals retained (full rebuilds58->36). Next: focused256k normal OFF/A/B with the same binary, dense omission1 fixed in A/B and target0/1. Track the short B-normal PP48.16 outlier, then PP/TG/total evaluation. Add repetitions/attribution only for unresolved uncertainty. |
 | 2 | CLI versus llama-bench | Same PLE16 build per backend; compare MTP OFF real-text CLI with full random-token PP and TG after depth matching actual prompt tokens. Start64k, review, then256k. Bench has no MTP path; context allocation, MoE routing, warmup/state reuse and timer boundaries remain different. Reuse the fresh ROCm256k OFF control if identical. |
 | 3 | Decide the next optimization | After the preceding results, choose MTP PP attribution (target/draft prefill, hidden copy/sync, bookkeeping), residual target suffix reuse (95 rebuilds/2.436146s, separate CPU/GPU invalidation), ROCm128k/256k PP scaling (early/late batches, MTP OFF), or focused Vulkan128k coverage. No implementation automatically starts. Do not revive r2 MTP-QSA without attribution. |
 | 4 | MTP usage policy | Once the selected path is stable, assess representative output quality, prompt reuse and fresh-prompt total latency; DraftMax1/2 only if acceptance/cost supports it. TG improvement does not alone establish total-latency superiority. |

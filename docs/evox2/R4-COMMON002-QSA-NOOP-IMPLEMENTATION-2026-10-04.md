@@ -14,8 +14,10 @@ acceptance history: target full rebuilds217->95, layout5.529702->2.436146 s,
 wall TG19.96->22.71 (+13.78%), PP effectively unchanged. Diagnostic-OFF normal
 ABBA now passes4/4: mean TG20.205->22.830 (+12.99%), matching response and
 aggregate acceptance, mean PP229.940->229.565 (-0.16%). Source default stays OFF.
-Next, at user request: ROCm build/validation, CLI/bench comparison, then choose
-the next optimization. See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
+ROCm native gates and all8 allocation/short CLI runs now pass. Next: the three
+ROCm256k normal runs, then CLI/bench comparison before choosing the next
+optimization. Short B-normal PP has an explicit outlier to track. See
+[ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md). See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
 [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md). See
 [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
 [allocation and short CLI validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
@@ -397,7 +399,29 @@ The user now requests ROCm build/measurement, then CLI/bench comparison, then
 a decision on MTP PP versus other work. Residual suffix reuse is parked during
 those checks. New ROCm short/256k and staged64k/256k CLI/bench plans are
 provided; no inference code changes. PowerShell7 source checks and PlanOnly
-expansion pass locally; Windows ROCm native/model/performance remain pending.
+expansion pass locally; the subsequent Windows ROCm native/model and short
+gates now pass as recorded below, with long performance still pending.
 The currently verified Vulkan binaries need no rebuild. Rebuild ROCm to include
 the candidates and native test targets. See [normal results](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
 [ROCm/bench commands and comparison limits](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).
+
+
+## 23:08–23:41 ROCm native, allocation and short gate: Complete
+
+Both native model suites are Complete with source/policy/model Passed and
+Verified build identity. Dense suite36 matched-partition comparisons and
+target suite524 comparisons are exact; eight dense diagnostic-only partition
+comparisons remain separately informational. Target native records confirm67
+no-op suppressions and33 pending-stale preservations.
+
+All8 CLI runs are OK with Verified b11420/131288531 runtime and target/draft
+evidence. Allocation A/B match16/29 acceptance; short MTP ON bodies match
+with68/118 acceptance and wall ordered59-round trim histories match. B
+suppresses23 no-op invalidations and retains all36 real-removal stale marks;
+full rebuilds58->36 and copied cells13459->8625. Draft layout remains omitted.
+
+Short B-normal PP48.16 (3.384780s) is an outlier against the other MTP ON
+PP173.07–184.92 (0.881450–0.941810s). Cause is unconfirmed; retain it and
+track PP in256k. Single short TG differences do not establish a speedup.
+Proceed to the three ROCm256k normal arms with the same binaries; no rebuild
+is needed for this documentation update. See [complete ROCm validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
