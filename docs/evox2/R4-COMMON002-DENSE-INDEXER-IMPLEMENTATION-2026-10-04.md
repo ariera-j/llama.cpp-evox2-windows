@@ -6,8 +6,9 @@ Implemented on `r4/upstream-refresh-20261002` from planning baseline
 
 Status: runtime switch, native tests, Windows gate script and three benchmark
 plans are implemented. Windows source checks, native policy and build/runtime
-identity checks passed in the supplied 14:23 run. The model gate failed at its
-first prefix position assertion; the test correction below requires a rebuild
+identity checks passed in the supplied runs. The 14:35 model gate passed the
+corrected position assertion but failed A's first rollback numeric comparison.
+The batch-partition correction and diagnostics below require another rebuild
 and rerun. Real model/state/rollback correctness and GPU measurements remain
 pending. No speedup or model correctness pass is asserted yet.
 
@@ -112,6 +113,63 @@ Local C++17 syntax and native policy checks pass for this correction. Windows
 model execution and PowerShell execution of the correction remain pending.
 Rebuild with Gate A's BuildOnly command, then rerun `-RunModelTests`; do not
 advance to long measurements until that report is Complete.
+
+## 14:35 Windows numeric failure and batch-partition correction
+
+Source: `20261004-143511-352-mtp-dense-indexer.zip`, rebuilt after `03520d8`.
+Source/policy checks and build/runtime identity passed. Position, append and
+no-op checks progressed to A's first accept-0 replay comparison:
+
+```text
+MTP dense indexer: A/accept-0/logits nmse=0.00242120861 max_abs=0.353354931
+MTP dense indexer: FAIL: A/accept-0/logits: NMSE exceeds state-test threshold
+```
+
+This exceeds the unchanged `1e-5` threshold. A is omission OFF; B was initialized
+but its exercise and A/B comparison had not run. Hidden comparison was also
+not reached because the logits comparison threw first. This establishes a
+failure in the existing-arm test, not a demonstrated candidate regression.
+
+The test mixed two batch partitions: the edited path evaluated all eight rows
+at once, removed positions 6 and 7, then evaluated position 6 alone. Its fresh
+reference evaluated positions 0 through 6 as one seven-row batch. In the
+single-sequence QWEN4EXP path, `common_speculative_impl_draft_mtp::draft` adds
+one new token/hidden row per step. Vulkan's `ggml_vk_mul_mat` dispatch also
+selects matvec vs matmul using output column count. Therefore the old fixture
+confounds cache edits with evaluation partition and kernel selection. That
+source finding does not prove which GPU operation caused the observed NMSE.
+
+The corrected edited path evaluates prefix `[0,6)` together, then positions 6
+and 7 individually, trims the rejected suffix and evaluates one continuation.
+The reference uses the same six-row prefix and individual retained/continuation
+rows. Accept-0/1/2 now compare identical input partitions for all retained rows
+and the final output. The fixed target token/hidden fixture is retained for
+cache isolation; sampling and recursive draft carry still require Gate B's
+real CLI coverage. Full/PARTIAL_ONLY restore and A/B checks remain strict.
+
+Two diagnostic-only comparisons per arm measure bulk `[0,7)` vs `[6,1]` and
+bulk `[0,8)` vs `[6,1,1]`, without any removal or restore. Their names contain
+`diagnostic-only-partition` and summary lines contain `diagnostic_only=1`.
+They print logits/hidden NMSE and maximum absolute difference but do not decide
+the candidate cache gate. A partition mismatch together with passing matched
+cache checks would support partition-dependent numerics as the old test's
+confound; that result is still pending. A matched-partition cache mismatch
+remains a blocking failure requiring further source/runtime investigation.
+
+All gating numeric comparisons keep `NMSE <= 1e-5`. Finite numeric failures are
+collected so A, B, logits, hidden and A/B results can be inspected in one run;
+any collected failure returns 1 before the completed PASS marker. Structural
+or non-finite failures still stop immediately. Exact state byte counts,
+full-state shrinkage and PARTIAL_ONLY equality are unchanged. No inference
+runtime or kernel change is included in this correction.
+
+Local C++17 syntax checks with warnings as errors pass. A model-free regression
+of the actual comparison/report helpers confirms that multiple numeric
+failures are retained and block completion, equal outputs pass, zero-energy
+mismatches fail and non-finite output throws. This does not execute model or
+GPU code. Windows model execution remains pending. Run Gate A's pull,
+BuildOnly and `-RunModelTests` commands again, retaining the entire report even
+if it fails; do not proceed to long measurements until Gate A is Complete.
 
 ## Gate A: source checks, rebuild and native correctness
 

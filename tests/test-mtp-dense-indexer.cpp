@@ -63,7 +63,7 @@ struct output {
     std::vector<float> logits, hidden;
 };
 
-static void compare(const std::vector<float> & reference, const std::vector<float> & actual,
+static bool compare(const std::vector<float> & reference, const std::vector<float> & actual,
                     const std::string & name) {
     require(!reference.empty() && reference.size() == actual.size(), name + ": missing/unequal output");
     double squared_error = 0, energy = 0;
@@ -79,13 +79,27 @@ static void compare(const std::vector<float> & reference, const std::vector<floa
     // normalizing energy, so require exact zeros instead of dividing by zero.
     const double nmse = energy ? squared_error / energy : (squared_error ? INFINITY : 0.0);
     std::printf("MTP dense indexer: %s nmse=%.9g max_abs=%.9g\n", name.c_str(), nmse, double(max_abs));
-    require(nmse <= 1e-5, name + ": NMSE exceeds state-test threshold");
+    return nmse <= 1e-5;
 }
 
-static void compare(const output & reference, const output & actual, const std::string & name) {
-    compare(reference.logits, actual.logits, name + "/logits");
-    compare(reference.hidden, actual.hidden, name + "/hidden");
+static bool compare(const output & reference, const output & actual, const std::string & name) {
+    const bool logits = compare(reference.logits, actual.logits, name + "/logits");
+    const bool hidden = compare(reference.hidden, actual.hidden, name + "/hidden");
+    return logits && hidden;
 }
+
+struct comparison_report {
+    std::vector<std::string> failed;
+    void check(const output & reference, const output & actual, const std::string & name) {
+        if (!compare(reference, actual, name)) { failed.push_back(name); }
+    }
+    void require_ok() const {
+        for (const auto & name : failed) {
+            std::fprintf(stderr, "MTP dense indexer: numerical failure: %s\n", name.c_str());
+        }
+        require(failed.empty(), std::to_string(failed.size()) + " numerical comparisons exceed NMSE 1e-5");
+    }
+};
 
 static output capture_output(llama_context * ctx) {
     llama_synchronize(ctx);
@@ -180,7 +194,8 @@ struct checks {
     size_t full_size = 0, partial_size = 0;
 };
 
-static checks exercise(llama_context * ctx, const trace & input, const std::string & arm) {
+static checks exercise(llama_context * ctx, const trace & input, const std::string & arm,
+                       comparison_report & comparisons) {
     checks result;
     clear(ctx);
     result.outputs.push_back(decode(ctx, input, 0, 6, arm + "/prefix"));
@@ -195,13 +210,23 @@ static checks exercise(llama_context * ctx, const trace & input, const std::stri
     for (int accepted = 0; accepted <= 2; ++accepted) {
         clear(ctx);
         const auto stage = arm + "/accept-" + std::to_string(accepted);
-        decode(ctx, input, 0, 8, stage + "/speculate"); // prefix of six, plus two speculative rows
+        decode(ctx, input, 0, 6, stage + "/prefix");
+        // The single-sequence QWEN4EXP draft loop evaluates one row per step.
+        // Keep the retained prefix's batch partition identical to the fresh
+        // reference. Bulk 8 vs bulk 7 compares matmul/matvec paths as well as
+        // rollback, which is not a cache-isolation test on quantized Vulkan.
+        decode(ctx, input, 6, 1, stage + "/speculate-0");
+        decode(ctx, input, 7, 1, stage + "/speculate-1");
         require(llama_memory_seq_rm(llama_get_memory(ctx), 0, 6 + accepted, -1), "Speculative suffix removal refused");
         check_positions(ctx, 5 + accepted, stage + "/trim");
         const auto after_trim = decode(ctx, input, 6 + accepted, 1, stage + "/replay");
         clear(ctx);
-        const auto reference = decode(ctx, input, 0, 7 + accepted, stage + "/reference");
-        compare(reference, after_trim, stage);
+        decode(ctx, input, 0, 6, stage + "/reference-prefix");
+        for (int i = 6; i < 6 + accepted; ++i) {
+            decode(ctx, input, i, 1, stage + "/reference-accepted-" + std::to_string(i - 6));
+        }
+        const auto reference = decode(ctx, input, 6 + accepted, 1, stage + "/reference-continue");
+        comparisons.check(reference, after_trim, stage);
         result.outputs.push_back(after_trim);
     }
 
@@ -220,10 +245,28 @@ static checks exercise(llama_context * ctx, const trace & input, const std::stri
         }
         check_positions(ctx, 5, stage + "/restored");
         const auto actual = decode(ctx, input, 6, 1, stage + "/continue");
-        compare(expected, actual, stage);
+        comparisons.check(expected, actual, stage);
         result.outputs.push_back(actual);
     }
     return result;
+}
+
+static void diagnose_partition(llama_context * ctx, const trace & input, const std::string & arm) {
+    // No removal or restore: measure bulk vs [6, 1, ...] at the same logical
+    // tail. This diagnostic cannot pass/fail the candidate's cache gate.
+    // It helps distinguish partition-dependent numerics from edit failures.
+    for (int tail : {6, 7}) {
+        const auto stage = arm + "/diagnostic-only-partition-tail-" + std::to_string(tail);
+        clear(ctx);
+        const auto bulk = decode(ctx, input, 0, tail + 1, stage + "/bulk");
+        clear(ctx);
+        decode(ctx, input, 0, 6, stage + "/prefix");
+        for (int i = 6; i < tail; ++i) { decode(ctx, input, i, 1, stage + "/append"); }
+        const auto split = decode(ctx, input, tail, 1, stage + "/split");
+        const bool matched = compare(bulk, split, stage);
+        std::printf("MTP dense indexer: diagnostic_only=1 arm=%s tail=%d partition_matched=%d\n",
+                    arm.c_str(), tail, int(matched));
+    }
 }
 
 static llama_context_ptr draft_context(llama_model * model, llama_context_params params,
@@ -290,16 +333,20 @@ int main(int argc, char ** argv) {
         const auto input = make_trace(target.get());
         auto a = draft_context(draft_model.get(), cp, "0", log);
         auto b = draft_context(draft_model.get(), cp, "1", log);
-        const auto results_a = exercise(a.get(), input, "A");
-        const auto results_b = exercise(b.get(), input, "B");
+        diagnose_partition(a.get(), input, "A");
+        diagnose_partition(b.get(), input, "B");
+        comparison_report comparisons;
+        const auto results_a = exercise(a.get(), input, "A", comparisons);
+        const auto results_b = exercise(b.get(), input, "B", comparisons);
         require(results_a.outputs.size() == results_b.outputs.size(), "Unequal check counts");
         for (size_t i = 0; i < results_a.outputs.size(); ++i) {
-            compare(results_a.outputs[i], results_b.outputs[i], "A/B-" + std::to_string(i));
+            comparisons.check(results_a.outputs[i], results_b.outputs[i], "A/B-" + std::to_string(i));
         }
         require(results_a.full_size > results_b.full_size, "No actual draft indexer state was omitted");
         require(results_a.partial_size == results_b.partial_size, "PARTIAL_ONLY checkpoint format changed");
         std::printf("MTP dense indexer: full_state_bytes A=%zu B=%zu partial_state_bytes=%zu\n",
                     results_a.full_size, results_b.full_size, results_a.partial_size);
+        comparisons.require_ok();
         std::puts("MTP dense indexer: PASS (append, no-op, accept 0/1/2, full/partial restore, A/B logits and hidden)");
         return 0;
     } catch (const std::exception & error) {
