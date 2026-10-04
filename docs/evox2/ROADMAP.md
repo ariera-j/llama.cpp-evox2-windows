@@ -134,6 +134,11 @@ The next concrete implementation is therefore the step-1 diagnostics, with
 reliable build identification and a small correctness case. It is not a
 performance-algorithm change or an automatic default change.
 
+The proposed implementation, event/timing semantics, build-identity refresh and
+focused Windows gates are recorded in
+[R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md).
+This is a plan, not an implemented diagnostic feature.
+
 #### Deferred, conditional and completed items
 
 | Item | Current disposition | When to revisit |

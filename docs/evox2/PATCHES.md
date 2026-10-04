@@ -657,6 +657,14 @@ for all results and focused diagnostic gates, and
 [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md)
 for the initial source review, compatibility fix and matrix plan.
 
+Next implementation proposal:
+[R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md).
+Add default-off wall/synchronized diagnostics for MTP, CPU layout updates and
+Vulkan verification dispatch; explicitly refresh BuildOnly metadata and verify
+existing artifact identities. Start with three focused Vulkan diagnostic runs,
+after a short correctness/control gate. No runtime optimization is implemented
+by this proposal.
+
 Refresh-branch validation plan:
 
 - test the existing Unsloth Q8_0 MTP sidecar without downstream MTP patches
