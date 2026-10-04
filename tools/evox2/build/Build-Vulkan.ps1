@@ -212,7 +212,9 @@ try {
         'llama-bench',
         'test-backend-ops',
         'test-mtp-indexer-policy',
-        'test-mtp-dense-indexer'
+        'test-mtp-dense-indexer',
+        'test-qsa-noop-policy',
+        'test-qsa-noop-invalidation'
     )
 
     $configureRecord = [ordered]@{

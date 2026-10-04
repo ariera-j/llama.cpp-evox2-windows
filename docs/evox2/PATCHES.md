@@ -717,15 +717,18 @@ See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-
 Target layout source investigation is complete at the current source baseline:
 full acceptance still calls trim, and no-op indexer removals unconditionally
 stale the layout. B-wall target cost splits into 122 no-op-associated rebuilds /
-3.092231 s and 95 real suffix rebuilds / 2.407742 s. First plan a separate
-no-op invalidation candidate that retains recurrent/indexer/attention removal
-calls and pending stale markers. Actual suffix reuse follows separately;
+3.092231 s and 95 real suffix rebuilds / 2.407742 s. A separate default-off
+no-op invalidation candidate is now implemented and retains recurrent/indexer/
+attention removal calls and pending stale markers. Actual suffix reuse follows separately;
 CPU layout dirtiness must not clear required pooled-key invalidation.
 No runtime change is included in this review. The
 [target no-op implementation plan](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-PLAN-2026-10-04.md)
-is now prepared: separate default-off switch, actual membership-count check,
-existing dirty-state preservation, numeric target QSA tests and short/wall/
-normal A/B with draft omission1 fixed. Implement after plan review. See
+is approved and delivered: separate default-off switch, actual membership-count
+check, existing dirty-state preservation, numeric target QSA tests and short/
+wall/normal A/B with draft omission1 fixed. Local policy, C++ syntax, PowerShell
+source and diagnostic checks pass. Windows Vulkan build/native model and the
+new performance gates are pending; no default promotion or speed claim yet.
+See [implementation and Windows commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md) and
 [target source review](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 
 Refresh-branch validation plan:

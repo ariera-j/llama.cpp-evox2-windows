@@ -3,8 +3,10 @@
 Planning baseline: `r4/upstream-refresh-20261002` at
 `f24b6e3e654a2826b9459d379dce0ac3b2d4b1f3`; pinned upstream
 `bed0a856606ee4a24a164066f73d2379447033f5`.
-Status: implementation proposal for review. This commit changes documents only;
-the runtime switch, native targets, scripts and plans below are not delivered yet.
+Status: approved and implemented. The original planning commit was documents
+only; the runtime switch, native targets, scripts and focused plans are now
+delivered. Windows build/model and new performance gates remain pending. See
+[implementation and commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md).
 
 ## Goal and bounded scope
 
@@ -275,10 +277,9 @@ attribution and ROCm long-context PP scaling follow; COMMON-005 decode remains
 deferred. The already validated draft omission's128k confirmation remains a
 coverage gate before wider use.
 
-Once implementation is approved, deliver the code/tests/plans and a runnable
-implementation document, commit/push, then have Windows build/native results
-reviewed before longer measurements. Commands naming the new scripts/configs
-will be supplied only when those files exist.
+Code/tests/plans and the runnable implementation document are delivered.
+Review Windows build/native results before longer measurements; the new
+scripts/configs and their commands are in the implementation document.
 
 Related:
 [target source investigation](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md),

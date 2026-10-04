@@ -101,6 +101,8 @@ function Get-Evox2BuildArtifactIdentities {
         'test-backend-ops.exe',
         'test-mtp-indexer-policy.exe',
         'test-mtp-dense-indexer.exe',
+        'test-qsa-noop-policy.exe',
+        'test-qsa-noop-invalidation.exe',
         'ggml.dll',
         'llama.dll',
         'ggml-base.dll',

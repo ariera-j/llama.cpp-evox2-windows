@@ -9,6 +9,7 @@ from pathlib import Path
 
 FIELDS = re.compile(r"([A-Za-z0-9_]+)=([^\s]+)")
 COUNTERS = {"full_rebuilds", "stale_rebuilds", "copied_cells", "appended_cells",
+            "noop_observed", "noop_suppressed", "stale_marked", "pending_stale_preserved",
             "scan_steps", "logical_new", "padded_new", "rows", "bytes", "getter_us", "copy_us"}
 
 

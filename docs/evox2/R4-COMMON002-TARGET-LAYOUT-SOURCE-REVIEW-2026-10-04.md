@@ -245,3 +245,12 @@ Related:
 [wall work removal](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md),
 [earlier layout review](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md),
 [roadmap](ROADMAP.md).
+
+## Approved candidate implementation
+
+Candidate1 is now implemented as a separate default-off target opt-in, with
+actual membership-count checks and preserved pending stale state. Code, native
+numeric/fallback tests, Windows gate and isolated short/wall/normal plans are
+delivered. Local checks pass; Windows Vulkan build/model results must be reviewed
+before additional measurements. This does not validate the expected time saving.
+See [implementation and commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md).

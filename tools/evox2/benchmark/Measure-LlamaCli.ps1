@@ -697,6 +697,8 @@ $CombinedText = [IO.File]::ReadAllText($OutputPath, $Utf8NoBom)
 $Parsed = ConvertFrom-Evox2LlamaCliResult -Text $CombinedText
 $DenseIndexerEvidence = Get-Evox2MtpDenseIndexerEvidence -Text $CombinedText `
     -Setting $env:LLAMA_MTP_SKIP_DENSE_INDEXER -Mtp ([bool]$Mtp)
+$QsaNoopEvidence = Get-Evox2QsaNoopInvalidationEvidence -Text $CombinedText `
+    -Setting $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION
 
 $EnoughInput = $false
 if (-not $AllocationOnly -and $null -ne $Parsed.PromptTokens) {
@@ -723,6 +725,10 @@ $resourceSampleCount = 0
 if ($Status -eq 'OK' -and $Mtp -and $env:LLAMA_MTP_SKIP_DENSE_INDEXER -in @('0', '1') -and
     $DenseIndexerEvidence.Status -ne 'Verified') {
     $Status = 'CANDIDATE_EVIDENCE_' + $DenseIndexerEvidence.Status.ToUpperInvariant()
+}
+if ($Status -eq 'OK' -and $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION -in @('0', '1') -and
+    $QsaNoopEvidence.Status -ne 'Verified') {
+    $Status = 'QSA_NOOP_EVIDENCE_' + $QsaNoopEvidence.Status.ToUpperInvariant()
 }
 if (Test-Path -LiteralPath $ResourcePath -PathType Leaf) {
     try {
@@ -779,6 +785,7 @@ $Result = [ordered]@{
     DraftAccepted              = $Parsed.DraftAccepted
     DraftGenerated             = $Parsed.DraftGenerated
     MtpDenseIndexerEvidence     = $DenseIndexerEvidence
+    QsaNoopInvalidationEvidence = $QsaNoopEvidence
 
     ModelArchitecture          = $Parsed.ModelArchitecture
     ModelFileType              = $Parsed.ModelFileType
@@ -831,6 +838,8 @@ $Summary = [PSCustomObject]@{
     DraftAcceptance     = $Parsed.DraftAcceptance
     DenseIndexerEvidence = $DenseIndexerEvidence.Status
     DenseIndexerOmitted  = $DenseIndexerEvidence.Omitted
+    QsaNoopEvidence     = $QsaNoopEvidence.Status
+    QsaNoopEnabled      = $QsaNoopEvidence.Enabled
     ResourceSamples     = $resourceSampleCount
     DurationMinutes     = [math]::Round(($Finished - $Started).TotalMinutes, 3)
     RunDirectory        = $RunDirectory

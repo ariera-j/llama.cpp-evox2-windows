@@ -1,8 +1,8 @@
 @{
     SchemaVersion = 1
-    Name = 'qwen38-r4-mtp-diagnostics'
+    Name = 'qwen38-r4-qsa-noop-abba'
 
-    # Focused attribution runs; not a performance comparison.
+    # Same-binary normal 256k ABBA; both MTP ON, diagnostics OFF.
     Settings = @{
         CooldownSeconds = 10
         ContinueOnError = $false
@@ -63,30 +63,19 @@
 
     Jobs = @(
         @{
-            Name = 'vulkan-128k-on'; Tool = 'cli'
-            BuildKeys = @('R4QsaUnionVulkan'); ModelKeys = @('UnslothPle16')
-            Environment = @{
-                GGML_VK_MOE_LEGACY_TILE_SELECTION = '1'
-                GGML_VK_GET_ROWS_128X4 = '0'
-                GGML_VK_QSA_UNION = '1'
-                LLAMA_MTP_DIAG = 'wall'
-            }
-            Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
-            Variants = @(@{ Name = 'on-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 } })
-        }
-        @{
             Name = 'vulkan-256k'; Tool = 'cli'
             BuildKeys = @('R4QsaUnionVulkan'); ModelKeys = @('UnslothPle16')
             Environment = @{
                 GGML_VK_MOE_LEGACY_TILE_SELECTION = '1'
                 GGML_VK_GET_ROWS_128X4 = '0'
                 GGML_VK_QSA_UNION = '1'
-                LLAMA_MTP_DIAG = 'wall'
             }
             Cases = @(@{ Name = '256k'; Parameters = @{ Context = 262144; InputKey = '256k' } })
             Variants = @(
-                @{ Name = 'on-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 } }
-                @{ Name = 'off-wall'; Parameters = @{} }
+                @{ Name = 'A1'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'A1' } }
+                @{ Name = 'B1'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'B1' } }
+                @{ Name = 'B2'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'B2' } }
+                @{ Name = 'A2'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'A2' } }
             )
         }
     )

@@ -120,10 +120,12 @@ COMMON-001 compatibility port are complete.
    match, PP mean 228.835 -> 229.650. The earlier normal MTP OFF reference is
    TG19.76/PP265.02: B has only +2.15% TG and total latency remains higher.
    Target source review is complete: no-op invalidation is the first bounded
-   candidate (3.09 s of B-wall's 5.50 s). Its implementation plan is now ready:
-   separate default-off target switch, membership-count comparison, preserved
-   existing stale state, numeric target QSA gate and draft-omission1 A/B. See
-   [target no-op implementation plan](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-PLAN-2026-10-04.md).
+   candidate (3.09 s of B-wall's 5.50 s). The approved no-op candidate is now
+   implemented: separate default-off target switch, actual membership-count comparison and preserved existing stale
+   state. Native target tests, Windows gate and short/wall/normal plans retain
+   draft omission1. Local policy/source/diagnostic checks pass; Windows Vulkan
+   build and native model gate are next, before additional measurements. See
+   [implementation and commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md).
    Focused 128k confirmation remains before broader expansion. See
    [candidate normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
    See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
@@ -155,7 +157,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Target source review is complete: B-wall layout is 3.092231 s after full-accept no-op trims and 2.407742 s after real suffix removal. No-op implementation plan is ready: separate default-off target switch, actual membership counts, numeric target gate, short/wall/normal A/B with draft omission1. Implement after plan review; suffix-prefix reuse with distinct CPU/GPU invalidation follows separately. Focused 128k confirmation remains an expansion gate; ROCm coverage remains pending. |
+| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Target source review is complete: B-wall layout is 3.092231 s after full-accept no-op trims and 2.407742 s after real suffix removal. Approved no-op candidate is implemented with separate default-off target switch, actual membership counts, preserved dirty state, numeric target gate and short/wall/normal A/B with draft omission1. Local checks pass; rebuild Vulkan and review native model results before short then long measurements; suffix-prefix reuse with distinct CPU/GPU invalidation follows separately. Focused 128k confirmation remains an expansion gate; ROCm coverage remains pending. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |

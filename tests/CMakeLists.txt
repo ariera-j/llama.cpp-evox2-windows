@@ -355,3 +355,6 @@ if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
+
+llama_build_and_test(test-qsa-noop-policy.cpp)
+llama_build(test-qsa-noop-invalidation.cpp)

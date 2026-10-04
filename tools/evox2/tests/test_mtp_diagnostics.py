@@ -32,6 +32,22 @@ def refused_probe():
 
 
 class AccountingTests(unittest.TestCase):
+    def test_qsa_noop_flags_are_summed_observations_are_not(self):
+        lines = []
+        for i, (before, after, suppressed, pending) in enumerate(((8, 8, 1, 0), (8, 8, 1, 1), (8, 6, 0, 0))):
+            fields = dict(domain="memory", event="seq_rm", idx_cells_before=before, idx_cells_after=after,
+                          stale_before=2147483647 if not pending else 6, stale_after=6,
+                          noop_observed=int(before == after), noop_suppressed=suppressed,
+                          stale_marked=1-suppressed, pending_stale_preserved=pending)
+            lines += [event("begin", str(i), 10+20*i, **fields), event("end", str(i), 10+20*i, 20+20*i, **fields)]
+        report = parser.summarize(lines)
+        self.assertTrue(report["Complete"], report["Issues"])
+        counters = report["Groups"][0]["CounterSums"]
+        self.assertEqual(counters, dict(noop_observed=2, noop_suppressed=2, stale_marked=1, pending_stale_preserved=1))
+        self.assertEqual(report["Events"][0]["idx_cells_before"], "8")
+        for name in ("idx_cells_before", "idx_cells_after", "stale_before", "stale_after"):
+            self.assertNotIn(name, counters)
+
     def test_nested_times_are_not_added_to_coverage(self):
         lines = [event("begin", "outer", 100), event("begin", "child", 120, parent="outer"),
                  event("end", "child", 120, 170, parent="outer"), event("end", "outer", 100, 200)]
@@ -135,6 +151,12 @@ class RecoveryTests(unittest.TestCase):
             root = Path(d); child = self.fixture(root, exit_code=1)
             with self.assertRaises(ValueError): parser.repair_matrix(root)
             self.assertEqual(json.loads((child / "result.json").read_text())["Status"], "DIAGNOSTIC_INCOMPLETE")
+
+    def test_candidate_evidence_failure_cannot_be_recovered_as_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); child = self.fixture(root, status="QSA_NOOP_EVIDENCE_MISSING")
+            with self.assertRaises(ValueError): parser.repair_matrix(root)
+            self.assertEqual(json.loads((child / "result.json").read_text())["Status"], "QSA_NOOP_EVIDENCE_MISSING")
 
     def test_partially_collected_matrix_cannot_be_marked_complete(self):
         with tempfile.TemporaryDirectory() as d:

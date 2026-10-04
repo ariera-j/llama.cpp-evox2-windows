@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <type_traits>
 
 #include "llama-impl.h"
@@ -43,7 +44,8 @@ llama_memory_hybrid_idx::llama_memory_hybrid_idx(
                             /* layer filters */
     const layer_filter_cb & filter_attn,
     const layer_filter_cb & filter_recr,
-    const layer_filter_cb & filter_idx) :
+    const layer_filter_cb & filter_idx,
+                     bool   target_context) :
     llama_memory_hybrid(
         model,
         type_k, type_v, v_trans, kv_size, n_pad, n_swa, swa_type,
@@ -72,7 +74,18 @@ llama_memory_hybrid_idx::llama_memory_hybrid_idx(
             model, hparams_idx, type_k, type_v, v_trans, offload, unified,
             kv_size, n_seq_max, n_pad, n_swa, swa_type,
             nullptr, filter_idx, nullptr, nullptr, "idx_");
-    }()) {}
+    }()) {
+    const char * setting = std::getenv("LLAMA_QSA_SKIP_NOOP_INVALIDATION");
+    const uint32_t streams = mem_idx ? mem_idx->get_n_stream() : 0;
+    qsa_noop = llama_qsa_noop::decide(setting, model.arch == LLM_ARCH_QWEN4EXP,
+        target_context, bool(mem_idx), get_kpool_by_order(), get_kpool(),
+        n_seq_max, streams, n_swa != 0 || swa_type != LLAMA_SWA_TYPE_NONE);
+    if (setting) {
+        LLAMA_LOG_INFO("%s: QSA no-op invalidation: requested=%d eligible=%d enabled=%d target=%d kpool=%u streams=%u seq_max=%u reason=%s\n",
+            __func__, int(qsa_noop.requested), int(qsa_noop.eligible), int(qsa_noop.enabled),
+            int(target_context), get_kpool(), streams, n_seq_max, qsa_noop.reason);
+    }
+}
 
 llama_memory_context_ptr llama_memory_hybrid_idx::init_batch(llama_batch_allocr & balloc, uint32_t n_ubatch, bool embd_all) {
     // note: repeats llama_memory_hybrid::init_batch, as the indexer needs the attention slot infos that the base context hides
@@ -199,13 +212,29 @@ bool llama_memory_hybrid_idx::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_po
     if (mem_idx) {
         mtp_diag::scope indexer("memory", "seq_rm_indexer", nullptr, "unknown", llama_mtp_diag_emit);
         const llama_pos stale = mem_idx_stale_pos(seq_id, p0);
+        const bool inspected = qsa_noop.eligible && (qsa_noop.enabled || diag.active()) &&
+            llama_qsa_noop::inspect(qsa_noop, seq_id, kpool_layout_shared(), diag.active());
+        const size_t before = inspected ? mem_idx->get_cells(seq_id).seq_pos_get(seq_id).size() : 0;
+        const llama_pos stale_before = inspected ? mem_idx_stale[seq_id] : POS_CLEAN;
         mem_idx->seq_rm(seq_id, p0, p1);
-        mem_idx_stale_set(seq_id, stale);
+        const size_t after = inspected ? mem_idx->get_cells(seq_id).seq_pos_get(seq_id).size() : 0;
+        const bool suppressed = llama_qsa_noop::suppress(qsa_noop, inspected, before, after);
+        if (!suppressed) {
+            mem_idx_stale_set(seq_id, stale);
+        }
         diag.add("stale_from", stale);
+        if (inspected && diag.active()) {
+            diag.add("idx_cells_before", before); diag.add("idx_cells_after", after);
+            diag.add("noop_observed", before == after ? 1 : 0);
+            diag.add("noop_suppressed", suppressed ? 1 : 0);
+            diag.add("stale_marked", suppressed ? 0 : 1);
+            diag.add("pending_stale_preserved", suppressed && stale_before != POS_CLEAN ? 1 : 0);
+            diag.add("stale_before", stale_before); diag.add("stale_after", mem_idx_stale[seq_id]);
+        }
 
         // removing a sequence can free cells another sequence shared, but only this one is marked stale, so the
         // survivor would keep shared = true and pin cache_safe off forever; stale every sequence to re-derive it
-        if (kpool_layout_shared()) {
+        if (!suppressed && kpool_layout_shared()) {
             mem_idx_stale_set(-1, 0);
         }
     }

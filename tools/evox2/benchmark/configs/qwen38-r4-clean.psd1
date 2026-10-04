@@ -40,6 +40,7 @@
         # restores the caller's environment afterward. These are not patches.
         Environment = @{
             LLAMA_MTP_SKIP_DENSE_INDEXER        = $null
+            LLAMA_QSA_SKIP_NOOP_INVALIDATION    = $null
             LLAMA_MTP_DIAG = $null
             GGML_VK_GET_ROWS_128X4          = $null
             LLAMA_QSA_NO_POOLED_CACHE       = $null

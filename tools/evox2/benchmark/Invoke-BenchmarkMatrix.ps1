@@ -302,6 +302,10 @@ function ConvertTo-Evox2MatrixResultRow {
             PP                = $ChildRow.PP
             TG                = $ChildRow.TG
             DraftAcceptance   = $ChildRow.DraftAcceptance
+            DenseIndexerEvidence = $ChildRow.DenseIndexerEvidence
+            DenseIndexerOmitted  = $ChildRow.DenseIndexerOmitted
+            QsaNoopEvidence      = $ChildRow.QsaNoopEvidence
+            QsaNoopEnabled       = $ChildRow.QsaNoopEnabled
 
             BenchTest         = $null
             PromptTokens      = $ChildRow.PromptTokens

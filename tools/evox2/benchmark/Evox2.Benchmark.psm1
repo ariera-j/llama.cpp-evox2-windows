@@ -316,6 +316,41 @@ function Get-Evox2MtpDenseIndexerEvidence {
     }
 }
 
+
+function Get-Evox2QsaNoopInvalidationEvidence {
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Text, [AllowNull()][string]$Setting)
+    $pattern = '(?m)QSA no-op invalidation: requested=([01]) eligible=([01]) enabled=([01]) target=([01]) kpool=(\d+) streams=(\d+) seq_max=(\d+) reason=([a-z_]+)\r?$'
+    $records = @([regex]::Matches($Text, $pattern) | ForEach-Object {
+        [PSCustomObject]@{
+            Requested = $_.Groups[1].Value -eq '1'; Eligible = $_.Groups[2].Value -eq '1'
+            Enabled = $_.Groups[3].Value -eq '1'; Target = $_.Groups[4].Value -eq '1'
+            KPool = [int64]$_.Groups[5].Value; Streams = [int64]$_.Groups[6].Value
+            SeqMax = [int64]$_.Groups[7].Value; Reason = $_.Groups[8].Value
+        }
+    })
+    $targets = @($records | Where-Object { $_.Target })
+    $status = if ($Setting -notin @('0', '1')) { 'NotRequested' }
+        elseif ([regex]::Matches($Text, 'QSA no-op invalidation:').Count -ne $records.Count) { 'Malformed' }
+        elseif ($targets.Count -gt 1) { 'Malformed' }
+        elseif ($targets.Count -eq 0) { 'Missing' }
+        else { 'Verified' }
+    if ($status -eq 'Verified') {
+        $target = $targets[0]
+        if ($target.Requested -ne ($Setting -eq '1') -or
+            ($target.Enabled -and (-not $target.Eligible -or -not $target.Requested)) -or
+            ($target.Eligible -and ($target.KPool -ne 4 -or $target.Streams -ne 1 -or $target.SeqMax -ne 1)) -or
+            ($Setting -eq '0' -and $target.Enabled)) { $status = 'Mismatch' }
+        elseif ($Setting -eq '1' -and (-not $target.Eligible -or -not $target.Enabled)) { $status = 'NotApplied' }
+        elseif (($target.Enabled -and $target.Reason -ne 'target_single_sequence') -or
+            ($target.Eligible -and -not $target.Enabled -and $target.Reason -ne 'disabled')) { $status = 'Mismatch' }
+    }
+    return [PSCustomObject]@{
+        Setting = $Setting; Status = $status; Decisions = @($records)
+        Enabled = if ($status -eq 'Verified') { $targets[0].Enabled } else { $null }
+    }
+}
+
 function ConvertFrom-Evox2LlamaCliResult {
     [CmdletBinding()]
     param(
@@ -526,6 +561,7 @@ Export-ModuleMember -Function @(
     'New-Evox2RunDirectory',
     'Write-Evox2CombinedLog',
     'Get-Evox2MtpDenseIndexerEvidence',
+    'Get-Evox2QsaNoopInvalidationEvidence',
     'ConvertFrom-Evox2LlamaCliResult',
     'ConvertFrom-Evox2LlamaBenchJson',
     'Get-Evox2LlamaBenchTestLabel'

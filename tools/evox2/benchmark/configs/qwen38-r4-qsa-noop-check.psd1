@@ -1,8 +1,9 @@
 @{
     SchemaVersion = 1
-    Name = 'qwen38-r4-mtp-diagnostics'
+    Name = 'qwen38-r4-qsa-noop-check'
 
-    # Focused attribution runs; not a performance comparison.
+    # Five short correctness/control runs; A and B both use MTP.
+    # A/B keep draft omission ON; only B suppresses target no-op invalidation.
     Settings = @{
         CooldownSeconds = 10
         ContinueOnError = $false
@@ -18,15 +19,15 @@
             CpuMoe           = 0
             FlashAttn        = 'auto'
             Verbosity        = 4
-            GenerationTokens = 512
+            GenerationTokens = 128
             PromptCacheMiB   = 0
-            Temperature      = 0.2
+            Temperature      = 0.0
             TopP             = 0.8
             Reasoning        = 'off'
             Fit              = 'off'
             Mtp              = $false
             ResourceMonitor  = $true
-            ExtraArgs = @('-tb', '4', '--ctx-checkpoints', '0t', '--seed', '1234', '--ignore-eos')
+            ExtraArgs = @('-tb', '4', '--ctx-checkpoints', '0t', '--seed', '1234', '--ignore-eos', '--top-k', '1')
         }
 
         # Prevent inherited diagnostics/profilers from changing normal timings.
@@ -63,30 +64,23 @@
 
     Jobs = @(
         @{
-            Name = 'vulkan-128k-on'; Tool = 'cli'
+            Name = 'vulkan-short'; Tool = 'cli'
             BuildKeys = @('R4QsaUnionVulkan'); ModelKeys = @('UnslothPle16')
             Environment = @{
                 GGML_VK_MOE_LEGACY_TILE_SELECTION = '1'
                 GGML_VK_GET_ROWS_128X4 = '0'
                 GGML_VK_QSA_UNION = '1'
-                LLAMA_MTP_DIAG = 'wall'
             }
-            Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
-            Variants = @(@{ Name = 'on-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 } })
-        }
-        @{
-            Name = 'vulkan-256k'; Tool = 'cli'
-            BuildKeys = @('R4QsaUnionVulkan'); ModelKeys = @('UnslothPle16')
-            Environment = @{
-                GGML_VK_MOE_LEGACY_TILE_SELECTION = '1'
-                GGML_VK_GET_ROWS_128X4 = '0'
-                GGML_VK_QSA_UNION = '1'
-                LLAMA_MTP_DIAG = 'wall'
-            }
-            Cases = @(@{ Name = '256k'; Parameters = @{ Context = 262144; InputKey = '256k' } })
+            Cases = @(@{
+                Name = 'controlled'
+                Parameters = @{ Context = 32768; InputFile = 'tools\evox2\benchmark\inputs\mtp-short.txt' }
+            })
             Variants = @(
-                @{ Name = 'on-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 } }
-                @{ Name = 'off-wall'; Parameters = @{} }
+                @{ Name = 'control-mtp-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'; LLAMA_MTP_DIAG = 'off' } }
+                @{ Name = 'A-normal'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_MTP_DIAG = 'off' } }
+                @{ Name = 'B-normal'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'; LLAMA_MTP_DIAG = 'off' } }
+                @{ Name = 'A-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_MTP_DIAG = 'wall' } }
+                @{ Name = 'B-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'; LLAMA_MTP_DIAG = 'wall' } }
             )
         }
     )
