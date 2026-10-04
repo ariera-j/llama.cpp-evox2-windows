@@ -226,6 +226,12 @@ try {
         Targets   = @($targets)
     }
 
+    $buildSource = if (-not $ManifestOnly) { Get-Evox2GitMetadata -RepoRoot $RepoRoot } else { $null }
+    if ($BuildOnly) {
+        $configureRecord.MetadataRefresh = Invoke-Evox2BuildMetadataRefresh `
+            -CMake $cmake -RepoRoot $RepoRoot -BuildDir $BuildDir -Backend 'Vulkan'
+    }
+
     if (-not $ManifestOnly -and -not $BuildOnly) {
         Write-Host 'Configuring Vulkan build...'
         & $cmake @configureArgs
@@ -305,6 +311,7 @@ try {
         -BinDir $BinDir `
         -Configuration $Configuration `
         -GeneratedBy 'tools/evox2/build/Build-Vulkan.ps1' `
+        -BuildSource $buildSource `
         -Configure $configureRecord `
         -Build $buildRecord `
         -Toolchain $toolchain `

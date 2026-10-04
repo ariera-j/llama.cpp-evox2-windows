@@ -107,6 +107,11 @@ function Get-Evox2BuildArtifactIdentities {
         'ggml-hip.dll'
     )
 
+    $names += @('llama-cli.dll', 'llama-server.dll', 'llama-common.dll')
+    $names += @(Get-ChildItem -LiteralPath $BinDir -Filter 'ggml-cpu*.dll' -File |
+        ForEach-Object { $_.Name })
+    $names = @($names | Sort-Object -Unique)
+
     $result = @()
 
     foreach ($name in $names) {
@@ -117,6 +122,33 @@ function Get-Evox2BuildArtifactIdentities {
     }
 
     return @($result)
+}
+
+function Invoke-Evox2BuildMetadataRefresh {
+    [CmdletBinding()]
+    param([string]$CMake, [string]$RepoRoot, [string]$BuildDir,
+          [ValidateSet('Vulkan', 'ROCm')][string]$Backend)
+
+    $cachePath = Join-Path $BuildDir 'CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
+        throw 'BuildOnly requires an existing CMake cache; run a full configure first.'
+    }
+    $cache = Get-Content -LiteralPath $cachePath -Raw
+    $homeMatch = [regex]::Match($cache, '(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)\r?$')
+    if (-not $homeMatch.Success -or
+        -not [string]::Equals([IO.Path]::GetFullPath($homeMatch.Groups[1].Value.Trim()),
+            [IO.Path]::GetFullPath($RepoRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'CMake cache belongs to another source directory.'
+    }
+    $backendFlag = if ($Backend -eq 'Vulkan') { 'GGML_VULKAN' } else { 'GGML_HIP' }
+    if ($cache -notmatch "(?m)^${backendFlag}:BOOL=(ON|1|TRUE)\r?`$") {
+        throw "CMake cache does not enable $backendFlag."
+    }
+    $arguments = @('-S', $RepoRoot, '-B', $BuildDir)
+    Write-Host 'Refreshing build metadata using the existing CMake configuration...'
+    & $CMake @arguments | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Metadata refresh failed: $LASTEXITCODE" }
+    return [ordered]@{ Executed = $true; Arguments = $arguments; CachePreserved = $true }
 }
 
 function Write-Evox2BuildManifest {
@@ -159,7 +191,10 @@ function Write-Evox2BuildManifest {
 
         [Parameter(Mandatory = $false)]
         [AllowNull()]
-        [object]$Validation
+        [object]$Validation,
+
+        [AllowNull()]
+        [object]$BuildSource
     )
 
     $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
@@ -185,6 +220,26 @@ function Write-Evox2BuildManifest {
     $artifacts = Get-Evox2BuildArtifactIdentities -BinDir $BinDir
     $manifestPath = Join-Path $BinDir 'evox2-build.json'
 
+    $identityStatus = 'Unverified'
+    $identityReason = 'No real build executed by this invocation.'
+    if ($Build.Executed) {
+        $sourceStable = $null -ne $BuildSource -and
+            $BuildSource.Commit -eq $git.Commit -and
+            $BuildSource.DirtyFingerprint -eq $git.DirtyFingerprint
+        $versionMatches = -not [string]::IsNullOrWhiteSpace($exe.Commit) -and
+            $git.Commit.StartsWith($exe.Commit, [StringComparison]::OrdinalIgnoreCase)
+        if ($sourceStable -and $versionMatches) {
+            $identityStatus = 'Verified'
+            $identityReason = 'Source stable during build; embedded commit matches.'
+        } else {
+            $identityStatus = 'Mismatch'
+            $identityReason = 'Source changed during build or embedded commit does not match build source.'
+        }
+    } elseif (-not [string]::IsNullOrWhiteSpace($exe.Commit) -and
+        -not $git.Commit.StartsWith($exe.Commit, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Warning 'ManifestOnly: embedded commit differs from current checkout; no rebuild was performed.'
+    }
+
     $manifest = [ordered]@{
         SchemaVersion = 1
         GeneratedAt   = (Get-Date).ToString('o')
@@ -196,6 +251,8 @@ function Write-Evox2BuildManifest {
         BinaryDirectory = $BinDir
 
         Source = $git
+        BuildSource = $BuildSource
+        BuildIdentity = [ordered]@{ Status = $identityStatus; Reason = $identityReason }
 
         ExecutableIdentity = $exe
         DeviceIdentity     = $devices
@@ -211,6 +268,9 @@ function Write-Evox2BuildManifest {
     }
 
     Write-Evox2Json -InputObject $manifest -Path $manifestPath -Depth 32
+    if ($identityStatus -eq 'Mismatch') {
+        throw "$identityReason Manifest preserved at $manifestPath"
+    }
     return $manifestPath
 }
 
@@ -219,5 +279,6 @@ Export-ModuleMember -Function @(
     'ConvertTo-Evox2CaptureRecord',
     'Save-Evox2CaptureLog',
     'Get-Evox2BuildArtifactIdentities',
+    'Invoke-Evox2BuildMetadataRefresh',
     'Write-Evox2BuildManifest'
 )

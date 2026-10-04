@@ -564,6 +564,52 @@ function Get-Evox2ConditionId {
     return $hash.Substring(0, $Length)
 }
 
+function Test-Evox2RuntimeArtifacts {
+    [CmdletBinding()]
+    param([string]$Executable, [AllowNull()][object]$Manifest)
+
+    if ($null -eq $Manifest) {
+        return [PSCustomObject]@{ Status = 'MissingManifest'; Digest = $null; Artifacts = @(); Issues = @() }
+    }
+    $binDir = Split-Path -Parent $Executable
+    $requiredNames = @([IO.Path]::GetFileName($Executable))
+    $dllNames = @('llama.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-vulkan.dll', 'ggml-hip.dll', 'llama-cli.dll', 'llama-server.dll', 'llama-common.dll')
+    $dllNames += @(Get-ChildItem -LiteralPath $binDir -Filter 'ggml-cpu*.dll' -File | ForEach-Object { $_.Name })
+    $requiredNames += @($dllNames | Where-Object { Test-Path -LiteralPath (Join-Path $binDir $_) -PathType Leaf })
+    # Include any additional bounded ggml/llama runtime DLLs already recorded by the manifest.
+    $recorded = if ($Manifest.PSObject.Properties['Artifacts']) { @($Manifest.Artifacts) } else { @() }
+    $requiredNames += @($recorded | Where-Object { $_.Name -match '^(ggml|llama).*\.dll$' } |
+        ForEach-Object { $_.Name })
+    $artifacts = @(); $issues = @(); $mismatch = $false
+    foreach ($name in @($requiredNames | Sort-Object -Unique)) {
+        if ([IO.Path]::GetFileName($name) -ne $name) { throw 'Invalid runtime artifact name in manifest.' }
+        $file = Join-Path $binDir $name
+        $expected = @($recorded | Where-Object { $_.Name -eq $name })
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            $issues += "Missing runtime artifact: $name"; $mismatch = $true; continue
+        }
+        $actual = Get-Evox2FileIdentity -Path $file -Sha256
+        $artifacts += $actual
+        if ($expected.Count -ne 1 -or [string]::IsNullOrWhiteSpace($expected[0].Sha256)) {
+            $issues += "Unrecorded runtime artifact: $name"; continue
+        }
+        if ($actual.Sha256 -ne $expected[0].Sha256) {
+            $issues += "Runtime artifact hash mismatch: $name"; $mismatch = $true
+        }
+    }
+    $digest = $null
+    $status = if ($mismatch) { 'Mismatch' } elseif ($issues.Count) { 'Unverified' } else { 'Verified' }
+    if ($status -eq 'Verified') {
+        $text = (@($artifacts | Sort-Object Name | ForEach-Object { "$($_.Name.ToLowerInvariant())=$($_.Sha256)" }) -join "`n")
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)) |
+                ForEach-Object { $_.ToString('x2') }) -join ''
+        } finally { $sha.Dispose() }
+    }
+    return [PSCustomObject]@{ Status = $status; Digest = $digest; Artifacts = @($artifacts); Issues = @($issues) }
+}
+
 function Get-Evox2LlamaIdentity {
     [CmdletBinding()]
     param(
@@ -582,6 +628,10 @@ function Get-Evox2LlamaIdentity {
     $manifest = Read-Evox2BuildManifest -Executable $Executable
     $exe = Get-Evox2ExecutableMetadata -Executable $Executable `
         -SkipHash:$SkipExecutableHash
+    $runtimeArtifacts = Test-Evox2RuntimeArtifacts -Executable $Executable -Manifest $manifest
+    if ($runtimeArtifacts.Status -eq 'Mismatch') {
+        throw ($runtimeArtifacts.Issues -join '; ')
+    }
     $device = Get-Evox2DeviceMetadata -Executable $Executable
 
     $git = $null
@@ -600,6 +650,7 @@ function Get-Evox2LlamaIdentity {
         Executable    = $exe
         Device        = $device
         BuildManifest = $manifest
+        RuntimeArtifacts = $runtimeArtifacts
         Git           = $git
         System        = $system
     }
@@ -619,5 +670,6 @@ Export-ModuleMember -Function @(
     'Write-Evox2Json',
     'ConvertTo-Evox2CanonicalObject',
     'Get-Evox2ConditionId',
+    'Test-Evox2RuntimeArtifacts',
     'Get-Evox2LlamaIdentity'
 )
