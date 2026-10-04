@@ -6,12 +6,16 @@ Do not start suffix reuse or MTP PP changes before reviewing these results.
 Source default stays OFF and upstream remains pinned. The plan adds benchmark
 configurations only; no inference/runtime implementation changes.
 
-Status after the23:47 submission: both ROCm native model gates are Complete
-and all8 allocation/short CLI runs are OK with matched A/B output/acceptance
-and intended invalidation suppression. Proceed to step3, the256k three-run
-normal plan, with the current b11420/131288531 binaries; no rebuild is needed.
-B-normal short PP48.16 is an unexplained outlier and remains a follow-up in
-the long results. See [native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
+Status after the2026-10-05 01:26 submission: native and allocation/short gates
+remain Complete. The256k normal matrix is now3/3 OK with Verified b11420/
+131288531 runtime: OFF/A/B PP185.76/173.91/173.84, TG12.39/13.57/14.44.
+B improves observed TG versus OFF but adds88.318 s to fresh-prompt evaluation.
+A/B bodies and acceptance differ (289/441 versus286/448), so isolated no-op
+speedup and ROCm long-context output equivalence remain unestablished. The
+short PP48.16 collapse is absent from this long A/B pair; its cause remains open.
+Proceed to step4, MTP OFF CLI/bench64k, with the current binaries; no rebuild.
+Bench does not validate speculative correctness. See [256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md)
+and [native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
 
 ## 1. Build ROCm and validate native behavior
 
@@ -206,7 +210,9 @@ target suffix rebuilds, ROCm long-context PP scaling, or focused128k validation.
 Reuse existing diagnostics for the chosen question; avoid restarting every
 profile/context. COMMON-005 decode remains deferred and defaults stay OFF.
 This does not promise CLI/bench numeric equality. Native ROCm model validation
-is now Complete; long-context ROCm performance and CLI/bench comparison remain
-pending until their Windows results arrive.
+is Complete and the exploratory long-context matrix is collected. Its A/B
+output/acceptance difference remains open; CLI/bench results are still pending.
+Keep ROCm candidate equivalence/attribution as an explicit post-bench decision
+item before broader candidate use; do not mark it resolved by OFF-only bench.
 
 See [Vulkan normal ABBA results](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md).

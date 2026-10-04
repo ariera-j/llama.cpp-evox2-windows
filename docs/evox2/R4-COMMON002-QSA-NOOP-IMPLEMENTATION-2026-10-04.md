@@ -14,9 +14,13 @@ acceptance history: target full rebuilds217->95, layout5.529702->2.436146 s,
 wall TG19.96->22.71 (+13.78%), PP effectively unchanged. Diagnostic-OFF normal
 ABBA now passes4/4: mean TG20.205->22.830 (+12.99%), matching response and
 aggregate acceptance, mean PP229.940->229.565 (-0.16%). Source default stays OFF.
-ROCm native gates and all8 allocation/short CLI runs now pass. Next: the three
-ROCm256k normal runs, then CLI/bench comparison before choosing the next
-optimization. Short B-normal PP has an explicit outlier to track. See
+ROCm native gates and all8 allocation/short CLI runs pass. The256k normal
+matrix is3/3 OK: OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84.
+A/B response and acceptance differ, so ROCm long equivalence and isolated
+no-op performance remain unresolved. B adds88.318 s versus OFF to fresh-prompt
+evaluation. Next: MTP OFF CLI/bench64k before choosing the next investigation.
+The short PP outlier is not reproduced here but its cause remains open. See
+[ROCm256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md) and
 [ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md). See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
 [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md). See
 [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
@@ -425,3 +429,18 @@ PP173.07–184.92 (0.881450–0.941810s). Cause is unconfirmed; retain it and
 track PP in256k. Single short TG differences do not establish a speedup.
 Proceed to the three ROCm256k normal arms with the same binaries; no rebuild
 is needed for this documentation update. See [complete ROCm validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
+
+
+## 2026-10-05 00:08–01:24 ROCm256k normal collection: Complete
+
+The three OFF/A/B runs all finish OK with the same Verified b11420/131288531
+runtime,255181 prompt and512 generated tokens. PP185.76/173.91/173.84 and
+TG12.39/13.57/14.44 show current ON TG above OFF, but B evaluation remains
+88.318 s longer than OFF because PP adds94.176 s while generation saves5.859 s.
+A/B generation bodies differ from byte3 and acceptance is289/441 versus286/448.
+Therefore collection is Complete, while long-context candidate equivalence and
+isolated TG attribution are unresolved. Normal logs have no ordered trace;
+existing native/short exactness does not settle this long difference.
+Short B-normal PP48.16 collapse is absent in this pair, not explained or fixed.
+Proceed independently to MTP OFF CLI/bench64k with existing binaries. No code
+change or rebuild. See [full results and limits](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md).

@@ -85,7 +85,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), target no-op candidate implemented and Windows native gate Complete, then 8/8 allocation/short CLI runs pass with matched output/acceptance and target full rebuilds 57->33; 256k wall also passes 2/2 with matched output/ordered acceptance, target rebuilds 217->95, layout 5.53->2.44 s, wall TG +13.78% and PP unchanged; normal ABBA now passes 4/4 (TG mean 20.205->22.830, +12.99%, output/acceptance match); ROCm native gates and 8/8 allocation/short CLI now pass (matched output/acceptance, rebuilds58->36); next ROCm256k normal OFF/A/B with short PP outlier tracked, CLI/bench comparison, then optimization decision; 128k confirmation retained, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), target no-op candidate implemented and Windows native gate Complete, then 8/8 allocation/short CLI runs pass with matched output/acceptance and target full rebuilds 57->33; 256k wall also passes 2/2 with matched output/ordered acceptance, target rebuilds 217->95, layout 5.53->2.44 s, wall TG +13.78% and PP unchanged; normal ABBA now passes 4/4 (TG mean 20.205->22.830, +12.99%, output/acceptance match); ROCm native gates and 8/8 allocation/short CLI now pass (matched output/acceptance, rebuilds58->36); ROCm256k normal collection3/3 OK (OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84), but A/B output/acceptance differ so long equivalence and isolated no-op benefit remain unresolved; B fresh-prompt evaluation+88.318s versus OFF; next MTP OFF CLI/bench64k, then investigation decision including ROCm equivalence; 128k confirmation retained, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -747,9 +747,14 @@ pass. Windows ROCm native gates now both pass and all8 allocation/short runs
 are OK with Verified runtime and matched A/B output/acceptance. The short
 wall confirms23 no-op suppressions and36 real-removal stale marks retained
 (full rebuilds58->36). B-normal PP48.16 is an unexplained outlier, retained
-for long-result review. Next: ROCm256k normal OFF/A/B, then staged CLI/bench;
-long ROCm performance remains pending. No inference code changed; this update
-is documentation only and neither current binary needs rebuilding.
+for follow-up. ROCm256k normal collection now finishes3/3 OK with the same
+Verified runtime: OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84.
+The short PP collapse is absent here, but A/B response/acceptance differ
+(289/441 versus286/448), leaving long equivalence and isolated speedup open.
+B evaluation remains88.318s slower than OFF. Proceed to MTP OFF CLI/bench64k;
+its results do not settle speculative correctness. No inference code changed;
+this update is documentation only and neither binary needs rebuilding.
+See [ROCm256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md).
 See [ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
 See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
 [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).

@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-04 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; union default OFF; COMMON-002 overnight 28/28 pass, long-context TG investigation active; COMMON-005 decode port deferred)
+Snapshot: 2026-10-05 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; union default OFF; COMMON-002 overnight 28/28 pass, long-context TG investigation active; COMMON-005 decode port deferred)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -136,8 +136,13 @@ COMMON-001 compatibility port are complete.
    aggregate acceptance, mean PP229.940->229.565 (-0.16%). Source default stays
    OFF. ROCm native model gates and all8 allocation/short CLI runs now pass
    with matching A/B output/acceptance and full rebuilds58->36. Short B-normal
-   PP48.16 is an explicit unexplained outlier. Next are three ROCm256k normal
-   controls, CLI/bench comparison, then the next optimization decision. See
+   PP48.16 is an explicit unexplained outlier. ROCm256k normal collection is
+   now3/3 OK: OFF/A/B TG12.39/13.57/14.44 and PP185.76/173.91/173.84.
+   A/B bodies and acceptance differ; long equivalence and isolated no-op benefit
+   remain open. B fresh-prompt evaluation is88.318 s slower than OFF. Proceed
+   to MTP OFF CLI/bench64k, then choose the next investigation, including the
+   unresolved ROCm long A/B difference. See
+   [ROCm256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md) and
    [ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md) and
    [no-op normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
    [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md) and
@@ -177,9 +182,9 @@ current same-binary no-op comparison. See [normal results](R4-COMMON002-QSA-NOOP
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | ROCm coverage of current MTP candidates | Both native model/state/rollback gates and all8 allocation/short runs pass with Verified b11420/131288531 runtime, matched A/B output/acceptance, 23 no-op suppressions and 36 real removals retained (full rebuilds58->36). Next: focused256k normal OFF/A/B with the same binary, dense omission1 fixed in A/B and target0/1. Track the short B-normal PP48.16 outlier, then PP/TG/total evaluation. Add repetitions/attribution only for unresolved uncertainty. |
+| 1 | ROCm coverage of current MTP candidates | Both native model/state/rollback gates and all8 allocation/short runs pass with Verified b11420/131288531 runtime, matched A/B output/acceptance, 23 no-op suppressions and 36 real removals retained (full rebuilds58->36). 256k normal collection is3/3 OK: OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84; B evaluation is88.318s slower than OFF. A/B response/acceptance differ, so long candidate equivalence and isolated speedup remain open. Short PP48.16 collapse is absent here but unexplained. Continue OFF-only bench independently; retain focused ROCm equivalence/variability review before broader candidate use. |
 | 2 | CLI versus llama-bench | Same PLE16 build per backend; compare MTP OFF real-text CLI with full random-token PP and TG after depth matching actual prompt tokens. Start64k, review, then256k. Bench has no MTP path; context allocation, MoE routing, warmup/state reuse and timer boundaries remain different. Reuse the fresh ROCm256k OFF control if identical. |
-| 3 | Decide the next optimization | After the preceding results, choose MTP PP attribution (target/draft prefill, hidden copy/sync, bookkeeping), residual target suffix reuse (95 rebuilds/2.436146s, separate CPU/GPU invalidation), ROCm128k/256k PP scaling (early/late batches, MTP OFF), or focused Vulkan128k coverage. No implementation automatically starts. Do not revive r2 MTP-QSA without attribution. |
+| 3 | Decide the next optimization | After the preceding results, choose MTP PP attribution (target/draft prefill, hidden copy/sync, bookkeeping), residual target suffix reuse (95 rebuilds/2.436146s, separate CPU/GPU invalidation), ROCm128k/256k PP scaling (early/late batches, MTP OFF), focused Vulkan128k coverage, or unresolved ROCm256k candidate equivalence/variability. Bench OFF cannot settle the latter. No implementation automatically starts. Do not revive r2 MTP-QSA without attribution. |
 | 4 | MTP usage policy | Once the selected path is stable, assess representative output quality, prompt reuse and fresh-prompt total latency; DraftMax1/2 only if acceptance/cost supports it. TG improvement does not alone establish total-latency superiority. |
 | 5 | COMMON-005: residual ROCm decode | Remains deferred. Reprofile after the selected PP/coverage work; port only a still-needed compact-K/V delta. COMMON-003/VULKAN-001 and conditional upstream reviews remain in their existing backlog. |
 
