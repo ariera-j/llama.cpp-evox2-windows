@@ -4,7 +4,9 @@ Implementation parent: `feec722ade5b9a22e4c9555c72a6841c50afd5e8` on
 `r4/upstream-refresh-20261002`; upstream remains pinned to
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 Status: code, native targets, Windows gate and focused plans delivered;
-Windows Vulkan build/model validation and new performance measurements pending.
+Initial Windows source/policy and build-identity checks pass; the target model
+gate failed on a test-side hidden-row access and is corrected below. Rebuild/
+model rerun and new performance validation remain pending.
 The existing draft-omission measurements do not validate this new runtime.
 
 ## Runtime change
@@ -235,3 +237,48 @@ Related: [approved plan](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-PLAN-2026-10-04.md
 [target source review](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md),
 [draft omission ABBA](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md),
 [roadmap](ROADMAP.md).
+
+
+## 19:02 Windows gate failure: unmasked NextN row selection corrected
+
+Source: `20261004-190252-816-qsa-noop-invalidation.zip`, including the19:01
+SourceOnly report and19:02 native run from implementation commit `8f421386`.
+SourceChecks Passed, PolicyTest Passed/exit0, BuildIdentity Verified. The target
+model test exited1 at the first `seqs-1/prefix-32/accept-0` evaluation, before
+any logits/hidden numerical comparison or removal case. Startup decisions
+confirmed A requested0/eligible1/enabled0 and B requested1/eligible1/enabled1,
+both target1/pool4/streams1/seq_max1. The model runtime artifact digest was
+`a1ca0f5a7c6e4d188445d0b28b4d46eb034bba5472bc307e85d352eec1adac56`.
+
+The decisive stderr line is:
+
+```text
+get_embeddings_nextn_ith: invalid nextn embeddings id -1, reason: out of range [0, 64)
+```
+
+This is a test API misuse. `llama_context::get_embeddings_nextn_ith` supports
+negative output selection only for masked NextN; unmasked NextN rows are
+indexed by the token's nonnegative row within the current batch. The new target
+gate enables unmasked output but copied a `-1` accessor from the older masked
+draft gate. Logits' `-1` selection remains valid. This failure does not establish
+a candidate numerical error and is not a correctness pass.
+
+The corrected helper receives `common_batch::size()-1`, after checking that the
+batch is nonempty, and uses it only for the target NextN accessor. This selects
+the last token of the current batch after output reordering, including batches
+split into multiple ubatches. It does not use the absolute sequence position
+or the allocated buffer capacity. Missing logits/hidden diagnostics now identify
+the failing output explicitly. Target output remains unmasked, and the strict
+finite/dimension/NMSE<=1e-5 gate is unchanged.
+
+A new model-free regression compiles the actual capture/decode helper bodies
+against accessor stubs. It verifies batches32/33/3/1, nonzero sequence positions,
+stale unused capacity and empty-batch rejection. The old `-1` access is rejected
+by these stubs; no copied replacement capture implementation is tested.
+The regression and C++17 syntax/warnings-as-errors check pass locally. This
+validates accessor wiring, not Vulkan numeric correctness. The source fix,
+regression and this record do not change the optimization runtime.
+
+After pulling the fix, repeat Gate A's BuildOnly and `-RunModelTests` commands.
+Retain the whole test report, including on failure. ModelTest must pass and the
+report must be Complete before allocation/short or long measurements proceed.

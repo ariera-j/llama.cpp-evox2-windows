@@ -104,14 +104,18 @@ struct comparison_report {
     }
 };
 
-static output capture_output(llama_context * ctx) {
+static output capture_output(llama_context * ctx, int32_t last_token_row) {
+    require(last_token_row >= 0, "Missing target batch rows");
     llama_synchronize(ctx);
     const auto * model = llama_get_model(ctx);
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
     const int n_hidden = llama_model_n_embd_out(model);
     const auto * logits = llama_get_logits_ith(ctx, -1);
-    const auto * hidden = llama_get_embeddings_nextn_ith(ctx, -1);
-    require(logits && hidden && n_vocab > 0 && n_hidden > 0, "Missing MTP logits/nextn output");
+    // Target NextN is unmasked: rows use the current batch's token indices,
+    // not output_resolve_row's negative indices or absolute sequence positions.
+    const auto * hidden = llama_get_embeddings_nextn_ith(ctx, last_token_row);
+    require(logits && n_vocab > 0, "Missing target logits");
+    require(hidden && n_hidden > 0, "Missing unmasked target nextn row " + std::to_string(last_token_row));
     return {{logits, logits + n_vocab}, {hidden, hidden + n_hidden}};
 }
 
@@ -120,8 +124,9 @@ static output decode(llama_context * ctx, int first, int count) {
     common_batch batch(ctx);
     const int vocab = llama_vocab_n_tokens(llama_model_get_vocab(llama_get_model(ctx)));
     for (int i=first; i<first+count; ++i) batch.add(3 + i % (vocab-3), i, 0, true);
+    require(batch.size() > 0, "Empty target test batch");
     require(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0, "Target decode failed");
-    return capture_output(ctx);
+    return capture_output(ctx, batch.size() - 1);
 }
 static void clear(llama_context * ctx) { llama_memory_clear(llama_get_memory(ctx), true); }
 static std::vector<uint8_t> save(llama_context * ctx, llama_state_seq_flags flags) {
