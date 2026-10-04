@@ -13,8 +13,13 @@ and five short real CLI runs also pass in the 14:58-15:06 collection: all four
 MTP ON response bodies/acceptance match and B removes draft indexer work.
 The 15:11-15:51 256k wall pair also passes: TG 14.76 -> 19.95 tok/s,
 identical generated response bytes and acceptance history, and zero draft
-indexer/layout/pool work in B. Gate D normal 256k ABBA is now the next step.
-Normal performance and exhaustive model correctness remain unproven;
+indexer/layout/pool work in B. Gate D diagnostic-off normal ABBA also passes:
+TG mean 15.220 -> 20.185 tok/s (+32.62%), all four response bodies/acceptance
+match, PP effectively unchanged. This establishes a useful Vulkan 256k opt-in
+improvement; exhaustive correctness and cross-context/backend coverage remain
+unproven. Relative to the earlier normal MTP OFF reference, TG is only +2.15%
+and total prompt+generation is still slower. Continue separate target layout
+source investigation and retain focused 128k confirmation before expansion;
 keep the runtime switch default OFF.
 
 See [allocation and short CLI validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md)
@@ -234,7 +239,8 @@ binaries. This recording commit changes documentation only; retain the existing
 build manifest and artifact hashes for the next runs. At this 14:50 checkpoint,
 Gate B's real speculative acceptance/carry/CLI checks were still pending; they
 now pass in the [later short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
-The subsequent 256k wall pair also passes; ordinary ABBA is now the next gate.
+The subsequent 256k wall and normal ABBA gates also pass; see the
+[normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 
 ## Gate A: source checks, rebuild and native correctness
 
@@ -362,6 +368,23 @@ Only a useful, consistent normal gain justifies preparing 128k confirmation
 and subsequent short-context/ROCm checks. This plan includes only 256k and
 does not expand into an overnight matrix. Keep default OFF; ambiguous small
 differences remain inconclusive, and no default promotion is included.
+
+Gate D result: the 16:16-17:35 matrix is Complete, 4/4 OK, with diagnostics
+off and zero diagnostic records. A TG repeats 15.14/15.30; B repeats
+20.10/20.27 tok/s. Mean generation time 33.567750 -> 25.319875 s (-8.247875 s).
+Response bytes, accepted293/generated436 and Verified runtime digest match
+across all four. PP mean 228.835 -> 229.650 (+0.36%) remains effectively
+unchanged; total prompt+generation 1148.711170 -> 1136.513690 s (-1.06%).
+The preserved overnight normal OFF reference is PP265.02/TG19.76/total988.73 s;
+it uses an earlier binary, so it is contextual evidence, not a same-binary
+OFF control. B TG +2.15% versus that reference does not resolve MTP PP overhead.
+The earlier wall OFF PP268.37/TG19.69 is a diagnostic reference and must not
+be substituted for the normal OFF baseline.
+See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
+The candidate can be retained explicitly ON for subsequent Vulkan MTP tests.
+Next source work targets the retained target layout (5.499980 s in B-wall);
+focused 128k confirmation remains the expansion gate. No default change or
+new code/config implementation is included in this recording.
 
 ## State compatibility and scope
 

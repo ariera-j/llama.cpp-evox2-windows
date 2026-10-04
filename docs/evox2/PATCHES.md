@@ -53,7 +53,12 @@ passes 8/8 runs; MTP ON output/acceptance match and draft indexer work disappear
 only in B. The 256k wall pair also passes: TG 14.76 -> 19.95 (+35.16%),
 generation time -9.00755 s, matching response bytes/acceptance, no draft layout
 in B and 5.499980 s target layout remaining. PP is effectively unchanged.
-Normal 256k ABBA is next; default remains OFF.
+Normal 256k ABBA also passes 4/4: TG mean 15.220 -> 20.185 (+32.62%),
+identical response/acceptance and effectively unchanged PP. Versus the earlier
+normal MTP OFF reference TG19.76, the advantage is only +2.15%; PP overhead
+still makes fresh-prompt total latency worse. Target layout remains the next
+source investigation, with 128k confirmation before expansion. Default OFF.
+See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md).
 See [short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md)
 and [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
@@ -79,7 +84,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (TG +35.16%, output/acceptance match, draft layout removed); normal ABBA next, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target layout source review and 128k confirmation next, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -698,7 +703,13 @@ events are absent only in B. Candidate 256k wall A/B passes with TG
 14.76 -> 19.95 tok/s and generation time 34.61605 -> 25.60850 s.
 Output bytes and ordered acceptance history match. Draft layout 9.767278 s
 is removed; target layout remains 5.499980 s. PP gains only 0.13%, so MTP PP
-overhead remains open. Proceed to normal 256k ABBA with the same binary.
+overhead remains open. Normal 256k ABBA now passes with the same binary:
+TG mean 15.220 -> 20.185 (+32.62%), generation time -8.247875 s, matched
+output/acceptance and effectively unchanged PP. Earlier normal OFF is
+TG19.76/PP265.02, so B's TG advantage is small and fresh-prompt latency still
+loses. Retain the opt-in for subsequent Vulkan MTP tests; investigate retained
+target layout separately and confirm 128k before wider expansion.
+See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
 [implementation and Windows commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 

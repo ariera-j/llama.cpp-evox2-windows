@@ -115,7 +115,13 @@ COMMON-001 compatibility port are complete.
    wall pair also passes: TG 14.76 -> 19.95 tok/s (+35.16%), generation time
    -9.00755 s, identical generated response bytes and acceptance history.
    Draft layout is absent in B; target layout remains 5.499980 s. PP is
-   effectively unchanged (229.91 -> 230.21). Next: diagnostic-off 256k ABBA.
+   effectively unchanged (229.91 -> 230.21). Diagnostic-off normal ABBA now
+   also passes 4/4: TG mean 15.220 -> 20.185 (+32.62%), response/acceptance
+   match, PP mean 228.835 -> 229.650. The earlier normal MTP OFF reference is
+   TG19.76/PP265.02: B has only +2.15% TG and total latency remains higher.
+   Next: separate target suffix/no-op source investigation; focused 128k
+   confirmation before broader expansion. See
+   [candidate normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
    See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
    [candidate short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
    Main
@@ -145,7 +151,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero indexer omission passes native, allocation/short and 256k wall gates. Wall TG 14.76 -> 19.95 (+35.16%) with matched output/acceptance and no draft layout; PP unchanged. Next: normal 256k ABBA, then target suffix/no-op maintenance separately (5.50 s remains in B). Normal performance and GPU/ROCm attribution remain conditional. |
+| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Next: target suffix/no-op source investigation (5.50 s remains in B-wall), with focused 128k confirmation before expansion. ROCm coverage remains pending. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
@@ -170,8 +176,10 @@ optimization proposal, change list and validation order are recorded in
 with supporting source evidence in
 [R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 The optimization is implemented behind the default-off opt-in; Windows native,
-allocation/short and candidate 256k wall gates pass. Normal 256k ABBA remains
-pending. Run Gate D commands in
+allocation/short, candidate 256k wall and diagnostic-off normal ABBA gates pass.
+Use explicit candidate=1 for subsequent Vulkan MTP tests while retaining source
+default OFF. Investigate target suffix/no-op layout next; focused 128k
+confirmation is retained before broader use. Results and commands are in
 [the implementation document](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 
 The earlier diagnostic design and event/timing semantics are recorded in

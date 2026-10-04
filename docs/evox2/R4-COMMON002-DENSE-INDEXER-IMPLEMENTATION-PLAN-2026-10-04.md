@@ -9,8 +9,12 @@ focused benchmark plans are delivered. The 14:50 Windows Vulkan native model/
 state/rollback and A/B gate passes after harness corrections. Allocation/short
 real CLI subsequently passes 8/8 runs. The 256k wall pair also passes: TG
 14.76 -> 19.95 tok/s (+35.16%), identical response bytes/acceptance, draft
-layout removed and target layout retained. Normal 256k ABBA is now next;
-normal performance gates remain pending. This document preserves the design.
+layout removed and target layout retained. Normal 256k ABBA also passes:
+TG mean 15.220 -> 20.185 (+32.62%), matched output/acceptance, PP unchanged.
+The earlier normal OFF TG19.76 is only 2.15% below B; MTP PP overhead remains.
+Next: retained target layout source investigation and focused 128k confirmation
+before expansion. Default remains OFF. This document preserves the design.
+See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md).
 See [implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 for actual delivered behavior, local checks and Windows commands.

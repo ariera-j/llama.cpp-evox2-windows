@@ -11,7 +11,11 @@ rollback and A/B gate passes after harness corrections. Allocation/short CLI
 also passes 8/8 runs and confirms removal of draft indexer/layout/pool work;
 the 256k wall pair also passes with TG +35.16% and matching output/acceptance.
 Draft layout 9.767278 s is removed; target layout remains 5.499980 s.
-Normal 256k ABBA is next, followed by separate target layout work if justified.
+Normal 256k ABBA also passes: TG mean 15.220 -> 20.185 (+32.62%), matching
+response/acceptance and effectively unchanged PP. Proceed with separate target
+suffix/no-op source investigation; retain focused 128k confirmation before
+expansion. MTP PP overhead is unresolved and the source default remains OFF.
+See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md)
 and [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 and [the design](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
