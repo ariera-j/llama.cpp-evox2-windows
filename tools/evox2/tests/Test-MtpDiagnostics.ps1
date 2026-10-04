@@ -56,10 +56,55 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $fixture 'mtp-diagnostics.csv'))) {
         throw 'Diagnostic summary sidecar test failed.'
     }
+
+    # Reproduce a shell location that differs from Python's inherited process
+    # directory. Both wrappers must resolve relative paths in PowerShell.
+    $matrixFixture = Join-Path $temp 'diagnostic-matrix'
+    $processFixture = Join-Path $temp 'process-directory'
+    New-Item -ItemType Directory -Path $matrixFixture, $processFixture | Out-Null
+    $child = [PSCustomObject]@{
+        RunId = 'run1'; Status = 'DIAGNOSTIC_INCOMPLETE'; DiagnosticStatus = 'Incomplete'
+        DiagnosticError = 'fixture'; ExitCode = 0; RunException = $null
+        GenerationEvalMilliseconds = 1.0; GenerationTokensPerSecond = 19.69
+    }
+    $child | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixture 'result.json') -Encoding UTF8
+    [PSCustomObject]@{ RunId = 'run1'; Status = 'DIAGNOSTIC_INCOMPLETE'; TG = 19.69 } |
+        Export-Csv -LiteralPath (Join-Path $fixture 'summary.csv') -NoTypeInformation -Encoding UTF8
+    $run = [PSCustomObject]@{
+        MatrixRunId = 'M001'; ChildRunId = 'run1'; ChildRunDirectory = $fixture
+        MatrixStatus = 'DIAGNOSTIC_INCOMPLETE'
+    }
+    $row = [PSCustomObject]@{ MatrixRunId = 'M001'; ChildStatus = 'DIAGNOSTIC_INCOMPLETE'; TG = 19.69 }
+    [PSCustomObject]@{
+        Runs = @($run); Results = @($row); RunCountPlanned = 1; RunCountFinished = 1
+        Complete = $false; StoppedEarly = $true; StatusCounts = @{ OK = 0; NonOK = 1 }
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $matrixFixture 'matrix-result.json') -Encoding UTF8
+    $run | Export-Csv -LiteralPath (Join-Path $matrixFixture 'matrix-runs.csv') -NoTypeInformation -Encoding UTF8
+    $row | Export-Csv -LiteralPath (Join-Path $matrixFixture 'matrix-results.csv') -NoTypeInformation -Encoding UTF8
+    $savedProcessDirectory = [Environment]::CurrentDirectory
+    Push-Location $temp
+    try {
+        [Environment]::CurrentDirectory = $processFixture
+        $relativeSummaryOutput = @(& (Join-Path $repo 'tools\evox2\benchmark\Summarize-MtpDiagnostics.ps1') `
+            -RunDirectory '.\diagnostic-run' -Python $Python)
+        if ($relativeSummaryOutput.Count -ne 0) { throw 'Relative summary polluted the success pipeline.' }
+        $relativeRepairOutput = @(& (Join-Path $repo 'tools\evox2\benchmark\Repair-MtpDiagnostics.ps1') `
+            -MatrixDirectory '.\diagnostic-matrix' -Python $Python)
+        if ($relativeRepairOutput.Count -ne 0) { throw 'Relative repair polluted the success pipeline.' }
+        $repaired = Get-Content -LiteralPath (Join-Path $matrixFixture 'matrix-result.json') -Raw | ConvertFrom-Json
+        $repairedChild = Get-Content -LiteralPath (Join-Path $fixture 'result.json') -Raw | ConvertFrom-Json
+        if (-not $repaired.Complete -or $repaired.StatusCounts.OK -ne 1 -or
+            $repairedChild.Status -ne 'OK' -or $repairedChild.GenerationTokensPerSecond -ne 19.69) {
+            throw 'Relative diagnostic recovery failed or changed performance metrics.'
+        }
+    } finally {
+        [Environment]::CurrentDirectory = $savedProcessDirectory
+        Pop-Location
+    }
 } finally { Remove-Item -LiteralPath $temp -Recurse -Force }
 Push-Location $repo
 try {
     & $Python -m unittest discover -s tools/evox2/tests -p test_mtp_diagnostics.py -v
     if ($LASTEXITCODE -ne 0) { throw 'Diagnostic parser tests failed.' }
 } finally { Pop-Location }
-Write-Host 'PowerShell parsing, artifact verification, summary pipeline and diagnostic parser checks passed.'
+Write-Host 'PowerShell parsing, artifact verification, relative paths, summary pipeline and diagnostic parser checks passed.'

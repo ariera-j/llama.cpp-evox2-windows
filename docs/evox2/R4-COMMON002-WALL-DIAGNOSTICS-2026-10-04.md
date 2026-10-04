@@ -68,6 +68,15 @@ No phase-unmatched event falls inside the generation interval of any run.
 Completeness recovery preserves every measured performance field; no model
 execution or inference rerun is required.
 
+User follow-up: the real matrix is now recovered, with exactly the three event
+counts above and all existing runs OK. Passing a relative `MatrixDirectory`
+initially resolved against `C:\Windows\System32`; an absolute path succeeded.
+The diagnostic wrappers now use PowerShell `Resolve-Path` rather than .NET
+`GetFullPath`, with a regression fixture for differing shell/process
+directories. The newly added PowerShell fixture still needs Windows execution.
+No repeated real-matrix repair or inference rerun is needed. See
+[layout source review and next candidate](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
+
 ## Measured CPU layout bottleneck
 
 The layout scopes contain the CPU sequence-cell/pool-list update, not GPU

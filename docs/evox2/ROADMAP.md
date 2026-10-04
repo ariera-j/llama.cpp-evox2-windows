@@ -98,12 +98,18 @@ COMMON-001 compatibility port are complete.
    Vulkan allocation/short gate. Normal ON and wall ON text/acceptance match;
    partial/full acceptance and rejection are observed. A summary success-stream
    fix was applied before the focused Vulkan 128k ON, 256k ON/OFF wall collection.
-   All three inference runs finished; a startup capability-refusal classification
-   fix recovers the OFF report without rerunning. Layout CPU time grows from
+   All three inference runs finished; the user has recovered all three reports
+   with the startup capability-refusal classification fix, without rerunning.
+   Layout CPU time grows from
    5.207 s at 128k ON to 15.015 s at 256k ON, versus 0.004 s at 256k OFF.
-   Prioritize unused dense-draft layout bookkeeping, then main suffix/no-op
-   maintenance; optional sync collection is not required to select this CPU
-   candidate. See [wall diagnostics and recovery](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md),
+   Source review confirms that dense MTP skips the graph's pool input while
+   memory still allocates and maintains its indexer. The next proposal is
+   opt-in null indexer allocation for the supported single ratio-zero MTP
+   block, retaining hybrid/attention/recurrent semantics; main suffix/no-op
+   maintenance follows separately. No additional sync collection is required
+   before this bounded candidate. See
+   [layout source review and focused gates](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md),
+   [wall diagnostics and recovery](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md),
    [short validation](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md) and the
    [implementation and commands](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md)
    and the earlier
@@ -124,7 +130,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Wall collection identifies CPU full-history layout rebuilding: 15.015 s at 256k ON, including 9.901 s draft work. Recover the OFF report's startup-probe classification, then design unused dense-draft indexer/layout suppression with ratio/rollback validation; main suffix/no-op layout maintenance follows separately. Confirm a selected fix with unprofiled ABBA; GPU verification/ROCm attribution remains conditional. |
+| 1 | COMMON-002: long-context MTP TG | Wall reports are recovered. Source review confirms unnecessary dense-draft indexer/layout maintenance and full-history reconstruction after sequence edits. Implement a default-off candidate omitting the indexer only for the supported single ratio-zero MTP block; validate allocation, rollback, one focused 256k wall A/B and normal ABBA. Main suffix/no-op layout maintenance follows separately; GPU/ROCm attribution remains conditional. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
@@ -142,14 +148,15 @@ Do not let one unsuccessful candidate indefinitely block the next question.
 | Memory and destructor warnings | Continue phase-aligned resource logging in steps 1–3 | Track warnings and allocation changes. Investigate immediately if an assert, allocation failure, output corruption or repeatable steady-phase paging appears; current destructor-only warnings and counters alone do not justify changing UMA/context first. |
 | Output-length / prompt-reuse break-even | Step 4, after throughput changes settle | The current 64k constant-speed estimates (~2700 output tokens Vulkan, ~1300 ROCm) are illustrative, not deployment thresholds. The initial Vulkan 32k pair uses 128-token greedy generation; overnight rows use 512 tokens at temperature 0.2. Do not treat those as matched backend conditions. |
 
-The next concrete implementation is therefore the step-1 diagnostics, with
-reliable build identification and a small correctness case. It is not a
-performance-algorithm change or an automatic default change.
+The step-1 diagnostics, build identification and short correctness gate are
+implemented and the focused wall collection is complete. The next bounded
+optimization proposal and validation order are recorded in
+[R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
+The optimization is not implemented yet; its proposed opt-in preserves the
+current default for A/B.
 
-The proposed implementation, event/timing semantics, build-identity refresh and
-focused Windows gates are recorded in
+The earlier diagnostic design and event/timing semantics are recorded in
 [R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md).
-This is a plan, not an implemented diagnostic feature.
 
 #### Deferred, conditional and completed items
 
