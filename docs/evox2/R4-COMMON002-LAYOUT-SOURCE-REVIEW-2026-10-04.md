@@ -4,9 +4,10 @@ Reviewed source: `r4/upstream-refresh-20261002` at
 `4051671d23d03d0a94b8978ddc9cfd0934e0cc93`, pinned upstream
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 
-Status: source investigation complete; the optimization below is proposed,
-not implemented. This change only fixes diagnostic-wrapper path resolution,
-adds its regression fixture and records the investigation.
+Status: source investigation complete; diagnostic relative-path repair is
+confirmed on Windows. The optimization below remains proposed, not implemented.
+The concrete change list, native/state gates and benchmark variants are now in
+[the implementation plan](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
 
 ## Decision before further measurement
 
@@ -148,9 +149,11 @@ output and verifies recovery keeps the performance metric unchanged. It
 restores the process directory and shell location afterward.
 
 Local verification: all 14 Python/native helper tests pass, with no skips.
-PowerShell is unavailable in this environment; the newly added Windows fixture
-has not been executed here. Run `tools/evox2/tests/Test-MtpDiagnostics.ps1`
-on Windows after updating. No GPU rebuild, inference rerun or repeated repair
+PowerShell is unavailable in this environment. The user subsequently ran the
+updated `Test-MtpDiagnostics.ps1` on Windows successfully: parsing, artifact
+verification, relative paths, success pipelines and recovery all pass; 14
+Python tests report 11 passing and three g++ helpers skipped. The relative-path
+prerequisite is complete. No GPU rebuild, inference rerun or repeated repair
 of the already recovered real matrix is required for this script-only change.
 
 Related evidence:

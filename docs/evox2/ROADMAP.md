@@ -107,7 +107,10 @@ COMMON-001 compatibility port are complete.
    opt-in null indexer allocation for the supported single ratio-zero MTP
    block, retaining hybrid/attention/recurrent semantics; main suffix/no-op
    maintenance follows separately. No additional sync collection is required
-   before this bounded candidate. See
+   before this bounded candidate. The relative-path Windows fixture is now
+   confirmed; the concrete implementation plan defines same-setting state
+   restore and separate short, wall and normal ABBA gates. See
+   [dense-indexer implementation plan](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
    [layout source review and focused gates](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md),
    [wall diagnostics and recovery](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md),
    [short validation](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md) and the
@@ -150,7 +153,9 @@ Do not let one unsuccessful candidate indefinitely block the next question.
 
 The step-1 diagnostics, build identification and short correctness gate are
 implemented and the focused wall collection is complete. The next bounded
-optimization proposal and validation order are recorded in
+optimization proposal, change list and validation order are recorded in
+[R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
+with supporting source evidence in
 [R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 The optimization is not implemented yet; its proposed opt-in preserves the
 current default for A/B.

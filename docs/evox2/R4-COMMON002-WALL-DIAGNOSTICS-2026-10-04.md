@@ -73,7 +73,9 @@ counts above and all existing runs OK. Passing a relative `MatrixDirectory`
 initially resolved against `C:\Windows\System32`; an absolute path succeeded.
 The diagnostic wrappers now use PowerShell `Resolve-Path` rather than .NET
 `GetFullPath`, with a regression fixture for differing shell/process
-directories. The newly added PowerShell fixture still needs Windows execution.
+directories. The user has now passed the updated Windows fixture, including
+relative paths and recovery: 14 Python tests, 11 passing and three g++ helpers
+skipped; all PowerShell checks pass.
 No repeated real-matrix repair or inference rerun is needed. See
 [layout source review and next candidate](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 

@@ -47,7 +47,10 @@ with the script-only startup-capability-probe classification fix; no GPU rerun.
 Source review confirms that the ratio-zero MTP graph omits pool inputs while
 memory still maintains an indexer. A default-off dense-draft indexer omission
 is the next proposal; the optimization is not implemented. Both diagnostic
-wrappers now resolve relative paths against PowerShell's location. See
+wrappers now resolve relative paths against PowerShell's location, and the
+updated Windows path/pipeline/recovery fixture passes. The concrete candidate
+plan adds eligibility, same-setting state/rollback and focused A/B gates. See
+[R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
 [R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md) and
 [R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md).
 See [R4-COMMON002-SHORT-VALIDATION-2026-10-04.md](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md);
@@ -672,7 +675,9 @@ for the initial source review, compatibility fix and matrix plan.
 
 Diagnostics, artifact identity and the focused wall collection are complete.
 Next optimization proposal:
-[R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
+[R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
+based on the
+[layout source review](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 Omit indexer allocation only for the supported single ratio-zero MTP block,
 behind a default-off opt-in. Retain hybrid, attention and recurrent handling;
 validate rollback and same-setting restore before focused 256k wall A/B and
