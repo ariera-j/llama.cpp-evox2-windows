@@ -4,9 +4,11 @@ Planning baseline: `r4/upstream-refresh-20261002` at
 `fa6caa2f731902ed651023c60ed0b24989cb5ce4`; upstream remains pinned at
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 
-Status: implementation proposal only. The runtime switch, native tests and
-new benchmark plans described below do not exist yet. No C++ or performance
-algorithm is changed by this document commit.
+Status: implemented after user approval. The runtime switch, native tests and
+focused benchmark plans are delivered; Windows compilation, model/state and
+GPU performance gates are pending. This document preserves the design.
+See [implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
+for actual delivered behavior, local checks and Windows commands.
 
 ## Goal and measured basis
 
@@ -162,8 +164,8 @@ only. Do not download or convert a new model just to start this bounded gate.
 
 ## Focused Windows validation and measurement
 
-New plan filenames below are deliverables for the implementation, not commands
-to run against the current branch.
+The three plan filenames below are now delivered. Run their commands from
+the implementation document after rebuilding and passing preceding gates.
 
 Common conditions: `R4QsaUnionVulkan`, `UnslothPle16`, `UnslothMtp`, f16,
 batch 2048, ubatch 1024, t4/tb4, GPU layers 999, CPU MoE 0, flash attention
@@ -225,5 +227,5 @@ g++ is unavailable. Local prior validation passed all 14 with g++ available.
 The repeated progress lines are fixture reports, not inference or extra
 matrix rows. The script path fix at `fa6caa2f...` is therefore confirmed.
 
-This document records the next implementation and gates. It does not assert
-that indexer omission, native model/state tests or any new speedup has passed.
+This document preserves the implementation design and gates. Delivery does
+not establish native model/state correctness or any new speedup.

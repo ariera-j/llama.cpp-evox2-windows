@@ -34,6 +34,7 @@
         # Prevent inherited diagnostics/profilers from changing normal timings.
         # The runner restores the caller's environment after each child.
         Environment = @{
+            LLAMA_MTP_SKIP_DENSE_INDEXER        = $null
             LLAMA_MTP_DIAG = $null
             LLAMA_QSA_NO_POOLED_CACHE           = $null
             LLAMA_QSA_POOLED_MAX_TOKENS         = $null

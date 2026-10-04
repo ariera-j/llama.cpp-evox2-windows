@@ -285,6 +285,37 @@ function ConvertFrom-Evox2InvariantInt64 {
     return [int64]::Parse($Value, [Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Get-Evox2MtpDenseIndexerEvidence {
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Text, [AllowNull()][string]$Setting, [bool]$Mtp)
+    $pattern = '(?m)MTP dense indexer: requested=([01]) eligible=([01]) omitted=([01]) layer=(-?\d+) ratio=(-?\d+) reason=([a-z_]+)\r?$'
+    $records = @([regex]::Matches($Text, $pattern) | ForEach-Object {
+        [PSCustomObject]@{
+            Requested = $_.Groups[1].Value -eq '1'; Eligible = $_.Groups[2].Value -eq '1'
+            Omitted = $_.Groups[3].Value -eq '1'; Layer = [int64]$_.Groups[4].Value
+            Ratio = [int64]$_.Groups[5].Value; Reason = $_.Groups[6].Value
+        }
+    })
+    $status = if (-not $Mtp) { 'MtpDisabled' } elseif ($Setting -notin @('0', '1')) { 'NotRequested' }
+        elseif (-not $records.Count) { 'Missing' }
+        elseif ([regex]::Matches($Text, 'MTP dense indexer:').Count -ne $records.Count) { 'Malformed' }
+        else { 'Verified' }
+    if ($status -eq 'Verified') {
+        foreach ($record in $records) {
+            if ($record.Requested -ne ($Setting -eq '1')) { $status = 'Mismatch'; break }
+            if ($Setting -eq '1' -and (-not $record.Eligible -or -not $record.Omitted -or
+                $record.Layer -lt 0 -or $record.Ratio -ne 0 -or $record.Reason -ne 'dense_single_block')) {
+                $status = 'NotApplied'; break
+            }
+            if ($Setting -eq '0' -and $record.Omitted) { $status = 'Mismatch'; break }
+        }
+    }
+    return [PSCustomObject]@{
+        Setting = $Setting; Status = $status; Decisions = @($records)
+        Omitted = if ($status -eq 'Verified') { $records[-1].Omitted } else { $null }
+    }
+}
+
 function ConvertFrom-Evox2LlamaCliResult {
     [CmdletBinding()]
     param(
@@ -494,6 +525,7 @@ Export-ModuleMember -Function @(
     'Get-Evox2BuildLabel',
     'New-Evox2RunDirectory',
     'Write-Evox2CombinedLog',
+    'Get-Evox2MtpDenseIndexerEvidence',
     'ConvertFrom-Evox2LlamaCliResult',
     'ConvertFrom-Evox2LlamaBenchJson',
     'Get-Evox2LlamaBenchTestLabel'

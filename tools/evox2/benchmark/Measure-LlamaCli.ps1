@@ -695,6 +695,8 @@ Write-Evox2CombinedLog `
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $CombinedText = [IO.File]::ReadAllText($OutputPath, $Utf8NoBom)
 $Parsed = ConvertFrom-Evox2LlamaCliResult -Text $CombinedText
+$DenseIndexerEvidence = Get-Evox2MtpDenseIndexerEvidence -Text $CombinedText `
+    -Setting $env:LLAMA_MTP_SKIP_DENSE_INDEXER -Mtp ([bool]$Mtp)
 
 $EnoughInput = $false
 if (-not $AllocationOnly -and $null -ne $Parsed.PromptTokens) {
@@ -718,6 +720,10 @@ $Status = if ($null -ne $runException) {
 }
 
 $resourceSampleCount = 0
+if ($Status -eq 'OK' -and $Mtp -and $env:LLAMA_MTP_SKIP_DENSE_INDEXER -in @('0', '1') -and
+    $DenseIndexerEvidence.Status -ne 'Verified') {
+    $Status = 'CANDIDATE_EVIDENCE_' + $DenseIndexerEvidence.Status.ToUpperInvariant()
+}
 if (Test-Path -LiteralPath $ResourcePath -PathType Leaf) {
     try {
         $resourceSampleCount = @(Import-Csv -LiteralPath $ResourcePath).Count
@@ -772,6 +778,7 @@ $Result = [ordered]@{
     DraftAcceptance            = $Parsed.DraftAcceptance
     DraftAccepted              = $Parsed.DraftAccepted
     DraftGenerated             = $Parsed.DraftGenerated
+    MtpDenseIndexerEvidence     = $DenseIndexerEvidence
 
     ModelArchitecture          = $Parsed.ModelArchitecture
     ModelFileType              = $Parsed.ModelFileType
@@ -822,6 +829,8 @@ $Summary = [PSCustomObject]@{
     TG                  = $Parsed.GenerationTokensPerSecond
     MTP                 = [bool]$Mtp
     DraftAcceptance     = $Parsed.DraftAcceptance
+    DenseIndexerEvidence = $DenseIndexerEvidence.Status
+    DenseIndexerOmitted  = $DenseIndexerEvidence.Omitted
     ResourceSamples     = $resourceSampleCount
     DurationMinutes     = [math]::Round(($Finished - $Started).TotalMinutes, 3)
     RunDirectory        = $RunDirectory

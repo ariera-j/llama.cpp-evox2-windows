@@ -18,6 +18,7 @@
 #include "llama-memory-hybrid-iswa.h"
 #include "llama-memory-hybrid-idx.h"
 #include "llama-memory-recurrent.h"
+#include "llama-mtp-indexer-policy.h"
 
 #include "llama.h"
 #include "models/models.h"
@@ -29,6 +30,7 @@
 #include <cassert>
 #include <cfloat>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <functional>
@@ -2741,6 +2743,24 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* filter_attn       */ std::move(filter_attn),
                             /* filter_recr       */ std::move(filter_recr));
                     } else if (needs_mem_idx) {
+                        // A dense MTP graph never consumes indexer keys. Omit
+                        // the cache itself (not merely its layer tensors), while
+                        // preserving the hybrid context type and attention/recurrent paths.
+                        if (arch == LLM_ARCH_QWEN4EXP && params.ctx_type == LLAMA_CONTEXT_TYPE_MTP) {
+                            const char * setting = std::getenv("LLAMA_MTP_SKIP_DENSE_INDEXER");
+                            const auto choice = llama_mtp_indexer::decide(
+                                setting, true, true, bool(filter_idx),
+                                hparams.n_layer_all, hparams.n_layer_nextn,
+                                hparams.dsv4_compress_ratios.data(), hparams.dsv4_compress_ratios.size());
+                            if (choice.enabled) {
+                                filter_idx = nullptr;
+                            }
+                            if (setting != nullptr) {
+                                LLAMA_LOG_INFO("%s: MTP dense indexer: requested=%d eligible=%d omitted=%d layer=%lld ratio=%lld reason=%s\n",
+                                    __func__, int(choice.requested), int(choice.eligible), int(choice.enabled),
+                                    (long long) choice.layer, (long long) choice.ratio, choice.reason);
+                            }
+                        }
                         // sparse attention over a per-token indexer cache, in its own memory type
                         res = new llama_memory_hybrid_idx(
                             /* model             */ *this,

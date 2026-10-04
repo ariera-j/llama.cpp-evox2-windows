@@ -282,6 +282,9 @@ llama_build(test-backend-ops.cpp)
 
 llama_build_and_test(test-tiled-mulmat.cpp)
 llama_build_and_test(test-model-load-cancel.cpp LABEL "model")
+llama_build_and_test(test-mtp-indexer-policy.cpp)
+# Explicit model-dependent gate; do not register an automatic model download/run.
+llama_build(test-mtp-dense-indexer.cpp)
 llama_build_and_test(test-autorelease.cpp       LABEL "model")
 llama_build_and_test(test-backend-sampler.cpp   LABEL "model")
 

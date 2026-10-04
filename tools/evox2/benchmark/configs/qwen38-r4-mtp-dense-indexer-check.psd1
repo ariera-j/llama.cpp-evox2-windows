@@ -1,8 +1,9 @@
 @{
     SchemaVersion = 1
-    Name = 'qwen38-r4-mtp-check'
+    Name = 'qwen38-r4-mtp-dense-indexer-check'
 
-    # Focused attribution runs; not a performance comparison.
+    # Five short correctness/control runs; A and B both use MTP.
+    # Only B omits the unused dense draft indexer.
     Settings = @{
         CooldownSeconds = 10
         ContinueOnError = $false
@@ -74,10 +75,11 @@
                 Parameters = @{ Context = 32768; InputFile = 'tools\evox2\benchmark\inputs\mtp-short.txt' }
             })
             Variants = @(
-                @{ Name = 'off'; Parameters = @{}; Environment = @{ LLAMA_MTP_DIAG = $null } }
-                @{ Name = 'on-normal'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_DIAG = $null } }
-                @{ Name = 'on-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_DIAG = 'wall' } }
-                @{ Name = 'on-sync'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_DIAG = 'sync' } }
+                @{ Name = 'control-mtp-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_MTP_DIAG = 'off' } }
+                @{ Name = 'A-normal'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '0'; LLAMA_MTP_DIAG = 'off' } }
+                @{ Name = 'B-normal'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_MTP_DIAG = 'off' } }
+                @{ Name = 'A-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '0'; LLAMA_MTP_DIAG = 'wall' } }
+                @{ Name = 'B-wall'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_MTP_DIAG = 'wall' } }
             )
         }
     )

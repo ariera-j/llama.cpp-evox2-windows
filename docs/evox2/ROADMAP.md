@@ -103,13 +103,14 @@ COMMON-001 compatibility port are complete.
    Layout CPU time grows from
    5.207 s at 128k ON to 15.015 s at 256k ON, versus 0.004 s at 256k OFF.
    Source review confirms that dense MTP skips the graph's pool input while
-   memory still allocates and maintains its indexer. The next proposal is
-   opt-in null indexer allocation for the supported single ratio-zero MTP
-   block, retaining hybrid/attention/recurrent semantics; main suffix/no-op
-   maintenance follows separately. No additional sync collection is required
-   before this bounded candidate. The relative-path Windows fixture is now
-   confirmed; the concrete implementation plan defines same-setting state
-   restore and separate short, wall and normal ABBA gates. See
+   memory still allocates and maintains its indexer. Opt-in null indexer
+   allocation for the supported single ratio-zero MTP block is now implemented,
+   retaining hybrid/attention/recurrent semantics and source default OFF.
+   Local policy/syntax/diagnostic checks pass; Windows build, native state/
+   rollback and short gates precede the 256k wall pair and normal ABBA. Main
+   suffix/no-op maintenance follows separately. The earlier relative-path
+   Windows fixture is confirmed. No extra sync collection is required. See
+   [dense-indexer implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md),
    [dense-indexer implementation plan](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
    [layout source review and focused gates](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md),
    [wall diagnostics and recovery](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md),
@@ -133,7 +134,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Wall reports are recovered. Source review confirms unnecessary dense-draft indexer/layout maintenance and full-history reconstruction after sequence edits. Implement a default-off candidate omitting the indexer only for the supported single ratio-zero MTP block; validate allocation, rollback, one focused 256k wall A/B and normal ABBA. Main suffix/no-op layout maintenance follows separately; GPU/ROCm attribution remains conditional. |
+| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero indexer omission is implemented. Next: Windows build and native state/rollback tests, three allocation smokes, five short runs, a focused 256k wall A/B and normal ABBA. No gain is asserted yet. Main suffix/no-op maintenance follows separately; GPU/ROCm attribution remains conditional. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
@@ -157,8 +158,9 @@ optimization proposal, change list and validation order are recorded in
 [R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
 with supporting source evidence in
 [R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
-The optimization is not implemented yet; its proposed opt-in preserves the
-current default for A/B.
+The optimization is now implemented behind the default-off opt-in; Windows
+model/performance gates remain pending. Run the commands in
+[the implementation document](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 
 The earlier diagnostic design and event/timing semantics are recorded in
 [R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md).

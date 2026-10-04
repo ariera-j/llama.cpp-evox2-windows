@@ -99,6 +99,8 @@ function Get-Evox2BuildArtifactIdentities {
         'llama-server.exe',
         'llama-bench.exe',
         'test-backend-ops.exe',
+        'test-mtp-indexer-policy.exe',
+        'test-mtp-dense-indexer.exe',
         'ggml.dll',
         'llama.dll',
         'ggml-base.dll',

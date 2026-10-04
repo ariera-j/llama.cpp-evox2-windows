@@ -223,7 +223,9 @@ try {
         'llama-cli',
         'llama-server',
         'llama-bench',
-        'test-backend-ops'
+        'test-backend-ops',
+        'test-mtp-indexer-policy',
+        'test-mtp-dense-indexer'
     )
 
     $configureRecord = [ordered]@{

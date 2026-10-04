@@ -5,9 +5,10 @@ Reviewed source: `r4/upstream-refresh-20261002` at
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 
 Status: source investigation complete; diagnostic relative-path repair is
-confirmed on Windows. The optimization below remains proposed, not implemented.
-The concrete change list, native/state gates and benchmark variants are now in
-[the implementation plan](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
+confirmed on Windows. The guarded dense-draft indexer candidate is now
+implemented after user approval; Windows build/model/performance gates remain
+pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
+and [the design](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
 
 ## Decision before further measurement
 
@@ -73,7 +74,8 @@ change; unprofiled A/B is the performance gate.
 
 Make the memory-creation decision once, inside `llama_model::create_memory`.
 Use a default-off opt-in control for matched A/B; proposed name:
-`LLAMA_MTP_SKIP_DENSE_INDEXER=1`. This variable does not exist yet.
+`LLAMA_MTP_SKIP_DENSE_INDEXER=1`. The switch is now delivered, default OFF;
+the sections here retain the source rationale for that implementation.
 
 Initial eligibility must require all of:
 

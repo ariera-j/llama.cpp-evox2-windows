@@ -46,7 +46,9 @@ The wall collection now completes all three inference runs and identifies a
 with the script-only startup-capability-probe classification fix; no GPU rerun.
 Source review confirms that the ratio-zero MTP graph omits pool inputs while
 memory still maintains an indexer. A default-off dense-draft indexer omission
-is the next proposal; the optimization is not implemented. Both diagnostic
+is now implemented, default OFF; its Windows correctness/performance gates
+remain pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
+Both diagnostic
 wrappers now resolve relative paths against PowerShell's location, and the
 updated Windows path/pipeline/recovery fixture passes. The concrete candidate
 plan adds eligibility, same-setting state/rollback and focused A/B gates. See
@@ -68,7 +70,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading exists; dense sidecar's unused pool-input assertion fixed; opt-in attribution diagnostics implemented | Overnight 28/28 and rebuilt short gates pass; wall reports recovered. Source confirms unused dense-draft indexer maintenance and stale full-history rebuilding. Null indexer allocation is the next bounded proposal; broader correctness/performance pending |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes local policy/syntax/diagnostic checks; Windows native model/state/rollback and focused performance gates pending, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -674,14 +676,15 @@ for all results and focused diagnostic gates, and
 for the initial source review, compatibility fix and matrix plan.
 
 Diagnostics, artifact identity and the focused wall collection are complete.
-Next optimization proposal:
+The bounded optimization is implemented; design:
 [R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
 based on the
 [layout source review](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
-Omit indexer allocation only for the supported single ratio-zero MTP block,
-behind a default-off opt-in. Retain hybrid, attention and recurrent handling;
-validate rollback and same-setting restore before focused 256k wall A/B and
-unprofiled ABBA. This optimization remains proposed, not implemented.
+The default-off opt-in omits allocation only for the supported single
+ratio-zero MTP block and retains hybrid, attention and recurrent handling.
+Next validate the Windows build, rollback and same-setting restore before
+focused 256k wall A/B and unprofiled ABBA. See
+[implementation and Windows commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 
 Refresh-branch validation plan:
 
