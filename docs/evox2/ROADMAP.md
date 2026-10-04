@@ -128,8 +128,12 @@ COMMON-001 compatibility port are complete.
    invalidations are suppressed and33 pending stale markers are preserved.
    Allocation/short CLI gate now passes8/8: A/B output and acceptance match,
    25 no-op invalidations are suppressed and all33 real removals retain stale
-   marks; target full rebuilds fall57->33. Next: the two256k wall arms, then
-   normal ABBA after wall review. See
+   marks; target full rebuilds fall57->33. The256k wall gate now also passes
+   2/2 with matching output and ordered acceptance:123 no-op suppressions,
+   all95 real-removal stale marks retained, full rebuilds217->95 and layout
+   5.529702->2.436146 s. Wall TG19.96->22.71 (+13.78%), PP unchanged. Next:
+   diagnostic-OFF normal ABBA; source default remains OFF. See
+   [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
    [allocation and short validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md) and
    [implementation and commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md).
    Focused 128k confirmation remains before broader expansion. See
@@ -163,7 +167,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Target source review is complete: B-wall layout is 3.092231 s after full-accept no-op trims and 2.407742 s after real suffix removal. Approved no-op candidate is implemented with separate default-off target switch, actual membership counts, preserved dirty state, numeric target gate and short/wall/normal A/B with draft omission1. Windows Vulkan native gate is Complete after the accessor fix: 524 vector comparisons are exact, 67 no-op invalidations suppressed and 33 pending stale markers preserved. Allocation/short CLI gate passes 8/8 with matched A/B output/acceptance and full rebuilds 57->33. Next: 256k wall, then normal ABBA after review; suffix-prefix reuse with distinct CPU/GPU invalidation follows separately. Focused 128k confirmation remains an expansion gate; ROCm coverage remains pending. |
+| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Target source review is complete: B-wall layout is 3.092231 s after full-accept no-op trims and 2.407742 s after real suffix removal. Approved no-op candidate is implemented with separate default-off target switch, actual membership counts, preserved dirty state, numeric target gate and short/wall/normal A/B with draft omission1. Windows Vulkan native gate is Complete after the accessor fix: 524 vector comparisons are exact, 67 no-op invalidations suppressed and 33 pending stale markers preserved. Allocation/short CLI gate passes 8/8 with matched A/B output/acceptance and full rebuilds 57->33. 256k wall also passes 2/2 with matched output/ordered acceptance, full rebuilds 217->95 and layout 5.529702->2.436146 s; wall TG 19.96->22.71 (+13.78%), PP unchanged. Next: diagnostic-OFF normal ABBA; suffix-prefix reuse with distinct CPU/GPU invalidation follows separately. Focused 128k confirmation remains an expansion gate; ROCm coverage remains pending. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |

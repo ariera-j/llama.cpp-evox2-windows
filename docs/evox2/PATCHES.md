@@ -85,7 +85,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), target no-op candidate implemented and Windows native gate Complete, then 8/8 allocation/short CLI runs pass with matched output/acceptance and target full rebuilds 57->33; next two 256k wall arms, normal ABBA after review, 128k confirmation retained, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), target no-op candidate implemented and Windows native gate Complete, then 8/8 allocation/short CLI runs pass with matched output/acceptance and target full rebuilds 57->33; 256k wall also passes 2/2 with matched output/ordered acceptance, target rebuilds 217->95, layout 5.53->2.44 s, wall TG +13.78% and PP unchanged; next diagnostic-OFF normal ABBA, 128k confirmation retained, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -732,9 +732,15 @@ with67 actual no-op suppressions and33 preserved pending stale markers. The
 allocation/short CLI gate now also passes8/8 with Verified startup/runtime
 evidence, matched A/B response bodies and acceptance,25 no-op suppressions
 and all33 real-removal stale marks preserved. Target full rebuilds fall57->33.
-Short normal TG34.81->34.86 does not establish a speedup. Next: two256k wall
-arms, then normal ABBA after review; keep source default OFF. This validation
-update is documentation only; no rebuild is needed.
+Short normal TG34.81->34.86 does not establish a speedup. The256k wall gate
+now also passes2/2 with matching output and ordered218-round acceptance
+history:123 no-op suppressions, all95 real-removal stale marks retained,
+full rebuilds217->95 and layout5.529702->2.436146 s. Wall TG19.96->22.71
+(+13.78%) while PP230.12->229.92 is effectively unchanged. Next: diagnostic-OFF
+normal ABBA to establish repeatability; keep source default OFF. Residual
+suffix rebuilds retain2.436146 s of layout work. This validation update is
+documentation only; no rebuild is needed.
+See [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md).
 See [allocation and short CLI validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
 See [implementation and Windows commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md) and
 [target source review](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md).

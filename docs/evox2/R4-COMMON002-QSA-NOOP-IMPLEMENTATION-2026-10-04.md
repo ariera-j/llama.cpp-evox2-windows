@@ -9,8 +9,11 @@ accessor correction. All524 logits/hidden comparisons are exactly equal; actual
 no-op suppression and pending stale preservation are confirmed. All three
 allocation smokes and five short CLI runs now pass: A/B output and acceptance
 match, 25 unnecessary invalidations are suppressed, and real removals remain
-intact. Next: the two 256k wall arms; normal ABBA follows wall review.
-Long-context performance remains pending. See
+intact. The 256k wall gate now also passes2/2 with matching output and ordered
+acceptance history: target full rebuilds217->95, layout5.529702->2.436146 s,
+wall TG19.96->22.71 (+13.78%), PP effectively unchanged. Next: diagnostic-OFF
+normal ABBA; repeatable normal performance remains pending. See
+[256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
 [allocation and short CLI validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
 The existing draft-omission measurements do not validate this new runtime.
 
@@ -349,6 +352,27 @@ explains24 fewer rebuilds for25 suppressions. Draft layout remains omitted.
 Normal short TG34.81->34.86 is only+0.14% at163 prompt tokens, so this gate
 validates behavior/work removal rather than a performance gain.
 
-Proceed only to Gate C, the two256k wall arms, using the verified b11416 /
-5df0bdbaf CLI. This update is documentation only; no rebuild is needed.
+This gate authorized Gate C with the verified b11416 /5df0bdbaf CLI.
+The subsequent wall gate passes as recorded below. No rebuild is needed.
 See [complete allocation and short results](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
+
+
+## 19:53–20:34 256k wall gate: Complete
+
+Both runs are OK with Verified startup/runtime evidence and matching response
+bytes and ordered218-round acceptance/position histories (293/436). Target B
+suppresses123 no-op invalidations and retains all95 real-removal stale marks.
+The final no-op trim has no next decode: full rebuilds217->95, copied
+cells55429810->24265693, layout CPU5.529702->2.436146 s. Draft layout stays
+omitted and pooled logical/padded new counts match.
+
+Wall TG19.96->22.71 (+13.78%) accompanies3.108240 s less generation evaluation
+and3.093556 s less layout work; PP230.12->229.92 (-0.09%). This supports the
+mechanism but requires normal ABBA for repeatable performance. Total evaluation
+improves only2.178570 s (about0.19%) because PP dominates; whole-process
+duration differences include loading/startup and are not TG savings.
+
+Proceed to Gate D, the diagnostic-OFF A1/B1/B2/A2 plan, using the same
+verified CLI. Source default stays OFF; focused128k/ROCm remain later gates.
+The95 real suffix rebuilds retain2.436146 s of layout cost for the separate
+suffix-reuse investigation. See [complete wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md).
