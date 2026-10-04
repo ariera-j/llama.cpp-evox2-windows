@@ -9,9 +9,14 @@ plans are implemented. Windows source checks, native policy and build/runtime
 identity checks passed in the supplied runs. The 14:50 rebuilt Windows Vulkan
 model gate is Complete: all native cache/state/rollback and A/B comparisons
 pass with the corrected batch partitions. Gate B's three allocation smokes
-and five short real CLI runs are next, followed conditionally by 256k wall and
-normal ABBA. Performance and exhaustive model correctness remain unproven;
+and five short real CLI runs also pass in the 14:58-15:06 collection: all four
+MTP ON response bodies/acceptance match and B removes draft indexer work.
+Next run the two 256k wall arms and review before ordinary ABBA. Performance
+and exhaustive model correctness remain unproven;
 keep the runtime switch default OFF.
+
+See [allocation and short CLI validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md)
+for all eight runs, diagnostic scope counts and the next commands.
 
 ## Delivered behavior and evidence
 
@@ -224,9 +229,10 @@ attribution is a separate question if real CLI output behavior warrants it.
 Gate A is now passed on the supplied Vulkan models. No additional native model
 rerun, rebuild or ROCm run is required before Gate B with these verified
 binaries. This recording commit changes documentation only; retain the existing
-build manifest and artifact hashes for the next runs. Gate B's real speculative
-acceptance/carry/CLI checks and performance gates remain pending. Do not jump
-directly to the 256k wall/ABBA plans.
+build manifest and artifact hashes for the next runs. At this 14:50 checkpoint,
+Gate B's real speculative acceptance/carry/CLI checks were still pending; they
+now pass in the [later short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
+The next gate is the 256k wall pair, with ordinary ABBA conditional on review.
 
 ## Gate A: source checks, rebuild and native correctness
 

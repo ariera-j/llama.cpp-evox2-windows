@@ -108,9 +108,13 @@ COMMON-001 compatibility port are complete.
    retaining hybrid/attention/recurrent semantics and source default OFF.
    Windows native policy/model/state/rollback gates pass in the 14:50 Vulkan
    report after harness position/partition corrections. All eight A/B output
-   pairs have identical logits/hidden; default remains OFF. Next complete three
-   allocation smokes and five short real CLI runs before the 256k wall pair
-   and normal ABBA. Main
+   pairs have identical logits/hidden; default remains OFF. Three allocation
+   smokes and five short real CLI runs also pass (8/8 OK): output/acceptance
+   match across MTP ON arms, rejected/partial/full drafts are covered, and B
+   removes draft indexer/layout/pool work while target work remains. Next run
+   the 256k wall pair and review before normal ABBA. See
+   [candidate short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
+   Main
    suffix/no-op maintenance follows separately. The earlier relative-path
    Windows fixture is confirmed. No extra sync collection is required. See
    [dense-indexer implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md),
