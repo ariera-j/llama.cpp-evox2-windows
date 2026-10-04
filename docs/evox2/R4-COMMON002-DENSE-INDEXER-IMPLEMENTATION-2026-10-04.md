@@ -5,9 +5,11 @@ Implemented on `r4/upstream-refresh-20261002` from planning baseline
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 
 Status: runtime switch, native tests, Windows gate script and three benchmark
-plans are implemented. Local checks pass below. Windows build/linkage,
-PowerShell execution, real model/state/rollback gates and GPU measurements
-are pending. No speedup or model correctness pass is asserted yet.
+plans are implemented. Windows source checks, native policy and build/runtime
+identity checks passed in the supplied 14:23 run. The model gate failed at its
+first prefix position assertion; the test correction below requires a rebuild
+and rerun. Real model/state/rollback correctness and GPU measurements remain
+pending. No speedup or model correctness pass is asserted yet.
 
 ## Delivered behavior and evidence
 
@@ -70,6 +72,46 @@ for the latter. All 14 existing Python/native diagnostic tests pass, no skips.
 Whitespace and repository links are checked before commit. PowerShell, full
 Vulkan/ROCm builds and model execution are unavailable here and remain Windows
 gates. Previous Windows diagnostic passes do not validate these new features.
+
+## 14:23 Windows model-gate failure and correction
+
+Source: `20261004-142343-911-mtp-dense-indexer.zip`, containing the 14:23
+model run and the preceding 14:22 SourceOnly report. Both source checks and
+the native policy passed. Executable/DLL identities were Verified, while
+`test-mtp-dense-indexer.exe` returned 1 and stdout was empty. Its stderr ended:
+
+```text
+MTP dense indexer: FAIL: Attention sequence positions differ from the input trace
+```
+
+Target trace generation and both draft initializations had succeeded; stderr
+contains the expected A `omitted=0` and B `omitted=1` startup evidence. Failure
+occurred during A's first six-token prefix, before numeric output comparisons,
+state save/restore or execution of B. This result does not identify an omission
+runtime failure and is not a correctness pass for either arm.
+
+The harness incorrectly treated public `llama_memory_seq_pos_min` as attention
+cache minimum and required zero. `llama_memory_hybrid_idx` inherits the hybrid
+position APIs: minimum is the maximum of attention/recurrent minima; maximum
+is the minimum of their maxima. The empty draft recurrent cache still tracks
+sequence positions. With one sequence, no rollback snapshots and a six-token
+prefix, its sole cell is at position 5, so the source contract predicts hybrid
+min=max=5. The original log did not print the actual values.
+
+The correction checks both public bounds against the current tail, including
+after no-op removal, accepted-suffix trimming and same-setting restore. It
+reports arm/stage plus actual min/max and expected tail on failure. Attention
+history remains checked through fresh replay and continuation output
+comparisons; NMSE limits, A/B comparisons, exact state byte counts, full-state
+shrinkage and PARTIAL_ONLY size equality are unchanged. The runtime candidate
+and memory APIs are unchanged.
+
+The PowerShell report now records an attempted failing native gate as Failed
+instead of NotRun and includes its native FAIL message and exit code in Error.
+Local C++17 syntax and native policy checks pass for this correction. Windows
+model execution and PowerShell execution of the correction remain pending.
+Rebuild with Gate A's BuildOnly command, then rerun `-RunModelTests`; do not
+advance to long measurements until that report is Complete.
 
 ## Gate A: source checks, rebuild and native correctness
 

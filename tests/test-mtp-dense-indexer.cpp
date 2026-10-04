@@ -126,17 +126,29 @@ static trace make_trace(llama_context * target) {
     return result;
 }
 
-static output decode(llama_context * ctx, const trace & input, int first, int count) {
+static void check_positions(llama_context * ctx, llama_pos expected, const std::string & stage) {
+    const auto memory = llama_get_memory(ctx);
+    const auto min = llama_memory_seq_pos_min(memory, 0);
+    const auto max = llama_memory_seq_pos_max(memory, 0);
+    // These public APIs report the intersection of attention and recurrent
+    // ranges, not attention alone. With n_seq_max=1 and n_rs_seq=0, even the
+    // empty MTP recurrent cache tracks one cell at the latest position. Thus
+    // hybrid min=max=latest; attention history is checked by replay outputs.
+    require(min == expected && max == expected,
+            stage + ": hybrid sequence positions min=" + std::to_string(min) +
+            " max=" + std::to_string(max) + " expected=" + std::to_string(expected));
+}
+
+static output decode(llama_context * ctx, const trace & input, int first, int count,
+                     const std::string & stage) {
     require(first >= 0 && count > 0 && size_t(first + count) <= input.tokens.size(), "Invalid trace slice");
     common_batch batch(ctx);
     for (int i = first; i < first + count; ++i) {
         const int slot = batch.add(input.tokens[i], i, 0, true);
         require(batch.set_embd(slot, {input.hidden[i].data(), 1, input.hidden[i].size()}), "Cannot pair MTP input");
     }
-    require(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0, "MTP decode failed");
-    require(llama_memory_seq_pos_min(llama_get_memory(ctx), 0) == 0 &&
-            llama_memory_seq_pos_max(llama_get_memory(ctx), 0) == first + count - 1,
-            "Attention sequence positions differ from the input trace");
+    require(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0, stage + ": MTP decode failed");
+    check_positions(ctx, first + count - 1, stage);
     return capture_output(ctx);
 }
 
@@ -171,40 +183,44 @@ struct checks {
 static checks exercise(llama_context * ctx, const trace & input, const std::string & arm) {
     checks result;
     clear(ctx);
-    result.outputs.push_back(decode(ctx, input, 0, 6));
+    result.outputs.push_back(decode(ctx, input, 0, 6, arm + "/prefix"));
     result.full_size = save(ctx, LLAMA_STATE_SEQ_FLAGS_NONE).size();
     result.partial_size = save(ctx, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY).size();
-    result.outputs.push_back(decode(ctx, input, 6, 1)); // append-only
+    result.outputs.push_back(decode(ctx, input, 6, 1, arm + "/append")); // append-only
     const auto max_before = llama_memory_seq_pos_max(llama_get_memory(ctx), 0);
     require(llama_memory_seq_rm(llama_get_memory(ctx), 0, max_before + 1, -1), "No-op suffix removal refused");
-    require(llama_memory_seq_pos_max(llama_get_memory(ctx), 0) == max_before, "No-op removal changed attention positions");
-    result.outputs.push_back(decode(ctx, input, 7, 1));
+    check_positions(ctx, max_before, arm + "/no-op-remove");
+    result.outputs.push_back(decode(ctx, input, 7, 1, arm + "/no-op-append"));
 
     for (int accepted = 0; accepted <= 2; ++accepted) {
         clear(ctx);
-        decode(ctx, input, 0, 8); // prefix of six, plus two speculative rows
+        const auto stage = arm + "/accept-" + std::to_string(accepted);
+        decode(ctx, input, 0, 8, stage + "/speculate"); // prefix of six, plus two speculative rows
         require(llama_memory_seq_rm(llama_get_memory(ctx), 0, 6 + accepted, -1), "Speculative suffix removal refused");
-        const auto after_trim = decode(ctx, input, 6 + accepted, 1);
+        check_positions(ctx, 5 + accepted, stage + "/trim");
+        const auto after_trim = decode(ctx, input, 6 + accepted, 1, stage + "/replay");
         clear(ctx);
-        const auto reference = decode(ctx, input, 0, 7 + accepted);
-        compare(reference, after_trim, arm + "/accept-" + std::to_string(accepted));
+        const auto reference = decode(ctx, input, 0, 7 + accepted, stage + "/reference");
+        compare(reference, after_trim, stage);
         result.outputs.push_back(after_trim);
     }
 
     for (auto flags : {LLAMA_STATE_SEQ_FLAGS_NONE, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY}) {
         clear(ctx);
-        decode(ctx, input, 0, 6);
+        const auto stage = arm + (flags ? "/partial-restore" : "/full-restore");
+        decode(ctx, input, 0, 6, stage + "/prefix");
         const auto state = save(ctx, flags);
-        const auto expected = decode(ctx, input, 6, 1);
-        decode(ctx, input, 7, 1);
+        const auto expected = decode(ctx, input, 6, 1, stage + "/expected");
+        decode(ctx, input, 7, 1, stage + "/extra");
         restore(ctx, state, flags);
         // PARTIAL_ONLY restores recurrent state, not attention/indexer cells.
         // This is the same restore-then-trim order used by speculative rollback.
         if (flags & LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) {
             require(llama_memory_seq_rm(llama_get_memory(ctx), 0, 6, -1), "Restored suffix removal refused");
         }
-        const auto actual = decode(ctx, input, 6, 1);
-        compare(expected, actual, arm + (flags ? "/partial-restore" : "/full-restore"));
+        check_positions(ctx, 5, stage + "/restored");
+        const auto actual = decode(ctx, input, 6, 1, stage + "/continue");
+        compare(expected, actual, stage);
         result.outputs.push_back(actual);
     }
     return result;

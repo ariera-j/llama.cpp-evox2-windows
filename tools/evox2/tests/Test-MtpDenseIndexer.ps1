@@ -56,8 +56,11 @@ function Invoke-NativeGate([string]$Executable, [string[]]$Arguments, [string]$N
         Arguments = @($Arguments)
     }
     if ($null -eq $exitCode -or $exitCode -ne 0 -or -not $text.Contains($PassMarker)) {
-        Get-Content -LiteralPath $stderr -Tail 30 | ForEach-Object { Write-Host $_ }
-        throw "$Name failed or did not report its completed gate. Logs are retained in $reportDirectory"
+        $tail = @(Get-Content -LiteralPath $stderr -Tail 30)
+        $tail | ForEach-Object { Write-Host $_ }
+        $failure = @($tail | Where-Object { $_ -match '^MTP (dense indexer|indexer policy): FAIL:' })
+        $detail = if ($failure.Count) { $failure[-1] } else { 'No completed gate marker; inspect the native logs.' }
+        throw "$Name failed (exit=$exitCode): $detail Logs are retained in $reportDirectory"
     }
     Get-Content -LiteralPath $stdout | ForEach-Object { Write-Host $_ }
 }
@@ -146,10 +149,12 @@ try {
         $manifest = Read-Evox2BuildManifest -Executable $cli
         Assert-Check ($null -ne $manifest -and $manifest.BuildIdentity.Status -eq 'Verified') 'Build manifest/source identity is not Verified.'
         $report.BuildIdentity = $manifest.BuildIdentity
+        $report.PolicyTest = 'Running'
         Invoke-NativeGate -Executable (Join-Path $binDir 'test-mtp-indexer-policy.exe') -Arguments @() `
             -Name 'policy' -PassMarker 'MTP indexer policy: PASS'
         $report.PolicyTest = 'Passed'
         if ($RunModelTests) {
+            $report.ModelTest = 'Running'
             $main = Get-Evox2ConfigEntry -Config $config -Section Models -Key $ModelKey
             $draft = Get-Evox2ConfigEntry -Config $config -Section Models -Key $DraftModelKey
             $mainPath = if ([IO.Path]::IsPathRooted($main.Path)) { $main.Path } else { Join-Path $repo $main.Path }
@@ -183,6 +188,8 @@ try {
         }
     }
 } catch {
+    if ($report.PolicyTest -eq 'Running') { $report.PolicyTest = 'Failed' }
+    if ($report.ModelTest -eq 'Running') { $report.ModelTest = 'Failed' }
     $report.Status = 'Failed'; $report.Error = $_.Exception.Message
     throw
 } finally {
