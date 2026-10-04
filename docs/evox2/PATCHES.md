@@ -56,8 +56,9 @@ in B and 5.499980 s target layout remaining. PP is effectively unchanged.
 Normal 256k ABBA also passes 4/4: TG mean 15.220 -> 20.185 (+32.62%),
 identical response/acceptance and effectively unchanged PP. Versus the earlier
 normal MTP OFF reference TG19.76, the advantage is only +2.15%; PP overhead
-still makes fresh-prompt total latency worse. Target layout remains the next
-source investigation, with 128k confirmation before expansion. Default OFF.
+still makes fresh-prompt total latency worse. Target source review is complete:
+no-op invalidation (3.09 s of 5.50 s) is the first bounded proposal, with 128k
+confirmation before expansion. Default OFF.
 See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md).
 See [short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md)
@@ -84,7 +85,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target layout source review and 128k confirmation next, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), no-op invalidation plan next; 128k expansion confirmation retained, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -712,6 +713,16 @@ target layout separately and confirm 128k before wider expansion.
 See [normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
 [implementation and Windows commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
+
+Target layout source investigation is complete at the current source baseline:
+full acceptance still calls trim, and no-op indexer removals unconditionally
+stale the layout. B-wall target cost splits into 122 no-op-associated rebuilds /
+3.092231 s and 95 real suffix rebuilds / 2.407742 s. First plan a separate
+no-op invalidation candidate that retains recurrent/indexer/attention removal
+calls and pending stale markers. Actual suffix reuse follows separately;
+CPU layout dirtiness must not clear required pooled-key invalidation.
+No runtime change is included in this review. See
+[target source review](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 
 Refresh-branch validation plan:
 

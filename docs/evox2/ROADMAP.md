@@ -119,8 +119,9 @@ COMMON-001 compatibility port are complete.
    also passes 4/4: TG mean 15.220 -> 20.185 (+32.62%), response/acceptance
    match, PP mean 228.835 -> 229.650. The earlier normal MTP OFF reference is
    TG19.76/PP265.02: B has only +2.15% TG and total latency remains higher.
-   Next: separate target suffix/no-op source investigation; focused 128k
-   confirmation before broader expansion. See
+   Target source review is complete: no-op invalidation is the first bounded
+   candidate (3.09 s of B-wall's 5.50 s); prepare its implementation plan.
+   Focused 128k confirmation remains before broader expansion. See
    [candidate normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
    See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
    [candidate short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
@@ -151,7 +152,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Next: target suffix/no-op source investigation (5.50 s remains in B-wall), with focused 128k confirmation before expansion. ROCm coverage remains pending. |
+| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Target source review is complete: B-wall layout is 3.092231 s after full-accept no-op trims and 2.407742 s after real suffix removal. Next: plan a separate no-op invalidation candidate first, then suffix-prefix reuse with distinct CPU/GPU invalidation. Focused 128k confirmation remains an expansion gate; ROCm coverage remains pending. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
@@ -178,8 +179,13 @@ with supporting source evidence in
 The optimization is implemented behind the default-off opt-in; Windows native,
 allocation/short, candidate 256k wall and diagnostic-off normal ABBA gates pass.
 Use explicit candidate=1 for subsequent Vulkan MTP tests while retaining source
-default OFF. Investigate target suffix/no-op layout next; focused 128k
-confirmation is retained before broader use. Results and commands are in
+default OFF. Target source review is now complete: all-accepted trims still
+set indexer stale markers and force full layout copies. In B-wall, 122 such
+rebuilds cost 3.092231 s; 95 real suffix rebuilds cost 2.407742 s. Next prepare
+a separate no-op invalidation implementation plan, leaving real edits intact;
+then consider suffix-prefix reuse with distinct CPU/GPU invalidation. See
+[target layout source investigation](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
+Focused 128k confirmation remains before broader use. Results and commands are in
 [the implementation document](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 
 The earlier diagnostic design and event/timing semantics are recorded in

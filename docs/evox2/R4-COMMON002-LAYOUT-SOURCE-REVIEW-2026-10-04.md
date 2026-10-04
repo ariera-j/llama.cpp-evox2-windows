@@ -20,6 +20,13 @@ See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-
 and [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 and [the design](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
 
+The subsequent [target layout source investigation](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md)
+is now complete. It separates B-wall's residual 5.499980 s into 3.092231 s
+following full-accept no-op trims and 2.407742 s following actual suffix
+removal. The next bounded proposal is no-op invalidation suppression, keeping
+real removal calls and pending stale state; suffix-prefix reuse is a separate
+candidate requiring distinct CPU-layout and pooled-key invalidation.
+
 ## Decision before further measurement
 
 Use the completed wall collection to select the first bounded source change.
