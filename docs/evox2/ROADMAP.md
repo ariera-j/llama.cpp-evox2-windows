@@ -101,7 +101,54 @@ COMMON-001 compatibility port are complete.
    investigation follows the two MTP questions above; related compact-K/V work
    must be designed and validated for PP rather than restoring the r3
    single-token decode patch automatically.
-7. Resume other candidates after ordinary MTP compatibility is established.
+7. Use the consolidated priorities below for usage-policy work, cross-cutting
+   checks and the remaining conditional/deferred candidates.
+
+### Consolidated priorities after the overnight review
+
+This is the actionable order as of 2026-10-04. It combines the user's three
+performance questions, the four additional observations, and the deferred
+patches. The historical sections below are references, not competing work queues.
+
+| Order | Work | Next action and completion gate |
+|---|---|---|
+| 1 | COMMON-002: long-context MTP TG | Add opt-in phase/CPU-layout diagnostics; start with Vulkan 128k/256k ON and a focused OFF control. Separate draft generation, catch-up, target verification, sequence removal, hidden-state handling and CPU layout rebuilding. Use ROCm to check shared mechanisms where needed. Select one measured cause, validate its fix, then confirm with unprofiled ABBA. An evidence-backed limit or no-gain result can also close the scoped investigation. |
+| 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
+| 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
+| 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
+| 5 | COMMON-005: residual ROCm decode | Reprofile the remaining long-context single-token decode cost after the PP work. Port only a still-needed compact-K/V delta; reuse shared infrastructure if appropriate while keeping PP and decode validation distinct. Vulkan remains the primary optimization target. |
+
+Steps are scoped investigations, not promises that every slowdown can be fixed.
+Do not let one unsuccessful candidate indefinitely block the next question.
+
+#### Checks integrated with that work
+
+| Observation | Priority and placement | Escalation or acceptance rule |
+|---|---|---|
+| Output and rollback correctness | Start a small baseline case alongside step 1; require a focused correctness gate before adopting every state/cache/attention change | Exercise rejected and partially accepted drafts and inspect the first divergent logits/state if outputs differ. Greedy text divergence alone is not proof of a bug. A confirmed state/logit error takes priority over speed work. |
+| Build identity | Small prerequisite bundled with the next diagnostic implementation/build | Ensure source identity is explicit and preserve backend DLL identities as well as the launcher. Address stale embedded build metadata within this narrow scope; no broad build-system rewrite. Existing manifests keep the current comparison usable. |
+| Memory and destructor warnings | Continue phase-aligned resource logging in steps 1–3 | Track warnings and allocation changes. Investigate immediately if an assert, allocation failure, output corruption or repeatable steady-phase paging appears; current destructor-only warnings and counters alone do not justify changing UMA/context first. |
+| Output-length / prompt-reuse break-even | Step 4, after throughput changes settle | The current 64k constant-speed estimates (~2700 output tokens Vulkan, ~1300 ROCm) are illustrative, not deployment thresholds. The initial Vulkan 32k pair uses 128-token greedy generation; overnight rows use 512 tokens at temperature 0.2. Do not treat those as matched backend conditions. |
+
+The next concrete implementation is therefore the step-1 diagnostics, with
+reliable build identification and a small correctness case. It is not a
+performance-algorithm change or an automatic default change.
+
+#### Deferred, conditional and completed items
+
+| Item | Current disposition | When to revisit |
+|---|---|---|
+| COMMON-004 historical incremental-pool port | No wholesale port; upstream incremental pooling is already present | Only a measured residual gap. The new suffix-triggered CPU layout rebuild candidate belongs to step 1 and is distinct from restoring the old GPU pooling implementation. |
+| COMMON-006 historical block-domain selection rewrite | Upstream validation, not a queued implementation | If a current profile demonstrates remaining selection/top-k/expansion cost that the upstream path fails to address. |
+| COMMON-003 ROCmFPx format/core and VULKAN-001 kernels | Later model-expansion work | After the current Unsloth PLE16/MTP questions, when resuming ROCmFPx model evaluation. Check pinned-upstream support first; add only missing common support, then Vulkan kernels if required. |
+| Historical MTP-QSA prototype | Conditional experiment; remains outside the stable stack | Only if step 2 demonstrates a concrete opportunity beyond the r2 negative result. Use a separate experiment and validate PP, TG and output; do not force QSA by changing GGUF metadata. |
+| VULKAN-002 broader/default promotion and MoE default policy | Separate, lower-priority validation | After current MTP interactions are understood and broader model/device evidence is available. Keep existing explicit experiment settings and source defaults. |
+| GET_ROWS 128x4 candidate | Closed with no useful measured gain; default OFF | Only new evidence, not routine long-context retesting. |
+| COMMON-001 and current VULKAN-002 target validation | Complete for the documented scope | Regression checks for affected code; no re-port or full repeat without a reason. |
+| External engines such as Strata | Later exploration after the r4 baseline and current investigations settle | Separate compatibility/value review; no change to the pinned r4 base or present measurement scope. |
+
+Results and detailed hypotheses:
+[R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md).
 
 COMMON-001 is treated as a compatibility/layout patch, not a throughput
 optimization. ROCm clean Original and COMMON-001 PLE16 are effectively neutral
