@@ -34,8 +34,11 @@ are the historical r3 checkpoint frozen at
 VULKAN-002 `5814fbe99...` now passes the Windows build, 18/18 GPU OFF/ON tests,
 64k profile/normal ABBA and PLE16 128k/256k ABBA. Normal PP gains reach +65.2% /
 +100.6%, with TG effectively unchanged. Keep the default OFF; validated target
-runs explicitly enable union. COMMON-002 upstream MTP investigation is next,
-and COMMON-005 ROCm decode work is deferred by user priority. See
+runs explicitly enable union. COMMON-002 dense MTP now completes all 28 overnight
+Vulkan/ROCm runs through 256k. Investigate its long-context TG regression first,
+then MTP PP overhead and ROCm PP scaling; COMMON-005's historical decode port
+remains deferred. See
+[R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md) and
 [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
 
 See [BASELINE.md](BASELINE.md) for the current r4 gates.
@@ -636,16 +639,23 @@ Upstream PR #29761 (`Qwen4Exp: add MTP`) merged on 2026-10-01. It adds qwen4exp
 MTP conversion/tensor support and fixes the draft-model load path, so the old
 r3 plan to port MTP support first is no longer the correct starting point.
 
-Current priority (2026-10-04): next after validated VULKAN-002; COMMON-005
-ROCm work is deferred. Pinned-source inspection is complete: native sidecar
+Current priority (2026-10-04): active after validated VULKAN-002; COMMON-005's
+historical ROCm decode port is deferred. Pinned-source inspection is complete: native sidecar
 loading, HC-wide hidden transfer, MTP-layer QSA and bounded recurrent rollback
 are present. The dense sidecar's unused QSA-input assertion is fixed by the
 layer-ratio guard. Rebuilt Vulkan allocation and 32k OFF/ON generation pass;
 TG improves in the first pair but total latency increases for 128 generated
-tokens. The user requested an exploratory overnight 28-run Vulkan/ROCm matrix;
-broader output/rollback correctness and performance remain pending. See
+tokens. The overnight matrix now passes 28/28 runs through 256k. TG OFF -> ON
+at 256k is Vulkan 19.76 -> 15.245 and ROCm 12.405 -> 10.955 tok/s. Vulkan
+128k/256k acceptance stays near 67%, so acceptance alone does not explain the
+loss. Dense draft/catch-up work, CPU pool-layout rebuilding after sequence edits,
+unused dense-draft indexer bookkeeping and small-query verification dispatch
+need separate timing. Exhaustive output/rollback equivalence remains unproven.
+Investigate TG first, then MTP PP overhead, then ROCm long-context PP scaling.
+See [R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md)
+for all results and focused diagnostic gates, and
 [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md)
-for source evidence, measured results and the overnight matrix plan.
+for the initial source review, compatibility fix and matrix plan.
 
 Refresh-branch validation plan:
 

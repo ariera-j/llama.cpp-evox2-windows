@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-04 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; union default OFF; COMMON-002 MTP next; COMMON-005 deferred)
+Snapshot: 2026-10-04 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; union default OFF; COMMON-002 overnight 28/28 pass, long-context TG investigation active; COMMON-005 decode port deferred)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -80,25 +80,27 @@ COMMON-001 compatibility port are complete.
    279.80/185.90. Keep source default OFF and explicitly enable it for the
    validated Vulkan baseline; broader/default promotion is separate. See
    [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
-5. **COMMON-002 MTP is next.** Inspect MTP support at pinned upstream
-   `bed0a856606ee4a24a164066f73d2379447033f5`, then test the existing Unsloth
-   Q8_0 sidecar with the current r4 Vulkan build. Do not move upstream or restore
-   old compatibility code before checking remaining gaps. Loading/allocation,
-   short generation, draft acceptance/rollback and long-context PP overhead
-   are separate gates. Source review is complete: native MTP loading, HC state
-   transfer, draft QSA and bounded recurrent rollback already exist. The dense
-   sidecar's unused QSA-input assertion was fixed; rebuilt Vulkan allocation and
-   32k OFF/ON generation pass. First-pair TG improves but 128-token total latency
-   increases. At the user's request, prepare serial overnight ABBA collection:
-   Vulkan 64k/128k/256k and ROCm 32k/64k/128k/256k, 512 generated tokens.
-   Review all failures, output and total latency the next morning; this collection
-   does not establish each gate in advance. Old MTP-QSA code needs a fresh
-   delta review, not automatic restoration. See
+5. **COMMON-002 long-context MTP investigation is active.** Native upstream
+   MTP plus the dense-sidecar input guard completes all 28 overnight runs:
+   Vulkan 64k/128k/256k and ROCm 32k/64k/128k/256k, ABBA, 512 output tokens.
+   Runtime success does not establish exhaustive output/logit/rollback equivalence.
+   At 256k MTP reduces TG by 22.8% on Vulkan and 11.7% on ROCm; all 64k+
+   cases also have worse total PP+TG latency. Follow the user's order:
+   first split draft generation, catch-up, verification and CPU layout/rollback
+   costs at 128k/256k; then investigate MTP PP overhead; then ROCm PP scaling.
+   Check unused dense-draft indexer bookkeeping and suffix-triggered CPU layout
+   rebuilds before reviving the unsuccessful r2 MTP-QSA prototype. Check actual
+   small-query Vulkan union dispatch during verification. For ROCm PP, profile
+   the growing full-KV attention path before considering grouped selected-K/V
+   compaction. See
+   [R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md)
+   and the earlier
    [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
-6. **COMMON-005 deferred.** Its residual target is mainly ROCm decode. Vulkan
-   now leads the recorded PP/TG comparisons for the tested 96GB, PLE16, MTP-OFF
-   workload. Prioritize Vulkan; retain ROCm as a comparison/alternative backend
-   and resume its compact K/V port only when that use case becomes a priority.
+6. **COMMON-005 historical decode port remains deferred.** ROCm still leads
+   PP through 64k, while Vulkan leads at 128k/256k. The requested ROCm PP
+   investigation follows the two MTP questions above; related compact-K/V work
+   must be designed and validated for PP rather than restoring the r3
+   single-token decode patch automatically.
 7. Resume other candidates after ordinary MTP compatibility is established.
 
 COMMON-001 is treated as a compatibility/layout patch, not a throughput

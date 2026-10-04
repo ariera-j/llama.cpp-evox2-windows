@@ -1,9 +1,12 @@
 # r4 COMMON-002: pinned-upstream MTP review
 
 Recorded: 2026-10-04 JST. Status: source review complete; dense-MTP input fix
-validated by repeated Vulkan allocation smoke and a 32k OFF/ON generation pair.
-Exploratory overnight Vulkan/ROCm matrix prepared; results and broader output/
-rollback correctness validation remain pending.
+passes allocation and the overnight Vulkan/ROCm matrix (28/28 runs, through
+256k). Long-context MTP TG regresses; exhaustive output/logit/rollback
+equivalence remains unproven. Results, source investigation and focused next
+measurements are in
+[R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md).
+The sections below preserve the original review and successive runtime gates.
 
 ## Decision
 
