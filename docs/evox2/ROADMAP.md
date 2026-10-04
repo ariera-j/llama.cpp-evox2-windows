@@ -131,8 +131,13 @@ COMMON-001 compatibility port are complete.
    marks; target full rebuilds fall57->33. The256k wall gate now also passes
    2/2 with matching output and ordered acceptance:123 no-op suppressions,
    all95 real-removal stale marks retained, full rebuilds217->95 and layout
-   5.529702->2.436146 s. Wall TG19.96->22.71 (+13.78%), PP unchanged. Next:
-   diagnostic-OFF normal ABBA; source default remains OFF. See
+   5.529702->2.436146 s. Wall TG19.96->22.71 (+13.78%), PP unchanged. Normal
+   ABBA now passes4/4: mean TG20.205->22.830 (+12.99%), matched response and
+   aggregate acceptance, mean PP229.940->229.565 (-0.16%). Source default stays
+   OFF. At user request, next are ROCm build/measurement, CLI/bench comparison,
+   then a decision on the next optimization. See
+   [no-op normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
+   [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md) and
    [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
    [allocation and short validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md) and
    [implementation and commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md).
@@ -140,8 +145,7 @@ COMMON-001 compatibility port are complete.
    [candidate normal ABBA validation](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
    See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
    [candidate short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
-   Main
-   suffix/no-op maintenance follows separately. The earlier relative-path
+   Residual target suffix maintenance is parked during the requested checks. The earlier relative-path
    Windows fixture is confirmed. No extra sync collection is required. See
    [dense-indexer implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md),
    [dense-indexer implementation plan](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
@@ -153,25 +157,32 @@ COMMON-001 compatibility port are complete.
    [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
 6. **COMMON-005 historical decode port remains deferred.** ROCm still leads
    PP through 64k, while Vulkan leads at 128k/256k. The requested ROCm PP
-   investigation follows the two MTP questions above; related compact-K/V work
+   investigation is a candidate for the post-ROCm/bench decision; related compact-K/V work
    must be designed and validated for PP rather than restoring the r3
    single-token decode patch automatically.
 7. Use the consolidated priorities below for usage-policy work, cross-cutting
    checks and the remaining conditional/deferred candidates.
 
-### Consolidated priorities after the overnight review
+### Consolidated priorities after Vulkan no-op normal ABBA
 
-This is the actionable order as of 2026-10-04. It combines the user's three
-performance questions, the four additional observations, and the deferred
-patches. The historical sections below are references, not competing work queues.
+This is the actionable order after the user's22:41 request on2026-10-04.
+Vulkan256k target no-op validation is complete through native, allocation/short,
+wall and normal ABBA. Normal TG20.205->22.830 (+12.99%) is reproduced with
+matched output/acceptance; PP is effectively unchanged. Source default stays OFF.
+Historical dense omission improved TG15.220->20.185; that is separate from the
+current same-binary no-op comparison. See [normal results](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md).
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero omission passes native, allocation/short, 256k wall and normal ABBA. Normal TG 15.220 -> 20.185 (+32.62%), matched output/acceptance; PP unchanged. B is only +2.15% TG above the earlier OFF reference and loses on fresh-prompt total latency. Target source review is complete: B-wall layout is 3.092231 s after full-accept no-op trims and 2.407742 s after real suffix removal. Approved no-op candidate is implemented with separate default-off target switch, actual membership counts, preserved dirty state, numeric target gate and short/wall/normal A/B with draft omission1. Windows Vulkan native gate is Complete after the accessor fix: 524 vector comparisons are exact, 67 no-op invalidations suppressed and 33 pending stale markers preserved. Allocation/short CLI gate passes 8/8 with matched A/B output/acceptance and full rebuilds 57->33. 256k wall also passes 2/2 with matched output/ordered acceptance, full rebuilds 217->95 and layout 5.529702->2.436146 s; wall TG 19.96->22.71 (+13.78%), PP unchanged. Next: diagnostic-OFF normal ABBA; suffix-prefix reuse with distinct CPU/GPU invalidation follows separately. Focused 128k confirmation remains an expansion gate; ROCm coverage remains pending. |
-| 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
-| 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
-| 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
-| 5 | COMMON-005: residual ROCm decode | Reprofile the remaining long-context single-token decode cost after the PP work. Port only a still-needed compact-K/V delta; reuse shared infrastructure if appropriate while keeping PP and decode validation distinct. Vulkan remains the primary optimization target. |
+| 1 | ROCm coverage of current MTP candidates | Rebuild R4ROCm with both native targets; pass both native model/state/rollback gates, three allocation smokes and five short runs. Then focused256k normal OFF/A/B (dense omission1 fixed in A/B, target0/1). Record startup/runtime evidence, output/acceptance, PP/TG and total evaluation. Add repetitions/attribution only for unresolved uncertainty. |
+| 2 | CLI versus llama-bench | Same PLE16 build per backend; compare MTP OFF real-text CLI with full random-token PP and TG after depth matching actual prompt tokens. Start64k, review, then256k. Bench has no MTP path; context allocation, MoE routing, warmup/state reuse and timer boundaries remain different. Reuse the fresh ROCm256k OFF control if identical. |
+| 3 | Decide the next optimization | After the preceding results, choose MTP PP attribution (target/draft prefill, hidden copy/sync, bookkeeping), residual target suffix reuse (95 rebuilds/2.436146s, separate CPU/GPU invalidation), ROCm128k/256k PP scaling (early/late batches, MTP OFF), or focused Vulkan128k coverage. No implementation automatically starts. Do not revive r2 MTP-QSA without attribution. |
+| 4 | MTP usage policy | Once the selected path is stable, assess representative output quality, prompt reuse and fresh-prompt total latency; DraftMax1/2 only if acceptance/cost supports it. TG improvement does not alone establish total-latency superiority. |
+| 5 | COMMON-005: residual ROCm decode | Remains deferred. Reprofile after the selected PP/coverage work; port only a still-needed compact-K/V delta. COMMON-003/VULKAN-001 and conditional upstream reviews remain in their existing backlog. |
+
+See [runnable ROCm/bench sequence](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).
+The prior four observations and baseline records remain historical evidence;
+this table replaces their earlier implementation ordering.
 
 Steps are scoped investigations, not promises that every slowdown can be fixed.
 Do not let one unsuccessful candidate indefinitely block the next question.

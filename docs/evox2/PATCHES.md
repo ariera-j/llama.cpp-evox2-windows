@@ -85,7 +85,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), target no-op candidate implemented and Windows native gate Complete, then 8/8 allocation/short CLI runs pass with matched output/acceptance and target full rebuilds 57->33; 256k wall also passes 2/2 with matched output/ordered acceptance, target rebuilds 217->95, layout 5.53->2.44 s, wall TG +13.78% and PP unchanged; next diagnostic-OFF normal ABBA, 128k confirmation retained, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), target no-op candidate implemented and Windows native gate Complete, then 8/8 allocation/short CLI runs pass with matched output/acceptance and target full rebuilds 57->33; 256k wall also passes 2/2 with matched output/ordered acceptance, target rebuilds 217->95, layout 5.53->2.44 s, wall TG +13.78% and PP unchanged; normal ABBA now passes 4/4 (TG mean 20.205->22.830, +12.99%, output/acceptance match); next user-directed ROCm coverage, CLI/bench comparison, then optimization decision; 128k confirmation retained, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -736,10 +736,17 @@ Short normal TG34.81->34.86 does not establish a speedup. The256k wall gate
 now also passes2/2 with matching output and ordered218-round acceptance
 history:123 no-op suppressions, all95 real-removal stale marks retained,
 full rebuilds217->95 and layout5.529702->2.436146 s. Wall TG19.96->22.71
-(+13.78%) while PP230.12->229.92 is effectively unchanged. Next: diagnostic-OFF
-normal ABBA to establish repeatability; keep source default OFF. Residual
-suffix rebuilds retain2.436146 s of layout work. This validation update is
-documentation only; no rebuild is needed.
+(+13.78%) while PP230.12->229.92 is effectively unchanged. Diagnostic-OFF
+normal ABBA now also passes4/4 with matched output/aggregate acceptance:
+mean TG20.205->22.830 (+12.99%), mean PP229.940->229.565 (-0.16%). Keep source
+default OFF. Residual suffix rebuilds retain2.436146 s but further TG/PP
+implementation is parked: the user requests ROCm build/measurement, then
+CLI/bench comparison, then the next optimization decision. New focused ROCm
+short/256k and staged CLI/bench plans are prepared; local source/PlanOnly checks
+pass, Windows ROCm model/performance validation remains pending. No inference
+code changed; Vulkan needs no rebuild, ROCm needs the current native targets.
+See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
+[ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).
 See [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md).
 See [allocation and short CLI validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
 See [implementation and Windows commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md) and

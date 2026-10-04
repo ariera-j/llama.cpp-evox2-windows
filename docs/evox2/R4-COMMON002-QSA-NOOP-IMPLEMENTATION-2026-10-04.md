@@ -11,8 +11,12 @@ allocation smokes and five short CLI runs now pass: A/B output and acceptance
 match, 25 unnecessary invalidations are suppressed, and real removals remain
 intact. The 256k wall gate now also passes2/2 with matching output and ordered
 acceptance history: target full rebuilds217->95, layout5.529702->2.436146 s,
-wall TG19.96->22.71 (+13.78%), PP effectively unchanged. Next: diagnostic-OFF
-normal ABBA; repeatable normal performance remains pending. See
+wall TG19.96->22.71 (+13.78%), PP effectively unchanged. Diagnostic-OFF normal
+ABBA now passes4/4: mean TG20.205->22.830 (+12.99%), matching response and
+aggregate acceptance, mean PP229.940->229.565 (-0.16%). Source default stays OFF.
+Next, at user request: ROCm build/validation, CLI/bench comparison, then choose
+the next optimization. See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
+[ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md). See
 [256k wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md) and
 [allocation and short CLI validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
 The existing draft-omission measurements do not validate this new runtime.
@@ -372,7 +376,28 @@ mechanism but requires normal ABBA for repeatable performance. Total evaluation
 improves only2.178570 s (about0.19%) because PP dominates; whole-process
 duration differences include loading/startup and are not TG savings.
 
-Proceed to Gate D, the diagnostic-OFF A1/B1/B2/A2 plan, using the same
-verified CLI. Source default stays OFF; focused128k/ROCm remain later gates.
+This wall gate authorized Gate D; the subsequent normal ABBA passes below.
+Source default stays OFF; focused128k remains a separate coverage gate.
 The95 real suffix rebuilds retain2.436146 s of layout cost for the separate
 suffix-reuse investigation. See [complete wall validation](R4-COMMON002-QSA-NOOP-WALL-VALIDATION-2026-10-04.md).
+
+
+## 20:42–22:07 diagnostic-OFF normal ABBA gate: Complete
+
+All4 runs are OK with Verified startup/runtime evidence, identical2538-byte
+responses and293/436 aggregate acceptance, also matching the wall pair.
+Normal runs do not collect ordered trim histories. A TG20.24/20.17 averages
+20.205; B22.82/22.84 averages22.830 (+12.99%). PP means229.940->229.565
+(-0.16%), effectively unchanged. Mean generation evaluation saves2.910235 s
+while total evaluation saves only1.121760 s (about0.10%) with PP variation
+larger than that saving. This validates TG improvement at Vulkan256k, not
+robust fresh-prompt total-latency improvement or global MTP enablement.
+
+The user now requests ROCm build/measurement, then CLI/bench comparison, then
+a decision on MTP PP versus other work. Residual suffix reuse is parked during
+those checks. New ROCm short/256k and staged64k/256k CLI/bench plans are
+provided; no inference code changes. PowerShell7 source checks and PlanOnly
+expansion pass locally; Windows ROCm native/model/performance remain pending.
+The currently verified Vulkan binaries need no rebuild. Rebuild ROCm to include
+the candidates and native test targets. See [normal results](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
+[ROCm/bench commands and comparison limits](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).
