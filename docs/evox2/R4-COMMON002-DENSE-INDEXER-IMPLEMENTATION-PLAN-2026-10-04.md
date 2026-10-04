@@ -7,8 +7,11 @@ Planning baseline: `r4/upstream-refresh-20261002` at
 Status: implemented after user approval. The runtime switch, native tests and
 focused benchmark plans are delivered. The 14:50 Windows Vulkan native model/
 state/rollback and A/B gate passes after harness corrections. Allocation/short
-real CLI subsequently passes 8/8 runs; the 256k wall pair is next, and GPU
-performance gates remain pending. This document preserves the design.
+real CLI subsequently passes 8/8 runs. The 256k wall pair also passes: TG
+14.76 -> 19.95 tok/s (+35.16%), identical response bytes/acceptance, draft
+layout removed and target layout retained. Normal 256k ABBA is now next;
+normal performance gates remain pending. This document preserves the design.
+See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md).
 See [implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 for actual delivered behavior, local checks and Windows commands.
 

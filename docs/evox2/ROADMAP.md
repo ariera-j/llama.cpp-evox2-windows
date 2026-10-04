@@ -111,8 +111,12 @@ COMMON-001 compatibility port are complete.
    pairs have identical logits/hidden; default remains OFF. Three allocation
    smokes and five short real CLI runs also pass (8/8 OK): output/acceptance
    match across MTP ON arms, rejected/partial/full drafts are covered, and B
-   removes draft indexer/layout/pool work while target work remains. Next run
-   the 256k wall pair and review before normal ABBA. See
+   removes draft indexer/layout/pool work while target work remains. The 256k
+   wall pair also passes: TG 14.76 -> 19.95 tok/s (+35.16%), generation time
+   -9.00755 s, identical generated response bytes and acceptance history.
+   Draft layout is absent in B; target layout remains 5.499980 s. PP is
+   effectively unchanged (229.91 -> 230.21). Next: diagnostic-off 256k ABBA.
+   See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md) and
    [candidate short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
    Main
    suffix/no-op maintenance follows separately. The earlier relative-path
@@ -141,7 +145,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero indexer omission is implemented. Next: Windows build and native state/rollback tests, three allocation smokes, five short runs, a focused 256k wall A/B and normal ABBA. No gain is asserted yet. Main suffix/no-op maintenance follows separately; GPU/ROCm attribution remains conditional. |
+| 1 | COMMON-002: long-context MTP TG | Default-off single-block ratio-zero indexer omission passes native, allocation/short and 256k wall gates. Wall TG 14.76 -> 19.95 (+35.16%) with matched output/acceptance and no draft layout; PP unchanged. Next: normal 256k ABBA, then target suffix/no-op maintenance separately (5.50 s remains in B). Normal performance and GPU/ROCm attribution remain conditional. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |
@@ -165,8 +169,9 @@ optimization proposal, change list and validation order are recorded in
 [R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md),
 with supporting source evidence in
 [R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
-The optimization is now implemented behind the default-off opt-in; Windows
-model/performance gates remain pending. Run the commands in
+The optimization is implemented behind the default-off opt-in; Windows native,
+allocation/short and candidate 256k wall gates pass. Normal 256k ABBA remains
+pending. Run Gate D commands in
 [the implementation document](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 
 The earlier diagnostic design and event/timing semantics are recorded in

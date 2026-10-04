@@ -11,8 +11,10 @@ model gate is Complete: all native cache/state/rollback and A/B comparisons
 pass with the corrected batch partitions. Gate B's three allocation smokes
 and five short real CLI runs also pass in the 14:58-15:06 collection: all four
 MTP ON response bodies/acceptance match and B removes draft indexer work.
-Next run the two 256k wall arms and review before ordinary ABBA. Performance
-and exhaustive model correctness remain unproven;
+The 15:11-15:51 256k wall pair also passes: TG 14.76 -> 19.95 tok/s,
+identical generated response bytes and acceptance history, and zero draft
+indexer/layout/pool work in B. Gate D normal 256k ABBA is now the next step.
+Normal performance and exhaustive model correctness remain unproven;
 keep the runtime switch default OFF.
 
 See [allocation and short CLI validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md)
@@ -232,7 +234,7 @@ binaries. This recording commit changes documentation only; retain the existing
 build manifest and artifact hashes for the next runs. At this 14:50 checkpoint,
 Gate B's real speculative acceptance/carry/CLI checks were still pending; they
 now pass in the [later short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md).
-The next gate is the 256k wall pair, with ordinary ABBA conditional on review.
+The subsequent 256k wall pair also passes; ordinary ABBA is now the next gate.
 
 ## Gate A: source checks, rebuild and native correctness
 
@@ -329,6 +331,15 @@ PP/TG, CPU scopes, acceptance and resources. Do not sum inclusive parents with
 their children or interpret Vulkan dispatch CPU time as GPU kernel time.
 If draft layout remains, resolve scope/evidence before further collection.
 No default sync pair or ROCm rerun is required to check this CPU candidate.
+
+Gate C result: both reports Complete, no issues or phase-alignment warnings.
+B removes 9.767278 s of generation draft layout; target layout remains
+5.499980 s. Generation time falls 34.61605 -> 25.60850 s (-9.00755 s),
+PP 229.91 -> 230.21 tok/s (+0.13%). All 218 acceptance/carry rounds match,
+including rejection, partial and full acceptance, and generated response
+bytes match. See [candidate 256k wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md).
+Proceed to the existing normal ABBA plan using the same verified binary;
+no rebuild, sync or ROCm run is required first.
 
 ## Gate D: normal 256k ABBA and conditional expansion
 

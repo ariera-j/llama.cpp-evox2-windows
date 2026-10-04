@@ -9,7 +9,11 @@ confirmed on Windows. The guarded dense-draft indexer candidate is now
 implemented after user approval. The 14:50 Windows Vulkan native model/state/
 rollback and A/B gate passes after harness corrections. Allocation/short CLI
 also passes 8/8 runs and confirms removal of draft indexer/layout/pool work;
-256k wall and performance gates remain pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
+the 256k wall pair also passes with TG +35.16% and matching output/acceptance.
+Draft layout 9.767278 s is removed; target layout remains 5.499980 s.
+Normal 256k ABBA is next, followed by separate target layout work if justified.
+See [candidate wall validation](R4-COMMON002-DENSE-INDEXER-WALL-VALIDATION-2026-10-04.md)
+and [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 and [the design](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
 
 ## Decision before further measurement
