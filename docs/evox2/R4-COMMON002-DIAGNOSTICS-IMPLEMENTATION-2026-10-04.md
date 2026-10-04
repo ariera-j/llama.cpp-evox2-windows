@@ -6,8 +6,11 @@ Recorded: 2026-10-04 JST. Implementation based on
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 
 The [implementation plan](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md)
-is now implemented. Windows build, allocation, generation and GPU validation
-are pending. This patch measures the existing path; it does not implement a
+is now implemented. The rebuilt Windows Vulkan binary, AllocationOnly OFF/ON,
+and short OFF/ON/wall gate passed; see
+[short validation](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md). Long-context
+diagnostic collection, sync and ROCm validation remain pending.
+This patch measures the existing path; it does not implement a
 performance candidate or claim a speedup.
 
 ## Implemented observations

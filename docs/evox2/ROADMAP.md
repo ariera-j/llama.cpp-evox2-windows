@@ -94,9 +94,11 @@ COMMON-001 compatibility port are complete.
    the growing full-KV attention path before considering grouped selected-K/V
    compaction. See
    [R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md)
-   Opt-in diagnostics and build identity checks are implemented; Windows/GPU
-   validation is pending. Next run the build/allocation/short gate, then the
-   focused Vulkan 128k ON, 256k ON/OFF wall collection. See the
+   Opt-in diagnostics and build identity checks passed the rebuilt Windows
+   Vulkan allocation/short gate. Normal ON and wall ON text/acceptance match;
+   partial/full acceptance and rejection are observed. A summary success-stream
+   fix precedes the focused Vulkan 128k ON, 256k ON/OFF wall collection. See
+   [short validation](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md) and the
    [implementation and commands](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md)
    and the earlier
    [R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
@@ -116,7 +118,7 @@ patches. The historical sections below are references, not competing work queues
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | COMMON-002: long-context MTP TG | Diagnostics implemented; pass the Windows build/allocation/short gate, then Vulkan 128k/256k ON and a focused OFF control. Separate draft generation, catch-up, target verification, sequence removal, hidden-state handling and CPU layout rebuilding. Use ROCm to check shared mechanisms where needed. Select one measured cause, validate its fix, then confirm with unprofiled ABBA. An evidence-backed limit or no-gain result can also close the scoped investigation. |
+| 1 | COMMON-002: long-context MTP TG | Windows Vulkan build/allocation/short diagnostic gate passed; pull the summary stream fix, then Vulkan 128k/256k ON and a focused OFF control. Separate draft generation, catch-up, target verification, sequence removal, hidden-state handling and CPU layout rebuilding. Use ROCm to check shared mechanisms where needed. Select one measured cause, validate its fix, then confirm with unprofiled ABBA. An evidence-backed limit or no-gain result can also close the scoped investigation. |
 | 2 | COMMON-002: MTP PP overhead | Split target PP, draft prefill, hidden-state copy/sync and indexer bookkeeping. Reuse the first diagnostics. Assess unused dense-draft indexer removal, transfer reduction and dense-prefill kernels/batching according to measured cost. Do not automatically revive r2 MTP-QSA. |
 | 3 | ROCm long-context PP scaling | Profile early/late prompt batches with MTP OFF at the 128k/256k crossover. If full-KV FA dominates the growth, evaluate PP-oriented selected-K/V compaction or a backend-appropriate sparse path. This has priority over the old COMMON-005 decode port. |
 | 4 | MTP usage policy | With the selected implementation stable, compare representative short/long outputs and prompt-reuse workloads. Determine where MTP improves total latency as well as TG; consider DraftMax=1 versus 2 only with measured acceptance and overhead. Do not repeat the full matrix before it answers a concrete decision. |

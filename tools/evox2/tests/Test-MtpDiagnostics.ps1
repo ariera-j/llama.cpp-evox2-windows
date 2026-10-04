@@ -39,10 +39,26 @@ try {
     if ((Test-Evox2RuntimeArtifacts -Executable $exe -Manifest $manifest).Status -ne 'Mismatch') {
         throw 'Missing DLL test failed.'
     }
+
+    # The native parser prints a progress line. It must not become a matrix row.
+    $fixture = Join-Path $temp 'diagnostic-run'
+    New-Item -ItemType Directory -Path $fixture | Out-Null
+    $begin = 'mtp_diag v=1 kind=begin id=server-test parent=none mode=wall domain=server event=target_evaluation ctx=0x1 role=target phase=generation thread=1 t0_us=10 t1_us=0 elapsed_us=0 rc=0 complete=0'
+    $end = 'mtp_diag v=1 kind=end id=server-test parent=none mode=wall domain=server event=target_evaluation ctx=0x1 role=target phase=generation thread=1 t0_us=10 t1_us=20 elapsed_us=10 rc=0 complete=1'
+    [IO.File]::WriteAllText((Join-Path $fixture 'stderr.log'), "$begin`n$end`n")
+    [IO.File]::WriteAllText((Join-Path $fixture 'result.json'), '{"GenerationEvalMilliseconds":1.0}')
+    $summaryOutput = @(& (Join-Path $repo 'tools\evox2\benchmark\Summarize-MtpDiagnostics.ps1') `
+        -RunDirectory $fixture -Python $Python)
+    if ($summaryOutput.Count -ne 0) { throw 'Diagnostic summary polluted the success pipeline.' }
+    $report = Get-Content -LiteralPath (Join-Path $fixture 'mtp-diagnostics.json') -Raw | ConvertFrom-Json
+    if ($report.Status -ne 'Complete' -or
+        -not (Test-Path -LiteralPath (Join-Path $fixture 'mtp-diagnostics.csv'))) {
+        throw 'Diagnostic summary sidecar test failed.'
+    }
 } finally { Remove-Item -LiteralPath $temp -Recurse -Force }
 Push-Location $repo
 try {
     & $Python -m unittest discover -s tools/evox2/tests -p test_mtp_diagnostics.py -v
     if ($LASTEXITCODE -ne 0) { throw 'Diagnostic parser tests failed.' }
 } finally { Pop-Location }
-Write-Host 'PowerShell parsing, artifact verification and diagnostic parser checks passed.'
+Write-Host 'PowerShell parsing, artifact verification, summary pipeline and diagnostic parser checks passed.'
