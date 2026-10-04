@@ -1,3 +1,4 @@
+#include "../ggml-mtp-diag.h"
 #include "ggml-vulkan-common.h"
 
 namespace {
@@ -8270,8 +8271,14 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
     return true;
 }
 
+static void ggml_vk_mtp_diag_emit(const char * line) { GGML_LOG_INFO("%s", line); }
+
 void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const ggml_tensor * q, const ggml_tensor * k, const ggml_tensor * v, const ggml_tensor * mask, const ggml_tensor * sinks, ggml_tensor * dst) {
+    mtp_diag::scope diag("vulkan", "fa_dispatch", ctx, "unknown", ggml_vk_mtp_diag_emit);
+    diag.add("tensor", dst->name);
+    diag.add("n_query", q->ne[1]); diag.add("n_kv", k->ne[1]);
     if (ggml_vk_qsa_union(ctx, subctx, q, k, v, mask, sinks, dst)) {
+        diag.add("path", "union");
         return;
     }
     VK_LOG_DEBUG("ggml_vk_flash_attn((" << q << ", name=" << q->name << ", type=" << q->type << ", ne0=" << q->ne[0] << ", ne1=" << q->ne[1] << ", ne2=" << q->ne[2] << ", ne3=" << q->ne[3] << ", nb0=" << q->nb[0] << ", nb1=" << q->nb[1] << ", nb2=" << q->nb[2] << ", nb3=" << q->nb[3];
@@ -8429,6 +8436,7 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
     }
 
     // Only use mask opt when the mask is fairly large. This hasn't been tuned extensively.
+    diag.add("path", use_sparse ? "sparse" : "dense");
     bool use_mask_opt = mask && !use_sparse && nem1 >= 32 && nem0 * nem1 > 32768 && nem0 >= tuning_params.block_cols * 16
                         && (ctx->device->architecture != vk_device_architecture::AMD_GCN || HSK > 256 || HSV > 256);
     vk_fa_pipeline_state fa_pipeline_state = get_fa_pipeline_state(ctx->device, tuning_params, HSK, HSV, aligned, f32acc,
@@ -14422,6 +14430,8 @@ static int32_t find_first_set(uint32_t x) {
 static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
     VK_LOG_DEBUG("ggml_backend_vk_graph_compute(" << cgraph->n_nodes << " nodes)");
     ggml_backend_vk_context * ctx = (ggml_backend_vk_context *)backend->context;
+    mtp_diag::scope diag("vulkan", "graph", ctx, "unknown", ggml_vk_mtp_diag_emit);
+    diag.add("n_nodes", cgraph->n_nodes);
 
     ctx->device->diag_cgraph = nullptr;
     ctx->device->diag_prev_start = -1;

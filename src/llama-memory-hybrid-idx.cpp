@@ -1,4 +1,5 @@
 #include "llama-memory-hybrid-idx.h"
+#include "llama-mtp-diag.h"
 
 #include <algorithm>
 #include <cmath>
@@ -183,15 +184,24 @@ llama_pos llama_memory_hybrid_idx::mem_idx_stale_pos(llama_seq_id seq_id, llama_
 }
 
 bool llama_memory_hybrid_idx::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+    mtp_diag::scope diag("memory", "seq_rm", nullptr, "unknown", llama_mtp_diag_emit);
+    diag.pointer("mem", static_cast<llama_memory_i *>(this));
+    diag.add("seq", seq_id); diag.add("pos_first", p0); diag.add("pos_last", p1);
     // same order as llama_memory_hybrid::seq_rm: the recurrent cache can refuse, so try it first
-    if (!get_mem_recr()->seq_rm(seq_id, p0, p1)) {
+    mtp_diag::scope recurrent("memory", "seq_rm_recurrent", nullptr, "unknown", llama_mtp_diag_emit);
+    const bool recurrent_ok = get_mem_recr()->seq_rm(seq_id, p0, p1);
+    recurrent.status(recurrent_ok ? 0 : -1); recurrent.finish();
+    if (!recurrent_ok) {
+        diag.status(-1);
         return false;
     }
 
     if (mem_idx) {
+        mtp_diag::scope indexer("memory", "seq_rm_indexer", nullptr, "unknown", llama_mtp_diag_emit);
         const llama_pos stale = mem_idx_stale_pos(seq_id, p0);
         mem_idx->seq_rm(seq_id, p0, p1);
         mem_idx_stale_set(seq_id, stale);
+        diag.add("stale_from", stale);
 
         // removing a sequence can free cells another sequence shared, but only this one is marked stale, so the
         // survivor would keep shared = true and pin cache_safe off forever; stale every sequence to re-derive it
@@ -200,7 +210,10 @@ bool llama_memory_hybrid_idx::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_po
         }
     }
 
-    return get_mem_attn()->seq_rm(seq_id, p0, p1);
+    mtp_diag::scope attention("memory", "seq_rm_attention", nullptr, "unknown", llama_mtp_diag_emit);
+    const bool ok = get_mem_attn()->seq_rm(seq_id, p0, p1);
+    attention.status(ok ? 0 : -1); diag.status(ok ? 0 : -1);
+    return ok;
 }
 
 void llama_memory_hybrid_idx::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) {
@@ -411,6 +424,9 @@ bool llama_memory_hybrid_idx::kpool_layout_shared() const {
 // Pools are fixed by the positions relative to the sequence's first one, so the layout survives a plain
 // append. A sequence edit can regroup them, and mem_idx_stale tells us it happened.
 const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_layout_update() {
+    mtp_diag::scope diag("memory", "layout", nullptr, "unknown", llama_mtp_diag_emit);
+    diag.pointer("mem", static_cast<llama_memory_i *>(this));
+    int64_t full = 0, appended = 0, copied = 0, scanned = 0, stale_rebuild = 0;
     GGML_ASSERT(mem_idx != nullptr);
 
     if (!kpool_lay) {
@@ -440,6 +456,7 @@ const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_lay
 
         sq.strm = unified ? 0 : mem_idx->get_stream(s);
 
+        const size_t old_cells = sq.cells.size();
         size_t n_kept = 0;
         if (mem_idx_stale[s] == POS_CLEAN && !sq.cells.empty() && !sp.empty() &&
                 sq.pos_min == sp.begin()->first) {
@@ -452,6 +469,7 @@ const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_lay
         // the appended tail accounts for every cell only if nothing before it was dropped, but an edit can
         // regroup a sequence without changing its cell count, so a stale sequence must rebuild regardless
         if (sq.cells.size() != sp.size() || mem_idx_stale[s] != POS_CLEAN) {
+            if (diag.active()) { ++full; copied += sp.size(); stale_rebuild += mem_idx_stale[s] != POS_CLEAN; }
             sq.cells.assign(sp.begin(), sp.end());
             sq.pools.clear();
             sq.j_next  = 0;
@@ -460,11 +478,14 @@ const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_lay
             n_kept     = 0;
         }
 
+        if (diag.active() && n_kept) { appended += sq.cells.size() - old_cells; }
+
         // sharing starts with a seq_cp; it ends with an edit, or a seq_rm/state_drop/state_read that frees the
         // shared cells - each stales every sequence so the rebuild above re-derives it, so once set it holds
         // until then and the rescan can be skipped
         if (unified && !sq.shared) {
             for (size_t j = n_kept; j < sq.cells.size(); ++j) {
+                if (diag.active()) { ++scanned; }
                 if (cells.seq_count(sq.cells[j].second) > 1) {
                     sq.shared = true;
                     break;
@@ -477,10 +498,12 @@ const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_lay
         if (hparams_idx.indexer_kpool_by_order) {
             // consecutive cells in sequence order, whatever their positions
             for (; j + kpool <= sq.cells.size(); j += kpool) {
+                if (diag.active()) { ++scanned; }
                 sq.pools.push_back((uint32_t) j);
             }
         } else {
             while (j + kpool <= sq.cells.size()) {
+                if (diag.active()) { ++scanned; }
                 const llama_pos p0 = sq.cells[j].first;
                 if ((p0 - sq.pos_min) % (llama_pos) kpool != 0) {
                     ++j;
@@ -488,6 +511,7 @@ const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_lay
                 }
                 bool ok = true;
                 for (uint32_t k = 1; k < kpool; ++k) {
+                    if (diag.active()) { ++scanned; }
                     if (sq.cells[j + k].first != p0 + (llama_pos) k) {
                         ok = false;
                         break;
@@ -507,6 +531,10 @@ const llama_memory_hybrid_idx::kpool_layout & llama_memory_hybrid_idx::kpool_lay
         lay.cache_safe   = lay.cache_safe && !sq.shared;
     }
 
+    diag.add("full_rebuilds", full); diag.add("stale_rebuilds", stale_rebuild);
+    diag.add("copied_cells", copied); diag.add("appended_cells", appended);
+    diag.add("scan_steps", scanned); diag.add("pools", lay.n_pool_real);
+    diag.add("cache_safe", lay.cache_safe ? 1 : 0);
     return lay;
 }
 
@@ -592,7 +620,13 @@ bool llama_memory_hybrid_idx_context::apply() {
         if (!kpool_st) {
             kpool_st = std::make_unique<kpool_state>();
         }
+        mtp_diag::scope state_diag("memory", "pool_state", nullptr, "unknown", llama_mtp_diag_emit);
+        state_diag.pointer("mem", static_cast<llama_memory_i *>(mem));
         kpool_build_state(get_ubatch());
+        state_diag.add("pools", kpool_st->n_pool_real);
+        state_diag.add("logical_new", kpool_st->n_new);
+        state_diag.add("padded_new", kpool_st->n_new_g);
+        state_diag.add("cache_safe", kpool_st->cache_safe ? 1 : 0);
         i_kpool  = i_cur;
     }
 

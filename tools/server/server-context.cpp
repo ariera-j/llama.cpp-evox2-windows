@@ -15,6 +15,7 @@
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
+#include "mtp-diag.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
@@ -638,6 +639,10 @@ struct server_slot {
     }
 
     void print_timings() const {
+        mtp_diag::scope summary("server", "task_summary", ctx_tgt, "target", common_mtp_diag_emit, "summary");
+        summary.add("slot", id);
+        summary.add("generated", stats.n_gen);
+        summary.add("prompt", stats.n_prompt_processed);
         const double t_prompt_total = stats.t_prompt_ms();
         const double t_gen_total    = stats.t_gen_ms();
 
@@ -1148,6 +1153,7 @@ private:
             return false;
         }
 
+        common_mtp_diag_register(ctx_tgt, "target");
         vocab = llama_model_get_vocab(model_tgt);
 
         try {
@@ -3166,6 +3172,7 @@ private:
         // generate the actual drafts (if any)
         if (!drafting.empty()) {
             queue_tasks.yield_to_queue([&]() {
+                mtp_diag::scope draft_diag("server", "draft_round", ctx_dft, "draft", common_mtp_diag_emit, "generation");
                 common_speculative_draft(spec.get());
             });
         }
@@ -3185,6 +3192,9 @@ private:
                     ckpt.load_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                 }
 
+                mtp_diag::scope trim_diag("server", "draft_trim", ctx_dft, "draft", common_mtp_diag_emit, "generation");
+                trim_diag.add("slot", slot.id);
+                trim_diag.add("pos_first", ckpt.pos_max + 1);
                 if (!llama_memory_seq_rm(llama_get_memory(ctx_dft), slot.id, ckpt.pos_max + 1, -1)) {
                     GGML_ABORT("failed to remove sequence %d\n", slot.id);
                 }
@@ -3850,11 +3860,31 @@ private:
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
+        const char * diag_phase = "unknown";
+        if (mtp_diag::enabled()) {
+            bool prompt = false, generation = false;
+            for (const auto & slot : slots) {
+                if (!slot.is_processing()) { continue; }
+                prompt |= slot.state == SLOT_STATE_PROCESSING_PROMPT || slot.state == SLOT_STATE_DONE_PROMPT;
+                generation |= slot.state == SLOT_STATE_GENERATING;
+            }
+            diag_phase = prompt && generation ? "mixed" : prompt ? "prompt" : generation ? "generation" : "unknown";
+        }
         queue_tasks.yield_to_queue([&]() {
-            ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
-            if (ret == 0 && has_output) {
+            common_mtp_diag_wait(ctx_tgt, "target", "pending_wait", diag_phase);
+            mtp_diag::scope evaluation("server", "target_evaluation", ctx_tgt, "target", common_mtp_diag_emit, diag_phase);
+            evaluation.add("n_tokens", batch.view.size());
+            { // process and the existing completion wait are different children
+                mtp_diag::scope process_diag("server", "target_process", ctx_tgt, "target", common_mtp_diag_emit);
+                ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+                process_diag.status(ret);
+            }
+            if (ret == 0 && (has_output || mtp_diag::synchronized())) {
+                mtp_diag::scope wait_diag("server", "target_wait", ctx_tgt, "target", common_mtp_diag_emit);
+                wait_diag.add("added_sync", has_output ? 0 : 1);
                 llama_synchronize(ctx_tgt);
             }
+            evaluation.status(ret);
         });
 
         if (ret != 0) {
@@ -3916,7 +3946,10 @@ private:
         if (spec) {
             bool ok = true;
             queue_tasks.yield_to_queue([&]() {
+                mtp_diag::scope catchup_diag("server", "catchup", ctx_dft, "draft", common_mtp_diag_emit, diag_phase);
+                catchup_diag.add("n_tokens", batch.view.size());
                 ok = common_speculative_process(spec.get(), batch.view);
+                catchup_diag.status(ok ? 0 : -1);
             });
 
             if (!ok) {
@@ -4089,6 +4122,8 @@ private:
 
             // verify and try to accept the draft
             {
+                mtp_diag::scope accept_diag("server", "verify_accept", ctx_tgt, "target", common_mtp_diag_emit, "generation");
+                accept_diag.add("slot", slot.id); accept_diag.add("drafted", n_draft);
                 common_sampler_ptr smpl_save(common_sampler_clone(slot.smpl.get()));
 
                 GGML_ASSERT(slot.spec_i_batch.size() == n_draft + 1);
@@ -4189,7 +4224,14 @@ private:
             slot.sampled = ids.back(); // last accepted token
             SLT_DBG(slot, "add accepted tokens: sampled=%d, ids.size=%zu, n_draft=%zu\n", slot.sampled, ids.size(), n_draft);
 
-            slot.mem.seq_rm(slot.id, slot.prompt.tokens.pos_next(), -1);
+            {
+                mtp_diag::scope trim_diag("server", "target_trim", ctx_tgt, "target", common_mtp_diag_emit, "generation");
+                trim_diag.add("slot", slot.id);
+                trim_diag.add("accepted", n_accepted);
+                trim_diag.add("drafted", n_draft);
+                trim_diag.add("pos_first", slot.prompt.tokens.pos_next());
+                slot.mem.seq_rm(slot.id, slot.prompt.tokens.pos_next(), -1);
+            }
 
             for (size_t i = 0; i < ids.size(); ++i) {
                 completion_token_output result;

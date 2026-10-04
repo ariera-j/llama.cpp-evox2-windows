@@ -1,4 +1,5 @@
 #include "speculative.h"
+#include "mtp-diag.h"
 
 #include "common.h"
 #include "ggml.h"
@@ -1432,6 +1433,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         auto * ctx_tgt = this->params.ctx_tgt;
         auto * ctx_dft = this->params.ctx_dft;
         GGML_ASSERT(ctx_tgt && ctx_dft && "MTP requires ctx_tgt and ctx_dft to be set");
+        common_mtp_diag_register(ctx_tgt, "target");
+        common_mtp_diag_register(ctx_dft, "draft");
 
         n_embd = llama_model_n_embd_out(llama_get_model(ctx_dft));
         GGML_ASSERT(n_embd == llama_model_n_embd_out(llama_get_model(ctx_tgt)) &&
@@ -1546,6 +1549,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return true;
         }
 
+        mtp_diag::scope process_diag("common", "process", params.ctx_dft, "draft", common_mtp_diag_emit);
+        process_diag.add("n_tokens", batch_in.size());
         const int32_t n_tokens = batch_in.size();
 
         // remember the first and last batch index for each sequence
@@ -1578,7 +1583,12 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
             //                                                       ^--- this is a problem
             // TODO:this is generally true, but would be nice to assert it
-            const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
+            const float * h_tgt;
+            {
+                mtp_diag::scope hidden_diag("common", "target_hidden_get", ctx_tgt, "target", common_mtp_diag_emit);
+                h_tgt = llama_get_embeddings_nextn(ctx_tgt);
+            }
+            mtp_diag::scope prepare_diag("common", "catchup_prepare", ctx_dft, "draft", common_mtp_diag_emit);
 
             for (int k = 0; k < n_tokens; ++k) {
                 const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
@@ -1592,6 +1602,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 batch.set_embd(idx, { h_row, 1, (size_t) n_embd });
             }
 
+            prepare_diag.finish();
             auto * mem_dft = llama_get_memory(ctx_dft);
 
             bool ok = true;
@@ -1607,7 +1618,14 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     llama_set_nextn_layer_offset(ctx_dft, head);
                 }
 
+                common_mtp_diag_wait(ctx_dft, "draft", "pending_wait");
+                mtp_diag::scope decode_diag("common", "catchup_decode", ctx_dft, "draft", common_mtp_diag_emit);
+                decode_diag.add("n_tokens", batch.size());
+                decode_diag.add("head", head);
                 const int32_t rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+                decode_diag.status(rc);
+                decode_diag.finish();
+                if (rc == 0) { common_mtp_diag_wait(ctx_dft, "draft", "completion_wait"); }
                 if (rc != 0) {
                     SPC_ERR("llama_process(ctx_dft) head=%d failed rc=%d (pos=%d)\n",
                             head, (int) rc, (int) batch_in.tokens[0].pos[0]);
@@ -1624,6 +1642,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
         }
 
+        mtp_diag::scope carry_diag("common", "verified_hidden_carry", ctx_tgt, "target", common_mtp_diag_emit);
+        int64_t getter_us = 0, copy_us = 0, copied_rows = 0;
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             if (i_batch_end[seq_id] < 0) {
                 continue;
@@ -1634,19 +1654,31 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             verify_h[seq_id].resize((size_t) n_rows * n_embd);
 
             for (int32_t i = 0; i < n_rows; ++i) {
+                const int64_t t_get = carry_diag.active() ? ggml_time_us() : 0;
                 const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);
+                const int64_t t_copy = carry_diag.active() ? ggml_time_us() : 0;
                 std::memcpy(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes);
+                if (carry_diag.active()) {
+                    getter_us += t_copy - t_get;
+                    copy_us += ggml_time_us() - t_copy;
+                    ++copied_rows;
+                }
             }
 
             std::memcpy(pending_h[seq_id].data(),
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
         }
 
+        carry_diag.add("getter_us", getter_us);
+        carry_diag.add("copy_us", copy_us);
+        carry_diag.add("rows", copied_rows);
+        carry_diag.add("bytes", copied_rows * (int64_t) row_bytes);
         return true;
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
         auto & ctx_dft = params.ctx_dft;
+        mtp_diag::scope draft_diag("common", "draft", ctx_dft, "draft", common_mtp_diag_emit, "generation");
 
         batch.clear();
 
@@ -1707,7 +1739,14 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 llama_set_nextn_layer_offset(ctx_dft, i);
             }
 
+            common_mtp_diag_wait(ctx_dft, "draft", "pending_wait");
+            mtp_diag::scope decode_diag("common", "draft_decode", ctx_dft, "draft", common_mtp_diag_emit);
+            decode_diag.add("n_tokens", batch.size());
+            decode_diag.add("step", i);
             int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+            decode_diag.status(ret);
+            decode_diag.finish();
+            if (ret == 0) { common_mtp_diag_wait(ctx_dft, "draft", "completion_wait"); }
             if (ret != 0) {
                 SPC_ERR("llama_process[%d] returned %d\n", i, ret);
                 break;
@@ -1725,8 +1764,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 auto * smpl = smpls[seq_id].get();
 
-                const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
-                const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
+                llama_token id_sampled;
+                {
+                    mtp_diag::scope sample_diag("common", "draft_sample", ctx_dft, "draft", common_mtp_diag_emit);
+                    id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
+                }
+                const float * h_row;
+                {
+                    mtp_diag::scope getter_diag("common", "draft_hidden_get", ctx_dft, "draft", common_mtp_diag_emit);
+                    h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
+                }
 
                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
 
@@ -1812,6 +1859,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
+        mtp_diag::scope accept_diag("common", "accept_carry", params.ctx_dft, "draft", common_mtp_diag_emit, "generation");
+        accept_diag.add("seq", seq_id);
+        accept_diag.add("accepted", n_accepted);
         if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
             return;
         }
