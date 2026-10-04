@@ -29,7 +29,9 @@ Archive supplied:
 Matrix:
 `20261004-014032-340-qwen38-r4-mtp-overnight`,
 `qwen38-r4-mtp-overnight.psd1`, OFF/ON/ON/OFF within each backend/context.
-Two samples per condition; tables below use arithmetic means. Rounded log
+Two samples per overnight condition; tables below use arithmetic means. The
+performance table also includes the earlier Vulkan 32k single OFF/ON pair,
+explicitly marked because its generation length and temperature differ. Rounded log
 throughputs are averaged, while time comparisons use the measured durations.
 Prompt + generation excludes model loading and process startup.
 
@@ -68,6 +70,7 @@ temperature-0.2 performance runs as an exact-output correctness test.
 
 | Backend | Context | PP OFF → ON (tok/s) | TG OFF → ON (tok/s) | TG change | ON acceptance | PP+TG OFF → ON (s) | Total change |
 |---|---|---:|---:|---:|---:|---:|---:|
+| Vulkan | 32k* | 406.81 → 377.78 | 26.39 → 35.06 | 32.9% | 73.5% | 77.47 → 81.86 | 5.7% |
 | Vulkan | 64k | 334.68 → 310.19 | 25.75 → 29.84 | 15.9% | 72.8% | 204.47 → 216.33 | 5.8% |
 | Vulkan | 128k | 294.27 → 266.09 | 23.27 → 23.02 | -1.1% | 67.0% | 451.01 → 496.69 | 10.1% |
 | Vulkan | 256k | 265.02 → 228.08 | 19.76 → 15.25 | -22.8% | 67.2% | 988.73 → 1152.38 | 16.6% |
@@ -75,6 +78,14 @@ temperature-0.2 performance runs as an exact-output correctness test.
 | ROCm | 64k | 370.13 → 347.41 | 21.12 → 25.48 | 20.6% | 70.1% | 191.13 → 197.91 | 3.5% |
 | ROCm | 128k | 277.57 → 260.15 | 16.88 → 17.73 | 5.1% | 69.6% | 485.15 → 514.14 | 6.0% |
 | ROCm | 256k | 185.72 → 173.81 | 12.41 → 10.96 | -11.7% | 65.6% | 1415.21 → 1514.80 | 7.0% |
+
+*Vulkan 32k is the initial single OFF/ON pair: 29557 prompt tokens, **128
+generated tokens, temperature 0**. All other rows are overnight ABBA means
+with **512 generated tokens, temperature 0.2**. It is a reference row, not a
+matched ROCm 32k comparison or part of the 28-run matrix. Its source archive is
+`20261004-011450-457-cli-vulkan-b11390-ctx32768-84e3d65f27e7.zip`, which contains
+both runs. See [the initial 32k record](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md)
+for settings and output checks.
 
 At 512 generated tokens, every 64k+ case has worse total prompt+generation time
 with MTP. ROCm 32k's mean total reduction is only 0.4%, within the observed
@@ -280,6 +291,38 @@ masks). Reassess CUDA sparse portability instead of deleting HIP guards:
 warp, tile and backend requirements need implementation and correctness work.
 This is related to COMMON-005's compact-attention goal, but the frozen r3
 decode-oriented design is not automatically a complete PP solution.
+
+## Other observations beyond the three performance questions
+
+- **Output/state correctness remains a separate gate.** Vulkan repetitions
+  match within each mode, while ROCm repetitions differ at the fixed seed;
+  fixed-seed temperature-0.2 generation is not a guarantee of identical output.
+  The earlier greedy Vulkan 32k OFF/ON pair also diverges after the first
+  paragraph. This alone does not prove a rollback bug: batch shape and numerical
+  differences can change greedy choices. Before accepting an optimization,
+  use a short controlled case to inspect the first divergent logits and exercise
+  rejected/partially accepted drafts. Readable output and exit 0 are insufficient
+  to establish state equivalence.
+- **MTP usefulness depends on output length and prompt reuse.** With a fresh
+  64k prompt, a constant-speed estimate of extra PP time divided by per-token
+  TG savings gives a break-even output length of roughly 2700 tokens on Vulkan
+  and 1300 on ROCm. These are illustrative extrapolations, not measured
+  thresholds: acceptance and speed change with output/context. The 512-token
+  totals therefore should not become a universal MTP-OFF policy, nor should
+  improved TG alone become an MTP-ON policy. Cached multi-turn use needs its
+  own workload measurement after the present investigation.
+- **Memory margin and allocator accounting merit tracking, not a paging
+  diagnosis.** The Vulkan 256k ON counters and four destructor warnings above
+  are worth retaining in subsequent comparisons. Steady Vulkan TG samples do
+  not show disk paging, so current evidence does not justify lowering context
+  or changing UMA settings as the first response.
+- **Build identity needs explicit manifests.** Both embedded executable
+  version labels lag their recorded build source. Preserve manifest source
+  and backend artifact identities in future results; a launcher hash alone
+  cannot identify every DLL. This is a reproducibility issue, not evidence
+  that the measured runtime was stale.
+
+These observations do not change the requested order: MTP TG, MTP PP, ROCm PP.
 
 ## Next focused measurement and decision gates
 
