@@ -4,9 +4,10 @@ Implementation parent: `feec722ade5b9a22e4c9555c72a6841c50afd5e8` on
 `r4/upstream-refresh-20261002`; upstream remains pinned to
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 Status: code, native targets, Windows gate and focused plans delivered;
-Initial Windows source/policy and build-identity checks pass; the target model
-gate failed on a test-side hidden-row access and is corrected below. Rebuild/
-model rerun and new performance validation remain pending.
+Windows Vulkan source/policy/model gate is Complete after the hidden-row
+accessor correction. All524 logits/hidden comparisons are exactly equal; actual
+no-op suppression and pending stale preservation are confirmed. Next: three
+allocation smokes and five short CLI runs. Long-context performance remains pending.
 The existing draft-omission measurements do not validate this new runtime.
 
 ## Runtime change
@@ -282,3 +283,53 @@ regression and this record do not change the optimization runtime.
 After pulling the fix, repeat Gate A's BuildOnly and `-RunModelTests` commands.
 Retain the whole test report, including on failure. ModelTest must pass and the
 report must be Complete before allocation/short or long measurements proceed.
+
+
+## 19:12 Windows target native gate: Complete
+
+Source: `20261004-191201-185-qsa-noop-invalidation.zip`, submitted after the
+`5df0bdb` accessor fix. Run interval19:12:01.186–19:16:50.671 JST on2026-10-04.
+The report is Complete: SourceChecks/PolicyTest/ModelTest Passed, both native
+exit codes0, BuildIdentity Verified and an explicit final model PASS marker.
+The main model is the existing Unsloth PLE16 UD-IQ3_XXS, ngl999; no draft model
+is loaded by this native target gate.
+
+| Native evidence | Result |
+|---|---|
+| Logits/hidden vector comparisons | 524; every NMSE0 and maximum absolute difference0 |
+| Eligible sequence1 decisions | A requested0/eligible1/enabled0; B requested1/eligible1/enabled1 |
+| Ineligible unified sequence2 decisions | A/B eligible0/enabled0; actual shared-prefix fallback is exercised |
+| Inspected sequence removals | 242 across eligible A/B histories |
+| Observed equal-count removals | 134 |
+| Suppressed new invalidations | 67; every cell count and prior stale position preserved |
+| Pending stale preserved | 33; previous stale marker remains dirty |
+| Actual indexer membership decreases | 108 across A/B; all mark stale |
+| Total inspected old-path invalidations | 175; includes A no-ops and actual edits |
+| Recurrent refusals | 2, the intentional n_rs_seq0 A/B control; continuation matches |
+| Actual layout events | 628, including2 cache_safe0 shared-prefix events |
+
+All pool-boundary/accepted0/1/2, real-trim then no-op, no-op then real edit,
+nonzero-position/gap, repeated no-op, empty/drop/slot-reuse and state cases
+complete. The full and PARTIAL_ONLY stages each contain96 vector comparisons;
+state byte-count and same-setting A/B size checks pass. Shared-prefix and keep
+fallback continuations, malformed-restore clear/continuation and refusal
+continuation are all numerically identical across arms.
+
+Position shift/division are unsupported by both model contexts and reported
+as unchanged capability; no unsupported operation was forced. The four
+`state_seq_set_data: error loading state: unexpectedly reached end of buffer`
+lines are intentional malformed-state rejection cases in A/B single/multi-sequence
+contexts. The following clear/continuation checks pass; these lines are not
+unexpected inference failures. The original negative-NextN-row error is absent.
+
+Runtime artifact-set digests:
+
+- Policy: `a47c6028b17995573d3819ff2f04d4d2f0e8b6491aa43bff9e30e05c6e9146ee`
+- Model: `a36e6ae9df4147fc8fd74569d2abcd9c3a9b41fbb39b28ed7f2a90cb341f707d`
+
+These are executable/DLL identity digests, not Git hashes. Keep this verified
+runtime for Gate B. This validation update changes documents only and does not
+require rebuilding the already-tested binaries. Allocation smokes/short real
+CLI generation still need to validate startup evidence, draft-omission1 pairing,
+output/acceptance and diagnostic accounting before256k wall/normal timing.
+The switch remains source-default OFF and no speedup is established yet.

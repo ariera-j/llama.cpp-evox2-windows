@@ -726,8 +726,11 @@ No runtime change is included in this review. The
 is approved and delivered: separate default-off switch, actual membership-count
 check, existing dirty-state preservation, numeric target QSA tests and short/
 wall/normal A/B with draft omission1 fixed. Local policy, C++ syntax, PowerShell
-source and diagnostic checks pass. Windows Vulkan build/native model and the
-new performance gates are pending; no default promotion or speed claim yet.
+source and diagnostic checks pass. The19:12 Windows Vulkan native gate is now
+Complete after the accessor correction: all524 vector comparisons match exactly,
+with67 actual no-op suppressions and33 preserved pending stale markers. Allocation
+smokes/short CLI and long-context performance gates remain pending; keep source
+default OFF. This validation update is documentation only; no rebuild is needed.
 See [implementation and Windows commands](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-2026-10-04.md) and
 [target source review](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 
