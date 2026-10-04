@@ -6,11 +6,12 @@ Implemented on `r4/upstream-refresh-20261002` from planning baseline
 
 Status: runtime switch, native tests, Windows gate script and three benchmark
 plans are implemented. Windows source checks, native policy and build/runtime
-identity checks passed in the supplied runs. The 14:35 model gate passed the
-corrected position assertion but failed A's first rollback numeric comparison.
-The batch-partition correction and diagnostics below require another rebuild
-and rerun. Real model/state/rollback correctness and GPU measurements remain
-pending. No speedup or model correctness pass is asserted yet.
+identity checks passed in the supplied runs. The 14:50 rebuilt Windows Vulkan
+model gate is Complete: all native cache/state/rollback and A/B comparisons
+pass with the corrected batch partitions. Gate B's three allocation smokes
+and five short real CLI runs are next, followed conditionally by 256k wall and
+normal ABBA. Performance and exhaustive model correctness remain unproven;
+keep the runtime switch default OFF.
 
 ## Delivered behavior and evidence
 
@@ -170,6 +171,62 @@ mismatches fail and non-finite output throws. This does not execute model or
 GPU code. Windows model execution remains pending. Run Gate A's pull,
 BuildOnly and `-RunModelTests` commands again, retaining the entire report even
 if it fails; do not proceed to long measurements until Gate A is Complete.
+
+## 14:50 Windows native gate: Complete
+
+Source: `20261004-145014-722-mtp-dense-indexer.zip`, submitted after the
+`e2deea7` harness correction. Run interval: 2026-10-04 14:50:14.722 through
+14:50:52.409 JST. `result.json` reports Status Complete, SourceChecks/PolicyTest/
+ModelTest Passed, native policy/model exit codes 0 and BuildIdentity Verified.
+The model runtime artifact digest is
+`d514e17f80919756d8490824127bc1e1add10d036083fb8400be9971646bc25f`;
+policy runtime artifact digest is
+`17a4dfaef459451063d350ea4c4644a0fbc7cabe8356694600266b6ef51f0357`.
+These are runtime artifact-set digests, not Git commit IDs.
+
+The Vulkan gate used Unsloth PLE16 UD-IQ3_XXS plus the Q8_0 MTP sidecar,
+`-ngl 999`, with small 1024-token contexts and a fixed twelve-token target
+trace. Startup evidence confirms A requested=0/eligible=1/omitted=0 and B
+requested=1/eligible=1/omitted=1 at layer 48, ratio 0. Target indexer retention,
+append/no-op, accepted suffix lengths 0/1/2, same-setting full and PARTIAL_ONLY
+restore, exact state byte counts and state-size gates all pass.
+
+| Native evidence | A (omission OFF) | B (omission ON) |
+|---|---:|---:|
+| Accept-0 logits NMSE / max absolute error | 2.68728732e-8 / 0.00196957588 | Same |
+| Accept-0 hidden NMSE / max absolute error | 3.44411158e-8 / 0.00199985504 | Same |
+| Accept-1 and accept-2 logits/hidden NMSE | 0 | 0 |
+| Full/PARTIAL_ONLY continuation logits NMSE | 2.68728732e-8 | Same |
+| Full/PARTIAL_ONLY continuation hidden NMSE | 3.44411158e-8 | Same |
+| Full sequence-state bytes | 15,672 | 12,500 |
+| PARTIAL_ONLY bytes | 28 | 28 |
+
+All eight cross-arm output pairs have logits and hidden NMSE=0 and maximum
+absolute error=0 (16 vector comparisons). The largest gating NMSE is
+3.44411158e-8, below the unchanged 1e-5 threshold. The 3,172-byte full-state
+difference proves omission in this small fixture; it is not a VRAM saving or
+speedup estimate for the long-context workload.
+
+Diagnostic-only bulk versus split results are identical between A and B:
+
+| Compared tail | Logits NMSE / max absolute error | Hidden NMSE / max absolute error |
+|---|---:|---:|
+| 6: bulk seven rows vs [6,1] | 0.0024256991 / 0.353331089 | 0.000253505524 / 0.102178574 |
+| 7: bulk eight rows vs [6,1,1] | 0.000822770938 / 0.255668283 | 0.000178434587 / 0.0826435089 |
+
+These differences occur without sequence removal or state restore, reproduce
+in both arms, and disappear from the strict cache comparisons when retained
+input partitions match. This supports evaluation-partition dependence as the
+confound in the previous 0.00242120861 rollback comparison. It does not isolate
+the responsible kernel or prove all bulk/step differences benign. Kernel-level
+attribution is a separate question if real CLI output behavior warrants it.
+
+Gate A is now passed on the supplied Vulkan models. No additional native model
+rerun, rebuild or ROCm run is required before Gate B with these verified
+binaries. This recording commit changes documentation only; retain the existing
+build manifest and artifact hashes for the next runs. Gate B's real speculative
+acceptance/carry/CLI checks and performance gates remain pending. Do not jump
+directly to the 256k wall/ABBA plans.
 
 ## Gate A: source checks, rebuild and native correctness
 

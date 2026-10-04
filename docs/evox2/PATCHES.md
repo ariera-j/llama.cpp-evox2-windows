@@ -46,8 +46,10 @@ The wall collection now completes all three inference runs and identifies a
 with the script-only startup-capability-probe classification fix; no GPU rerun.
 Source review confirms that the ratio-zero MTP graph omits pool inputs while
 memory still maintains an indexer. A default-off dense-draft indexer omission
-is now implemented, default OFF; its Windows correctness/performance gates
-remain pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
+is now implemented, default OFF. The 14:50 Windows Vulkan native gate is
+Complete after test position/partition corrections: policy, cache/state/
+rollback and all eight A/B output pairs pass. Allocation/short real CLI and
+performance gates remain pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 Both diagnostic
 wrappers now resolve relative paths against PowerShell's location, and the
 updated Windows path/pipeline/recovery fixture passes. The concrete candidate
@@ -70,7 +72,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes local policy/syntax/diagnostic checks; Windows native model/state/rollback and focused performance gates pending, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates at 14:50; allocation/short real CLI and focused performance gates pending, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -682,8 +684,10 @@ based on the
 [layout source review](R4-COMMON002-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 The default-off opt-in omits allocation only for the supported single
 ratio-zero MTP block and retains hybrid, attention and recurrent handling.
-Next validate the Windows build, rollback and same-setting restore before
-focused 256k wall A/B and unprofiled ABBA. See
+Windows Vulkan build, native rollback and same-setting restore now pass in the
+14:50 report, with identical A/B logits/hidden on eight output pairs. Next run
+three allocation smokes and five short CLI gates before focused 256k wall A/B
+and unprofiled ABBA. See
 [implementation and Windows commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md).
 
 Refresh-branch validation plan:

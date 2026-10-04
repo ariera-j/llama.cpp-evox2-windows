@@ -6,8 +6,9 @@ Reviewed source: `r4/upstream-refresh-20261002` at
 
 Status: source investigation complete; diagnostic relative-path repair is
 confirmed on Windows. The guarded dense-draft indexer candidate is now
-implemented after user approval; Windows build/model/performance gates remain
-pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
+implemented after user approval. The 14:50 Windows Vulkan native model/state/
+rollback and A/B gate passes after harness corrections; real CLI and performance
+gates remain pending. See [implementation and commands](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 and [the design](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-PLAN-2026-10-04.md).
 
 ## Decision before further measurement

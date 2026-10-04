@@ -5,8 +5,10 @@ Planning baseline: `r4/upstream-refresh-20261002` at
 `bed0a856606ee4a24a164066f73d2379447033f5`.
 
 Status: implemented after user approval. The runtime switch, native tests and
-focused benchmark plans are delivered; Windows compilation, model/state and
-GPU performance gates are pending. This document preserves the design.
+focused benchmark plans are delivered. The 14:50 Windows Vulkan native model/
+state/rollback and A/B gate passes after harness corrections; allocation/short
+real CLI and GPU performance gates remain pending. This document preserves
+the design.
 See [implementation and runnable gates](R4-COMMON002-DENSE-INDEXER-IMPLEMENTATION-2026-10-04.md)
 for actual delivered behavior, local checks and Windows commands.
 
