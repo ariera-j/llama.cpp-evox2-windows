@@ -1,8 +1,9 @@
 # r4 COMMON-002: MTP diagnostics implementation plan
 
 Recorded: 2026-10-04 JST. Historical design proposal. **Diagnostic code is now
-implemented; Windows Vulkan allocation/short gates pass, long-context diagnostic
-collection is pending.** See the
+implemented; Windows Vulkan allocation/short gates and the three-run wall
+collection are complete.** A startup-probe classification fix recovers the OFF
+report without rerunning; see [wall findings](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md) and the
 [implementation record and Windows handoff](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md)
 for delivered behavior, differences from this proposal and completed checks.
 Source reviewed: `29d832821e8366bed450aba8ee1b36a6eb49c86a` on

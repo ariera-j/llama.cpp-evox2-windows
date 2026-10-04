@@ -7,6 +7,7 @@ $paths = @(
     'tools\evox2\build\Evox2.Build.psm1', 'tools\evox2\build\Build-Vulkan.ps1',
     'tools\evox2\build\Build-ROCm.ps1', 'tools\evox2\lib\Evox2.Common.psm1',
     'tools\evox2\benchmark\Measure-LlamaCli.ps1', 'tools\evox2\benchmark\Summarize-MtpDiagnostics.ps1',
+    'tools\evox2\benchmark\Repair-MtpDiagnostics.ps1',
     'tools\evox2\benchmark\configs\qwen38-r4-mtp-check.psd1',
     'tools\evox2\benchmark\configs\qwen38-r4-mtp-diagnostics.psd1',
     'tools\evox2\benchmark\configs\qwen38-r4-mtp-diagnostics-sync.psd1'

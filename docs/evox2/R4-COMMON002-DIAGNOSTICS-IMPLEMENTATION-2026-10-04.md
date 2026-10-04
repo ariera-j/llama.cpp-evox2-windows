@@ -8,8 +8,11 @@ Recorded: 2026-10-04 JST. Implementation based on
 The [implementation plan](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-PLAN-2026-10-04.md)
 is now implemented. The rebuilt Windows Vulkan binary, AllocationOnly OFF/ON,
 and short OFF/ON/wall gate passed; see
-[short validation](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md). Long-context
-diagnostic collection, sync and ROCm validation remain pending.
+[short validation](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md). The three-run
+Vulkan wall collection also finished; a script-only fix recovers its OFF report
+after a normal startup capability refusal. See
+[wall observations and recovery](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md).
+Sync and ROCm diagnostic validation remain pending.
 This patch measures the existing path; it does not implement a
 performance candidate or claim a speedup.
 

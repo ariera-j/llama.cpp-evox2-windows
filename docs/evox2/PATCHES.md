@@ -40,7 +40,11 @@ then MTP PP overhead and ROCm PP scaling; COMMON-005's historical decode port
 remains deferred. See
 [R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md)
 for implemented opt-in diagnostics and build identity checks; the rebuilt Vulkan
-allocation/short diagnostic gate now passes, with long-context collection next.
+allocation/short diagnostic gate now passes.
+The wall collection now completes all three inference runs and identifies a
+15.015 s CPU layout cost at 256k MTP ON. Its OFF report needs the script-only
+startup-capability-probe classification recovery; no GPU rerun. See
+[R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md).
 See [R4-COMMON002-SHORT-VALIDATION-2026-10-04.md](R4-COMMON002-SHORT-VALIDATION-2026-10-04.md);
 [R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md) and
 [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
@@ -56,7 +60,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading exists; dense sidecar's unused pool-input assertion fixed; opt-in attribution diagnostics implemented | Overnight 28/28 runs pass; long-context TG regression active. Rebuilt Vulkan allocation/short diagnostic gate passes; focused long-context collection next; broader correctness/performance pending |
+| COMMON-002 | Native MTP loading exists; dense sidecar's unused pool-input assertion fixed; opt-in attribution diagnostics implemented | Overnight 28/28 and rebuilt short gates pass. Wall collection identifies full-history CPU layout rebuilding; startup-probe report recovery is script-only. Dense-draft bookkeeping candidate next; broader correctness/performance pending |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
