@@ -6,8 +6,12 @@ Implementation parent: `feec722ade5b9a22e4c9555c72a6841c50afd5e8` on
 Status: code, native targets, Windows gate and focused plans delivered;
 Windows Vulkan source/policy/model gate is Complete after the hidden-row
 accessor correction. All524 logits/hidden comparisons are exactly equal; actual
-no-op suppression and pending stale preservation are confirmed. Next: three
-allocation smokes and five short CLI runs. Long-context performance remains pending.
+no-op suppression and pending stale preservation are confirmed. All three
+allocation smokes and five short CLI runs now pass: A/B output and acceptance
+match, 25 unnecessary invalidations are suppressed, and real removals remain
+intact. Next: the two 256k wall arms; normal ABBA follows wall review.
+Long-context performance remains pending. See
+[allocation and short CLI validation](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
 The existing draft-omission measurements do not validate this new runtime.
 
 ## Runtime change
@@ -327,9 +331,24 @@ Runtime artifact-set digests:
 - Policy: `a47c6028b17995573d3819ff2f04d4d2f0e8b6491aa43bff9e30e05c6e9146ee`
 - Model: `a36e6ae9df4147fc8fd74569d2abcd9c3a9b41fbb39b28ed7f2a90cb341f707d`
 
-These are executable/DLL identity digests, not Git hashes. Keep this verified
-runtime for Gate B. This validation update changes documents only and does not
-require rebuilding the already-tested binaries. Allocation smokes/short real
-CLI generation still need to validate startup evidence, draft-omission1 pairing,
-output/acceptance and diagnostic accounting before256k wall/normal timing.
+These are executable/DLL identity digests, not Git hashes. Gate B now passes
+with the same source build; see the subsequent CLI identity and checks below.
 The switch remains source-default OFF and no speedup is established yet.
+
+## 19:23–19:30 allocation and short CLI gate: Complete
+
+All eight runs are OK with exit0, Verified runtime and independent target
+startup evidence. MTP ON A/B allocation responses match with13/34 acceptance;
+all four short MTP ON responses match with69/116 acceptance. Wall A/B also
+match the ordered58-round acceptance/position history.
+
+In target generation, B suppresses25 unchanged-membership invalidations while
+retaining stale marks for all33 actual removals. Full rebuilds fall57->33 and
+copied cells13256->7976. The final no-op trim has no subsequent decode, which
+explains24 fewer rebuilds for25 suppressions. Draft layout remains omitted.
+Normal short TG34.81->34.86 is only+0.14% at163 prompt tokens, so this gate
+validates behavior/work removal rather than a performance gain.
+
+Proceed only to Gate C, the two256k wall arms, using the verified b11416 /
+5df0bdbaf CLI. This update is documentation only; no rebuild is needed.
+See [complete allocation and short results](R4-COMMON002-QSA-NOOP-SHORT-VALIDATION-2026-10-04.md).
