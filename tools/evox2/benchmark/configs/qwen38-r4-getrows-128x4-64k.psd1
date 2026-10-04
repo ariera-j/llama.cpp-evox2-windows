@@ -39,6 +39,7 @@
         # Clear inherited experiment overrides for each child; the runner
         # restores the caller's environment afterward.
         Environment = @{
+            LLAMA_MTP_DIAG = $null
             LLAMA_QSA_NO_POOLED_CACHE       = $null
             LLAMA_QSA_POOLED_MAX_TOKENS     = $null
             QWEN4EXP_QSA_GATHER             = $null

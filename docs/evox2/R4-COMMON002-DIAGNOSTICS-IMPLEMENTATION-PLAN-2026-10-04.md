@@ -1,6 +1,9 @@
 # r4 COMMON-002: MTP diagnostics implementation plan
 
-Recorded: 2026-10-04 JST. **Proposal only; diagnostic code is not implemented.**
+Recorded: 2026-10-04 JST. Historical design proposal. **Diagnostic code is now
+implemented; Windows/GPU validation is pending.** See the
+[implementation record and Windows handoff](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md)
+for delivered behavior, differences from this proposal and completed checks.
 Source reviewed: `29d832821e8366bed450aba8ee1b36a6eb49c86a` on
 `r4/upstream-refresh-20261002`; upstream remains
 `bed0a856606ee4a24a164066f73d2379447033f5`.

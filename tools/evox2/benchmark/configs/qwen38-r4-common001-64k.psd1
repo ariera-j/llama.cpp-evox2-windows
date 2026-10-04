@@ -43,6 +43,7 @@
         # Clear inherited experiment/profiler overrides for every child run.
         # Invoke-BenchmarkMatrix.ps1 restores the caller environment afterward.
         Environment = @{
+            LLAMA_MTP_DIAG = $null
             GGML_VK_GET_ROWS_128X4          = $null
             LLAMA_QSA_NO_POOLED_CACHE         = $null
             LLAMA_QSA_POOLED_MAX_TOKENS       = $null

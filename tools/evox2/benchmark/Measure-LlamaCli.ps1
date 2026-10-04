@@ -363,6 +363,8 @@ $ConditionFingerprint = [ordered]@{
         Compiler    = $Identity.Executable.Compiler
     }
 
+    RuntimeArtifactDigest = $Identity.RuntimeArtifacts.Digest
+
     Backend = $DetectedBackend
 
     Device = if ($primaryDeviceObject) {
@@ -527,6 +529,7 @@ $Conditions = [ordered]@{
 
     ExecutableIdentity = $Identity.Executable
     DeviceIdentity     = $Identity.Device
+    RuntimeArtifacts   = $Identity.RuntimeArtifacts
     BuildManifest      = $Identity.BuildManifest
     GitIdentity        = $Identity.Git
     SystemIdentity     = $Identity.System
@@ -738,6 +741,8 @@ $Result = [ordered]@{
     BackendDetected = $DetectedBackend
     BuildNumber     = $Identity.Executable.BuildNumber
     ExecutableCommit = $Identity.Executable.Commit
+    RuntimeArtifactStatus = $Identity.RuntimeArtifacts.Status
+    RuntimeArtifactDigest = $Identity.RuntimeArtifacts.Digest
     ExecutableSha256 = $Identity.Executable.Sha256
     Compiler         = $Identity.Executable.Compiler
 
@@ -820,6 +825,24 @@ $Summary = [PSCustomObject]@{
     ResourceSamples     = $resourceSampleCount
     DurationMinutes     = [math]::Round(($Finished - $Started).TotalMinutes, 3)
     RunDirectory        = $RunDirectory
+}
+
+if ($env:LLAMA_MTP_DIAG -in @('wall', 'sync')) {
+    try {
+        & (Join-Path $PSScriptRoot 'Summarize-MtpDiagnostics.ps1') -RunDirectory $RunDirectory
+        $Result.DiagnosticStatus = 'Complete'
+    } catch {
+        $Result.DiagnosticStatus = 'Incomplete'
+        $Result.DiagnosticError = $_.Exception.Message
+        if ($Status -eq 'OK') {
+            $Status = 'DIAGNOSTIC_INCOMPLETE'
+            $Result.Status = $Status
+            $Summary.Status = $Status
+        }
+        Write-Warning $_.Exception.Message
+    }
+    $Result.Files.MtpDiagnostics = Join-Path $RunDirectory 'mtp-diagnostics.json'
+    Write-Evox2Json -InputObject $Result -Path $ResultPath -Depth 24
 }
 
 $Summary | Export-Csv -LiteralPath $SummaryPath -NoTypeInformation -Encoding UTF8

@@ -38,6 +38,8 @@ runs explicitly enable union. COMMON-002 dense MTP now completes all 28 overnigh
 Vulkan/ROCm runs through 256k. Investigate its long-context TG regression first,
 then MTP PP overhead and ROCm PP scaling; COMMON-005's historical decode port
 remains deferred. See
+[R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md](R4-COMMON002-DIAGNOSTICS-IMPLEMENTATION-2026-10-04.md)
+for implemented opt-in diagnostics, build identity checks and pending Windows gates;
 [R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md) and
 [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
 
@@ -52,7 +54,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading exists; dense sidecar's unused pool-input assertion fixed | Rebuilt Vulkan allocation and 32k OFF/ON generation pass; exploratory overnight Vulkan/ROCm matrix prepared, broader correctness/performance pending |
+| COMMON-002 | Native MTP loading exists; dense sidecar's unused pool-input assertion fixed; opt-in attribution diagnostics implemented | Overnight 28/28 runs pass; long-context TG regression active. New diagnostics await Windows build/allocation/short gates and focused Vulkan collection; broader correctness/performance pending |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
