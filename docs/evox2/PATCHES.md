@@ -85,7 +85,7 @@ Historical r3 `validated` statuses below remain unchanged.
 |---|---|---|
 | COMMON-001 | Joined-PLE upstream path plus adapted split PLE16 support | Completed; Original/PLE16 load and 64k gates, PLE16 128k/256k validated on both backends |
 | COMMON-004 | Persistent pooled keys and incremental dirty/new-pool updates exist | Do not port the old cache; scoped Vulkan cached-gather 128x4 gate closed without promotion |
-| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), no-op invalidation plan next; 128k expansion confirmation retained, default OFF |
+| COMMON-002 | Native MTP loading, dense-sidecar graph guard, opt-in attribution diagnostics and guarded dense-indexer omission implemented | Earlier overnight 28/28 and short gates pass; wall reports recovered. New omission candidate passes Windows Vulkan native policy/model/state/rollback and A/B gates, then 8/8 allocation/short CLI runs and 256k wall A/B (draft layout removed) and normal ABBA (TG +32.62%, output/acceptance match); target source review complete (3.09 s no-op / 2.41 s suffix rebuilds), no-op implementation plan prepared (independent target opt-in, numeric target gate, focused A/B); implementation after review, 128k confirmation retained, default OFF |
 | COMMON-005 | qwen4exp passes full K/V plus a selection mask; HIP sparse-FA dispatch is disabled | Deferred: mainly ROCm decode; retain its validated r3 evidence and revisit when ROCm is needed |
 | VULKAN-002 | Adapted grouped-union PP added without replacing upstream sparse decode | Validated opt-in on Evo-X2 through 256k; keep default OFF and preserve the measured baseline |
 
@@ -721,7 +721,11 @@ stale the layout. B-wall target cost splits into 122 no-op-associated rebuilds /
 no-op invalidation candidate that retains recurrent/indexer/attention removal
 calls and pending stale markers. Actual suffix reuse follows separately;
 CPU layout dirtiness must not clear required pooled-key invalidation.
-No runtime change is included in this review. See
+No runtime change is included in this review. The
+[target no-op implementation plan](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-PLAN-2026-10-04.md)
+is now prepared: separate default-off switch, actual membership-count check,
+existing dirty-state preservation, numeric target QSA tests and short/wall/
+normal A/B with draft omission1 fixed. Implement after plan review. See
 [target source review](R4-COMMON002-TARGET-LAYOUT-SOURCE-REVIEW-2026-10-04.md).
 
 Refresh-branch validation plan:

@@ -6,6 +6,12 @@ Reviewed branch `r4/upstream-refresh-20261002` at
 Status: source investigation complete. No runtime code/config/default changes
 or Windows rebuild are included in this recording.
 
+The subsequent [target no-op implementation plan](R4-COMMON002-QSA-NOOP-IMPLEMENTATION-PLAN-2026-10-04.md)
+is now prepared for review. It specifies a separate default-off target switch,
+actual membership-count comparison, pending stale preservation, numeric target
+QSA tests and short/wall/normal A/B with draft omission1 fixed. Runtime code,
+new native targets/scripts and new benchmark plans are not delivered yet.
+
 ## Findings and first candidate
 
 The retained target layout cost has two distinct causes:
