@@ -139,9 +139,14 @@ COMMON-001 compatibility port are complete.
    PP48.16 is an explicit unexplained outlier. ROCm256k normal collection is
    now3/3 OK: OFF/A/B TG12.39/13.57/14.44 and PP185.76/173.91/173.84.
    A/B bodies and acceptance differ; long equivalence and isolated no-op benefit
-   remain open. B fresh-prompt evaluation is88.318 s slower than OFF. Proceed
-   to MTP OFF CLI/bench64k, then choose the next investigation, including the
-   unresolved ROCm long A/B difference. See
+   remain open. B fresh-prompt evaluation is88.318 s slower than OFF. MTP OFF
+   CLI/bench is now collected at64k/256k:11 new runs OK plus the
+   reused ROCm256k OFF control. TG tool gaps stay within2.40%, ROCm PP agrees
+   closely, Vulkan256k bench PP is19.40% below CLI. ROCm PP halves between
+   these depths in both tools without MTP. Choose the next investigation,
+   retaining unresolved ROCm long A/B divergence and a separate native time-SD
+   overflow finding. See
+   [CLI/bench results](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md) and
    [ROCm256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md) and
    [ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md) and
    [no-op normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
@@ -171,9 +176,12 @@ COMMON-001 compatibility port are complete.
 7. Use the consolidated priorities below for usage-policy work, cross-cutting
    checks and the remaining conditional/deferred candidates.
 
-### Consolidated priorities after Vulkan no-op normal ABBA
+### Consolidated priorities after ROCm and CLI/bench collection
 
-This is the actionable order after the user's22:41 request on2026-10-04.
+This follows the user's22:41 sequence request on2026-10-04. ROCm normal and
+CLI/bench64k/256k collection have now arrived; the next source investigation
+is ready for a decision. Data completion does not close the unresolved ROCm
+MTP long-output issue.
 Vulkan256k target no-op validation is complete through native, allocation/short,
 wall and normal ABBA. Normal TG20.205->22.830 (+12.99%) is reproduced with
 matched output/acceptance; PP is effectively unchanged. Source default stays OFF.
@@ -182,13 +190,14 @@ current same-binary no-op comparison. See [normal results](R4-COMMON002-QSA-NOOP
 
 | Order | Work | Next action and completion gate |
 |---|---|---|
-| 1 | ROCm coverage of current MTP candidates | Both native model/state/rollback gates and all8 allocation/short runs pass with Verified b11420/131288531 runtime, matched A/B output/acceptance, 23 no-op suppressions and 36 real removals retained (full rebuilds58->36). 256k normal collection is3/3 OK: OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84; B evaluation is88.318s slower than OFF. A/B response/acceptance differ, so long candidate equivalence and isolated speedup remain open. Short PP48.16 collapse is absent here but unexplained. Continue OFF-only bench independently; retain focused ROCm equivalence/variability review before broader candidate use. |
-| 2 | CLI versus llama-bench | Same PLE16 build per backend; compare MTP OFF real-text CLI with full random-token PP and TG after depth matching actual prompt tokens. Start64k, review, then256k. Bench has no MTP path; context allocation, MoE routing, warmup/state reuse and timer boundaries remain different. Reuse the fresh ROCm256k OFF control if identical. |
-| 3 | Decide the next optimization | After the preceding results, choose MTP PP attribution (target/draft prefill, hidden copy/sync, bookkeeping), residual target suffix reuse (95 rebuilds/2.436146s, separate CPU/GPU invalidation), ROCm128k/256k PP scaling (early/late batches, MTP OFF), focused Vulkan128k coverage, or unresolved ROCm256k candidate equivalence/variability. Bench OFF cannot settle the latter. No implementation automatically starts. Do not revive r2 MTP-QSA without attribution. |
+| 1 | ROCm coverage of current MTP candidates | Both native model/state/rollback gates and all8 allocation/short runs pass with Verified b11420/131288531 runtime, matched A/B output/acceptance, 23 no-op suppressions and 36 real removals retained (full rebuilds58->36). 256k normal collection is3/3 OK: OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84; B evaluation is88.318s slower than OFF. A/B response/acceptance differ, so long candidate equivalence and isolated speedup remain open. Short PP48.16 collapse is absent here but unexplained. OFF-only bench collection is complete; retain focused ROCm equivalence/variability review before broader candidate use. |
+| 2 | CLI versus llama-bench | Collected at64k/256k:11 uploaded runs OK, eight bench rows/20 timed repetitions and reused ROCm256k OFF reference. TG gaps within2.40%; ROCm PP agrees closely; Vulkan256k PP268.10 CLI versus216.09 bench (−19.40%). ROCm PP falls about49% between depths in both tools without MTP. Reported runtime preflight digests match manifests. Native integer time-SD overflow identified; throughput statistics verify. Bench has no MTP path and allocation/routing/warmup/timer differences remain. No extra collection required for data organization. |
+| 3 | Decide the next optimization | After the preceding results, choose MTP PP attribution (target/draft prefill, hidden copy/sync, bookkeeping), residual target suffix reuse (95 rebuilds/2.436146s, separate CPU/GPU invalidation), ROCm128k/256k PP scaling (early/late batches, MTP OFF), focused Vulkan128k coverage, unresolved ROCm256k candidate equivalence/variability, or Vulkan256k PP workload/tool divergence. Bench OFF cannot settle MTP equivalence. Native time-SD overflow is a separate small measurement-tool fix. No implementation automatically starts. Do not revive r2 MTP-QSA without attribution. |
 | 4 | MTP usage policy | Once the selected path is stable, assess representative output quality, prompt reuse and fresh-prompt total latency; DraftMax1/2 only if acceptance/cost supports it. TG improvement does not alone establish total-latency superiority. |
 | 5 | COMMON-005: residual ROCm decode | Remains deferred. Reprofile after the selected PP/coverage work; port only a still-needed compact-K/V delta. COMMON-003/VULKAN-001 and conditional upstream reviews remain in their existing backlog. |
 
-See [runnable ROCm/bench sequence](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).
+See [collected CLI/bench results](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md)
+and [runnable ROCm/bench sequence](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md).
 The prior four observations and baseline records remain historical evidence;
 this table replaces their earlier implementation ordering.
 

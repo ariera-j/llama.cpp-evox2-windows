@@ -18,8 +18,12 @@ ROCm native gates and all8 allocation/short CLI runs pass. The256k normal
 matrix is3/3 OK: OFF/A/B TG12.39/13.57/14.44, PP185.76/173.91/173.84.
 A/B response and acceptance differ, so ROCm long equivalence and isolated
 no-op performance remain unresolved. B adds88.318 s versus OFF to fresh-prompt
-evaluation. Next: MTP OFF CLI/bench64k before choosing the next investigation.
+evaluation. MTP OFF CLI/bench64k/256k collection is now Complete:11 uploaded
+runs OK plus the reused ROCm256k OFF control. TG gaps are within2.40%; ROCm
+PP agrees closely, Vulkan256k bench PP is19.40% below CLI. The next source
+investigation remains a decision, including the unresolved MTP long divergence.
 The short PP outlier is not reproduced here but its cause remains open. See
+[CLI/bench results](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md) and
 [ROCm256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md) and
 [ROCm native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md). See [normal ABBA validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md) and
 [ROCm/bench procedure](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.md). See
@@ -444,3 +448,16 @@ existing native/short exactness does not settle this long difference.
 Short B-normal PP48.16 collapse is absent in this pair, not explained or fixed.
 Proceed independently to MTP OFF CLI/bench64k with existing binaries. No code
 change or rebuild. See [full results and limits](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md).
+
+## 2026-10-05 01:40–05:34 CLI/bench comparison: Collected
+
+Three new MTP OFF CLI runs and eight bench invocations finish11/11 OK. Reuse
+the preceding ROCm256k OFF control for the fourth CLI reference. TG differences
+are within2.40%; ROCm PP matches closely. Vulkan256k PP268.10 CLI versus216.09
+bench is a distinct−19.40% workload/tool gap. ROCm PP64k→256k falls49.82% in
+CLI and49.36% in bench without MTP. User preflight digests agree with manifests;
+throughput mean/SD reproduce from raw samples. Native uint64 time-SD overflow
+is separately identified for Vulkan256k PP and does not invalidate mean speed.
+The user-requested collection sequence is complete; choose the next source
+investigation separately. OFF-only bench leaves ROCm MTP A/B output divergence
+open. See [full data and interpretation limits](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md).

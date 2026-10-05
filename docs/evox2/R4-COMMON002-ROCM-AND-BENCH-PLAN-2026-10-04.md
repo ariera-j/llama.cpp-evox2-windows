@@ -6,16 +6,19 @@ Do not start suffix reuse or MTP PP changes before reviewing these results.
 Source default stays OFF and upstream remains pinned. The plan adds benchmark
 configurations only; no inference/runtime implementation changes.
 
-Status after the2026-10-05 01:26 submission: native and allocation/short gates
-remain Complete. The256k normal matrix is now3/3 OK with Verified b11420/
-131288531 runtime: OFF/A/B PP185.76/173.91/173.84, TG12.39/13.57/14.44.
-B improves observed TG versus OFF but adds88.318 s to fresh-prompt evaluation.
-A/B bodies and acceptance differ (289/441 versus286/448), so isolated no-op
-speedup and ROCm long-context output equivalence remain unestablished. The
-short PP48.16 collapse is absent from this long A/B pair; its cause remains open.
-Proceed to step4, MTP OFF CLI/bench64k, with the current binaries; no rebuild.
-Bench does not validate speculative correctness. See [256k review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md)
-and [native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
+Status after the2026-10-05 09:07 submission: the staged64k/256k CLI/bench
+comparison is collected (11/11 uploaded runs OK; eight bench rows/20 timed
+repetitions), plus the reused ROCm256k OFF control. Reported bench preflight
+runtime digests agree with uploaded manifest identities. TG gaps are within
+2.40%, ROCm PP agrees closely, while Vulkan256k bench PP216.09 is19.40% below
+CLI268.10. ROCm PP roughly halves from64k to256k in both tools without MTP.
+A native integer time-SD overflow is identified; throughput mean/SD verify
+against raw samples. Proceed to step5, the investigation decision; no rebuild
+or extra matrix follows automatically. ROCm MTP long A/B response/acceptance
+difference and the short PP outlier remain unresolved. See
+[CLI/bench results](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md),
+[256k MTP review](R4-COMMON002-ROCM-256K-VALIDATION-2026-10-05.md) and
+[native/short validation](R4-COMMON002-ROCM-SHORT-VALIDATION-2026-10-04.md).
 
 ## 1. Build ROCm and validate native behavior
 
@@ -210,9 +213,12 @@ target suffix rebuilds, ROCm long-context PP scaling, or focused128k validation.
 Reuse existing diagnostics for the chosen question; avoid restarting every
 profile/context. COMMON-005 decode remains deferred and defaults stay OFF.
 This does not promise CLI/bench numeric equality. Native ROCm model validation
-is Complete and the exploratory long-context matrix is collected. Its A/B
-output/acceptance difference remains open; CLI/bench results are still pending.
-Keep ROCm candidate equivalence/attribution as an explicit post-bench decision
-item before broader candidate use; do not mark it resolved by OFF-only bench.
+is Complete, the exploratory long-context matrix is collected and CLI/bench
+results are now available at64k/256k. Its MTP A/B output/acceptance difference
+remains open. Keep ROCm candidate equivalence/attribution as an explicit
+post-bench decision item before broader candidate use; OFF-only bench does
+not resolve it. Add Vulkan256k PP workload divergence and the separate native
+time-SD overflow to the recorded decision questions, without starting fixes
+automatically. See [results and raw-sample validation](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md).
 
 See [Vulkan normal ABBA results](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md).
