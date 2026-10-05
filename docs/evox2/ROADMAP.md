@@ -201,6 +201,19 @@ and [runnable ROCm/bench sequence](R4-COMMON002-ROCM-AND-BENCH-PLAN-2026-10-04.m
 The prior four observations and baseline records remain historical evidence;
 this table replaces their earlier implementation ordering.
 
+#### Next-chat handoff: PP investigation items (2026-10-05 09:21 JST)
+
+The user will decide priorities in a new chat. Preserve the following items
+in that decision; their order in this table does not assign a new priority.
+
+| Item | Evidence to carry into the decision | Status |
+|---|---|---|
+| Vulkan256k CLI/bench PP discrepancy | MTP OFF CLI268.10 versus bench216.09 tok/s (bench−19.40%); both bench repetitions218.31/213.87 are below CLI. Retain a focused investigation of input/MoE routing, allocations, graph setup, warmup and timer differences; cause is not established. TG agrees closely. | Explicit investigation candidate for the new-chat priority review |
+| Existing ROCm long-context PP scaling item | Reproduced with MTP OFF in llama-bench as well as CLI:64k→256k PP366.88→185.78 tok/s in bench (−49.36%), CLI370.22→185.76 (−49.82%). This is additional evidence for the existing item, not a separate duplicate task; it is not solely a speculative/CLI-application issue. | Retained existing investigation item, now with bench reproduction evidence |
+
+See [conditions, repetitions and comparison limits](R4-COMMON002-CLI-BENCH-COMPARISON-2026-10-05.md).
+The separate native time-SD overflow does not invalidate these mean PP rates.
+
 Steps are scoped investigations, not promises that every slowdown can be fixed.
 Do not let one unsuccessful candidate indefinitely block the next question.
 

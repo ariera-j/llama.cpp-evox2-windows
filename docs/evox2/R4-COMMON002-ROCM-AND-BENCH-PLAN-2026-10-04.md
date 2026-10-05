@@ -208,6 +208,14 @@ Interpretation limits from the pinned source:
 
 ## 5. Decision after measurements
 
+User handoff note at2026-10-05 09:21 JST: priorities will be considered in a
+new chat. Include Vulkan256k bench PP investigation explicitly (CLI268.10,
+bench216.09 tok/s,−19.40%). Keep the existing ROCm long-context PP item and
+attach its MTP OFF bench reproduction (64k366.88→256k185.78,−49.36%,
+matching CLI's roughly50% decline). Do not create a duplicate ROCm item or
+assign the next implementation priority before that review. See
+[the handoff entries in ROADMAP](ROADMAP.md).
+
 Only after ROCm and bench review, choose among MTP PP attribution, residual
 target suffix rebuilds, ROCm long-context PP scaling, or focused128k validation.
 Reuse existing diagnostics for the chosen question; avoid restarting every
