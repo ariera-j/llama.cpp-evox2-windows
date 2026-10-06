@@ -8105,10 +8105,22 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
     };
     const bool k_quant = k->type != GGML_TYPE_F16 && k->type != GGML_TYPE_BF16 && k->type != GGML_TYPE_F32;
     const bool v_quant = v->type != GGML_TYPE_F16 && v->type != GGML_TYPE_BF16 && v->type != GGML_TYPE_F32;
+    const uint64_t k_f16_sz = (uint64_t)ggml_nelements(k) * sizeof(ggml_fp16_t);
+    const uint64_t v_f16_sz = (uint64_t)ggml_nelements(v) * sizeof(ggml_fp16_t);
+    const uint64_t max_dequant_kv_scratch_sz = std::min(ctx->device->max_buffer_size, ctx->device->max_memory_allocation_size);
+
+    // K and V share one f16 scratch buffer. Checking each tensor only against
+    // maxStorageBufferRange can still allow their combined allocation to exceed
+    // the device's single-buffer or single-allocation limit.
+    const bool dequant_kv_scratch_fits =
+        k_f16_sz <= max_dequant_kv_scratch_sz &&
+        v_f16_sz <= max_dequant_kv_scratch_sz - k_f16_sz;
+
     const bool use_dequant_kv = k_quant && v_quant && neq1 >= 64 &&
                                 is_dense_kv_cache(k) && is_dense_kv_cache(v) &&
-                                (uint64_t)ggml_nelements(k) * sizeof(ggml_fp16_t) <= ctx->device->properties.limits.maxStorageBufferRange &&
-                                (uint64_t)ggml_nelements(v) * sizeof(ggml_fp16_t) <= ctx->device->properties.limits.maxStorageBufferRange &&
+                                k_f16_sz <= ctx->device->properties.limits.maxStorageBufferRange &&
+                                v_f16_sz <= ctx->device->properties.limits.maxStorageBufferRange &&
+                                dequant_kv_scratch_fits &&
                                 ctx->device->pipeline_dequant_transpose[k->type] != nullptr &&
                                 ctx->device->pipeline_dequant_transpose[v->type] != nullptr &&
                                 // coopmat2 path does not benefit from the f16 scratch
@@ -8381,9 +8393,6 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
     vk_subbuffer sparse_buf = use_sparse ? ggml_vk_subbuffer(ctx, ctx->prealloc_y, 0) : q_buf;
 
     if (use_dequant_kv) {
-        const uint64_t fp = sizeof(ggml_fp16_t);
-        const uint64_t k_f16_sz = (uint64_t)ggml_nelements(k) * fp;
-        const uint64_t v_f16_sz = (uint64_t)ggml_nelements(v) * fp;
         if (ctx->prealloc_size_x < k_f16_sz + v_f16_sz) {
             ctx->prealloc_size_x = k_f16_sz + v_f16_sz;
             ggml_vk_preallocate_buffers(ctx, subctx);
