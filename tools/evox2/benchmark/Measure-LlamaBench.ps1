@@ -9,6 +9,15 @@ param(
     [string]$ModelKey = '',
     [string]$ModelFile = '',
 
+    [string]$InputKey = '',
+    [string]$InputFile = '',
+
+    [ValidateSet('head-tail', 'head')]
+    [string]$PromptSlice = 'head-tail',
+
+    [ValidateRange(0, 4194304)]
+    [int]$Context = 0,
+
     [ValidateRange(0, 4194304)]
     [int[]]$PromptTokens = @(512),
 
@@ -106,6 +115,7 @@ if ([string]::IsNullOrWhiteSpace($LocalConfig)) {
 $Config = Import-Evox2LocalConfig -Path $LocalConfig
 $buildEntry = $null
 $modelEntry = $null
+$inputEntry = $null
 
 if (-not [string]::IsNullOrWhiteSpace($BuildKey)) {
     $buildEntry = Get-Evox2ConfigEntry -Config $Config -Section Builds -Key $BuildKey
@@ -142,6 +152,13 @@ if ([string]::IsNullOrWhiteSpace($ModelFile)) {
     throw 'Specify -ModelFile or -ModelKey.'
 }
 
+if (-not [string]::IsNullOrWhiteSpace($InputKey)) {
+    $inputEntry = Get-Evox2ConfigEntry -Config $Config -Section Inputs -Key $InputKey
+    if ([string]::IsNullOrWhiteSpace($InputFile)) {
+        $InputFile = [string]$inputEntry
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($UmaLabel) -and
     $Config.ContainsKey('UmaLabel')) {
     $UmaLabel = [string]$Config.UmaLabel
@@ -162,9 +179,16 @@ if (-not (Test-Path -LiteralPath $LlamaBench -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $ModelFile -PathType Leaf)) {
     throw "Required file not found: $ModelFile"
 }
+if (-not [string]::IsNullOrWhiteSpace($InputFile) -and
+    -not (Test-Path -LiteralPath $InputFile -PathType Leaf)) {
+    throw "Required file not found: $InputFile"
+}
 
 $LlamaBench = (Resolve-Path -LiteralPath $LlamaBench).Path
 $ModelFile = (Resolve-Path -LiteralPath $ModelFile).Path
+if (-not [string]::IsNullOrWhiteSpace($InputFile)) {
+    $InputFile = (Resolve-Path -LiteralPath $InputFile).Path
+}
 
 $PromptTokens = @($PromptTokens | Sort-Object -Unique)
 $GenerationTokens = @($GenerationTokens | Sort-Object -Unique)
@@ -203,6 +227,10 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedBackend) -and
 }
 
 $ModelIdentity = Get-Evox2FileIdentity -Path $ModelFile -Sha256:$HashModel
+$InputIdentity = $null
+if (-not [string]::IsNullOrWhiteSpace($InputFile)) {
+    $InputIdentity = Get-Evox2FileIdentity -Path $InputFile -Sha256
+}
 
 $ModelAlias = $null
 if ($null -ne $modelEntry -and $modelEntry.ContainsKey('Alias')) {
@@ -226,6 +254,17 @@ $LlamaArguments = @(
     '-fa', $FlashAttn,
     '-o', 'json'
 )
+
+if ($Context -gt 0) {
+    $LlamaArguments += @('-c', "$Context")
+}
+
+if ($InputIdentity) {
+    $LlamaArguments += @(
+        '-f', $InputFile,
+        '--prompt-slice', $PromptSlice
+    )
+}
 
 if ($NoWarmup) {
     $LlamaArguments += '--no-warmup'
@@ -274,8 +313,23 @@ $ConditionFingerprint = [ordered]@{
         Sha256           = $ModelIdentity.Sha256
     }
 
+    Input = if ($InputIdentity) {
+        [ordered]@{
+            Path        = $InputIdentity.Path
+            LengthBytes = $InputIdentity.LengthBytes
+            Sha256      = $InputIdentity.Sha256
+            Slice       = $PromptSlice
+        }
+    } else {
+        [ordered]@{
+            Mode = 'random-tokens'
+        }
+    }
+
     Benchmark = [ordered]@{
         PromptTokens     = @($PromptTokens)
+        Context          = $Context
+        PromptSlice      = if ($InputIdentity) { $PromptSlice } else { $null }
         GenerationTokens = @($GenerationTokens)
         Depths           = @($Depths)
         Repetitions      = $Repetitions
@@ -306,7 +360,11 @@ $CommandLine = ConvertTo-Evox2CommandLine `
 
 $maxPrompt = ($PromptTokens | Measure-Object -Maximum).Maximum
 $maxDepth = ($Depths | Measure-Object -Maximum).Maximum
-$ContextHint = [Math]::Max([int]$maxPrompt, [int]$maxDepth)
+$ContextHint = if ($Context -gt 0) {
+    $Context
+} else {
+    [Math]::Max([int]$maxPrompt, [int]$maxDepth)
+}
 if ($ContextHint -lt 1) {
     $ContextHint = 1
 }
@@ -319,6 +377,9 @@ $Preview = [PSCustomObject]@{
     Compiler          = $Identity.Executable.Compiler
     Model             = $ModelIdentity.Name
     ModelAlias        = $ModelAlias
+    Input             = if ($InputIdentity) { $InputIdentity.Name } else { 'random-tokens' }
+    PromptSlice       = if ($InputIdentity) { $PromptSlice } else { $null }
+    Context           = $Context
     PromptTokens      = ($PromptTokens -join ',')
     GenerationTokens  = ($GenerationTokens -join ',')
     Depths            = ($Depths -join ',')
@@ -379,6 +440,7 @@ $Conditions = [ordered]@{
     LookupKeys = [ordered]@{
         BuildKey = $BuildKey
         ModelKey = $ModelKey
+        InputKey = $InputKey
     }
 
     HumanAliases = [ordered]@{
@@ -401,11 +463,14 @@ $Conditions = [ordered]@{
     SystemIdentity     = $Identity.System
 
     ModelIdentity      = $ModelIdentity
+    InputIdentity      = $InputIdentity
     EffectiveCondition = $ConditionFingerprint
     Environment        = $RelevantEnvironment
 
     Notes = @(
         'llama-bench measurements exclude tokenization and sampling time.',
+        'When an input file is specified, prompt-processing uses tokenized file content instead of random token IDs.',
+        'PromptSlice=head-tail keeps ceil(N/2) tokens from the head and floor(N/2) tokens from the tail.',
         'Prompt-processing (-p) and generation (-n) are separate tests unless llama-bench -pg is used.',
         'Depth (-d) pre-fills the KV cache before each benchmark test.',
         'This Phase 3 wrapper does not benchmark MTP/speculative decoding.'
@@ -546,6 +611,9 @@ $HeaderLines = @(
     "EXECUTABLE_COMMIT: $($Identity.Executable.Commit)",
     "UMA_LABEL: $UmaLabel (manual label; not auto-detected)",
     "MODELFILE: $ModelFile",
+    "INPUT: $(if ($InputIdentity) { $InputFile } else { 'random-tokens' })",
+    "PROMPT_SLICE: $(if ($InputIdentity) { $PromptSlice } else { '' })",
+    "CONTEXT: $Context",
     "PROMPT_TOKENS: $($PromptTokens -join ',')",
     "GENERATION_TOKENS: $($GenerationTokens -join ',')",
     "DEPTHS: $($Depths -join ',')",
@@ -626,6 +694,10 @@ foreach ($row in $NativeRows) {
         UmaLabel          = $UmaLabel
         ModelFile         = $ModelFile
         ModelAlias        = $ModelAlias
+        InputFile         = if ($InputIdentity) { $InputFile } else { $null }
+        InputSha256       = if ($InputIdentity) { $InputIdentity.Sha256 } else { $null }
+        PromptSlice       = if ($InputIdentity) { $PromptSlice } else { $null }
+        Context           = $Context
         ModelType         = $row.model_type
         ModelSizeBytes    = $row.model_size
         ModelParams       = $row.model_n_params
@@ -674,6 +746,10 @@ if ($SummaryRows.Count -eq 0) {
             UmaLabel          = $UmaLabel
             ModelFile         = $ModelFile
             ModelAlias        = $ModelAlias
+            InputFile         = if ($InputIdentity) { $InputFile } else { $null }
+            InputSha256       = if ($InputIdentity) { $InputIdentity.Sha256 } else { $null }
+            PromptSlice       = if ($InputIdentity) { $PromptSlice } else { $null }
+            Context           = $Context
             ModelType         = $null
             ModelSizeBytes    = $ModelIdentity.LengthBytes
             ModelParams       = $null
@@ -725,6 +801,10 @@ $Result = [ordered]@{
 
     Requested = [ordered]@{
         PromptTokens     = @($PromptTokens)
+        Context          = $Context
+        InputFile        = if ($InputIdentity) { $InputFile } else { $null }
+        InputSha256      = if ($InputIdentity) { $InputIdentity.Sha256 } else { $null }
+        PromptSlice      = if ($InputIdentity) { $PromptSlice } else { $null }
         GenerationTokens = @($GenerationTokens)
         Depths           = @($Depths)
         Repetitions      = $Repetitions

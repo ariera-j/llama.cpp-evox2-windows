@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <iterator>
 #include <map>
 #include <numeric>
@@ -338,6 +339,9 @@ struct cmd_params {
     std::vector<std::string>         hf_file;
     std::string                      hf_token;
     bool                             offline;
+    std::string                      prompt_file;
+    std::string                      prompt_slice;
+    int                              n_ctx;
     std::vector<int>                 n_prompt;
     std::vector<int>                 n_gen;
     std::vector<std::pair<int, int>> n_pg;
@@ -384,6 +388,9 @@ static const cmd_params cmd_params_defaults = {
     /* hf_file              */ {},
     /* hf_token             */ "",
     /* offline              */ false,
+    /* prompt_file          */ "",
+    /* prompt_slice         */ "head-tail",
+    /* n_ctx                */ 0,
     /* n_prompt             */ { 512 },
     /* n_gen                */ { 128 },
     /* n_pg                 */ {},
@@ -458,6 +465,10 @@ static void print_usage(int /* argc */, char ** argv) {
     printf("                                                    (default: value from HF_TOKEN environment variable)\n");
     printf("  --offline                                         Offline mode: forces use of cache, prevents network access\n");
     printf("                                                    (default: disabled)\n");
+    printf("  -f, --prompt-file <filename>                      use UTF-8 text tokens for prompt-processing tests\n");
+    printf("                                                    (default: random tokens; with -f and no -p, use the full file)\n");
+    printf("  --prompt-slice <head-tail|head>                   select requested prompt tokens from the file (default: %s)\n", cmd_params_defaults.prompt_slice.c_str());
+    printf("  -c, --ctx-size <n>                                context size; 0 derives it from each test (default: %d)\n", cmd_params_defaults.n_ctx);
     printf("  -p, --n-prompt <n>                                (default: %s)\n", join(cmd_params_defaults.n_prompt, ",").c_str());
     printf("  -n, --n-gen <n>                                   (default: %s)\n", join(cmd_params_defaults.n_gen, ",").c_str());
     printf("  -pg <pp,tg>                                       (default: %s)\n", join(transform_to_str(cmd_params_defaults.n_pg, pair_str), ",").c_str());
@@ -539,6 +550,9 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
     params.progress             = cmd_params_defaults.progress;
     params.no_warmup            = cmd_params_defaults.no_warmup;
     params.offline              = cmd_params_defaults.offline;
+    params.prompt_file          = cmd_params_defaults.prompt_file;
+    params.prompt_slice         = cmd_params_defaults.prompt_slice;
+    params.n_ctx                = cmd_params_defaults.n_ctx;
 
     if (const char * env = getenv("HF_TOKEN")) {
         params.hf_token = env;
@@ -586,6 +600,32 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
                 params.hf_token = argv[i];
             } else if (arg == "--offline") {
                 params.offline = true;
+            } else if (arg == "-f" || arg == "--prompt-file") {
+                if (++i >= argc) {
+                    invalid_param = true;
+                    break;
+                }
+                params.prompt_file = argv[i];
+            } else if (arg == "--prompt-slice") {
+                if (++i >= argc) {
+                    invalid_param = true;
+                    break;
+                }
+                params.prompt_slice = argv[i];
+                if (params.prompt_slice != "head-tail" && params.prompt_slice != "head") {
+                    invalid_param = true;
+                    break;
+                }
+            } else if (arg == "-c" || arg == "--ctx-size") {
+                if (++i >= argc) {
+                    invalid_param = true;
+                    break;
+                }
+                params.n_ctx = std::stoi(argv[i]);
+                if (params.n_ctx < 0) {
+                    invalid_param = true;
+                    break;
+                }
             } else if (arg == "-p" || arg == "--n-prompt") {
                 if (++i >= argc) {
                     invalid_param = true;
@@ -1118,7 +1158,7 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
         params.model = cmd_params_defaults.model;
     }
     if (params.n_prompt.empty()) {
-        params.n_prompt = cmd_params_defaults.n_prompt;
+        params.n_prompt = params.prompt_file.empty() ? cmd_params_defaults.n_prompt : std::vector<int>{ -1 };
     }
     if (params.n_gen.empty()) {
         params.n_gen = cmd_params_defaults.n_gen;
@@ -1213,6 +1253,7 @@ struct cmd_params_instance {
     int                n_prompt;
     int                n_gen;
     int                n_depth;
+    int                n_ctx;
     int                n_batch;
     int                n_ubatch;
     ggml_type          type_k;
@@ -1305,7 +1346,7 @@ struct cmd_params_instance {
     llama_context_params to_llama_cparams() const {
         llama_context_params cparams = llama_context_default_params();
 
-        cparams.n_ctx           = n_prompt + n_gen + n_depth;
+        cparams.n_ctx           = n_ctx > 0 ? n_ctx : n_prompt + n_gen + n_depth;
         cparams.n_batch         = n_batch;
         cparams.n_ubatch        = n_ubatch;
         cparams.type_k          = type_k;
@@ -1361,6 +1402,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
                 /* .n_prompt              = */ n_prompt,
                 /* .n_gen                 = */ 0,
                 /* .n_depth               = */ nd,
+                /* .n_ctx                 = */ params.n_ctx,
                 /* .n_batch               = */ nb,
                 /* .n_ubatch              = */ nub,
                 /* .type_k                = */ tk,
@@ -1399,6 +1441,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
                 /* .n_prompt              = */ 0,
                 /* .n_gen                 = */ n_gen,
                 /* .n_depth               = */ nd,
+                /* .n_ctx                 = */ params.n_ctx,
                 /* .n_batch               = */ nb,
                 /* .n_ubatch              = */ nub,
                 /* .type_k                = */ tk,
@@ -1437,6 +1480,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
                 /* .n_prompt              = */ n_pg.first,
                 /* .n_gen                 = */ n_pg.second,
                 /* .n_depth               = */ nd,
+                /* .n_ctx                 = */ params.n_ctx,
                 /* .n_batch               = */ nb,
                 /* .n_ubatch              = */ nub,
                 /* .type_k                = */ tk,
@@ -2165,6 +2209,57 @@ struct ctx_state {
     std::vector<uint8_t> buf; // the llama_context state buffer
 };
 
+static std::vector<llama_token> select_prompt_tokens(
+        const std::vector<llama_token> & source,
+        int                              n_prompt,
+        const std::string &              slice_mode) {
+    if (n_prompt < 0 || (size_t) n_prompt > source.size()) {
+        throw std::invalid_argument("requested prompt length exceeds available prompt-file tokens");
+    }
+
+    if ((size_t) n_prompt == source.size()) {
+        return source;
+    }
+
+    if (slice_mode == "head") {
+        return std::vector<llama_token>(source.begin(), source.begin() + n_prompt);
+    }
+
+    const size_t n_head = ((size_t) n_prompt + 1) / 2;
+    const size_t n_tail = (size_t) n_prompt / 2;
+
+    std::vector<llama_token> result;
+    result.reserve((size_t) n_prompt);
+    result.insert(result.end(), source.begin(), source.begin() + n_head);
+    result.insert(result.end(), source.end() - n_tail, source.end());
+    return result;
+}
+
+static bool test_prompt_tokens(
+        llama_context *                  ctx,
+        const std::vector<llama_token> & prompt_tokens,
+        int                              n_batch,
+        int                              n_threads) {
+    llama_set_n_threads(ctx, n_threads, n_threads);
+
+    int n_processed = 0;
+    const int n_prompt = (int) prompt_tokens.size();
+
+    while (n_processed < n_prompt) {
+        const int n_tokens = std::min(n_prompt - n_processed, n_batch);
+        common_batch batch = common_batch_get_one(ctx, prompt_tokens.data() + n_processed, n_tokens);
+        const int res = llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+        if (res != 0) {
+            fprintf(stderr, "%s: failed to decode prompt batch, res = %d\n", __func__, res);
+            return false;
+        }
+        n_processed += n_tokens;
+    }
+
+    llama_synchronize(ctx);
+    return true;
+}
+
 static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_threads) {
     llama_set_n_threads(ctx, n_threads, n_threads);
 
@@ -2272,6 +2367,20 @@ int llama_bench(int argc, char ** argv) {
 
     cmd_params params = parse_cmd_params(argc, argv);
 
+    std::string prompt_file_text;
+    if (!params.prompt_file.empty()) {
+        std::ifstream prompt_file(params.prompt_file, std::ios::binary);
+        if (!prompt_file) {
+            fprintf(stderr, "%s: error: failed to open prompt file '%s'\n", __func__, params.prompt_file.c_str());
+            return 1;
+        }
+        prompt_file_text.assign(std::istreambuf_iterator<char>(prompt_file), std::istreambuf_iterator<char>());
+        if (prompt_file_text.empty()) {
+            fprintf(stderr, "%s: error: prompt file is empty: '%s'\n", __func__, params.prompt_file.c_str());
+            return 1;
+        }
+    }
+
     auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
     if (!cpu_dev) {
         fprintf(stderr, "%s: error: CPU backend is not loaded\n", __func__);
@@ -2324,10 +2433,21 @@ int llama_bench(int argc, char ** argv) {
             fprintf(stderr, "llama-bench: benchmark %d/%zu: starting\n", params_idx, params_count);
         }
         auto mparams = inst.to_llama_mparams();
-        auto cparams = inst.to_llama_cparams();
+        cmd_params_instance run_inst = inst;
+
+        llama_context_params cparams = {};
+        bool cparams_ready = run_inst.n_prompt >= 0;
+        if (cparams_ready) {
+            cparams = run_inst.to_llama_cparams();
+        }
 
         bool do_fit = inst.fit_target != cmd_params_defaults.fit_params_target[0] ||
                       inst.fit_min_ctx != cmd_params_defaults.fit_params_min_ctx[0];
+
+        if (do_fit && !cparams_ready) {
+            fprintf(stderr, "%s: error: --fit-target with --prompt-file and no -p is not supported; specify -p explicitly\n", __func__);
+            return 1;
+        }
 
         std::vector<float> fit_tensor_split(llama_max_devices(), 0.0f);
         std::vector<llama_model_tensor_buft_override> fit_overrides(llama_max_tensor_buft_overrides(), {nullptr, nullptr});
@@ -2348,7 +2468,9 @@ int llama_bench(int argc, char ** argv) {
 
             std::vector<size_t> margins(llama_max_devices(), inst.fit_target * 1024 * 1024);
 
-            uint32_t n_ctx_needed = inst.n_prompt + inst.n_gen + inst.n_depth;
+            const uint32_t n_ctx_work = run_inst.n_prompt + run_inst.n_gen + run_inst.n_depth;
+            const uint32_t n_ctx_requested = run_inst.n_ctx > 0 ? (uint32_t) run_inst.n_ctx : 0;
+            const uint32_t n_ctx_needed = std::max(n_ctx_work, n_ctx_requested);
             cparams.n_ctx = std::max(cparams.n_ctx, n_ctx_needed);
 
             common_fit_params(inst.model.c_str(), &mparams, &cparams,
@@ -2374,6 +2496,60 @@ int llama_bench(int argc, char ** argv) {
             prev_inst = &inst;
         }
 
+        std::vector<llama_token> prompt_tokens;
+        if (!params.prompt_file.empty() && run_inst.n_prompt != 0) {
+            const llama_vocab * vocab = llama_model_get_vocab(lmodel);
+            std::vector<llama_token> file_tokens = common_tokenize(vocab, prompt_file_text, true, false);
+
+            if (file_tokens.empty()) {
+                fprintf(stderr, "%s: error: prompt file tokenized to zero tokens\n", __func__);
+                llama_model_free(lmodel);
+                return 1;
+            }
+            if (file_tokens.size() > (size_t) INT32_MAX) {
+                fprintf(stderr, "%s: error: prompt file is too large to benchmark\n", __func__);
+                llama_model_free(lmodel);
+                return 1;
+            }
+
+            if (run_inst.n_prompt < 0) {
+                run_inst.n_prompt = (int) file_tokens.size();
+                cparams = run_inst.to_llama_cparams();
+                cparams_ready = true;
+            }
+
+            if ((size_t) run_inst.n_prompt > file_tokens.size()) {
+                fprintf(stderr,
+                        "%s: error: requested %d prompt tokens, but prompt file provides only %zu tokens\n",
+                        __func__, run_inst.n_prompt, file_tokens.size());
+                llama_model_free(lmodel);
+                return 1;
+            }
+
+            prompt_tokens = select_prompt_tokens(file_tokens, run_inst.n_prompt, params.prompt_slice);
+
+            if (params.progress) {
+                fprintf(stderr,
+                        "llama-bench: prompt file '%s': %zu available tokens, using %d (%s)\n",
+                        params.prompt_file.c_str(), file_tokens.size(), run_inst.n_prompt, params.prompt_slice.c_str());
+            }
+        }
+
+        if (!cparams_ready) {
+            fprintf(stderr, "%s: error: failed to resolve context parameters\n", __func__);
+            llama_model_free(lmodel);
+            return 1;
+        }
+
+        const uint64_t n_ctx_needed = (uint64_t) run_inst.n_prompt + run_inst.n_gen + run_inst.n_depth;
+        if (run_inst.n_ctx > 0 && (uint64_t) run_inst.n_ctx < n_ctx_needed) {
+            fprintf(stderr,
+                    "%s: error: context size %d is smaller than required test size %" PRIu64 "\n",
+                    __func__, run_inst.n_ctx, n_ctx_needed);
+            llama_model_free(lmodel);
+            return 1;
+        }
+
         llama_context * ctx = llama_init_from_model(lmodel, cparams);
         if (ctx == NULL) {
             fprintf(stderr, "%s: error: failed to create context with model '%s'\n", __func__, inst.model.c_str());
@@ -2381,7 +2557,7 @@ int llama_bench(int argc, char ** argv) {
             return 1;
         }
 
-        test t(inst, lmodel, ctx);
+        test t(run_inst, lmodel, ctx);
 
         llama_memory_clear(llama_get_memory(ctx), false);
 
@@ -2418,7 +2594,9 @@ int llama_bench(int argc, char ** argv) {
                     fprintf(stderr, "llama-bench: benchmark %d/%zu: warmup prompt run\n", params_idx, params_count);
                 }
                 //test_prompt(ctx, std::min(t.n_batch, std::min(t.n_prompt, 32)), 0, t.n_batch, t.n_threads);
-                bool res = test_prompt(ctx, t.n_prompt, t.n_batch, t.n_threads);
+                bool res = prompt_tokens.empty()
+                    ? test_prompt(ctx, t.n_prompt, t.n_batch, t.n_threads)
+                    : test_prompt_tokens(ctx, prompt_tokens, t.n_batch, t.n_threads);
                 if (!res) {
                     fprintf(stderr, "%s: error: failed to run prompt warmup\n", __func__);
                     llama_free(ctx);
@@ -2487,7 +2665,9 @@ int llama_bench(int argc, char ** argv) {
                     fprintf(stderr, "llama-bench: benchmark %d/%zu: prompt run %d/%d\n", params_idx, params_count,
                             i + 1, params.reps);
                 }
-                bool res = test_prompt(ctx, t.n_prompt, t.n_batch, t.n_threads);
+                bool res = prompt_tokens.empty()
+                    ? test_prompt(ctx, t.n_prompt, t.n_batch, t.n_threads)
+                    : test_prompt_tokens(ctx, prompt_tokens, t.n_batch, t.n_threads);
                 if (!res) {
                     fprintf(stderr, "%s: error: failed to run prompt\n", __func__);
                     llama_free(ctx);
