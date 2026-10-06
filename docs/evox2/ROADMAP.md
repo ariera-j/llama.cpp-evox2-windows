@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-05 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; union default OFF; COMMON-002 overnight 28/28 pass, long-context TG investigation active; COMMON-005 decode port deferred)
+Snapshot: 2026-10-06 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; COMMON-002 investigation preserved; active implementation paused while the Qwen3.5 long-context study is completed to a clean checkpoint)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -44,6 +44,115 @@ Original/PLE16 gate passes, and PLE16 completes 128k/256k on both backends.
 See [R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.md).
 Do not move the upstream base silently or rewrite r3 onto it. Re-apply only
 downstream deltas justified by measurements.
+
+### Upstream-watch-first implementation policy (2026-10-06)
+
+The r3/r4 cycle showed that several locally investigated or implemented
+optimizations were superseded by upstream changes within roughly one week.
+The profiling, bounded implementation and validation workflow remains useful,
+but not every observed regression should immediately become a downstream patch.
+
+Separate **investigation** from **implementation**:
+
+- reproduce and record a suspicious regression when it is found
+- preserve measurements, profiles, source attribution and comparison conditions
+- search upstream issues/PRs and external reports before writing a fix
+- when an upstream solution is already active, prefer watching it over duplicating it
+- implement locally only when the problem remains relevant after the watch gate,
+  or when the requirement is sufficiently Evo-X2/model-specific that upstream is
+  unlikely to prioritize it
+
+Use the following working states for future candidates:
+
+| State | Meaning |
+|---|---|
+| `WATCH-UPSTREAM` | Problem is recorded, but active upstream work or an obvious upstream solution exists. Do not duplicate it yet. |
+| `INVESTIGATE` | Cause or scope is not established. Profiling, reproduction and source tracing are useful; implementation is not yet approved. |
+| `LOCAL-CANDIDATE` | Requirement is niche, old, Evo-X2/model-specific, or lacks a plausible upstream path. Local design work is justified. |
+| `IMPLEMENT` | A bounded local change has passed the decision gate and is ready for implementation/validation. |
+| `UPSTREAMED / RETIRE` | Upstream now provides an equivalent or better path. Re-test and remove/defer the downstream delta rather than maintaining it automatically. |
+
+Suggested waiting gates are deliberately approximate rather than hard deadlines:
+
+- obvious regression with an active fix/PR: normally watch for **7-14 days**;
+  if the PR is still actively changing, continue to wait
+- issue/report with a plausible solution but no merge: re-evaluate after about
+  **two weeks** before duplicating it
+- older performance problem with no upstream resolution: if it survives
+  **two upstream refresh checkpoints or roughly 2-4 weeks**, promote it toward
+  local implementation
+- no similar public report, no proposed solution, or clearly niche requirement:
+  give it higher local investigation/implementation priority without waiting for
+  a generic upstream fix
+- correctness failures, output corruption, crashes, or repeatable state errors
+  are exceptions and can bypass the performance waiting gate
+
+Prioritization should not be based on expected speedup alone. Rank candidates by:
+
+1. expected user-visible PP/TG/latency impact
+2. likelihood that upstream will solve the same problem soon
+3. age/persistence of the problem across upstream refreshes
+4. uniqueness to Evo-X2, Windows, the target model or the downstream model format
+5. whether similar reports exist
+6. whether an issue exists but no implementation direction has been proposed
+7. investigation/implementation/validation cost
+
+Examples for the current backlog:
+
+- COMMON-001 and ROCmFPx support remain strong local candidates because they are
+  specialized model-format/operational requirements.
+- MTP PP overhead should remain measurable and visible, but do not immediately
+  start a large local rewrite while qwen4exp/MTP upstream is moving quickly.
+  If it remains after two refresh checkpoints or roughly 2-3 weeks without a
+  credible upstream fix, promote it.
+- Vulkan 256k CLI/bench PP divergence and other observations with no known close
+  external analogue remain high-value `INVESTIGATE` items even before a fix is
+  justified.
+- known regressions with an upstream fix or active PR should normally stay
+  `WATCH-UPSTREAM`.
+
+This policy supersedes the earlier implicit assumption that every measured
+regression should proceed directly from diagnosis to a downstream patch.
+
+### Planned restart sequence after the Qwen3.5 long-context study
+
+Do not refresh or implement anything merely because this section exists.
+When the Qwen3.5 long-context work reaches a clean checkpoint and llama.cpp
+optimization resumes, re-check current upstream at that time and use the
+following initial sequence:
+
+1. **Establish a new clean latest-upstream baseline first.**
+   Re-check upstream changes, build identity, Vulkan/ROCm load gates and enough
+   matched PP/TG coverage to determine whether the r3/r4 downstream deltas are
+   still required. Do not assume the 2026-10-06 upstream state is still current.
+2. **Reclassify the existing patch list.**
+   Mark COMMON/VULKAN items as still-needed, `WATCH-UPSTREAM`, or
+   `UPSTREAMED / RETIRE` before starting new implementation.
+3. **Restore COMMON-001 first if the current upstream still lacks the required
+   split PLE16 operational path.**
+   Preserve joined-model compatibility and repeat only the minimum regression
+   gates needed for the new base.
+4. **Then resume ROCmFPx / AgentionAI model support.**
+   Audit current upstream support first. Add only missing common format/core
+   support as COMMON-003, then add VULKAN-001 backend kernels only if still
+   required for the AgentionAI ROCmFP4-FAST model.
+5. **Run a matched AgentionAI versus Unsloth performance comparison.**
+   Use the same Evo-X2, model/task/context conditions where practical so the
+   comparison answers the operational question rather than mixing source,
+   model-format and benchmark changes. Start with MTP OFF unless the comparison
+   specifically targets speculative decode.
+6. **Reuse the Qwen3.5 quality-validation methodology on the AgentionAI model.**
+   Apply the same long-context quality questions/checks already used during the
+   Unsloth-side Qwen3.5 study, then compare failure modes and answer quality
+   rather than treating throughput as the only selection criterion.
+7. **Only after that comparison choose the next general optimization.**
+   Re-rank MTP PP overhead, ROCm long-context PP scaling, Vulkan CLI/bench
+   divergence and any newly discovered candidates under the upstream-watch
+   policy above.
+
+The goal of this restart order is to obtain a clean current baseline and a
+useful AgentionAI/Unsloth speed-and-quality comparison before spending another
+cycle on optimizations that upstream may supersede quickly.
 
 ### Active order after VULKAN-002 validation (2026-10-04)
 
