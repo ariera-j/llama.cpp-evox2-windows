@@ -125,27 +125,37 @@ following initial sequence:
    Re-check upstream changes, build identity, Vulkan/ROCm load gates and enough
    matched PP/TG coverage to determine whether the r3/r4 downstream deltas are
    still required. Do not assume the 2026-10-06 upstream state is still current.
-2. **Reclassify the existing patch list.**
+2. **Re-check the Vulkan 256k llama-cli / llama-bench PP discrepancy on the new
+   clean upstream before investigating it further.**
+   The r4 MTP-OFF reference measured about 268.10 tok/s in llama-cli versus
+   216.09 tok/s in llama-bench (-19.40%) at 256k, while ROCm agreed closely.
+   Treat this as an `INVESTIGATE` item only if it still reproduces. If current
+   upstream removes the gap, record it as upstream-resolved and do not spend time
+   reconstructing the historical cause. If it remains, first compare actual
+   prompt token count, batch/ubatch behavior, final partial batch, QSA/indexer
+   path, MoE routing, graph reserve/reallocation, warmup and cache state before
+   attempting a code change.
+3. **Reclassify the existing patch list.**
    Mark COMMON/VULKAN items as still-needed, `WATCH-UPSTREAM`, or
    `UPSTREAMED / RETIRE` before starting new implementation.
-3. **Restore COMMON-001 first if the current upstream still lacks the required
+4. **Restore COMMON-001 first if the current upstream still lacks the required
    split PLE16 operational path.**
    Preserve joined-model compatibility and repeat only the minimum regression
    gates needed for the new base.
-4. **Then resume ROCmFPx / AgentionAI model support.**
+5. **Then resume ROCmFPx / AgentionAI model support.**
    Audit current upstream support first. Add only missing common format/core
    support as COMMON-003, then add VULKAN-001 backend kernels only if still
    required for the AgentionAI ROCmFP4-FAST model.
-5. **Run a matched AgentionAI versus Unsloth performance comparison.**
+6. **Run a matched AgentionAI versus Unsloth performance comparison.**
    Use the same Evo-X2, model/task/context conditions where practical so the
    comparison answers the operational question rather than mixing source,
    model-format and benchmark changes. Start with MTP OFF unless the comparison
    specifically targets speculative decode.
-6. **Reuse the Qwen3.5 quality-validation methodology on the AgentionAI model.**
+7. **Reuse the Qwen3.5 quality-validation methodology on the AgentionAI model.**
    Apply the same long-context quality questions/checks already used during the
    Unsloth-side Qwen3.5 study, then compare failure modes and answer quality
    rather than treating throughput as the only selection criterion.
-7. **Only after that comparison choose the next general optimization.**
+8. **Only after that comparison choose the next general optimization.**
    Re-rank MTP PP overhead, ROCm long-context PP scaling, Vulkan CLI/bench
    divergence and any newly discovered candidates under the upstream-watch
    policy above.
@@ -153,6 +163,16 @@ following initial sequence:
 The goal of this restart order is to obtain a clean current baseline and a
 useful AgentionAI/Unsloth speed-and-quality comparison before spending another
 cycle on optimizations that upstream may supersede quickly.
+
+For performance measurement policy, use **llama-cli as the primary first-pass
+measurement path** because it exercises real input and produces output that can
+be sanity-checked at the same time. Use **llama-bench primarily for repeated
+samples, variance/standard-deviation checks, and confirmation of small
+throughput differences**, not as the sole first-pass authority. This is based on
+prior cases where unexpectedly high benchmark throughput coincided with invalid
+or degraded output behavior. The unresolved Vulkan 256k PP gap above should be
+checked on current upstream before this division of roles is treated as fully
+settled for long-context PP.
 
 ### Active order after VULKAN-002 validation (2026-10-04)
 
