@@ -256,22 +256,92 @@
 
 ただし、今回直接測定したのは PP 差までであり、union後の unique selected ID 数や overlap 率そのものは未計測である。したがって、**「random token で Vulkan QSA ON の PP が低下する」ことは確認済みだが、その内部原因が selected-ID overlap であることはまだ仮説**として扱う。
 
-## 次の測定: 256k
+## 256k 測定結果（2026-10-07）
 
-64kで入力依存性が確認できたため、次は差が大きかった256kで同じA/Bを行う。
+64kで入力依存性が確認できたため、256kでも同じA/Bを行った。
 
-固定条件の候補:
+固定条件:
 
+- build: b11427
 - context: `262144`
 - prompt tokens: `255181`
 - generation tokens: `0`
 - depth: `0`
 - repetitions: `2`
-- その他の llama-bench / Vulkan tuning 条件は64kと同じ
+- KV: f16
+- batch / ubatch: `2048 / 1024`
+- threads: `4`
+- GPU layers: `999`
+- CPU MoE: `0`
+- Flash Attention: `auto`
+- `GGML_VK_MOE_LEGACY_TILE_SELECTION=1`
+- `GGML_VK_QSA_UNION=1`
+- `GGML_VK_GET_ROWS_128X4=0`
 
-比較するのは以下の2条件だけとする。
+実文書側は長文入力を `head-tail` で255,181 tokenに切り出した。random側は `-InputFile` を指定せず、従来の llama-bench random token pathを使用した。
 
-1. random token
-2. 実文書 `head-tail`
+### 結果
 
-過去の256k比較では、実文書 llama-cli が 268.10 tok/s、random-token llama-bench が 216.09 tok/s で約19%の差があった。今回の同一build・同一context A/Bでこの差が再現するか、また実文書 llama-bench が CLI 側へ近づくかを確認する。
+| 条件 | PP [tok/s] | timed samples [tok/s] | 実文書比 |
+| --- | ---: | --- | ---: |
+| 実文書 / QSA UNION ON | **270.42** | 270.422 / 270.413 | baseline |
+| random token / QSA UNION ON | **213.42** | 215.955 / 210.895 | **-21.08%** |
+
+対応する計測成果物:
+
+- 実文書 / QSA UNION ON: `20261007-181635-742-bench-vulkan-b11427-ctx262144-f9d241c696c0.zip`
+- random / QSA UNION ON: `20261007-200749-569-bench-vulkan-b11427-ctx262144-5856b6e8f49f.zip`
+
+両runとも stderr で `qsa-union active (r4)` を確認した。
+
+### 過去のCLI / llama-benchとの対応
+
+過去の256k比較:
+
+| 経路 | 入力 | PP [tok/s] |
+| --- | --- | ---: |
+| llama-cli | 実文書 | 268.10 |
+| llama-bench | random token | 216.09 |
+
+今回の同一build・同一context比較:
+
+| 経路 | 入力 | PP [tok/s] |
+| --- | --- | ---: |
+| llama-bench b11427 | 実文書 | **270.42** |
+| llama-bench b11427 | random token | **213.42** |
+
+実文書 llama-bench は過去の実文書 llama-cli に対して **+0.86%**、random llama-bench は過去の random llama-bench に対して **-1.23%** であり、両系統とも過去測定とほぼ同じ性能帯を再現した。
+
+## 64k / 256k のまとめ
+
+| 経路 / 入力 | 64k PP [tok/s] | 256k PP [tok/s] | 64k→256k |
+| --- | ---: | ---: | ---: |
+| 過去 llama-cli / 実文書 | 337.45 | 268.10 | **-20.55%** |
+| 今回 llama-bench / 実文書 | **337.68** | **270.42** | **-19.92%** |
+| 今回 llama-bench / random | 316.10 | 213.42 | **-32.48%** |
+| 過去 llama-bench / random | 322.19 | 216.09 | **-32.93%** |
+
+同一build・同一contextでの random penalty は、
+
+- 64k: **-6.39%**
+- 256k: **-21.08%**
+
+まで拡大した。
+
+実文書に差し替えた llama-bench は、絶対PPだけでなく64k→256kのスケーリングも llama-cli とほぼ一致した。一方、random tokenでは以前と同様に長コンテキストで大きく性能が低下した。
+
+この結果から、以前観測した「llama-benchだけ256k PPが大きく低下する」現象については、llama-benchの実行経路そのものよりも、**標準のrandom-token workloadがVulkan QSA grouped-unionに不利であることが主要因**と判断できる。
+
+### QSA grouped-union内部機構について
+
+現在の実装では、64-query groupごとにQSAのselected IDをunionして重複を除去し、compact K/VをgatherしてFlash Attentionへ渡す。
+
+今回確認できたのは以下までである。
+
+- random token入力では、実文書入力よりPPが低下する。
+- その差は64kの約6%から256kの約21%へ拡大する。
+- 実文書 llama-bench は llama-cli の性能と長文スケーリングをほぼ再現する。
+
+一方、**random tokenでselected-ID overlapが低下し、union後のunique KV数が増えているかどうかはまだ直接測定していない**。
+
+次に内部原因まで確認する場合は、QSA union shaderが生成しているgroupごとのunique countを診断用に読み出し、実文書とrandomで比較する。
