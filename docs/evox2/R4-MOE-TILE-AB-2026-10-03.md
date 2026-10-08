@@ -262,3 +262,19 @@ B1 24.13に対してB2 25.00で、B内のばらつきが目立つ。
 
 追加の64k PP ABBAや全GPU向けrevertは現時点では不要。
 このABBA結果の分析ではソース/planを変更していない。
+
+ 
+## 2026-10-09: llama-bench QSA OFF計測との参考比較
+
+10/07～09の別調査で、`llama-bench`の実文書64k PPに以下の参考値が得られた。
+詳細: [llama-bench実文書入力・QSA union検証](R4-LLAMA-BENCH-REAL-PROMPT-2026-10-07.md)。
+
+| 実文書64k PP | MoE upstream相当 | MoE legacy | 改善幅 |
+| --- | ---: | ---: | ---: |
+| **このドキュメントの10/03同一build CLI ABBA** (b11376/Original) | **248.475** | **268.985** | **+8.25%** |
+| 10/07～09の別build bench参考値 (b11427→b11433/PLE16) | 243.34 | 268.81 | +10.47% |
+| 上記bench legacy再測定（Random先、実文書後、warmupあり、2rep） | 243.34 | 269.119772 | +10.59% |
+
+参考値の「upstream相当」243.34 tok/sはVulkan環境変数を3つ設定し忘れた測定。ソースでは `GGML_VK_QSA_UNION` と `GGML_VK_GET_ROWS_128X4` は未設定/`0`でどちらもOFFであり、今回legacy側で変えた**実効設定はMoE tileのみ**という解釈と整合する。
+
+ただし、**CLIとbench、OriginalとPLE16、buildとwarmup条件が異なる**ため、243.34→268.81 tok/sの+10.47%は厳密なMoE tile A/Bではない。本資料で確認済みのMoE tile単独の改善率は、あくまで**10/03の同一build ABBA +8.25%**である。別調査の参考値が近いことは傍証に留める。
