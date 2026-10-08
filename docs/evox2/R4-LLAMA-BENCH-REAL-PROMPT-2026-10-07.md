@@ -431,13 +431,44 @@ QSA OFFでは **randomの方が速い**という、ON時と逆の順位が出た
   - 実文書 run: `20261009-013438-820-bench-vulkan-b11433-ctx65536-d170bc3a04e8`
   - Random run: `20261009-013908-588-bench-vulkan-b11433-ctx65536-3b709d9654b4`
 
-### 追加予定: 64k QSA OFF の順序を逆転した再測定
+### 64k: QSA UNION OFF 追加測定（Random先→実文書後、各2回）
 
-2026-10-09時点で **夜間の再測定結果は未収録**。予定は **Random先・実文書後**、それぞれ64kで `repetitions=2`。新しいログが届いたら **warmupの有無・PP各反復値・環境変数・入力SHA・実行順**を確認し、上記の暫定OFF結果と並べて追記する。ここで結果を予測したり補完したりはしない。
+入力ZIP: `20261009-020541-191-bench-vulkan-b11433-ctx65536-68a3c2ffc33e.zip`。前回とは逆に **Random→実文書** の順で、それぞれ **warmupあり・timed repetitions=2** として再測定した。
+
+- random run: `20261009-015501-179-bench-vulkan-b11433-ctx65536-e41d256ce0b4`
+- 実文書 run: `20261009-020541-191-bench-vulkan-b11433-ctx65536-68a3c2ffc33e`
+- 共通: b11433 / `b1623a7aa`、Vulkan、モデルはUnsloth PLE16、ctx=65536、prompt=61789、`-n 0 -d 0 -b 2048 -ub 1024 -ctk f16 -ctv f16 -t 4 -ngl 999 -ncmoe 0 -fa auto`
+- Vulkan環境: `GGML_VK_QSA_UNION=0`、`GGML_VK_MOE_LEGACY_TILE_SELECTION=1`、`GGML_VK_GET_ROWS_128X4=0`。QSA診断STATSは未設定。
+- 実文書入力SHA256 `d08f051c05a72d73b959301269daa2d75682a9438773d48614c3655325add990`。両run Status OK / exit code 0。
+
+| 条件 | 順番 | Warmup | Timed rep数 | 実文書PP [tok/s] | Random PP [tok/s] | Randomの実文書比 |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| 初回（64k OFF） | 実文書→Random | なし | 1ずつ | 268.81 | 305.59 | +13.68% |
+| **再測定（64k OFF）** | **Random→実文書** | **あり** | **2ずつ** | **269.119772** | **306.514502** | **+13.90%** |
+
+再測定のtimed samples: random **306.680 / 306.349**、実文書 **269.087 / 269.153 tok/s**。先行runに対するPP変化はrandom約+0.30%、実文書約+0.12%で、各2回のばらつきも小さい。**QSA UNION OFFでrandomが速い現象は、順序を逆転しても再現**した。したがって測定順序・warmupのみを原因とする説明は支持しにくくなったが、OFF時のFA実行経路と入力依存性の内訳は未確定のまま。
+
+### 10/03のMoE tile単独A/Bとの比較（環境変数設定忘れの整理）
+
+一次資料: [R4-MOE-TILE-AB-2026-10-03.md](R4-MOE-TILE-AB-2026-10-03.md)。
+
+Vulkanソース上、`GGML_VK_QSA_UNION`、`GGML_VK_MOE_LEGACY_TILE_SELECTION`、`GGML_VK_GET_ROWS_128X4` は**いずれも文字列 `1` の場合だけON**である。よって「3変数とも未設定」と「QSA UNION=0 / GET_ROWS=0 / MoE legacy=1」の間で、**実効動作の差はMoE legacy tile選択だけ**。10/07の243.34 tok/sは、QSA OFFだけでなくMoE legacyもOFFだったため、QSA ONとの直接比較に使えない。
+
+10/03には、同じr4バイナリ b11376 / `c81b8bf78` で `GGML_VK_MOE_LEGACY_TILE_SELECTION=0/1` だけを切り替えた **llama-cli ABBA測定（Originalモデル、生成128）**が完了している。
+
+| 64k実文書PP比較 | MoE upstream方式（legacy=0） | MoE legacy方式（legacy=1） | 改善率 | 比較の位置づけ |
+| --- | ---: | ---: | ---: | --- |
+| 10/03 llama-cli ABBA平均（b11376 / Original） | 248.475 | 268.985 | **+8.25%** | **同一buildの厳密なMoE単独A/B** |
+| 10/07～09 llama-bench参考値（b11427→b11433 / PLE16） | 243.34 | 268.81 | **+10.47%** | **build、warmup等が異なるため交絡あり** |
+| 同参考値の再測定版 | 243.34 | 269.119772 | +10.59% | b11433 / warmupありの参考値 |
+
+10/03のGPU profileでは、MoE演算合計が **63.933→47.807秒（-25.22%）**、Flash Attentionが **108.658→108.654秒（ほぼ同じ）**、PPのGPU演算合計が **253.097→230.763秒（-8.82%）**。同一build・入力・条件でMoE切り替えに由来するPP改善を別途確認済みなので、今回の約10%の差も**MoE tile方式の寄与と整合**する。ただしOriginalとPLE16、llama-cliとllama-bench、build等の差があるため、**243.34→268.81の+10.47%すべてをMoEの因果効果と確定することはできない**。
+
+記事では本筋（実文書 vs random / QSA union効率）から独立した「環境変数の設定忘れから過去のMoE tile検証につながった」補足として扱う。QSA UNION ON/STATS ON とOFF/STATS OFFのPP差を純粋なQSA改善率として使わない。
 
 ### ここまでの暫定結論とr4取り込み
 
 1. `llama-bench` と `llama-cli` の以前のPP差は、実文書入力を使用するとほぼ消える（b11427の64k/256k比較）。実行経路の差だけでなく、**比較に使ったworkload差**が主要な交絡要因だった。
 2. b11433の直接診断で、**randomでは実文書よりunique/padded unionが明確に大きい**ことを64k・256k双方で確認した。とくに256kの差が大きく、長文でrandom PPが大きく低下する事実と整合する。
-3. QSA OFF 64kでは逆順位の単回測定が得られたが、追加の再測定が必要。UNION OFFは別FA経路へ移るため、**原因の寄与割合や特定kernelの寄与は未確定**。
+3. QSA OFF 64kではrandomの方が速いという逆順位が、**順序反転・warmupあり・各2回の追加実測でも再現**。UNION OFFは別FA経路へ移るため、**原因の寄与割合や特定kernelの寄与は未確定**。
 4. 通常のr4高速化を再開する際、**実文書入力は汎用llama-bench機能、union統計はVULKAN-002の診断付属機能**として、変更を分離して本流へ移植する。現時点では調査ブランチのみ。
