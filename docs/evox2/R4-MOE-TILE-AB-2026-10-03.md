@@ -277,4 +277,4 @@ B1 24.13に対してB2 25.00で、B内のばらつきが目立つ。
 
 参考値の「upstream相当」243.34 tok/sはVulkan環境変数を3つ設定し忘れた測定。ソースでは `GGML_VK_QSA_UNION` と `GGML_VK_GET_ROWS_128X4` は未設定/`0`でどちらもOFFであり、今回legacy側で変えた**実効設定はMoE tileのみ**という解釈と整合する。
 
-ただし、**CLIとbench、OriginalとPLE16、buildとwarmup条件が異なる**ため、243.34→268.81 tok/sの+10.47%は厳密なMoE tile A/Bではない。本資料で確認済みのMoE tile単独の改善率は、あくまで**10/03の同一build ABBA +8.25%**である。別調査の参考値が近いことは傍証に留める。
+ただし、**243.34→268.81のbench 2測定でもbuild・warmup条件が異なり**、加えて10/03のCLI ABBAと比べると**実行ツール・Original対PLE16というモデル形式も異なる**ため、+10.47%は厳密なMoE tile A/Bではない。本資料で確認済みのMoE tile単独の改善率は、あくまで**10/03の同一build ABBA +8.25%**である。別調査の参考値が近いことは傍証に留める。
