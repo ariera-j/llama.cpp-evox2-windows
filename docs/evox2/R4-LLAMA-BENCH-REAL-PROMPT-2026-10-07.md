@@ -345,3 +345,99 @@
 一方、**random tokenでselected-ID overlapが低下し、union後のunique KV数が増えているかどうかはまだ直接測定していない**。
 
 次に内部原因まで確認する場合は、QSA union shaderが生成しているgroupごとのunique countを診断用に読み出し、実文書とrandomで比較する。
+
+
+---
+
+## b11433 追加検証: VULKAN-002 union 診断と 64k QSA OFF（2026-10-09）
+
+この節は b11427 の実文書対応 llama-bench 検証（上記）に続く、b11433 の **union統計を直接取得した診断実験**を記録する。実行場所は Evo-X2 / Vulkan。実装・仕様は [R4-VULKAN002-QSA-UNION-STATS-2026-10-08.md](R4-VULKAN002-QSA-UNION-STATS-2026-10-08.md) を参照。
+
+### 共通条件と実験の違い
+
+- build: **b11433**（診断機能を含む、実行ファイルメタデータのcommit表記は `b1623a7aa`）
+- モデル: Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS、PLE16変換モデル
+- context / prompt: **64k = 65,536 / 61,789 tokens**、**256k = 262,144 / 255,181 tokens**
+- `-n 0 -d 0 -b 2048 -ub 1024 -ctk f16 -ctv f16 -t 4 -ngl 999 -ncmoe 0 -fa auto`
+- 実文書は `head-tail` 入力。ソース入力SHA-256: `d08f051c05a72d73b959301269daa2d75682a9438773d48614c3655325add990`（`nlp-survey-ch3-d32-b1.txt`）
+- random は入力ファイルを指定しない標準 `llama-bench` の token ID 生成
+- Vulkan共通: `GGML_VK_MOE_LEGACY_TILE_SELECTION=1`、`GGML_VK_GET_ROWS_128X4=0`
+- QSA ON 診断: `GGML_VK_QSA_UNION=1`、`GGML_VK_QSA_UNION_STATS=1`、`GGML_VK_QSA_UNION_STATS_KV_BIN=16384`
+- QSA OFF: `GGML_VK_QSA_UNION=0`。STATSも無効。QSA OFF は QSAモデル全体を無効にする指定ではなく、**grouped-unionの専用経路を使用しない**という意味。
+
+**重要:** 診断 ON のPP値はGPU統計コピー・同期・CSV処理の影響を受け得る。QSA ON診断とQSA OFF通常経路のPP値は、**厳密なON/OFF速度向上率の算定に用いない**。入力差の傾向と内部統計を見る実験である。実文書/ランダムの診断も測定回数・warmup条件を下記のとおり区別する。
+
+### 64k / 256k: 実文書とrandomの直接比較（QSA ON / STATS ON）
+
+| Context | 入力 | Timed repetitions | Warmup | PP [tok/s] | Unique union平均 | Padded union平均 | Unique / selected | 有効group合計 | Dropped |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64k | 実文書 | 2 | あり | **336.58** | 17,512.02 | 17,638.17 | 13.36% | 16,920 | 0 |
+| 64k | Random | 1 | あり | **315.62** | 24,859.00 | 24,984.69 | 18.96% | 11,280 | 0 |
+| 256k | 実文書 | 1 | なし | **269.57** | 19,703.62 | 19,829.13 | 15.01% | 41,904 | 0 |
+| 256k | Random | 1 | なし | **215.46** | 32,875.50 | 33,001.68 | 25.05% | 41,904 | 0 |
+
+- 64k: randomは実文書に対してPP **-6.23%**。unique union平均は **約41.95%増**、padded union平均は **約41.65%増**。
+- 256k: randomは実文書に対してPP **-20.07%**。unique union平均は **約66.85%増**、padded union平均は **約66.43%増**。
+- 64kは**実文書のrepetitions=2、random=1（どちらもwarmupあり）**。統計にはwarmupとtimedの両方が含まれるため、group数も異なる。比較には各測定内の `groups` で重み付けした平均を使用している。
+- 256kは両方 `repetitions=1`・`NoWarmup=true`。64k・256kとも `dropped_groups=0`、ステータスOK / exit code 0。
+- ON実行のstderrには、初期KV長でのfallbackと、その後の `qsa-union active (r4)` を確認した。
+- `selected` は `n_batch*n_top` の**候補slot総数**（無効indexも含む）。したがって `unique/selected` は便利な効率指標だが、**重複率だけを厳密に分離した値ではない**。
+
+#### KV長別の差（各16k区間、unique unionのgroup加重平均）
+
+| KV bin開始 | 64k 実文書 | 64k Random | 256k 実文書 | 256k Random |
+| ---: | ---: | ---: | ---: | ---: |
+| 32,768 | 16,863 | 23,257 | 16,908 | 23,033 |
+| 49,152 | 18,289 | 26,776 | 18,090 | 26,618 |
+| 65,536 | — | — | 19,162 | 29,866 |
+| 81,920 | — | — | 19,409 | 31,387 |
+| 98,304 | — | — | 19,731 | 33,384 |
+| 114,688 | — | — | 19,982 | 34,306 |
+| 131,072 | — | — | 19,752 | 34,490 |
+| 147,456 | — | — | 19,894 | 33,952 |
+| 163,840 | — | — | 20,231 | 34,834 |
+| 180,224 | — | — | 20,388 | 35,345 |
+| 196,608 | — | — | 20,234 | 35,456 |
+| 212,992 | — | — | 20,328 | 35,948 |
+| 229,376 | — | — | 20,808 | 36,591 |
+| 245,760 | — | — | 21,624 | 36,266 |
+
+**読み取り:** 256kの実文書では長文域でunique unionが概ね2万前後に留まるのに対し、randomでは3.5万～3.7万近くまで増加した。randomで selected ID集合の共有が少なくなるという従来の仮説を支持する。union後にFAが処理するpadded KV長も同時に増加している。
+
+ただし、この統計だけで **PP速度差の100%をunion経路の違いによるものと確定することはできない**。QSA OFFでは別のFA経路を選択し得るほか、MoE等も入力依存である。
+
+### 64k: QSA UNION OFF の暫定対照測定（2026-10-09、各1回）
+
+QSA ON診断のあと、**grouped-unionのみOFF**とし、64kの実文書・randomを各1回測定した。ON測定と同じb11433・入力ファイルSHA・context・prompt数・KV型・batch等を使用した。Vulkan環境変数は `GGML_VK_QSA_UNION=0`、`GGML_VK_MOE_LEGACY_TILE_SELECTION=1`、`GGML_VK_GET_ROWS_128X4=0`。STATSは設定されていない。
+
+| 条件 | 実文書PP [tok/s] | Random PP [tok/s] | Randomの実文書比 |
+| --- | ---: | ---: | ---: |
+| QSA ON、STATS ON（参考・測定回数とwarmup条件が異なる） | 336.58 | 315.62 | -6.23% |
+| **QSA OFF、STATS OFF（NoWarmup・各1回）** | **268.81** | **305.59** | **+13.68%** |
+
+QSA OFFでは **randomの方が速い**という、ON時と逆の順位が出た。条件のメタデータ上、明らかな設定間違いは見当たらず、両測定ともステータスOK / exit code 0。診断OFFなのでunion統計CSVはない。
+
+ただし、実文書→randomの順で、warmupなし・各1回の測定であるため、GPUクロック・初回状態・測定順序などの影響が残る。**逆転の原因は未確定で、現時点では暫定結果**として扱う。過去の64k `243.34 tok/s` の環境変数を一括設定し忘れた測定はMoE tile等も異なるので、この純粋なQSA OFF対照とは分けて扱う。
+
+#### 関連する元データ（ZIPにreal/randomの両方を収録）
+
+- **64k QSA ON/STATS ON**: `20261009-003514-594-bench-vulkan-b11433-ctx65536-90a7d414f967.zip`
+  - 実文書 run: `20261009-002507-004-bench-vulkan-b11433-ctx65536-838d3f383d73`
+  - Random run: `20261009-003514-594-bench-vulkan-b11433-ctx65536-90a7d414f967`
+- **256k QSA ON/STATS ON**: `20261009-010950-147-bench-vulkan-b11433-ctx262144-26785f0f75a6.zip`
+  - 実文書 run: `20261009-005225-937-bench-vulkan-b11433-ctx262144-1262e2597b8c`
+  - Random run: `20261009-010950-147-bench-vulkan-b11433-ctx262144-26785f0f75a6`
+- **64k QSA OFF/STATS OFF**: `20261009-013908-588-bench-vulkan-b11433-ctx65536-3b709d9654b4.zip`
+  - 実文書 run: `20261009-013438-820-bench-vulkan-b11433-ctx65536-d170bc3a04e8`
+  - Random run: `20261009-013908-588-bench-vulkan-b11433-ctx65536-3b709d9654b4`
+
+### 追加予定: 64k QSA OFF の順序を逆転した再測定
+
+2026-10-09時点で **夜間の再測定結果は未収録**。予定は **Random先・実文書後**、それぞれ64kで `repetitions=2`。新しいログが届いたら **warmupの有無・PP各反復値・環境変数・入力SHA・実行順**を確認し、上記の暫定OFF結果と並べて追記する。ここで結果を予測したり補完したりはしない。
+
+### ここまでの暫定結論とr4取り込み
+
+1. `llama-bench` と `llama-cli` の以前のPP差は、実文書入力を使用するとほぼ消える（b11427の64k/256k比較）。実行経路の差だけでなく、**比較に使ったworkload差**が主要な交絡要因だった。
+2. b11433の直接診断で、**randomでは実文書よりunique/padded unionが明確に大きい**ことを64k・256k双方で確認した。とくに256kの差が大きく、長文でrandom PPが大きく低下する事実と整合する。
+3. QSA OFF 64kでは逆順位の単回測定が得られたが、追加の再測定が必要。UNION OFFは別FA経路へ移るため、**原因の寄与割合や特定kernelの寄与は未確定**。
+4. 通常のr4高速化を再開する際、**実文書入力は汎用llama-bench機能、union統計はVULKAN-002の診断付属機能**として、変更を分離して本流へ移植する。現時点では調査ブランチのみ。
