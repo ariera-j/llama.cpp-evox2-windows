@@ -1263,6 +1263,12 @@ struct ggml_backend_vk_context {
     bool qsa_union_active_logged = false;
     bool qsa_union_fallback_logged = false;
 
+    // Optional VULKAN-002 diagnostics. Records are copied on the GPU and read only at backend sync.
+    vk_buffer qsa_union_stats_buffer;
+    uint32_t qsa_union_stats_records {};
+    uint64_t qsa_union_stats_dropped {};
+    uint64_t qsa_union_stats_sync {};
+
     size_t semaphore_idx, event_idx;
     ggml_vk_garbage_collector gc;
     size_t prealloc_size_x, prealloc_size_y, prealloc_size_split_k, prealloc_size_add_rms_partials, prealloc_size_add_rms_partials_offset;
