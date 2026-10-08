@@ -137,7 +137,7 @@ random対照では`-InputFile`と`-PromptSlice`を削除し、他を同じにす
 
 10/07の64k実文書 `243.34 tok/s` はQSAとMoE legacy等の環境変数を**すべて未設定**で取得された。Vulkan実装では `GGML_VK_QSA_UNION`、`GGML_VK_GET_ROWS_128X4` は未設定でも明示的な`0`でもOFFなので、今回のQSA OFF実文書 `268.81 / 269.12 tok/s` との差で**実効設定が異なるのは `GGML_VK_MOE_LEGACY_TILE_SELECTION`**。
 
-独立した [10/03のMoE tile A/B](R4-MOE-TILE-AB-2026-10-03.md) は、b11376で同一実行ファイル・Originalモデルのcli ABBAにより upstream 248.475 → legacy 268.985 tok/s（**+8.25%**）を確認。GPU profileでもMoE演算合計は63.933→47.807秒（**-25.22%**）で、FAはほぼ同じ。今回のb11427→b11433・PLE16・bench間参考比較 243.34→268.81（**+10.47%**）と同方向・近い大きさだが、**異なるbuild・モデル形式・ツール・warmupのため、この+10.47%自体を厳密なMoE単独効果とみなしてはいけない**。
+独立した [10/03のMoE tile A/B](R4-MOE-TILE-AB-2026-10-03.md) は、b11376で同一実行ファイル・Originalモデルのcli ABBAにより upstream 248.475 → legacy 268.985 tok/s（**+8.25%**）を確認。GPU profileでもMoE演算合計は63.933→47.807秒（**-25.22%**）で、FAはほぼ同じ。別調査のbench参考比較 243.34→268.81（**+10.47%**）と同方向・近い大きさだが、**そのbench同士でもbuildとwarmupが異なり、10/03のCLI ABBAとはモデル形式・ツールも異なる**。この+10.47%自体を厳密なMoE単独効果とみなしてはいけない。
 
 ### 本流移植前に残る確認
 
