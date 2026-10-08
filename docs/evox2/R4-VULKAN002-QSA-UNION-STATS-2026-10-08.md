@@ -121,18 +121,28 @@ random対照では`-InputFile`と`-PromptSlice`を削除し、他を同じにす
 | --- | --- | --- | --- | --- | --- |
 | ON | ON | 64k | 実行成功、CSV取得 | 実行成功、CSV取得 | 0 / 0 |
 | ON | ON | 256k | 実行成功、CSV取得 | 実行成功、CSV取得 | 0 / 0 |
-| OFF | OFF | 64k | 実行成功（各1回） | 実行成功（各1回） | 統計対象外 |
+| OFF | OFF | 64k | 初回1回＋再測定2回成功 | 初回1回＋再測定2回成功 | 統計対象外 |
 
 64k QSA ON の実文書は timed repetitions=2、randomは1で、**どちらもwarmupあり**。256k QSA ON は両方 `NoWarmup=true`、repetitions=1。16k binごとに出力されたCSVから、group数を重みとしたunique/padded平均と `sum(unique)/sum(selected)` を算出できることを確認した。
 
 256k QSA ONでは、randomのunique union平均は実文書比約**+66.85%**で、入力内容によるunion効率の差が大きい。これは長文PP差の有力な説明だが、PP低下の寄与率まで確定するものではない。
 
-64k QSA OFFではrandom PPが実文書PPより速い暫定結果が出た。測定順序・warmup条件・反復回数による揺らぎの可能性があり、**Random先／実文書後、各2回の追加実験は結果待ち**。現在のログを上書きせず後日追記する。
+64k QSA OFFではrandom PPが実文書PPより速い結果が**再現した**。初回は実文書→random（NoWarmup、各1回）で **268.81 vs 305.59 tok/s**（random +13.68%）。追加測定は順序を**random→実文書**と逆転し、warmupあり・各2回で **実文書269.119772 vs random306.514502 tok/s**（random +13.90%）。追加測定の2サンプルは実文書269.087/269.153、random306.680/306.349 tok/s。共通環境: `GGML_VK_QSA_UNION=0`、`GGML_VK_MOE_LEGACY_TILE_SELECTION=1`、`GGML_VK_GET_ROWS_128X4=0`。両runの終了ステータスOK。
+
+追加測定のZIP: `20261009-020541-191-bench-vulkan-b11433-ctx65536-68a3c2ffc33e.zip`（real/random収録）。詳細とrun ID、実文書入力SHAは [実文書bench検証メモ](R4-LLAMA-BENCH-REAL-PROMPT-2026-10-07.md) に追記した。
+
+**測定順序やwarmupだけでは逆転を説明しにくい**ことは確認できた一方、grouped-union OFFでは通常のFA経路が選ばれるため、速度逆転の内部要因は未特定である。
+
+### MoE tile単独A/Bとの関連
+
+10/07の64k実文書 `243.34 tok/s` はQSAとMoE legacy等の環境変数を**すべて未設定**で取得された。Vulkan実装では `GGML_VK_QSA_UNION`、`GGML_VK_GET_ROWS_128X4` は未設定でも明示的な`0`でもOFFなので、今回のQSA OFF実文書 `268.81 / 269.12 tok/s` との差で**実効設定が異なるのは `GGML_VK_MOE_LEGACY_TILE_SELECTION`**。
+
+独立した [10/03のMoE tile A/B](R4-MOE-TILE-AB-2026-10-03.md) は、b11376で同一実行ファイル・Originalモデルのcli ABBAにより upstream 248.475 → legacy 268.985 tok/s（**+8.25%**）を確認。GPU profileでもMoE演算合計は63.933→47.807秒（**-25.22%**）で、FAはほぼ同じ。今回のb11427→b11433・PLE16・bench間参考比較 243.34→268.81（**+10.47%**）と同方向・近い大きさだが、**異なるbuild・モデル形式・ツール・warmupのため、この+10.47%自体を厳密なMoE単独効果とみなしてはいけない**。
 
 ### 本流移植前に残る確認
 
 - 診断OFFで追加処理がなく、r4の通常PP/TGに性能退行がないかを比較する。
-- 夜間の64k QSA OFF再測定を確認し、順位逆転の再現性を判定する（本流移植の必須条件とはしない）。
+- 64k QSA OFFの順序反転再測定は完了。残るのはFA経路・MoEなど**逆転の機構**の切り分けであり、本流移植の必須条件とはしない。
 - 将来必要なら、複数文書ジャンル・レイヤー別・適用経路別の診断範囲を拡張する。
 
 ## 今後の扱い
