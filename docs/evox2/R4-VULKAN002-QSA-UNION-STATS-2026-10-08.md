@@ -1,6 +1,6 @@
 # VULKAN-002: QSA grouped-union 診断機能（試験実装）
 
-更新日: 2026-10-08
+更新日: 2026-10-09
 
 ## 位置づけ・状態
 
@@ -8,7 +8,7 @@
 - 起点: `investigation/llama-bench-real-prompt-20261007`（`e3466e8fa769928140f81c93c84889860732ff82`）
 - 実文書入力オプション `-f`, `--prompt-slice`, `-c` は汎用計測機能として維持する。
 - union統計はVULKAN-002の**診断用付属機能**。本線r4やr5には**未移植**。
-- **Windows / Evo-X2 での実ビルド・GPU実行は未検証**。マージ前に下記チェックが必要。
+- **Evo-X2 / Vulkan b11433で実測済み**（2026-10-09）。64k・256kの実文書/random双方で診断CSVを回収し、`dropped_groups=0`を確認。QSA OFF 64kの対照測定も取得済み。ただし通常性能への影響・他環境での動作・本線r4への移植は未確認。
 
 ## 目的
 
@@ -65,7 +65,7 @@ CSVの各行は**backend同期間の区間ごとの集約**であり、全runの
 
 ただしSTATS=1のPP値は、GPUコピーや追加barrier、readback、CSV書き込みを含み、通常のPP性能の指標には使わない。**性能測定はSTATS=0、union効率の比較はSTATS=1**で分離する。
 
-## Evo-X2での最初の動作確認
+## Evo-X2での動作確認手順
 
 PowerShellから、次の3変数を同じターミナルで設定（既存のVulkan実測条件を維持）。
 
@@ -112,6 +112,28 @@ random対照では`-InputFile`と`-PromptSlice`を削除し、他を同じにす
 - `kv_bin_start`が`16384`の倍数になり、64k付近で対応するbinへ入るか。
 - real/randomのunique・padded平均がどの程度違うか。ただし性能差のすべてをunion率だけに帰属しない。
 - 64kで妥当性確認後、256kや文書ジャンル比較へ展開。
+
+## 実機測定と現時点の確認状況（2026-10-09）
+
+詳しい測定条件、数値、入力SHA、各ZIP名、QSA OFFで生じた速度順位逆転とその留保は [llama-bench実文書入力モード／b11433追加検証](R4-LLAMA-BENCH-REAL-PROMPT-2026-10-07.md#b11433-追加検証-vulkan-002-union-診断と-64k-qsa-off2026-10-09) に記録する。
+
+| QSA UNION | Stats | Context | 実文書 | Random | 記録漏れ |
+| --- | --- | --- | --- | --- | --- |
+| ON | ON | 64k | 実行成功、CSV取得 | 実行成功、CSV取得 | 0 / 0 |
+| ON | ON | 256k | 実行成功、CSV取得 | 実行成功、CSV取得 | 0 / 0 |
+| OFF | OFF | 64k | 実行成功（各1回） | 実行成功（各1回） | 統計対象外 |
+
+64k QSA ON の実文書は timed repetitions=2、randomは1で、**どちらもwarmupあり**。256k QSA ON は両方 `NoWarmup=true`、repetitions=1。16k binごとに出力されたCSVから、group数を重みとしたunique/padded平均と `sum(unique)/sum(selected)` を算出できることを確認した。
+
+256k QSA ONでは、randomのunique union平均は実文書比約**+66.85%**で、入力内容によるunion効率の差が大きい。これは長文PP差の有力な説明だが、PP低下の寄与率まで確定するものではない。
+
+64k QSA OFFではrandom PPが実文書PPより速い暫定結果が出た。測定順序・warmup条件・反復回数による揺らぎの可能性があり、**Random先／実文書後、各2回の追加実験は結果待ち**。現在のログを上書きせず後日追記する。
+
+### 本流移植前に残る確認
+
+- 診断OFFで追加処理がなく、r4の通常PP/TGに性能退行がないかを比較する。
+- 夜間の64k QSA OFF再測定を確認し、順位逆転の再現性を判定する（本流移植の必須条件とはしない）。
+- 将来必要なら、複数文書ジャンル・レイヤー別・適用経路別の診断範囲を拡張する。
 
 ## 今後の扱い
 
