@@ -1,6 +1,9 @@
 #include "../ggml-mtp-diag.h"
 #include "ggml-vulkan-common.h"
 
+#include <fstream>
+#include <iomanip>
+
 namespace {
 inline std::ostream & operator<<(std::ostream & os, vk::Buffer buffer) {
     return os << static_cast<VkBuffer>(buffer);
@@ -1382,6 +1385,120 @@ vk_fa_tuning_params get_fa_tuning_params(const vk_device& device, uint32_t hsk, 
 }
 
 static constexpr uint32_t VK_QSA_GROUP = 64;
+
+static constexpr uint32_t VK_QSA_UNION_STATS_CAPACITY = 65536;
+// Matches the 4 uint32 values written by vulkan-shaders/qsa_union.comp.
+struct vk_qsa_union_stats_record {
+    uint32_t padded;
+    uint32_t unique;
+    uint32_t selected;
+    uint32_t n_kv;
+};
+static_assert(sizeof(vk_qsa_union_stats_record) == 4 * sizeof(uint32_t));
+
+static bool ggml_vk_qsa_union_stats_enabled() {
+    static const bool enabled = [] {
+        const char * env = getenv("GGML_VK_QSA_UNION_STATS");
+        return env && strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static uint32_t ggml_vk_qsa_union_stats_kv_bin() {
+    static const uint32_t size = [] {
+        const char * env = getenv("GGML_VK_QSA_UNION_STATS_KV_BIN");
+        if (!env) {
+            return 16384u;
+        }
+        char * end = nullptr;
+        const unsigned long value = strtoul(env, &end, 10);
+        if (end != env && *end == '\0' && value >= 1024 && value <= 262144 && (value & (value - 1)) == 0) {
+            return (uint32_t) value;
+        }
+        std::cerr << "ggml_vulkan: invalid GGML_VK_QSA_UNION_STATS_KV_BIN, using 16384\n";
+        return 16384u;
+    }();
+    return size;
+}
+
+// Called *after* ggml_vk_synchronize has waited for the compute fence.
+// No per-group CPU readback or logging is performed in the dispatch path.
+static void ggml_vk_qsa_union_stats_flush(ggml_backend_vk_context * ctx) {
+    const uint32_t n = ctx->qsa_union_stats_records;
+    const uint64_t dropped = ctx->qsa_union_stats_dropped;
+    if (n == 0) {
+        if (dropped != 0) {
+            std::cerr << "ggml_vulkan: QSA union stats dropped " << dropped << " records\n";
+            ctx->qsa_union_stats_dropped = 0;
+        }
+        return;
+    }
+
+    std::vector<vk_qsa_union_stats_record> records(n);
+    ggml_vk_buffer_read(ctx->qsa_union_stats_buffer, 0, records.data(), records.size() * sizeof(records[0]));
+
+    struct accumulator {
+        uint64_t groups = 0;
+        uint64_t unique_sum = 0;
+        uint64_t padded_sum = 0;
+        uint64_t selected_sum = 0;
+        uint32_t unique_min = UINT32_MAX;
+        uint32_t unique_max = 0;
+        uint32_t padded_min = UINT32_MAX;
+        uint32_t padded_max = 0;
+    };
+
+    const uint32_t width = ggml_vk_qsa_union_stats_kv_bin();
+    std::map<uint32_t, accumulator> by_kv;
+    for (const auto & record : records) {
+        const uint32_t bin = (record.n_kv / width) * width;
+        auto & a = by_kv[bin];
+        ++a.groups;
+        a.unique_sum += record.unique;
+        a.padded_sum += record.padded;
+        a.selected_sum += record.selected;
+        a.unique_min = std::min(a.unique_min, record.unique);
+        a.unique_max = std::max(a.unique_max, record.unique);
+        a.padded_min = std::min(a.padded_min, record.padded);
+        a.padded_max = std::max(a.padded_max, record.padded);
+    }
+
+    const char * file_env = getenv("GGML_VK_QSA_UNION_STATS_FILE");
+    const std::string file = file_env && *file_env ? file_env : "qsa-union-stats.csv";
+    std::ifstream existing(file, std::ios::binary | std::ios::ate);
+    const bool needs_header = !existing || existing.tellg() == 0;
+    existing.close();
+    std::ofstream out(file, std::ios::app);
+    if (!out) {
+        std::cerr << "ggml_vulkan: unable to open QSA union stats CSV: " << file << "\n";
+    } else {
+        if (needs_header) {
+            out << "sync,kv_bin_start,kv_bin_end,groups,unique_mean,unique_min,unique_max,"
+                   "padded_mean,padded_min,padded_max,selected_mean,unique_over_selected,"
+                   "padded_over_selected,dropped_groups\n";
+        }
+        out << std::fixed << std::setprecision(6);
+        for (const auto & [start, a] : by_kv) {
+            const double denom = (double) a.groups;
+            const double selected = (double) a.selected_sum;
+            out << ctx->qsa_union_stats_sync << ',' << start << ',' << start + width << ','
+                << a.groups << ',' << a.unique_sum / denom << ',' << a.unique_min << ',' << a.unique_max << ','
+                << a.padded_sum / denom << ',' << a.padded_min << ',' << a.padded_max << ','
+                << a.selected_sum / denom << ','
+                << (selected > 0 ? a.unique_sum / selected : 0.0) << ','
+                << (selected > 0 ? a.padded_sum / selected : 0.0) << ','
+                << dropped << '\n';
+        }
+    }
+
+    if (dropped) {
+        std::cerr << "ggml_vulkan: QSA union stats dropped " << dropped << " records (capacity "
+                  << VK_QSA_UNION_STATS_CAPACITY << ")\n";
+    }
+    ++ctx->qsa_union_stats_sync;
+    ctx->qsa_union_stats_records = 0;
+    ctx->qsa_union_stats_dropped = 0;
+}
 static constexpr uint32_t VK_QSA_SHARED_BYTES = (4096 + 32 + 1) * sizeof(uint32_t);
 
 static bool ggml_vk_qsa_union_enabled() {
@@ -8220,6 +8337,24 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
         ggml_vk_dispatch_pipeline(ctx, subctx, ctx->device->pipeline_qsa_union, {tb, ub, cb}, upc, {1, 1, 1});
         ggml_vk_sync_buffers(ctx, subctx);
 
+        if (ggml_vk_qsa_union_stats_enabled()) {
+            if (!ctx->qsa_union_stats_buffer) {
+                ctx->qsa_union_stats_buffer = ggml_vk_create_buffer_device(
+                    ctx->device, (size_t) VK_QSA_UNION_STATS_CAPACITY * sizeof(vk_qsa_union_stats_record));
+                GGML_LOG_INFO("ggml_vulkan: QSA union stats enabled (capacity=%u, kv_bin=%u)\n",
+                              VK_QSA_UNION_STATS_CAPACITY, ggml_vk_qsa_union_stats_kv_bin());
+            }
+            if (ctx->qsa_union_stats_records < VK_QSA_UNION_STATS_CAPACITY) {
+                ggml_vk_buffer_copy_async(subctx, ctx->qsa_union_stats_buffer,
+                    (size_t) ctx->qsa_union_stats_records * sizeof(vk_qsa_union_stats_record),
+                    ctx->prealloc_y, cb.offset, sizeof(vk_qsa_union_stats_record));
+                ++ctx->qsa_union_stats_records;
+                ggml_vk_sync_buffers(ctx, subctx);
+            } else {
+                ++ctx->qsa_union_stats_dropped;
+            }
+        }
+
         const vk_qsa_gather_push_constants gpc {capacity, hsk / 2, hsv / 2,
             (uint32_t) (k->nb[1] / 4), (uint32_t) (v->nb[1] / 4),
             (uint32_t) (k->nb[2] / 4), (uint32_t) (v->nb[2] / 4),
@@ -13674,6 +13809,10 @@ void ggml_vk_synchronize(ggml_backend_vk_context * ctx) {
             memcpy(cpy.dst, cpy.src, cpy.n);
         }
         ctx->compute_ctx.reset();
+    }
+
+    if (ctx->qsa_union_stats_records || ctx->qsa_union_stats_dropped) {
+        ggml_vk_qsa_union_stats_flush(ctx);
     }
 }
 
