@@ -215,7 +215,7 @@
 - 実文書 / QSA UNION ON: `20261007-150636-426-bench-vulkan-b11427-ctx65536-50463dfce096.zip`
 - random / QSA UNION ON: `20261007-153025-382-bench-vulkan-b11427-ctx65536-835d1d6f93a4.zip`
 
-最初の実文書 run では Vulkan tuning 用の3環境変数を設定していなかった。この run は参考値として残すが、`GGML_VK_QSA_UNION` だけでなく MoE legacy tile と GET_ROWS 設定も同時に異なるため、243.34 → 337.68 tok/s の差を QSA UNION 単独の効果とは扱わない。
+最初の実文書 run では Vulkan tuning 用の3環境変数を設定していなかった。この run は参考値として残すが、ON設定との比較で**実効動作が変化するのはQSA UNIONとMoE legacy tile選択の2つ**である（GET_ROWSは未設定も明示的な`0`もOFF）。したがって243.34 → 337.68 tok/s の差を QSA UNION 単独の効果とは扱わない。
 
 ### 過去の CLI / llama-bench との対応
 
