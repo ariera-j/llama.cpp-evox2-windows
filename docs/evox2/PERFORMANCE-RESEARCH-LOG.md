@@ -465,3 +465,276 @@ This is a provisional ordering from today's research, not a ROADMAP change.
 9. Revisit #25666 / #29679 only if MTP small-batch Vulkan verification remains a demonstrated bottleneck.
 10. Promote only confirmed items from this research log into ROADMAP/performance-candidate documents.
 
+
+---
+
+## 2026-10-09
+
+### Scope, snapshots, and restart decision
+
+Observed on 2026-10-09 JST, around 10:01-10:07. This entry supplements the
+2026-10-07 research rather than replacing its historical observations.
+
+- Document branch before this update: `r4/upstream-refresh-20261002`,
+  `13245a485d0e154d82afe0126b4350ecd651e27c`.
+- r4 pinned upstream remains `bed0a856606ee4a24a164066f73d2379447033f5`.
+- Upstream master observed at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`,
+  committed 2026-10-08 19:56 UTC; latest build release **b11514**, published
+  20:14 UTC (2026-10-09 05:14 JST), targets the same SHA.
+- GitHub compare reports **144 commits ahead** of the r4 upstream pin.
+  This is a snapshot, not a decision to adopt all 144 changes.
+- GitHub's `releases/latest` endpoint returns the stable **v0.6.0** release.
+  The newer b11514 build is marked prerelease; use the release collection and
+  exact SHA when identifying the current development baseline.
+- Main target remains Windows / Evo-X2 / gfx1151 / Qwen3.8-Flash-Next,
+  primarily real-document 128k/256k, f16 K/V, single sequence.
+
+**Restart conclusion:** preserve r4 and its measurement branches; establish a
+separate clean current-upstream comparison, then audit the necessary downstream
+deltas. Follow the existing [ROADMAP restart policy](ROADMAP.md#planned-restart-sequence-after-the-qwen35-long-context-study):
+COMMON-001 if still needed, then COMMON-003/VULKAN-001 and a matched
+AgentionAI/Unsloth comparison. The 10/07 entry's provisional MTP-first ordering
+must not be read as a requirement to solve all MTP overhead before that baseline.
+MTP correctness remains a gate for adopting MTP changes, not a blocker to an
+independent MTP-OFF baseline.
+
+This update is research only: no upstream repin, implementation, branch merge,
+toolchain change, or new Windows benchmark was performed.
+
+Snapshot sources:
+
+- https://github.com/ggml-org/llama.cpp/commit/de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b
+- https://github.com/ggml-org/llama.cpp/releases/tag/b11514
+- https://github.com/ggml-org/llama.cpp/compare/bed0a856606ee4a24a164066f73d2379447033f5...de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b
+
+### Carry forward the completed CLI/bench investigation
+
+The newer measurements are on
+`investigation/vulkan-qsa-union-stats-20261008`, observed at
+`979ef17eeff14440a58c866a966b355a1b63b17e`; they are not part of the document
+branch's implementation. Preserve that distinction when choosing a new base.
+
+| Measurement path, grouped-union ON | 64k PP, tok/s | 256k PP, tok/s |
+|---|---:|---:|
+| Earlier real-document llama-cli | 337.45 | 268.10 |
+| b11427 real-document llama-bench | 337.68 | 270.42 |
+| b11427 random-token llama-bench | 316.10 | 213.42 |
+
+The historical 256k tool gap is now substantially explained by **input workload
+dependence**, with real-document bench reproducing CLI's performance band.
+This is not a token-for-token equivalence claim: bench uses raw tokenization and
+head-tail slicing, without CLI's chat template.
+
+The b11433 diagnostics directly support the union-size explanation: at 256k,
+group-weighted unique union size was 19,703.62 for real text and 32,875.50 for
+random tokens (**+66.85%**), with no dropped groups. The diagnostic run includes
+extra copies/readback and must not be used to calculate a normal ON/OFF speedup.
+It does not assign all PP differences to union work.
+
+The 64k grouped-union-OFF comparison also reproduced the opposite input ranking:
+real 269.119772 versus random 306.514502 tok/s (**random +13.90%**), after
+reversing run order and using warmup plus two samples per input.
+`GGML_VK_MOE_LEGACY_TILE_SELECTION=1` was fixed. The mechanism behind this
+OFF-path ranking remains open; it is not evidence that random input is always
+a pessimistic benchmark.
+
+The independent 10/03 MoE tile CLI ABBA measured 248.475 -> 268.985 tok/s
+(**+8.25%**). The separate bench figures 243.34 -> 268.81 are consistent in
+direction, but differ in build/warmup and must not be presented as a controlled
+MoE-only speedup.
+
+**Priority consequence:** do not reopen the old CLI/bench gap as unexplained
+tool overhead. Retain real-input bench as an optional comparison aid; keep
+llama-cli as the primary first-pass speed/output check. Further document-genre,
+non-repeated-text, layer-level, and union-OFF mechanism studies are optional
+investigations, not prerequisites for resuming r4. Real-input bench support and
+union diagnostics remain separate potential ports; diagnostics-OFF performance
+still needs its own confirmation before promotion.
+
+Pinned local evidence:
+
+- [Real-input bench and 10/09 results](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/979ef17eeff14440a58c866a966b355a1b63b17e/docs/evox2/R4-LLAMA-BENCH-REAL-PROMPT-2026-10-07.md)
+- [Union diagnostic status](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/979ef17eeff14440a58c866a966b355a1b63b17e/docs/evox2/R4-VULKAN002-QSA-UNION-STATS-2026-10-08.md)
+- [MoE tile ABBA](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/979ef17eeff14440a58c866a966b355a1b63b17e/docs/evox2/R4-MOE-TILE-AB-2026-10-03.md)
+
+### Merged upstream changes to account for in a clean baseline
+
+All states below were checked against the PR API. Reported gains belong to the
+PR authors' hardware and workloads; none is an Evo-X2 Windows result from this
+research.
+
+| Item | Status / date (UTC) | Relevance and next action |
+|---|---|---|
+| [#30087: recurrent GDN kernel](https://github.com/ggml-org/llama.cpp/pull/30087) | Merged 10/08 | New baseline candidate. Final patch assigns four state columns per warp and adjusts launch occupancy. It changes shared CUDA/HIP source without a CUDA-only guard around the new mapping. qwen4exp calls the recurrent attention builder, so relevance is supported by source; gfx1151 performance and numerical behavior still require validation. |
+| [#28713: TOP_K dispatch](https://github.com/ggml-org/llama.cpp/pull/28713) | Merged 10/08 | QSA/indexer relevance, but the large published gains are NVIDIA results. HIP deliberately keeps the 1024-column bitonic threshold and disables the new CUDA-only few-row shortcut. The radix path gains bounded temporary-buffer chunking. Do not forecast the CUDA speedups for ROCm. |
+| [#30097: shared NextN tensor flags](https://github.com/ggml-org/llama.cpp/pull/30097) | Merged 10/07 | qwen4exp and other models accept trunk-only files through common detection. Loading compatibility improvement; it does not by itself establish compatibility with every published Unsloth shared or dense MTP sidecar. |
+| [#30107: Vulkan TOP_K edge cases](https://github.com/ggml-org/llama.cpp/pull/30107) | Merged 10/08 | Correctness fix for non-finite input and negative-value k=1 selection. Includes Radeon 8060S/RADV tests. Useful refresh coverage, but not a demonstrated fix for the local ROCm MTP A/B divergence. |
+| [#30003: sparse FA on coopmat2](https://github.com/ggml-org/llama.cpp/pull/30003) | Merged 10/08 | Extension of #29639 for NV cooperative-matrix-2. Low direct relevance to the current AMD path; not equivalent to downstream grouped-union. |
+| [#29887: GPU cache for host MoE experts](https://github.com/ggml-org/llama.cpp/pull/29887), [#30112: multiple GPUs](https://github.com/ggml-org/llama.cpp/pull/30112) | Merged 10/07 and 10/08 | Optional host-offload feature. #29887 caches experts for batches up to 32 tokens; large batches keep regular offload. With the current full-offload / `-ncmoe 0` setup, do not expect the published offload gains. More relevant to a later constrained-memory study. |
+| [#29958: k-pool graph shape stability](https://github.com/ggml-org/llama.cpp/pull/29958) | Merged 10/05; supplemental finding | Omitted from the previous intake. Makes qwen4exp pooled-key scatter/gather graph construction stable across cache-sharing states. Relevant when reviewing COMMON-004 and MTP/cache changes; graph re-reservation and CPU layout invalidation are different costs. It does not prove that the local dense-indexer omission or no-op invalidation fixes are obsolete. |
+
+For #30087, the opening description retains a two-column explanation and early
+RTX 4090 numbers, while the final patch and subsequent discussion use four
+columns. Use the merged code as the implementation reference. The author reports
+roughly 8% Qwen3.8-27B PP gains for the four-column experiment on RTX 4090, not
+on Strix Halo; FP32 reduction order changes. #29353's chunked GDN proposal remains
+a separate, unmerged kernel and its gains must not be added to #30087's figures.
+
+Previously recorded changes were rechecked and remain merged:
+[#29936](https://github.com/ggml-org/llama.cpp/pull/29936) MoE tile revert,
+[#29825](https://github.com/ggml-org/llama.cpp/pull/29825) indexer memory reduction,
+and [#29639](https://github.com/ggml-org/llama.cpp/pull/29639) quantized-K/V sparse
+Vulkan FA. The tile revert remains a strong reason to compare clean upstream
+before carrying the local legacy-selection workaround forward.
+
+[#27962](https://github.com/ggml-org/llama.cpp/pull/27962), HIP IQ2/IQ3 SWAR
+optimization, appeared in the recently updated search results but was merged
+on **2026-09-22**. It is not a newly landed October optimization.
+
+### New open candidates: scope before speedup
+
+These are **WATCH-UPSTREAM / applicability investigations**, not approved ports.
+
+| Candidate | Observed status | Evidence and applicability to this project |
+|---|---|---|
+| [#30149: tiled Vulkan transposed CONCAT](https://github.com/ggml-org/llama.cpp/pull/30149) | Open, Draft | Adds a tiled path for eligible dim-0, non-quantized 4-byte transposed input. W7800/RADV results show increasing PP benefit with larger ubatches; Qwen3.8-27B pp2048/ub2048 is about +3.2%. qwen4exp's `build_conv_state_at` explicitly constructs `concat(state, transpose(x), 0)`, so this is a concrete profiling lead, not just a model-family guess. Check actual tensor strides/widths and Windows 8060S timing first. |
+| [#30139: recurrent state views](https://github.com/ggml-org/llama.cpp/pull/30139) | Open | Avoids identity GET_ROWS copies of recurrent state, with graph-reuse and read/write ordering safeguards. qwen4exp uses `build_rs`, making it a plausible TG candidate on both backends. Published single-sequence gains are generally small and CUDA-based. This is recurrent-state copying, not the QSA pooled-key gather already investigated locally. |
+| [#30191: query-row slicing at deep KV](https://github.com/ggml-org/llama.cpp/pull/30191) | Open, Draft; created 10/08 | Serializes large FA dispatches into 512-query slices; W7800/RADV Qwen3.8-27B pp2048 at depth 16k reports about +10% at ub1024 and +27% at ub2048. Gate excludes sparse FA, GQA rewriting, and split-K. Therefore it is **not a direct grouped-union optimization** for Flash-Next. Retain for eligible dense/fallback paths or dense-model comparisons only. |
+| [#30190: fold verify tokens with GQA heads](https://github.com/ggml-org/llama.cpp/pull/30190) | Open, Draft / RFC; created 10/08 | Opt-in coopmat1 path for GQA-6, 2-8 tokens, masked dense FA and split-K. Reports +14.6% MTP TG for Qwen3.8-27B on W7800/RADV. Its narrow shape gate is not established for the actual Flash-Next target/draft, and the PR retains unresolved deep-KV NMSE observations and no token-exact equivalence claim. Watch; do not port based on its headline gain. |
+| [#30146: small-N split-K heuristic](https://github.com/ggml-org/llama.cpp/pull/30146) | Open, Draft | RDNA3/4 regular MUL_MAT tuning; tests are gfx1100/RADV. Routed MUL_MAT_ID is unaffected, and large-ubatch/TG controls are flat. Conditional small-batch/MTP lead, not evidence of a gain for the current ub1024 long prefill. |
+| [#30141: MTP hidden-state save/restore](https://github.com/ggml-org/llama.cpp/pull/30141) | Open | Checkpoint restoration currently leaves speculative hidden state stale; proposal restores pending and verification hidden rows. Direct correctness watch for checkpoint workflows. Current checkpoint-disabled fresh-prompt runs do not establish this as their failure cause. |
+| [#30103: CUDA/HIP FA race fix](https://github.com/ggml-org/llama.cpp/pull/30103) | Open | Addresses a tile-processing race for a particular `nbatch_combine` / head-dimension relation, linked to a gfx1201 backend-test failure. Inspect the actual ROCm FA specialization if reopening numerical divergence; no reproduction on this Evo-X2 has been established. |
+| [#27218: native HRX backend](https://github.com/ggml-org/llama.cpp/pull/27218) | Open, Draft; updated 10/08 | Larger AMD/ROCm backend proposal. Keep on a long-term watch list; this intake does not establish Windows/gfx1151/Flash-Next coverage or a ready replacement for the working HIP backend. |
+
+The 10/07 open list was also rechecked:
+
+- [#28303](https://github.com/ggml-org/llama.cpp/pull/28303), HIP tiled F32
+  CONCAT, remains open. Its Windows 8060S hardware match remains stronger than
+  #30149's, but its width/stride gate must still match the model.
+- [#29353](https://github.com/ggml-org/llama.cpp/pull/29353), chunked CUDA/HIP GDN,
+  remains open. Retain the reported 8060S Qwen3.8-27B pp2048/4096 gains of
+  6.75%/6.98% as external evidence, not as a Flash-Next 128k/256k prediction.
+- [#29187](https://github.com/ggml-org/llama.cpp/pull/29187), GDN projection
+  fusion, remains open and is Draft; no reason to promote it ahead of measured
+  bottlenecks.
+- [#25666](https://github.com/ggml-org/llama.cpp/pull/25666) and
+  [#29679](https://github.com/ggml-org/llama.cpp/pull/29679), Vulkan small-batch
+  MMVQ changes, remain open. Reproduce the relevant verify shape before porting.
+  The latter's Windows-driver match remains useful, but its tests are on a
+  7900 XTX and do not measure routed MUL_MAT_ID.
+
+### Source audit: downstream work that is still distinct
+
+This is a targeted audit at the observed upstream SHA, not a full port review.
+
+| Existing item | Finding | Provisional classification |
+|---|---|---|
+| COMMON-001, split PLE16 | `qwen4exp.cpp` still loads a joined `per_layer_token_embd.weight` with lazy-read flags; the inspected loader has no split-head fallback. Lazy row prefetch is not split-PLE16 support. | Still-needed compatibility candidate; use Original for a genuinely clean baseline, then validate a minimal PLE16 port. |
+| COMMON-003 / VULKAN-001, ROCmFPx | Current upstream `ggml.h` has MXFP4/NVFP4 but lacks the fork's `GGML_TYPE_Q4_0_ROCMFP4` and `GGML_TYPE_Q4_0_ROCMFP4_FAST` entries (100/101 in the inspected fork). Generic FP4 support does not establish AgentionAI ROCmFP4-FAST compatibility. | Retain the planned format/core audit and backend work after the baseline; not already upstreamed. |
+| COMMON-004 | Pooled-key reuse is already upstream, with #29958 further stabilizing graph construction. | Do not restore the old full patch; examine only a demonstrated residual cost. |
+| COMMON-005 / ROCm long-context PP | `ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse` still returns false under `GGML_USE_HIP`; mask compaction rejects HIP too. CUDA sparse support is not a HIP solution. | Recheck ROCm PP depth scaling on the new baseline, then profile FA versus GDN/CONCAT/TOP_K. Keep historical single-token compaction distinct from a PP design. |
+| VULKAN-002, grouped-union | Current Vulkan source has sparse FA but no downstream `GGML_VK_QSA_UNION` path. #30003 does not add that path. | Retain as a separately measured port candidate; input dependence is now evidenced. |
+| COMMON-002, MTP | #30097 helps tensor detection, while the inspected MTP graph still uses its own model embedding and constructs k-pool input from general indexer conditions. Sidecar loading, dense-draft indexer omission, and target no-op invalidation require separate review. | Do not retire the validated local work or claim universal sidecar compatibility from the new loader helper. |
+
+The preserved r4 record still has an unresolved ROCm 256k MTP A/B output and
+acceptance difference, plus MTP PP overhead. Today's public PRs are leads, not
+proof of their cause or resolution.
+
+Pinned source references:
+
+- [qwen4exp model and graph](https://github.com/ggml-org/llama.cpp/blob/de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b/src/models/qwen4exp.cpp)
+- [CUDA/HIP FA selection](https://github.com/ggml-org/llama.cpp/blob/de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b/ggml/src/ggml-cuda/fattn.cu)
+- [Current ggml types](https://github.com/ggml-org/llama.cpp/blob/de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b/ggml/include/ggml.h)
+- [Current Vulkan backend](https://github.com/ggml-org/llama.cpp/blob/de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b/ggml/src/ggml-vulkan/ggml-vulkan.cpp)
+- [Fork ROCmFP4 types](https://github.com/LaurentZuijdwijk/llama.cpp/blob/11bfe8a633fa02bac251db6cf21bd5ddab282a64/ggml/include/ggml.h)
+
+### Related engines and toolchain updates
+
+**Unsloth mix:** latest observed
+[b11505-mix-5209c9f](https://github.com/unslothai/llama.cpp/releases/tag/b11505-mix-5209c9f),
+published 2026-10-08 23:42 UTC / 10/09 08:42 JST.
+Its release manifest still includes
+[#240](https://github.com/unslothai/llama.cpp/pull/240) for shared/self-contained
+Qwen MTP heads. That PR remains open: inclusion in a mix build and merge into
+mainline are different facts. The newer manifest also lists
+[#253](https://github.com/unslothai/llama.cpp/pull/253), removing a CUDA graph-cache
+count cap that caused tensor-split regressions. The reported issue does not
+affect single-GPU or layer-split runs, so it is not evidence of a large gain on
+this Evo-X2. #241 remains open, but use the actual release manifest rather than
+assuming the 10/07 pin set is unchanged. Retain mix as a compatibility/performance
+reference, not a clean upstream baseline.
+
+**Strata:** latest observed
+[v0.1.41](https://github.com/Niko1221/Strata/releases/tag/v0.1.41),
+published 2026-10-08 12:14 UTC. The more immediately relevant Windows AMD changes
+were in [v0.1.40.3](https://github.com/Niko1221/Strata/releases/tag/v0.1.40.3):
+bundled HIP dependencies are placed beside the executable and runtime selection
+is logged; automatic expert-cache sizing on 16-GB-or-larger AMD cards retains
+more free VRAM. These respond to RX 7800 XT/7900 XT reports, not verified
+Evo-X2 results. v0.1.41's large speed claims mostly concern multi-GPU,
+NVIDIA short prompts, or memory-constrained streaming. Keep a separate current
+Windows HIP smoke test as an external reference; no new evidence here justifies
+replacing the llama.cpp plan or predicting its long-context throughput.
+
+**Halogen:** current README/changelog is at **0.17.3**, beyond the 10/07 note's
+0.17.0 era. 0.17.2 reports faster new-text long prompts and decode, and adaptive
+per-conversation MTP depth by default; 0.17.3 reports faster sampled decode.
+Greedy output identity is the project's claim; sampled seeded text can change
+between releases. It remains a native-Linux reference for the normal Windows
+workflow. Adaptive draft depth is worth tracking as a later design idea, after
+local MTP correctness and actual net latency are understood.
+
+- https://github.com/peonist-ai/halogen-flash-server/blob/main/CHANGELOG.md
+- https://github.com/peonist-ai/halogen-flash-server/blob/main/README.md
+
+**LaurentZuijdwijk fork:** default-branch tip remains
+`11bfe8a633fa02bac251db6cf21bd5ddab282a64` from 2026-09-07.
+No new default-branch refresh was found. Keep its specialized format/kernels
+as reference for COMMON-003/VULKAN-001.
+
+**ROCm / TheRock:** AMD's official current documentation remains **10.1.0**,
+released 2026-10-05. The matrix still lists Radeon 8060S/gfx1151, Windows 11
+25H2 and Adrenalin 26.10.41.05. Preserve the accepted 10.0/26.8.1 baseline.
+
+A refinement to the earlier memory note matters: the 10.1 release notes say
+Windows host registration now defaults to fine-grained, uncached memory, and
+coarse-grained behavior requires the explicit
+`hipExtHostRegisterCoarseGrained` flag. This is a semantics/correctness change,
+not an automatic speedup. Inspect the actual allocation/registration path before
+a separate toolchain A/B; do not combine that experiment with a source repin.
+
+- https://rocm.docs.amd.com/en/latest/about/release-notes.html
+- https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html
+
+### Provisional next sequence
+
+1. Preserve r4, the investigation branches, runtime hashes, and existing results.
+   At the actual start of build work, recheck the upstream SHA and pin the
+   separate clean comparison explicitly.
+2. Run minimum load/short-output gates and matched real-document measurements,
+   primarily 128k, with 64k support and 256k for depth scaling. Keep MTP OFF,
+   f16 KV, driver/toolchain, sampling, and input identity fixed for the first
+   comparison. Use the joined Original model until a minimal PLE16 port is
+   separately validated.
+3. Reclassify the existing deltas against the new base: MoE legacy selection is
+   an upstream-retirement candidate; COMMON-004 is already substantially
+   upstream; COMMON-001, ROCmFPx, and grouped-union remain distinct.
+4. Follow the ROADMAP's specialized-format sequence: minimal COMMON-001 if
+   needed, then COMMON-003/VULKAN-001, then matched AgentionAI versus Unsloth
+   speed and long-context quality checks. This research does not reorder those
+   tasks around every newly posted general optimization.
+5. For any remaining ROCm PP slope, measure the dominant operators before
+   choosing an experiment. #30087 is already in the clean baseline; #28303 and
+   #29353 are isolated watch/test candidates, while sparse FA still lacks the
+   inspected HIP path. GDN/CONCAT gains alone would not prove the context-depth
+   problem solved.
+6. Watch #30149/#30139 and the narrower #30190/#30191/#30146 rather than
+   duplicating their active upstream work. Escalate correctness issues using
+   the ROADMAP exception only if their triggering conditions are reproduced.
+7. Keep Strata, ROCm 10.1, quantized KV, and broader MTP tuning as independent
+   experiments. Promote findings into ROADMAP or implementation plans only
+   after applicability and priority review.
+
+Validation for this entry: GitHub PR states/releases, targeted source reads,
+and existing repository measurement documents were checked. No newly reported
+third-party speedup has been validated on the user's Windows hardware.
