@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-09 (r5 pinned and documentation/tooling prepared; Windows baseline validation pending; r4 retained as the comparison checkpoint)
+Snapshot: 2026-10-09 (r5 clean Windows baseline verified through 256k on Vulkan/ROCm; historical r4 clean binary replay on new Windows 26H2 is the next control)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -10,8 +10,9 @@ work. Patch IDs remain stable even when implementation priority changes.
 - Branch: `r5/upstream-refresh-20261009`
 - Pinned upstream: `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`
 - Documentation/tooling source: r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`
-- Native inference source: unchanged from upstream; builds and runtime gates pending
+- Native inference source: unchanged from pinned upstream; user-reported builds/backend tests passed, allocation and 64k/128k/256k CLI runs verified (b11517; six of six OK)
 - Entry point: [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md)
+- Accepted measurements and environment: [R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md); Windows 11 Pro upgraded to 26H2/26300.9550 between r4 and r5, so replay preserved r4 clean binaries on current OS before isolated upstream-speed claims
 - Repeatable procedure: [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md)
 
 Follow the r5 sequence below. Historical r4 implementations and validation reports are retained for comparison and do not imply those patches are present in this initial r5 tree.

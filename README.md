@@ -6,7 +6,7 @@ The active refresh identity is recorded in [CURRENT-REFRESH.json](docs/evox2/CUR
 
 ## Current work
 
-r5 starts from upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b` and imports documentation/tooling from the r4 checkpoint `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Windows builds, load checks and PP/TG validation are pending. Imported r3/r4 results are historical references, not r5 results.
+r5 starts from upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b` and imports documentation/tooling from the r4 checkpoint `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Both Windows clean builds and backend tests were reported successful, and original-model allocation plus 64k/128k/256k real-input Vulkan/ROCm baseline runs were verified from the supplied logs (6/6 OK, b11517). Results are recorded in [r5 clean baseline validation](docs/evox2/R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md). Imported r3/r4 results remain historical references, not r5 results. Windows 11 was upgraded to 26H2 before r5, so r4/r5 percentages are not source-only A/B results.
 
 Start with the Original Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model, joined PLE tensor layout, MTP OFF and f16 KV. Use the existing first GGUF shard; physically joining GGUF files is not required.
 
@@ -17,6 +17,7 @@ Start with the Original Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model, joined PLE 
 - [Evo-X2 overview](docs/evox2/README.md)
 - [Optimization roadmap](docs/evox2/ROADMAP.md)
 - [Baseline record](docs/evox2/BASELINE.md)
+- [r5 clean baseline, Windows 26H2 and r4 control plan](docs/evox2/R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md)
 - [Windows Vulkan build](docs/evox2/BUILD-VULKAN-WINDOWS.md)
 - [Windows ROCm build](docs/evox2/BUILD-ROCM-WINDOWS.md)
 - [Benchmarking methodology](docs/evox2/BENCHMARKING.md)
@@ -25,7 +26,7 @@ Start with the Original Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model, joined PLE 
 
 Scripts are under `tools/evox2`. The version-independent clean plan is `tools/evox2/benchmark/configs/qwen38-clean.psd1`; its `CleanVulkan` / `CleanROCm` aliases point to new binaries in the current worktree. Private model/input paths, `local.psd1` and raw benchmark logs stay local.
 
-Use the existing toolchains for the first comparison: Vulkan LLVM/Clang 20.1.8 + SDK 1.4.357.0; ROCm 10.0 / TheRock + Clang 23.0.0 with VS2022/MSVC 14.44, `gfx1151`. These are previous working conditions, not a claim that r5 has been built.
+Use the existing toolchains for the first comparison: Vulkan LLVM/Clang 20.1.8 + SDK 1.4.357.0; ROCm 10.0 / TheRock + Clang 23.0.0 with VS2022/MSVC 14.44, `gfx1151`. These are toolchain references; verified r5 b11517 build/run identities and the observed ROCm runtime environment are in the r5 validation report.
 
 ## Repository policy
 
