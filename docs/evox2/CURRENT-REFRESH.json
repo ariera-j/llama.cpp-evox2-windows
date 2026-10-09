@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "series": "r5",
+  "branch": "r5/upstream-refresh-20261009",
+  "created_date": "2026-10-09",
+  "upstream_repository": "ggml-org/llama.cpp",
+  "upstream_sha": "de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b",
+  "upstream_title": "Musa FWHT fix (#30167)",
+  "tooling_source_branch": "r4/upstream-refresh-20261002",
+  "tooling_source_sha": "bddf73442c24545879c9acadc078ba5b2c3cb7d8",
+  "imported_paths": [
+    "docs/evox2",
+    "tools/evox2"
+  ],
+  "housekeeping_paths": [
+    "README.md",
+    ".gitignore",
+    ".github/workflows"
+  ],
+  "inference_source_policy": "unchanged from pinned upstream; re-evaluate downstream patches separately",
+  "validation_status": "pending Windows Vulkan/ROCm builds and model/performance gates"
+}
