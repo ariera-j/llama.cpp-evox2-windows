@@ -17,7 +17,7 @@ Recorded r5 single-run real-input results (Original/MTP OFF/f16, manual UMA 96GB
 | Vulkan | 256k | 255,181 | 470 | 135.41 | 20.02 |
 | ROCm | 256k | 255,181 | 612 | 193.64 | 12.37 |
 
-Windows was updated after the old r4 measurements and before r5 to **Windows 11 Pro 26H2 / 26300.9550**, most recent reported KB **KB5121794** (installed 2026-10-08). This is a material comparison confound; a same-OS r4 binary rerun is planned. The full report preserves hashes, metadata and comparisons. No r4 patch is part of this clean baseline.
+The preserved **r4 clean** executables (b11372 / `94b877457`) have now been replayed on the same Windows 26H2 system at 64k: Vulkan PP/TG **248.18 / 25.12**, ROCm **370.95 / 21.12** tok/s; both OK/exit0. Historical pre-update r4 64k PP was **248.38 / 369.72** and r5 26H2 PP **269.24 / 390.73**. The 26H2 same-OS r4→r5 PP difference is **+8.49% Vulkan / +5.33% ROCm**; TG deltas are small and uncontrolled. Archived r4 runtime identity remains `Unverified` despite verified executable SHA/exit0. See the [full r5 report](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md#same-windows-r4-clean-control-2026-10-09-64k-only). 128k/256k r4 replays remain deferred.\n\nWindows was updated after the old r4 measurements and before r5 to **Windows 11 Pro 26H2 / 26300.9550**, most recent reported KB **KB5121794** (installed 2026-10-08). This is a material comparison confound; a same-OS r4 binary rerun is planned. The full report preserves hashes, metadata and comparisons. No r4 patch is part of this clean baseline.
 
 ## Preserved r4 clean baseline
 

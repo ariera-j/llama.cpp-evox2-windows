@@ -36,7 +36,7 @@ The user updated Evo-X2 with Windows Update **after r4 measurements and before r
 
 The archive system identity independently reports Windows 11 Pro / `10.0.26300`; it does not record UBR/hotfix details, which come from the subsequent user-provided PowerShell output.
 
-**Critical comparison limit:** historical r4 clean runs occurred before this Windows upgrade. r4→r5 differences cannot yet be attributed exclusively to llama.cpp changes; OS/kernel/WDDM/runtime/environment changes remain plausible confounders. Re-run the preserved r4 clean binaries on this same 26H2 machine for a better-controlled comparison.
+**Critical comparison limit:** historical r4 clean runs occurred before this Windows upgrade. r4→r5 differences cannot yet be attributed exclusively to llama.cpp changes; OS/kernel/WDDM/runtime/environment changes remain plausible confounders. The saved r4 clean executables have now been replayed for 64k on 26H2; details and limits are recorded below. Their 128k/256k OS effect remains unmeasured.
 
 ## Input and fixed inference conditions
 
@@ -101,7 +101,91 @@ Very low free RAM occurs at some sampled points, notably model initialization / 
 - All six inputs use the same backend-specific executable/runtime SHA identities above and share git HEAD `6763689b2c33af6132589f01c46a78ac397baf95`; real-input resource monitoring enabled.
 - Original ZIP files, private local paths/model blobs and process resource CSVs remain local; this document preserves summary metrics and identities only.
 
-## Next: historical r4 clean binaries on the same Windows 26H2 installation
+
+## Same-Windows r4 clean control (2026-10-09, 64k only)
+
+The **original r4 clean binaries were replayed unchanged** on the Windows 11 Pro
+26H2 / OS build 26300.9550 system used for r5. This isolates the major OS
+version upgrade better than the older cross-OS comparison. The user preserved
+the original binaries; they were not recompiled.
+
+- Archive: `20261009-143005-034-qwen38-r4-clean-26h2.zip` (not committed)
+- Matrix: `qwen38-r4-clean-26h2`, 2026-10-09 14:30:05–14:39:33 JST; complete
+  2/2 OK, exit code 0, no run exception.
+- Actual saved executables: b11372, embedded commit `94b877457`
+  (full source/build manifest commit `94b8774573901cd9b6986d3c43be0f74557e4863`).
+  The directory names include `b11352`, **not** the actual build number.
+- Vulkan CLI SHA-256:
+  `a5f974a1f28196e8fb5d52d4d60c36535c1865c3211d39cb5bd2577721beef27`;
+  Clang 20.1.8.
+- ROCm CLI SHA-256:
+  `3d4b426bbd214ce37300dd5dae033a6e649cf3d3b877443dbc709900f70df529`;
+  Clang 23.0.0.
+- **RuntimeArtifactStatus = Unverified** for both archived runs (no verified
+  runtime digest available to this runner); this is **not** a runtime failure.
+  Executable SHA, source identity and successful inference were recorded.
+- Original Unsloth joined-PLE first GGUF shard, MTP OFF, f16 K/V, 96GB UMA,
+  context 65,536, exact input SHA
+  `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`,
+  **61,789 prompt tokens**, `-b 2048 -ub 1024 -t 4 -tb 4 -ngl 999 -ncmoe 0
+  -fa auto --cache-ram 0 --ctx-checkpoints 0t` and the same normal sampling
+  configuration as the r5 64k plan.
+- Both runs loaded all 49 model layers onto the GPU. No fatal exception or
+  OOM was observed.
+
+### Direct three-way 64k comparison
+
+Each cell is a **single run**. r4 old-Windows is the 2026-10-03 archived
+measurement, and r4/r5 on 26H2 are new 2026-10-09 measurements.
+
+| Backend | Metric | r4 before 26H2 | r4 on 26H2 | r5 on 26H2 |
+|---|---|---:|---:|---:|
+| Vulkan | PP tok/s | 248.38 | **248.18** | **269.24** |
+| Vulkan | TG tok/s | 24.61 | **25.12** | **25.31** |
+| ROCm | PP tok/s | 369.72 | **370.95** | **390.73** |
+| ROCm | TG tok/s | 20.98 | **21.12** | **21.18** |
+
+| Backend | PP: old-r4→26H2-r4 | PP: 26H2-r4→26H2-r5 | TG: old-r4→26H2-r4 | TG: 26H2-r4→26H2-r5 |
+|---|---:|---:|---:|---:|
+| Vulkan | -0.08% | **+8.49%** | +2.07% | +0.76% |
+| ROCm | +0.33% | **+5.33%** | +0.67% | +0.28% |
+
+Additional observed detail:
+
+| Replay | Prompt evaluation seconds | Generation evaluation seconds | Generated tokens | Child duration seconds |
+|---|---:|---:|---:|---:|
+| r4 Vulkan 26H2 | 248.966 | 19.707 | 496 | 313.948 |
+| r4 ROCm 26H2 | 166.569 | 30.964 | 655 | 239.516 |
+
+The replay was run with the **r5 matrix runner** but using the preserved
+`R4CleanVulkan` and `R4CleanROCm` binaries and an otherwise identical
+copied clean measurement plan. r4 and r5 on 26H2 have the same requested
+context, original model, input SHA, prompt token count and main CLI settings;
+the executable/source revisions differ as intended. Saved-binary runtime
+artifact verification was unavailable, so a perfect environment/driver/DLL
+identity match is **not proven**.
+
+**Interpretation:** r4's 64k PP on 26H2 remains within 0.33% of the earlier
+r4 result, whereas new r5 clean PP is +8.49% Vulkan / +5.33% ROCm over
+the same-OS r4 replay. This supports the hypothesis that the r5 source/build
+change, rather than the 26H2 upgrade alone, accounts for the majority of
+the 64k PP increase. It is still not an interleaved replicated A/B and
+therefore does **not prove a particular source change** is responsible.
+
+**TG is inconclusive**: r4 on 26H2 is between the older r4 and r5 single
+runs; generated tokens vary with EOS (r4 26H2 Vulkan 496, ROCm 655; r5
+Vulkan 609, ROCm 586). Do not claim statistical significance for +0.76%
+or +0.28% differences without repeated fixed-generation controls.
+
+**Scope decision:** Do not run historical r4 on 128k and 256k solely to
+clear the initial r5 refresh gate. The longer-context OS contribution
+remains unmeasured and should stay a written limitation. Revisit only
+if a long-context regression, disputed optimization attribution, or
+publication-quality causal claim requires it. Proceed to MoE tile source
+investigation and VULKAN-002 evaluation without changing the r5 clean
+binaries.
+
+## Historical r4 binary replay procedure (completed for 64k; 128k/256k deferred)
 
 The user preserved these **r4 clean** build directories (directory label `b11352`, but verify **actual** executable version; the 2026-10-03 archived executable was b11372):
 
