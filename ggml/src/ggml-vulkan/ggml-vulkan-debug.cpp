@@ -963,6 +963,7 @@ void ggml_vk_check_results_0(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph
             if (src_clone[4]) {
                 ggml_flash_attn_ext_add_sinks(tensor_clone, src_clone[4]);
             }
+            ggml_flash_attn_ext_set_selected_rows(tensor_clone, src_clone[5]);
         } else if (tensor->op == GGML_OP_MUL_MAT) {
             tensor_clone = ggml_mul_mat(ggml_ctx, src_clone[0], src_clone[1]);
         } else if (tensor->op == GGML_OP_MUL_MAT_ID) {
