@@ -81,3 +81,21 @@ User-submitted archive (retained locally, not committed): `20261009-191137-742-q
 - Interpretation: no skip/fatal/incorrect GPU cases in this targeted fixture, correct opt-in routing and fallback. It is **not** a measurement of long-prompt Qwen3.8 PP or text quality.
 
 **Next runnable matrix plan:** [`configs/qwen38-r5-qsa-union.psd1`](../../tools/evox2/benchmark/configs/qwen38-r5-qsa-union.psd1) defines 64k PLE16 OFF/ON two-run sanity as `sanity64k`, 64k Original+PLE16 ABBA as `normal64k`, and optional 128k/256k PLE16 ABBA as `longctx`. For a single unattended execution, [`qwen38-r5-qsa-union-batch.psd1`](../../tools/evox2/benchmark/configs/qwen38-r5-qsa-union-batch.psd1) selects only PLE16 128k OFF/ON, PLE16 256k OFF/ON, then Original and PLE16 64k OFF/ON/ON/OFF (**12 runs, with no repeat at 128k or 256k**). The matrix stops at the first non-OK run (`ContinueOnError=$false`). Use `-PlanOnly` before starting. This second plan is a workload scheduling artifact; no new GPU validation/performance is claimed. Register `R5QsaUnionVulkan` under ignored `configs/local.psd1` to point at the tested `build-vulkan-qsa-union\bin\Release`. Before any test, use `-OnlyJob sanity64k -PlanOnly` and check the resolved build, model and environment. No obsolete r4 MoE/GET_ROWS variables are enabled. The historical standalone 18-case gate must remain completed before using this plan.
+
+## r5 actual-model 64k PLE16 QSA OFF/ON — preliminary pre-statistics baseline (2026-10-09)
+
+Source archive: `20261009-191835-955-qwen38-r5-qsa-union.zip` (two complete matrix children; source logs retained outside Git). Matrix `sanity64k` ran `A1-off` → `B1-on`, 2/2 OK, no early stop, 1 observation per condition. This baseline **predates the stats-feature port** and is essential for the later `STATS=0` no-regression check. It is **not** ABBA; avoid treating small percent differences as significant.
+
+| Metric | OFF | ON | ON change |
+|---|---:|---:|---:|
+| PP tokens/s | 269.44 | 338.71 | +25.71% |
+| PP time (ms) | 229322.97 | 182426.59 | -46896.38 ms |
+| TG tokens/s | 25.71 | 26.12 | +1.60% (single run, not an established gain) |
+| TG time (ms) | 19872.81 | 19565.56 | -307.25 ms |
+| Exit / Matrix status | 0 / OK | 0 / OK | both |
+
+Fixed: `llama-cli` b11530, Clang 20.1.8, embedded source commit `9391d35c0`, Vulkan0 AMD Radeon 8060S, executable SHA256 `8d45bad26c1460d6bd9c22a4a87389d6ab2855befe939c0a2e3e42297d33714f` (identical), runtime artifact digest `5d83efa4cb808e1e69fb38964c7992ae22f940c986ce0c18d096f72d75390579`, `GitIdentity.Commit=dabe0c58288961518fc2d64e9514207a6e0d1847`, GitDirty false. PLE16 model `Qwen3.8-Flash-Next-UD-IQ3_XXS-ple16.gguf` (81,961,816,672 bytes, **model full SHA not recorded**). Input `nlp-survey-ch3-d7-b1.txt`, 304,931 bytes, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`, matches r4; 61,789 evaluated tokens. Context 65,536; batch/ubatch 2048/1024; f16 K/V; `-t 4 -tb 4 -ngl 999 -ncmoe 0`, FA auto, cache RAM 0, checkpoints `0t`, reasoning off, MTP OFF, seed 1234, temp 0.2, top_p 0.8, fixed 512 tokens with ignore-eos. Resource-monitor logs retained in archive. Stats/profiler disabled. r4 legacy MoE and GET_ROWS toggles unset.
+
+Runtime stderr explicitly logs OFF `QSA grouped-union = off` and ON `QSA grouped-union = on`, then `qsa-union active (r5), group=64, path=1, Br=16, Bc=64, groups=16, capacity=32768, scratch=73400576 bytes`. CPU-reference 18/18 OFF and ON previously accepted. First-pass comparison with **r4 PLE16 64k ABBA mean** (OFF PP 268.42, ON PP 335.38, +24.95%; TG 25.30/25.40) shows similar improvement. Cross-build and 1 vs 2 samples limit comparisons; longer-context and r5 64k ABBA pending while this record is written.
+
+**Next:** treat this as the pre-stats baseline, let the queued matrix finish on unchanged b11530 binary, then build a **separate** stats-enabled r5 binary; verify STATS=0 path has no regression before STATS=1 CSV runs. Avoid pulling/rebuilding in-place while the old matrix is executing.
