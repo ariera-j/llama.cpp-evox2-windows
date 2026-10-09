@@ -1,6 +1,6 @@
 # r5 VULKAN-002 grouped-union selective port — implementation / validation handoff
 
-Recorded: 2026-10-09 JST. **Source implementation only. No Windows build or GPU execution verification yet.**
+Recorded: 2026-10-09 JST. **Windows Vulkan build and 18-case-per-mode GPU correctness smoke ACCEPTED. Actual model 64k OFF/ON speed and quality have not been measured on this VULKAN-002 binary.**
 Branch: `r5/upstream-refresh-20261009`; pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`; COMMON-001+bench Phase A already accepted on Evo-X2.
 Source donor: [r4 `5814fbe99e9249e8ac2c4c2e9b977c05735b0912`](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/5814fbe99e9249e8ac2c4c2e9b977c05735b0912).
 
@@ -8,7 +8,7 @@ Source donor: [r4 `5814fbe99e9249e8ac2c4c2e9b977c05735b0912`](https://github.com
 
 - Native selective port: [`b3d050492b1282feb1ea15aa682cf7d8a57f74b2`](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/b3d050492b1282feb1ea15aa682cf7d8a57f74b2), **14 source/test/shader files**. r4 donor source-hunks matched the current r5 exact context except two `ggml-vulkan-types.h` struct insertions, which were adapted to r5's removed legacy MoE/GET_ROWS fields. The unrelated r4 GPU-info log hunk was deliberately omitted. Two original r4 QSA compute shaders were added. Activation log changed from `(r4)` to `(r5)`.
 - Compatibility/test follow-up: [`0a3cf6a0e771feb7990d31748cbbf432681b055f`](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/0a3cf6a0e771feb7990d31748cbbf432681b055f). Adds explicit `QSA grouped-union = on/off` initialization log and updates existing `tools/evox2/benchmark/Test-QsaUnion.ps1` to expect `qsa-union active (r5)`. Removes obsolete GET_ROWS diagnostic environment controls from that test script.
-- New r5 code passes **source patch-context and structural checks only**. This is not equivalent to compiling or passing the 18 native CPU-reference cases; the user must run both.
+- New r5 code passed strict patch-context checks, and **the user-provided Windows Vulkan0 GPU correctness gate subsequently passed 18/18 OFF and 18/18 ON**. See actual evidence below. Model-specific 64k activation/performance remains pending.
 
 ## Design constraints retained
 
@@ -18,7 +18,7 @@ Source donor: [r4 `5814fbe99e9249e8ac2c4c2e9b977c05735b0912`](https://github.com
 - Historical r4 MoE legacy tile/GET_ROWS 128x4 control code is **not** restored. The current pinned r5 upstream has the per-expert MoE tile revert. Do not use r4-specific environment variables to recreate an outdated combination.
 - Phase C `GGML_VK_QSA_UNION_STATS` remains **unimplemented**. Do not enable or expect QSA union CSV yet.
 
-## Windows build gate — DO THIS BEFORE SPEED MEASUREMENT
+## Windows build gate — COMPLETED (commands retained for reproducibility)
 
 After `git pull --ff-only`, build a **new** Vulkan binary directory so that Phase A (b11526) and COMMON-001 (b11521) binaries remain available:
 
@@ -39,7 +39,7 @@ Test-Path "$bin\test-backend-ops.exe"
 
 The build script configures `-DLLAMA_BUILD_TESTS=ON` and includes the `test-backend-ops` target. The new source should also retain the Phase A llama-bench `--prompt-file`, `--prompt-slice`, and `--ctx-size` options. All tested Windows compiler/shader generation errors are new evidence to be investigated; no compilation claim is made here.
 
-## Targeted CPU-reference correctness gate (OFF and ON)
+## Targeted CPU-reference correctness gate (OFF and ON) — COMPLETED
 
 ```powershell
 .\tools\evox2\benchmark\Test-QsaUnion.ps1 `
@@ -59,9 +59,25 @@ For the first real activation, use an existing **64k** real-input plan with the 
 
 ## Next
 
-1. Windows Vulkan compile and targeted 18x2 OFF/ON reference gate; fix if necessary.
+1. **Completed:** Windows Vulkan compile and targeted 18x2 OFF/ON CPU-reference gate, 2026-10-09, attached ZIP below.
 2. Normal 64k Vulkan Original/PLE16 same-binary OFF/ON check, then r5 128k/256k as resources/time allow.
 3. Phase C port the stats-branch opt-in `GGML_VK_QSA_UNION_STATS` feature into the validated r5 union backend as a separate commit, followed by STATS=0 regression check and STATS=1 CSV evidence.
 4. Optional comparison inputs: English document and non-repeating Japanese document, initially single run each (not an acceptance blocker). [Staged plan](R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md).
 
-No runtime/benchmark result is claimed for VULKAN-002 on r5 at the time of this record.
+**Validation scope:** native targeted Vulkan correctness is accepted, but no r5 model-context PP/TG gain or Qwen3.8 answer agreement is claimed yet. Phase C stats not yet implemented.
+
+## Actual Windows Vulkan correctness result — 2026-10-09 (Evo-X2)
+
+User-submitted archive (retained locally, not committed): `20261009-191137-742-qsa-union-tests.zip`; directory `20261009-191137-742-qsa-union-tests/`. Includes `results.json`, `off/on.stdout.log`, `off/on.stderr.log`. It does **not** include a build manifest; the exact source checkout and compiler identity must be obtained from a manifest or CLI `--version` if needed, rather than inferred from a ZIP filename.
+
+- Binary: `C:\llama-build\llama.cpp-evox2-windows-r5\build-vulkan-qsa-union\bin\Release\test-backend-ops.exe`
+- Executable SHA256: `8710862824bc7f953dd9d9182806f8b1bb7ec175c038f78b0f146ebda650cc72`
+- Backend: `Vulkan0`, AMD Radeon(TM) 8060S Graphics (AMD proprietary driver, UMA).
+- Arguments: `-b "Vulkan0" -o FLASH_ATTN_EXT -p "qsa_union=1"`.
+- OFF: `GGML_VK_QSA_UNION=0`, explicit `QSA grouped-union = off (group=64, min_kv=32768)`; 18/18 native test cases **OK**, ExitCode=0, no unsupported cases, no union activation.
+- ON: `GGML_VK_QSA_UNION=1`, explicit `QSA grouped-union = on (group=64, min_kv=32768)`; 18/18 native test cases **OK**, ExitCode=0, no unsupported cases. Activation shown: `qsa-union active (r5), group=64, bitmap=16KiB, path=1, Br=16, Bc=64, f32acc=1, groups=1, capacity=256, min_kv=32768, scratch=98384 bytes`. Fallback shown: `qsa-union fallback: query count or KV threshold`.
+- `test-backend-ops` prints `Backend 2/2: CPU / Skipping`; this does **not** mean any of the 18 Vulkan0 test cases was skipped. CPU reference comparisons are performed by the harness when evaluating Vulkan0.
+- Coverage includes Q=2/63/64/65/349/1024, high-KV positions (131073 and 262144), varied head dimensions, hints, decode-style 1-query, threshold below min, and unsupported shapes/bias/sinks/types. The full output lists 18/18 for each mode and the script's `Passed=true` for both.
+- Interpretation: no skip/fatal/incorrect GPU cases in this targeted fixture, correct opt-in routing and fallback. It is **not** a measurement of long-prompt Qwen3.8 PP or text quality.
+
+**Next runnable matrix plan:** [`configs/qwen38-r5-qsa-union.psd1`](../../tools/evox2/benchmark/configs/qwen38-r5-qsa-union.psd1) defines 64k PLE16 OFF/ON two-run sanity as `sanity64k`, 64k Original+PLE16 ABBA as `normal64k`, and optional 128k/256k PLE16 ABBA as `longctx`. Register `R5QsaUnionVulkan` under ignored `configs/local.psd1` to point at the tested `build-vulkan-qsa-union\bin\Release`. Before any test, use `-OnlyJob sanity64k -PlanOnly` and check the resolved build, model and environment. No obsolete r4 MoE/GET_ROWS variables are enabled. The historical standalone 18-case gate must remain completed before using this plan.
