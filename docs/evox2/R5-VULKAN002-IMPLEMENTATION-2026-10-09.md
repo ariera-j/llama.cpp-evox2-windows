@@ -84,6 +84,8 @@ User-submitted archive (retained locally, not committed): `20261009-191137-742-q
 
 ## r5 actual-model 64k PLE16 QSA OFF/ON — preliminary pre-statistics baseline (2026-10-09)
 
+**Follow-up validated:** 12/12 additional normal CLI runs across 64k/128k/256k are complete; detailed ABBA and r4 comparisons: [R5-VULKAN002-VALIDATION-2026-10-09.md](R5-VULKAN002-VALIDATION-2026-10-09.md). The 64k PLE16 ABBA ON mean **339.48 tok/s** supersedes the isolated 338.71 single-run value for pre-stats regression checks; the prior record below is preserved as historical evidence.
+
 Source archive: `20261009-191835-955-qwen38-r5-qsa-union.zip` (two complete matrix children; source logs retained outside Git). Matrix `sanity64k` ran `A1-off` → `B1-on`, 2/2 OK, no early stop, 1 observation per condition. This baseline **predates the stats-feature port** and is essential for the later `STATS=0` no-regression check. It is **not** ABBA; avoid treating small percent differences as significant.
 
 | Metric | OFF | ON | ON change |
@@ -98,4 +100,4 @@ Fixed: `llama-cli` b11530, Clang 20.1.8, embedded source commit `9391d35c0`, Vul
 
 Runtime stderr explicitly logs OFF `QSA grouped-union = off` and ON `QSA grouped-union = on`, then `qsa-union active (r5), group=64, path=1, Br=16, Bc=64, groups=16, capacity=32768, scratch=73400576 bytes`. CPU-reference 18/18 OFF and ON previously accepted. First-pass comparison with **r4 PLE16 64k ABBA mean** (OFF PP 268.42, ON PP 335.38, +24.95%; TG 25.30/25.40) shows similar improvement. Cross-build and 1 vs 2 samples limit comparisons; longer-context and r5 64k ABBA pending while this record is written.
 
-**Next:** treat this as the pre-stats baseline, let the queued matrix finish on unchanged b11530 binary, then build a **separate** stats-enabled r5 binary; verify STATS=0 path has no regression before STATS=1 CSV runs. Avoid pulling/rebuilding in-place while the old matrix is executing.
+**Next:** the pre-stats 12-run matrix has **completed** and is recorded in [r5 validation](R5-VULKAN002-VALIDATION-2026-10-09.md). Build the stats-enabled source in a separate directory, preserve the b11530 binary, and compare STATS=0 against the 64k PLE16 ABBA ON mean 339.48 tok/s before STATS=1 CSV verification.

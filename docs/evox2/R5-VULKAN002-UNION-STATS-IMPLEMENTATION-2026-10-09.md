@@ -2,7 +2,7 @@
 
 Recorded: 2026-10-09. Branch: `r5/upstream-refresh-20261009`.
 
-**Source implemented, Windows build/runtime validation PENDING.** Parent benchmark is running on the **pre-stats b11530 binary**; do not modify that executable or the current benchmark input/config during the run. Phase B correctness 18/18 OFF+ON passed, and Phase B 64k PLE16 A/B PP 269.44→338.71 tok/s (+25.71%) is recorded at [r5 Phase B](R5-VULKAN002-IMPLEMENTATION-2026-10-09.md). That earlier run is the preserved STATS=0 baseline.
+**Source implemented, Windows build/runtime validation PENDING.** The **pre-stats b11530 matrix completed (12/12 OK)**: [r5 validation](R5-VULKAN002-VALIDATION-2026-10-09.md). Preserve that tested binary and its logs; compile diagnostics in a **different build directory**. Phase B correctness 18/18 OFF+ON passed, and Phase B 64k PLE16 A/B PP 269.44→338.71 tok/s (+25.71%) is recorded at [r5 Phase B](R5-VULKAN002-IMPLEMENTATION-2026-10-09.md). That earlier run is the preserved STATS=0 baseline.
 
 ## Port details
 
@@ -35,7 +35,7 @@ In ignored `tools/evox2/benchmark/configs/local.psd1` add `Builds.R5QsaStatsVulk
 
 ## Minimum confidence gates before genre/long-context experiments
 
-**Gate 1 — STATS OFF source regression.** New binary, matching original 64k PLE16 `llama-cli` workload and `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_STATS=0`. Compare PP to the pre-stats b11530 ON **338.71 tok/s** (one reference run only; expected run-to-run variance), TG **26.12 tok/s**, actual active path, resulting text identity/status and binary hash. If materially different, repeat before attributing regression. For optional r5 native test repeat, run `Test-QsaUnion.ps1 -BinDir .\build-vulkan-qsa-stats\bin\Release -Backend Vulkan0`; expect 18/18 OFF and ON and r5 activation/fallback. No need to repeat all longctx yet.
+**Gate 1 — STATS OFF source regression.** New binary, matching original 64k PLE16 `llama-cli` workload and `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_STATS=0`. Compare PP to the stronger pre-stats b11530 **64k PLE16 ABBA ON mean 339.48 tok/s** (339.64/339.32; two runs; ordinary run-to-run variance), TG **25.80 tok/s**, actual active path, resulting text identity/status and binary hash. If materially different, repeat before attributing regression. For optional r5 native test repeat, run `Test-QsaUnion.ps1 -BinDir .\build-vulkan-qsa-stats\bin\Release -Backend Vulkan0`; expect 18/18 OFF and ON and r5 activation/fallback. No need to repeat all longctx yet.
 
 **Gate 2 — STATS ON CSV correctness.** Use an existing 256k source file to supply **at least** 61,789 raw tokens at 64k context; the old 64k Jinja input file might tokenize to less than 61,789 raw tokens. The example below uses `InputKey '256k'` for this reason, but measures only 64k prompt:
 
@@ -58,7 +58,7 @@ try {
 }
 ```
 
-Verify `Status=OK`/ExitCode=0, `qsa-union active (r5)`, nonempty run-local `qsa-union-stats.csv`, correct header, `groups>0`, `dropped_groups=0`, positive `unique_mean <= padded_mean`, and bounds relative to `selected_mean`. `STATS=1` is a diagnosis run and its PP is not compared to 338.71 CLI tok/s.
+Verify `Status=OK`/ExitCode=0, `qsa-union active (r5)`, nonempty run-local `qsa-union-stats.csv`, correct header, `groups>0`, `dropped_groups=0`, positive `unique_mean <= padded_mean`, and bounds relative to `selected_mean`. `STATS=1` is a diagnosis run and its PP is not compared to 339.48 CLI tok/s.
 
 If the CSV is missing or dropped/nonphysical counts appear, attach `stderr.log`, `conditions.json`, `result.json` and `qsa-union-stats.csv` and investigate before running large diagnostic matrices.
 
@@ -77,4 +77,4 @@ Prefer weighted `unique_mean`, `padded_mean`, `unique_over_selected` (interprete
 
 ## Status
 
-As of this source commit, **only the r4 investigation branch has actual CSV evidence**. r5 CSV, compile, short smoke and non-regression checks require Evo-X2 runtime validation. The currently running older long-context/64k ABBA matrix remains authoritative for pre-stats VULKAN-002 measurements.
+As of this source commit, **only the r4 investigation branch has actual CSV evidence**. r5 CSV, compile, short smoke and non-regression checks require Evo-X2 runtime validation. The completed pre-stats b11530 12-run matrix remains authoritative for VULKAN-002 64k/128k/256k throughput; see [accepted results](R5-VULKAN002-VALIDATION-2026-10-09.md).
