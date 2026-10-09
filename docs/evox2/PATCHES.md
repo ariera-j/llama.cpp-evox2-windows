@@ -2,7 +2,7 @@
 
 ## Current r5 status (2026-10-09)
 
-The initial r5 inference source matches pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. r4 downstream inference patches, including COMMON-001, VULKAN-002, the dense MTP guard and the two TG candidates, are not ported by this bootstrap. Re-evaluate upstream support and current performance before classifying or porting a delta.
+The initial r5 inference source matched pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. A minimal r5 **COMMON-001 split PLE16 compatibility implementation is now committed** (Windows build/model validation pending). VULKAN-002, the dense MTP guard and the two TG candidates are not ported. [Implementation and test gates](R5-COMMON001-IMPLEMENTATION-2026-10-09.md).
 
 Documentation, build/measurement utilities and historical test fixtures are imported. Their presence does not mean the corresponding native patch or CMake test target is implemented in r5. The real-prompt bench and union-statistics investigation branches remain separate.
 

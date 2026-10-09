@@ -14,6 +14,7 @@ work. Patch IDs remain stable even when implementation priority changes.
 - Entry point: [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md)
 - Accepted measurements and environment: [R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md); r4 clean 64k binary replay on Windows 26H2 confirms PP close to old r4, while r5 PP is higher
 - Vulkan MoE tile investigation: [R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md); upstream PR #29936 reverted the per-expert selector, matching the r4 legacy-ON expression: **UPSTREAMED / RETIRE**, no r5 diagnostic switch port
+- r5 COMMON-001 split PLE16 support: [R5-COMMON001-IMPLEMENTATION-2026-10-09.md](R5-COMMON001-IMPLEMENTATION-2026-10-09.md); minimal 4-file additive implementation against pinned clean base, Windows build and Original/PLE16 Vulkan/ROCm runtime gates **pending**; do not confuse committed source with validated r5 performance
 - Repeatable procedure: [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md)
 
 Follow the r5 sequence below. Historical r4 implementations and validation reports are retained for comparison and do not imply those patches are present in this initial r5 tree.

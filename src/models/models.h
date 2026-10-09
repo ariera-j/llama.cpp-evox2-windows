@@ -2517,6 +2517,9 @@ struct llama_model_qwen4exp : public llama_model_base {
 
     class llm_graph_input_kpool;
 
+    // Empty for upstream joined PLE; populated only for split PLE GGUFs.
+    std::vector<ggml_tensor *> ple_ngram_embd;
+
     void load_arch_hparams(llama_model_loader & ml) override;
     void load_arch_tensors(llama_model_loader & ml) override;
 
