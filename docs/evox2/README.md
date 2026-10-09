@@ -15,9 +15,18 @@ branch: r4/upstream-refresh-20261002
 upstream base: bed0a856606ee4a24a164066f73d2379447033f5
 ```
 
-Windows builds, original-model AllocationOnly, and clean 64k/128k/256k PP/TG runs passed;
-ROCm had one automatic backend-test failure followed by a passing manual retest.
-No COMMON-001/004/005 implementation is imported. Vulkan PP/TG regression diagnosis is next.
+The clean Vulkan/ROCm baseline is preserved. r4 now contains MoE legacy tile
+selection, COMMON-001 split PLE16 support, VULKAN-002 grouped-union, a minimal
+dense MTP pool-input guard and two opt-in TG candidates. The historical
+COMMON-002 compatibility patch was not ported wholesale. MTP PP overhead and
+ROCm long-context PP scaling remain unresolved; the real-prompt bench and union
+statistics features remain on separate investigation branches.
+
+The next phase is a separate **r5 latest-upstream validation**, with the upstream
+SHA to be pinned when that branch is created. See
+[R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md) for implemented controls,
+validation limits and preserved branch heads, and [ROADMAP.md](ROADMAP.md) for
+the r5 sequence.
 
 The same source revision is used for both Vulkan and ROCm. Backend differences are created by build configuration, not by maintaining separate permanent source trees.
 
@@ -99,7 +108,8 @@ tools/evox2/
 ```
 
 `model/` and `experiments/` remain on r3 and are not imported at this stage.
-The r4 plan is `benchmark/configs/qwen38-r4-clean.psd1`; older plans are historical definitions.
+The initial clean-baseline plan is `benchmark/configs/qwen38-r4-clean.psd1`;
+use the dated validation reports for subsequent patch/MTP measurement plans.
 Copy `local.example.psd1` to a new ignored `local.psd1`, set the r4 build paths and original model path (first GGUF shard), and reuse the actual input paths.
 
 Build wrappers write `evox2-build.json` manifests and can reuse a shared
@@ -108,6 +118,8 @@ runtime/build facts rather than trusting lookup-key labels.
 
 ## Documentation map
 
+- [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md): current r4 implementation state, open gates, investigation heads and r5 validation decision
+- [PERFORMANCE-RESEARCH-LOG.md](PERFORMANCE-RESEARCH-LOG.md): upstream/model/engine research and the latest priority rationale
 - [ROADMAP.md](ROADMAP.md): current optimization order and upstream-refresh policy
 - [BASELINE.md](BASELINE.md): r4 source identity and pending validation gates; links to historical r3 results
 - [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md): Vulkan build procedure
@@ -131,6 +143,8 @@ Use the r4 build guides for current commands. The dated r3 validation/profiling 
 
 ## Current performance decisions
 
+- [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md) and [ROADMAP.md](ROADMAP.md): current r4 checkpoint and next r5 validation order.
+- [PERFORMANCE-RESEARCH-LOG.md](PERFORMANCE-RESEARCH-LOG.md): 2026-10-09 research, real/random PP findings and refresh priorities.
 - [BASELINE.md](BASELINE.md): completed six-run clean baseline through 256k.
 - [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md): source audit, historical comparisons, and Vulkan diagnosis before optimization ports.
 - [PERFORMANCE-CANDIDATES-2026-10-03.md](PERFORMANCE-CANDIDATES-2026-10-03.md): external engine survey and additional candidates, after the existing patch decisions.

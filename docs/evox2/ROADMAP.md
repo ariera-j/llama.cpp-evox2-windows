@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-06 (r3 frozen; r4 COMMON-001 and VULKAN-002 validated through 256k; COMMON-002 investigation preserved; active implementation paused while the Qwen3.5 long-context study is completed to a clean checkpoint)
+Snapshot: 2026-10-09 (r4 implementation and investigation checkpoint preserved; next phase is a separate r5 latest-upstream validation)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -44,6 +44,26 @@ Original/PLE16 gate passes, and PLE16 completes 128k/256k on both backends.
 See [R4-COMMON001-VALIDATION-2026-10-03.md](R4-COMMON001-VALIDATION-2026-10-03.md).
 Do not move the upstream base silently or rewrite r3 onto it. Re-apply only
 downstream deltas justified by measurements.
+
+### r4 checkpoint and r5 validation decision (2026-10-09)
+
+The confirmed r4 implementation state, MTP qualification, open validation gates
+and separate investigation-branch HEADs are recorded in
+[R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md).
+
+r4 contains MoE legacy tile selection, COMMON-001, VULKAN-002, the minimal dense
+MTP pool-input guard and two default-OFF TG candidates. The historical
+COMMON-002 compatibility patch was not ported wholesale; upstream-native MTP
+with a local guard is the accurate description. MTP PP overhead and ROCm
+long-context PP scaling remain unresolved. Real-document llama-bench input and
+QSA union statistics are implemented on separate investigation branches and are
+not integrated into r4.
+
+The next phase is **r5 validation from a newly pinned upstream base**.
+`r5/upstream-refresh-20261009` is the candidate branch name, not a branch created
+or validated by this documentation checkpoint. Keep r4 and the investigation
+heads as comparison references; their unresolved items do not all need to be
+closed before the clean r5 baseline.
 
 ### Upstream-watch-first implementation policy (2026-10-06)
 
@@ -105,76 +125,64 @@ Examples for the current backlog:
   start a large local rewrite while qwen4exp/MTP upstream is moving quickly.
   If it remains after two refresh checkpoints or roughly 2-3 weeks without a
   credible upstream fix, promote it.
-- Vulkan 256k CLI/bench PP divergence and other observations with no known close
-  external analogue remain high-value `INVESTIGATE` items even before a fix is
-  justified.
+- The Vulkan 256k CLI/random-token bench PP gap is now substantially explained
+  by input-dependent QSA union behavior; real-document bench input closely
+  matches CLI. Preserve the investigation, but do not reopen it as an unexplained
+  tool-overhead blocker for r5. The remaining union-OFF mechanism question is
+  lower priority. See [PERFORMANCE-RESEARCH-LOG.md](PERFORMANCE-RESEARCH-LOG.md).
 - known regressions with an upstream fix or active PR should normally stay
   `WATCH-UPSTREAM`.
 
 This policy supersedes the earlier implicit assumption that every measured
 regression should proceed directly from diagnosis to a downstream patch.
 
-### Planned restart sequence after the Qwen3.5 long-context study
+### Planned r5 validation and implementation sequence (2026-10-09)
 
-Do not refresh or implement anything merely because this section exists.
-When the Qwen3.5 long-context work reaches a clean checkpoint and llama.cpp
-optimization resumes, re-check current upstream at that time and use the
-following initial sequence:
+1. **Establish a clean latest-upstream baseline on a separate r5 branch.**
+   Re-check upstream at branch creation and pin its exact SHA. Start with the
+   joined Original model, MTP OFF and f16 KV. Validate Vulkan/ROCm builds, backend
+   tests, load and short inference, then matched 64k/128k PP/TG on both backends;
+   extend to 256k for long-context decisions. Preserve source/build/driver/input
+   identity and repeat material differences. Carry only necessary docs and
+   measurement tooling; do not merge the full r4 inference patch stack first.
+2. **Reclassify the existing downstream deltas against the new base.**
+   Mark COMMON/VULKAN items and MoE tile selection as still-needed,
+   WATCH-UPSTREAM, or UPSTREAMED / RETIRE. Re-check native MTP and the dense-sidecar
+   guard before considering old compatibility code or the two TG candidates.
+   Keep MTP correctness/overhead work separate from the initial MTP-OFF baseline.
+   Review real-prompt and union-statistics tool integration separately, including
+   the outstanding stats-OFF performance gate.
+3. **Restore COMMON-001 first if split PLE16 support remains necessary.**
+   Port only the missing path, preserve joined-model compatibility and repeat the
+   required load/output/performance gates for the new base.
+4. **Re-evaluate VULKAN-002 before the model comparison.**
+   Measure current-upstream QSA PP first. Port the minimum grouped-union change
+   only if it still adds value; validate OFF/ON output and performance through
+   the relevant long contexts. Its r4 benefit is not proof of an r5 benefit.
+5. **Add missing ROCmFPx / AgentionAI model support.**
+   Audit current upstream first, then implement missing COMMON-003 format/core
+   support and VULKAN-001 Vulkan kernels only where required.
+6. **Run matched AgentionAI versus Unsloth speed comparisons.**
+   Use the same machine, source, input/task, context and runtime conditions where
+   practical, with model-format differences recorded. Begin with MTP OFF.
+7. **Compare long-context quality using the Qwen3.5 validation methodology.**
+   Reuse the established questions/checks and compare output failure modes as
+   well as throughput.
+8. **Select the next general optimization from the remaining measured gaps.**
+   Re-rank MTP PP overhead, ROCm long-context PP scaling and new candidates under
+   the upstream-watch policy. The already investigated real/random PP gap is
+   not a mandatory prerequisite to this refresh.
 
-1. **Establish a new clean latest-upstream baseline first.**
-   Re-check upstream changes, build identity, Vulkan/ROCm load gates and enough
-   matched PP/TG coverage to determine whether the r3/r4 downstream deltas are
-   still required. Do not assume the 2026-10-06 upstream state is still current.
-2. **Re-check the Vulkan 256k llama-cli / llama-bench PP discrepancy on the new
-   clean upstream before investigating it further.**
-   The r4 MTP-OFF reference measured about 268.10 tok/s in llama-cli versus
-   216.09 tok/s in llama-bench (-19.40%) at 256k, while ROCm agreed closely.
-   Treat this as an `INVESTIGATE` item only if it still reproduces. If current
-   upstream removes the gap, record it as upstream-resolved and do not spend time
-   reconstructing the historical cause. If it remains, first compare actual
-   prompt token count, batch/ubatch behavior, final partial batch, QSA/indexer
-   path, MoE routing, graph reserve/reallocation, warmup and cache state before
-   attempting a code change.
-3. **Reclassify the existing patch list.**
-   Mark COMMON/VULKAN items as still-needed, `WATCH-UPSTREAM`, or
-   `UPSTREAMED / RETIRE` before starting new implementation.
-4. **Restore COMMON-001 first if the current upstream still lacks the required
-   split PLE16 operational path.**
-   Preserve joined-model compatibility and repeat only the minimum regression
-   gates needed for the new base.
-5. **Then resume ROCmFPx / AgentionAI model support.**
-   Audit current upstream support first. Add only missing common format/core
-   support as COMMON-003, then add VULKAN-001 backend kernels only if still
-   required for the AgentionAI ROCmFP4-FAST model.
-6. **Run a matched AgentionAI versus Unsloth performance comparison.**
-   Use the same Evo-X2, model/task/context conditions where practical so the
-   comparison answers the operational question rather than mixing source,
-   model-format and benchmark changes. Start with MTP OFF unless the comparison
-   specifically targets speculative decode.
-7. **Reuse the Qwen3.5 quality-validation methodology on the AgentionAI model.**
-   Apply the same long-context quality questions/checks already used during the
-   Unsloth-side Qwen3.5 study, then compare failure modes and answer quality
-   rather than treating throughput as the only selection criterion.
-8. **Only after that comparison choose the next general optimization.**
-   Re-rank MTP PP overhead, ROCm long-context PP scaling, Vulkan CLI/bench
-   divergence and any newly discovered candidates under the upstream-watch
-   policy above.
+Use **llama-cli for primary first-pass measurements** with real input and output
+sanity checks. Use **llama-bench for repeated samples, variance and confirmation
+of small differences**, matching the real-document input when comparing PP.
+Preserve the real-prompt/statistics investigation heads and selectively integrate
+their changes only after reviewing the required validation gates.
 
-The goal of this restart order is to obtain a clean current baseline and a
-useful AgentionAI/Unsloth speed-and-quality comparison before spending another
-cycle on optimizations that upstream may supersede quickly.
+The dated r4/r3 sections below preserve execution history. The r5 sequence above
+supersedes their old priority orders for the next phase.
 
-For performance measurement policy, use **llama-cli as the primary first-pass
-measurement path** because it exercises real input and produces output that can
-be sanity-checked at the same time. Use **llama-bench primarily for repeated
-samples, variance/standard-deviation checks, and confirmation of small
-throughput differences**, not as the sole first-pass authority. This is based on
-prior cases where unexpectedly high benchmark throughput coincided with invalid
-or degraded output behavior. The unresolved Vulkan 256k PP gap above should be
-checked on current upstream before this division of roles is treated as fully
-settled for long-context PP.
-
-### Active order after VULKAN-002 validation (2026-10-04)
+### Historical r4 order after VULKAN-002 validation (2026-10-04)
 
 This order supersedes the older refresh sequence below. The clean six-run
 baseline, scoped 64k PP regression diagnosis, GET_ROWS tensor breakdown, and
@@ -305,7 +313,7 @@ COMMON-001 compatibility port are complete.
 7. Use the consolidated priorities below for usage-policy work, cross-cutting
    checks and the remaining conditional/deferred candidates.
 
-### Consolidated priorities after ROCm and CLI/bench collection
+### Historical r4 priorities after ROCm and CLI/bench collection
 
 This follows the user's22:41 sequence request on2026-10-04. ROCm normal and
 CLI/bench64k/256k collection have now arrived; the next source investigation
@@ -646,11 +654,11 @@ ROCm can still retain a full-context attention cost even with the newer model
 QSA/k-pool selection path. The r3 COMMON-005 result remains the reference for
 this question.
 
-## Current execution order
+## Historical r3-to-r4 refresh execution order
 
-The numbered refresh sequence below records the original refresh plan. The
-**Active order after COMMON-001 validation** above supersedes it for current
-execution.
+The numbered sequence below records the original r3-to-r4 refresh plan.
+The **Planned r5 validation and implementation sequence (2026-10-09)** above is
+the current order for the next phase.
 
 ### 1. Freeze r3 at this documentation checkpoint (complete)
 

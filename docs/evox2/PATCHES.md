@@ -1,6 +1,32 @@
 # Evo-X2 downstream patch registry
 
-## Current r4 status
+## Current r4 status (2026-10-09)
+
+The full source/validation checkpoint and investigation-branch references are in
+[R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md).
+
+| Item | Current status |
+|---|---|
+| MoE legacy tile selection | Implemented and measured; opt-in, default OFF. |
+| COMMON-001 | Split PLE16 support implemented; Vulkan/ROCm validation through 256k. |
+| VULKAN-002 | Grouped-union implemented; Vulkan PP/TG validation through 256k; default OFF. |
+| COMMON-002 | Historical compatibility port not applied wholesale. Uses upstream-native MTP plus the minimal dense-sidecar pool-input guard; includes diagnostics and the two TG candidates below. |
+| Dense MTP indexer omission | Implemented, default OFF; Vulkan 256k normal ABBA validated. |
+| Target no-op QSA invalidation suppression | Implemented, default OFF; Vulkan 256k normal ABBA validated with indexer omission enabled. |
+| MTP PP overhead / ROCm PP scaling | Unresolved. ROCm long-context MTP equivalence and focused confirmation gates remain open. |
+| COMMON-003 / VULKAN-001 | ROCmFPx support not implemented in r4. |
+| COMMON-004 / COMMON-005 / COMMON-006 | No automatic historical port; old ROCm selected-KV decode remains deferred; COMMON-006 is an upstream-validation gate. |
+| Real-prompt bench / union statistics | Implemented on separate investigation branches, not integrated into r4; statistics-OFF performance validation remains pending. |
+
+Next work moves to a clean, separately pinned **r5 upstream-refresh validation**.
+Reclassify and selectively re-port only still-needed deltas after measuring the
+new baseline. See [ROADMAP.md](ROADMAP.md) for the current priority order.
+
+## Historical r4 implementation progression (2026-10-03 to 2026-10-05)
+
+The narrative below preserves the original progression. Statements about the
+next candidate or investigation reflect those dates; use the checkpoint above
+for the current state.
 
 The r4 base is pinned at `bed0a856606ee4a24a164066f73d2379447033f5` on
 `r4/upstream-refresh-20261002`. A diagnostic Vulkan MoE tile-selection switch is
