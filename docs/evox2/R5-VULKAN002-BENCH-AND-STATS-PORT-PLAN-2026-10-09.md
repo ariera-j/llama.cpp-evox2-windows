@@ -60,4 +60,4 @@ Diagnostic observations (STATS=1, unsuitable for causal PP gains): 64k unique KV
 
 ## Work status and handoff
 
-At creation of this plan: **Phase A source not yet ported**, Phase B/C not ported, no Windows build run for these phases. Actual checkpoints should be documented and this status updated as each phase completes. The user specifically wants a Windows build/light smoke gate **between Phase A and Phase B**, even if those changes happen in the same work session. Do not proceed to B without that gate.
+**Phase A source port implemented (2026-10-09)** from donor `4bf9af6fefa98622a65bd8d4c04ba73a02e27422`: 19 source hunks + 15 wrapper hunks applied with exact context to the r5 versions, preserving current upstream. See [r5 real-prompt bench implementation and Windows smoke handoff](R5-LLAMA-BENCH-REAL-PROMPT-PORT-2026-10-09.md). **Windows compile/smoke remains PENDING** and is a mandatory stop before Phase B. Phase B/C remain unimplemented. No r5 performance results yet.
