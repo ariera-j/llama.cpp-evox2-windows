@@ -426,6 +426,20 @@ $ResourcePath = Join-Path $RunDirectory 'resources.csv'
 $MonitorStdOutPath = Join-Path $RunDirectory 'resource-monitor.stdout.log'
 $MonitorStdErrPath = Join-Path $RunDirectory 'resource-monitor.stderr.log'
 
+# Keep optional QSA union diagnostics with the other benchmark artifacts.
+# The child inherits this environment; the caller's environment is restored in finally.
+$QsaStatsFile = $null
+$AutoQsaStatsFile = $false
+if ($env:GGML_VK_QSA_UNION_STATS -eq '1') {
+    if ([string]::IsNullOrWhiteSpace($env:GGML_VK_QSA_UNION_STATS_FILE)) {
+        $QsaStatsFile = Join-Path $RunDirectory 'qsa-union-stats.csv'
+        $env:GGML_VK_QSA_UNION_STATS_FILE = $QsaStatsFile
+        $AutoQsaStatsFile = $true
+    } else {
+        $QsaStatsFile = $env:GGML_VK_QSA_UNION_STATS_FILE
+    }
+}
+
 $Started = Get-Date
 
 $Conditions = [ordered]@{
@@ -466,6 +480,7 @@ $Conditions = [ordered]@{
     InputIdentity      = $InputIdentity
     EffectiveCondition = $ConditionFingerprint
     Environment        = $RelevantEnvironment
+    QsaUnionStatsFile  = $QsaStatsFile
 
     Notes = @(
         'llama-bench measurements exclude tokenization and sampling time.',
@@ -587,6 +602,9 @@ try {
     $runException = $_.Exception.ToString()
     Write-Warning "Run exception: $($_.Exception.Message)"
 } finally {
+    if ($AutoQsaStatsFile) {
+        Remove-Item Env:GGML_VK_QSA_UNION_STATS_FILE -ErrorAction SilentlyContinue
+    }
     if ($null -ne $monitorProcess) {
         try {
             if (-not $monitorProcess.HasExited) {
@@ -833,6 +851,7 @@ $Result = [ordered]@{
         Output     = $OutputPath
         StdErr     = $StdErrPath
         Resources  = if (Test-Path -LiteralPath $ResourcePath) { $ResourcePath } else { $null }
+        QsaUnionStats = if ($QsaStatsFile -and (Test-Path -LiteralPath $QsaStatsFile)) { $QsaStatsFile } else { $null }
     }
 }
 
@@ -855,6 +874,9 @@ Write-Host "result.json     : $ResultPath"
 Write-Host "summary.csv     : $SummaryPath"
 Write-Host "llama-bench.json: $NativeJsonPath"
 Write-Host "output.log      : $OutputPath"
+if ($QsaStatsFile) {
+    Write-Host "QSA union stats : $QsaStatsFile"
+}
 if ($ResourceMonitor) {
     Write-Host "resources.csv   : $ResourcePath"
 }
