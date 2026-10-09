@@ -11,7 +11,7 @@ Date: 2026-10-09. Target: `r5/upstream-refresh-20261009`; original donor commit 
 
 ## Verification status
 
-**Code-integrity/structural check only, Windows build and runtime smoke not yet performed.** Automated patch application required a unique exact original-context match for every one of the 34 source hunks. Checks confirmed new option/file handling, raw tokenization, token slice, original random fallback, explicit context path, input hash metadata and absence of union diagnostics in the two changed files. This does *not* establish C++/PowerShell compile success or actual runtime speed. Need the user's Evo-X2 test before beginning Phase B.
+**Windows Vulkan build and three planned 256-token smoke paths PASSED (2026-10-09, b11526).** 34/34 source hunks previously applied with exact context. The user-supplied ZIP confirms one same-binary execution each for random, head-tail and head, all Status OK / ExitCode 0, no parser exceptions, and correct input identity metadata. Results, limitations and artifact identification are recorded below. Negative-path testing and long-context performance comparison were not part of this smoke gate.
 
 ## Windows Vulkan build
 
@@ -75,3 +75,21 @@ A direct native check can also use `-f <file> --prompt-slice head-tail -c 1024 -
 - Record build ID, commit identity, binary hash, three child outcomes and source SHA in this report or a separate validation note; if any case fails, repair Phase A only.
 - **Do not start Phase B (VULKAN-002) until the Windows build and small smoke pass.** Next native change will be separately committed. Phase C optional stats follows after Phase B correctness/PP gate.
 - English or non-repeating Japanese full-text inputs are [optional later comparison cases](R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md), not smoke blockers.
+
+## Actual Evo-X2 Windows smoke results — 2026-10-09
+
+Artifact (user-provided ZIP, kept outside Git): `20261009-184742-690-bench-vulkan-b11526-ctx1024-af55eff8be8e.zip` with three child run folders, each containing `conditions.json`, `result.json`, `llama-bench.json`, `summary.csv`, `stderr.log`, `output.log`.
+
+| Case | ConditionId | PP tok/s | Native prompt count | Status | Exit | Input identity |
+|---|---|---:|---:|---|---:|---|
+| Random (unchanged original path) | `3322674eca2d` | 86.034 | 256 | OK | 0 | `InputIdentity=null`, mode `random-tokens` |
+| Real text, `head-tail` | `a7d3cfe998bd` | 383.022 | 256 | OK | 0 | Source hash verified and slice `head-tail` |
+| Real text, `head` | `af55eff8be8e` | 390.620 | 256 | OK | 0 | Same source hash and slice `head` |
+
+Fixed in all three runs: Vulkan backend, AMD Radeon 8060S on Ryzen AI Max+ 395 Evo-X2, UMA label 96 GB, Windows Clang 20.1.8, b11526, embedded commit `97a28e3b3`, repository/source commit `97a28e3b3202b51765151445c4c3ef4aa1a9649e`, PLE16 Unsloth model, context 1024, f16 KV, MTP OFF, batch/ubatch 256, 4 threads, `-ngl 999`, `-ncmoe 0`, flash-attn auto, one timed repetition, **NoWarmup=true**, generation/depth 0. All three recorded Git `Dirty=False`, identical executable SHA256 `b2803eacac9588f7e3933cbc0f2855aa01ca2834d900212b69af5c36e385f890` and zero parse failures.
+
+Real-input file: `nlp-survey-ch3-d7-b1.txt`, 304,931 bytes, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`; both real-input runs recorded identical file hashes and correct `Requested.PromptSlice` and `Requested.Context=1024`. Native rows report `n_prompt=256` for all runs. Random had no file identity. The ZIP does not contain the raw input file or the exact sliced token sequences, so token sequence equivalence is not independently replayed from this ZIP; wrapper metadata, normal process exit and native benchmark output are the evidence.
+
+**Acceptance:** Phase A source+wrapper Windows smoke gate passed. **Do not interpret the large 256-token PP difference as an optimization benchmark**: this is one short input/no warmup per mode, with different token distributions and no repeated timing or controlled warm state. Explicit undersized-input error, help-output capture and other negative paths are not independently shown in the ZIP; defer unless problems arise.
+
+**Next:** Phase B VULKAN-002 grouped-union implementation and native correctness gate, in an isolated commit. Phase C statistics remains later; see [staged plan](R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md).
