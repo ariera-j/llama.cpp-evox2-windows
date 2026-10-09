@@ -16,7 +16,7 @@ Source donor: [r4 `5814fbe99e9249e8ac2c4c2e9b977c05735b0912`](https://github.com
 - The `ggml_flash_attn_ext` source 5 metadata is optional; the original graph/mask and all non-Vulkan backends keep their normal result path.
 - `GGML_VK_QSA_UNION=1` opt-in (**default OFF**) and `GGML_VK_QSA_UNION_MIN_KV=32768` initially. 64-query groups. Only supported F16 K/V, F16 mask, compatible shapes/capabilities; single-query decode, multi-stream and unsupported formats fall back. The original r5 FA sparse flag 16 remains separate from dynamic count flag 32.
 - Historical r4 MoE legacy tile/GET_ROWS 128x4 control code is **not** restored. The current pinned r5 upstream has the per-expert MoE tile revert. Do not use r4-specific environment variables to recreate an outdated combination.
-- Phase C `GGML_VK_QSA_UNION_STATS` remains **unimplemented**. Do not enable or expect QSA union CSV yet.
+- Phase C `GGML_VK_QSA_UNION_STATS` **source implementation has been selectively ported** in commit `37ba95673a061c1b4c0991e8eeea5eb003bbe898`. **Do not yet assume it compiles or produces valid CSV on r5**; see [Phase C Windows handoff](R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md). Use a new build directory, never overwrite the accepted b11530 binary.
 
 ## Windows build gate — COMPLETED (commands retained for reproducibility)
 
@@ -61,10 +61,10 @@ For the first real activation, use an existing **64k** real-input plan with the 
 
 1. **Completed:** Windows Vulkan compile and targeted 18x2 OFF/ON CPU-reference gate, 2026-10-09, attached ZIP below.
 2. Normal 64k Vulkan Original/PLE16 same-binary OFF/ON check, then r5 128k/256k as resources/time allow.
-3. Phase C port the stats-branch opt-in `GGML_VK_QSA_UNION_STATS` feature into the validated r5 union backend as a separate commit, followed by STATS=0 regression check and STATS=1 CSV evidence.
+3. **Phase C source port committed**. Next build a separate stats-enabled r5 binary; compare STATS=0 against the preserved b11530 64k results and validate STATS=1 CSV, zero drop count and opt-in behavior. [Implementation handoff](R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md).
 4. Optional comparison inputs: English document and non-repeating Japanese document, initially single run each (not an acceptance blocker). [Staged plan](R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md).
 
-**Validation scope:** native targeted Vulkan correctness is accepted, but no r5 model-context PP/TG gain or Qwen3.8 answer agreement is claimed yet. Phase C stats not yet implemented.
+**Validation scope at phase B:** native targeted Vulkan correctness accepted. Subsequent 64k PLE16 model PP/TG sanity is recorded below. Phase C stats source port is present, but its new Windows build/CSV and STATS=0 regression are untested.
 
 ## Actual Windows Vulkan correctness result — 2026-10-09 (Evo-X2)
 
