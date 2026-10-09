@@ -8,6 +8,8 @@ Documentation, build/measurement utilities and historical test fixtures are impo
 
 See [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md) for validation gates and [ROADMAP.md](ROADMAP.md) for the current order.
 
+**r2 specialized-fork PLE extras: DEFER / WATCH FOR FORK UPDATE.** The historical `main`/r2 tree and LaurentZuijdwijk donor contain a lossless PLE split converter, an alternate token-major/strided split gather, and **Linux-only** disk-backed joined-table / sidecar / row-cache code. The useful split support is already provided by r5 COMMON-001; no additional PLE16-specific speed patch was identified. No extra code will be ported now, and the old disk reader expressly rejects Windows. [Frozen source review and revisit trigger](R2-PLE-LEGACY-SOURCE-REVIEW-2026-10-09.md).
+
 **r5 MoE tile selection: UPSTREAMED / RETIRE.** Upstream commit `3c9e747f7e8b` / PR #29936 (2026-10-05) reverted the per-expert `MUL_MAT_ID` selector back to the `nei1` (total tokens) expression. This matches the r4 `GGML_VK_MOE_LEGACY_TILE_SELECTION=1` path for selector/alignment decisions; the local r4 diagnostic switch is not needed in r5. The measured r4 same-binary 64k PP gain was +8.25%; r5 PP is compatible with the revert, but cross-build attribution is qualified. [Source investigation and metrics](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md). r4 patch status in the historical section below is unchanged.
 
 ## Preserved r4 status (2026-10-09)
