@@ -1,6 +1,6 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-09 (r5 clean Windows baseline verified through 256k on Vulkan/ROCm; historical r4 clean binary replay on new Windows 26H2 is the next control)
+Snapshot: 2026-10-09 (r5 clean Vulkan/ROCm baseline verified through 256k; r4 clean 64k replayed on Windows 26H2; Vulkan MoE tile selection classified UPSTREAMED / RETIRE)
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
@@ -12,7 +12,8 @@ work. Patch IDs remain stable even when implementation priority changes.
 - Documentation/tooling source: r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`
 - Native inference source: unchanged from pinned upstream; user-reported builds/backend tests passed, allocation and 64k/128k/256k CLI runs verified (b11517; six of six OK)
 - Entry point: [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md)
-- Accepted measurements and environment: [R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md); Windows 11 Pro upgraded to 26H2/26300.9550 between r4 and r5, so replay preserved r4 clean binaries on current OS before isolated upstream-speed claims
+- Accepted measurements and environment: [R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md); r4 clean 64k binary replay on Windows 26H2 confirms PP close to old r4, while r5 PP is higher
+- Vulkan MoE tile investigation: [R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md); upstream PR #29936 reverted the per-expert selector, matching the r4 legacy-ON expression: **UPSTREAMED / RETIRE**, no r5 diagnostic switch port
 - Repeatable procedure: [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md)
 
 Follow the r5 sequence below. Historical r4 implementations and validation reports are retained for comparison and do not imply those patches are present in this initial r5 tree.

@@ -74,7 +74,7 @@ r4 clean is original joined-PLE MTP OFF, b11372/embedded `94b877457`, same long-
 
 ### Later r4 optimized reference (not a matched baseline)
 
-- Vulkan r4 legacy MoE tile + QSA union **OFF**: original 64k ABBA mean PP **269.08**, TG **24.72**; PLE16 128k PP **178.97**, 256k PP **132.96** with legacy MoE fixed. r5 clean PP (269.24 / 179.51 / 135.41) is close, but **does not establish that upstream reverted or matched legacy tile selection**. Inspect source before deciding.
+- Vulkan r4 legacy MoE tile + QSA union **OFF**: original 64k ABBA mean PP **269.08**, TG **24.72**; PLE16 128k PP **178.97**, 256k PP **132.96** with legacy MoE fixed. r5 clean PP (269.24 / 179.51 / 135.41) is close. **Subsequent source inspection confirms** upstream PR #29936 reverted the selector and alignment inputs to `nei1`, matching the r4 legacy-ON expressions; see [r5 MoE tile investigation](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md). Cross-build speedups cannot be attributed entirely to this change without a matched A/B.
 - Vulkan r4 legacy MoE + grouped QSA union **ON**: original 64k ABBA PP **337.45**, TG **24.82**; PLE16 128k PP **295.68**, 256k PP **266.75**. Strong candidate for a **separate measured** VULKAN-002 port; different model layout on long inputs, build and OS mean these numbers are not a same-binary causal r5 A/B.
 - ROCm r4 post-COMMON-001 original 64k PP **370.32** / TG **21.17**; r5 390.73 / 21.18. ROCm r5 256k/64k PP ratio is **49.56%**; prior clean r4 ratio was **50.29%**, so long-context scaling still warrants investigation.
 - r4 MTP candidates/combined TG optimizations are **not** present in r5 clean and must not be interpreted as current r5 results.

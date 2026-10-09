@@ -6,7 +6,9 @@ The initial r5 inference source matches pinned upstream `de7fa0a3c6a2e1b4cd9f22e
 
 Documentation, build/measurement utilities and historical test fixtures are imported. Their presence does not mean the corresponding native patch or CMake test target is implemented in r5. The real-prompt bench and union-statistics investigation branches remain separate.
 
-See [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md) for pending gates and [ROADMAP.md](ROADMAP.md) for the current order.
+See [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md) for validation gates and [ROADMAP.md](ROADMAP.md) for the current order.
+
+**r5 MoE tile selection: UPSTREAMED / RETIRE.** Upstream commit `3c9e747f7e8b` / PR #29936 (2026-10-05) reverted the per-expert `MUL_MAT_ID` selector back to the `nei1` (total tokens) expression. This matches the r4 `GGML_VK_MOE_LEGACY_TILE_SELECTION=1` path for selector/alignment decisions; the local r4 diagnostic switch is not needed in r5. The measured r4 same-binary 64k PP gain was +8.25%; r5 PP is compatible with the revert, but cross-build attribution is qualified. [Source investigation and metrics](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md). r4 patch status in the historical section below is unchanged.
 
 ## Preserved r4 status (2026-10-09)
 
