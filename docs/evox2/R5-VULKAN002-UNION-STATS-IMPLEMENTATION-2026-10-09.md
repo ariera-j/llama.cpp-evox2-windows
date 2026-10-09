@@ -2,7 +2,7 @@
 
 Recorded: 2026-10-09. Branch: `r5/upstream-refresh-20261009`.
 
-**Source implemented, Windows build/runtime validation PENDING.** The **pre-stats b11530 matrix completed (12/12 OK)**: [r5 validation](R5-VULKAN002-VALIDATION-2026-10-09.md). Preserve that tested binary and its logs; compile diagnostics in a **different build directory**. Phase B correctness 18/18 OFF+ON passed, and Phase B 64k PLE16 A/B PP 269.44→338.71 tok/s (+25.71%) is recorded at [r5 Phase B](R5-VULKAN002-IMPLEMENTATION-2026-10-09.md). That earlier run is the preserved STATS=0 baseline.
+**Source ported; Windows Vulkan build b11535, STATS=0 CLI and STATS=1 CSV smoke PASSED (2026-10-09).** A repeat of the native 18/18 OFF/ON test on the statistics binary was not included in this evidence. The **pre-stats b11530 matrix completed (12/12 OK)**: [r5 validation](R5-VULKAN002-VALIDATION-2026-10-09.md). Preserve that tested binary and its logs; compile diagnostics in a **different build directory**. Phase B correctness 18/18 OFF+ON passed, and Phase B 64k PLE16 A/B PP 269.44→338.71 tok/s (+25.71%) is recorded at [r5 Phase B](R5-VULKAN002-IMPLEMENTATION-2026-10-09.md). That earlier run is the preserved STATS=0 baseline.
 
 ## Port details
 
@@ -77,4 +77,38 @@ Prefer weighted `unique_mean`, `padded_mean`, `unique_over_selected` (interprete
 
 ## Status
 
-As of this source commit, **only the r4 investigation branch has actual CSV evidence**. r5 CSV, compile, short smoke and non-regression checks require Evo-X2 runtime validation. The completed pre-stats b11530 12-run matrix remains authoritative for VULKAN-002 64k/128k/256k throughput; see [accepted results](R5-VULKAN002-VALIDATION-2026-10-09.md).
+As of 2026-10-09, r5 STATS OFF/ON 64k smoke data are now available and passed. A post-stats native reference test rerun, and fuller matched A/B performance repetition, are not yet evidenced. The completed pre-stats b11530 12-run matrix remains authoritative for normal VULKAN-002 64k/128k/256k throughput; see [accepted results](R5-VULKAN002-VALIDATION-2026-10-09.md).
+
+## r5 Windows b11535 64k runtime verification (2026-10-09)
+
+Source user ZIP (raw artifacts held outside Git): `20261009-220633-703-bench-vulkan-b11535-ctx65536-ea3fb4e261b7.zip` includes **one** STATS=0 `llama-cli` 64k full-model run plus **one** STATS=1 `llama-bench` 64k real-prompt run and the actual `qsa-union-stats.csv`. Both results report `Status=OK`, ExitCode=0, Vulkan0/AMD Radeon 8060S, clean source build SHA `fbb6e15bdfe85737683c56c74ab7fae13d520f17` (b11535, Clang 20.1.8). Both logged `qsa-union active (r5)` and fallback where expected. This accepts the *observed statistics data path*, not untested GPU platforms or full model output parity.
+
+### ② STATS=0 ordinary CLI no-regression smoke
+
+- Run ID: `20261009-215859-763-cli-vulkan-b11535-ctx65536-038a925d976b`.
+- Binary `llama-cli.exe` SHA256 `214a6e3c4175e5db838a8824651d01e3cab0ee4caa6a8fc44791f2192d0df78b`; runtime artifact digest `43ecfa03065bc879bab5e3ce861970d8273976bdbe0f10b5878ee629dd4c67ec`, runtime verified.
+- `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_STATS=0`; PLE16, original **64k** input `nlp-survey-ch3-d7-b1.txt`, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`; 61,789 tokens, ctx=65,536. Same measured parameters as the pre-stats PLE16 ABBA: MTP off, f16 KV, batch/ubatch 2048/1024, threads 4, GPU layers 999, CPU MoE 0, FA auto, 512 fixed generated tokens, seed 1234, ignore-EOS, temperature 0.2, top-p 0.8, `--ctx-checkpoints 0t`, cache-ram 0, `-tb 4`.
+- **PP=337.84 tok/s (182,894.46 ms)**, **TG=25.35 tok/s (20,155.34 ms)**; compare pre-stats b11530 PLE16 64k **ABBA ON mean PP=339.48, TG=25.80**, giving **PP −0.48%, TG −1.74%**. A single new run versus prior two-run mean does *not* demonstrate a meaningful regression or establish statistical equivalence. There were no detected errors and no stats CSV in this CLI run. STATS-off baseline smoke **PASS**.
+
+### ③ STATS=1 llama-bench union CSV verification
+
+- Run ID `20261009-220633-703-bench-vulkan-b11535-ctx65536-ea3fb4e261b7`. Binary `llama-bench.exe` SHA256 `9d32422898d4c8038acc3da9c8e3045841726d8cf1df6cea2e68241e4c707159`.
+- `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_STATS=1`, bin size 16384, PLE16, `-c 65536 -p 61789 -n 0 -d 0 -r 1 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 --no-warmup`.
+- The actual **bench** source is `nlp-survey-ch3-d31-b1.txt` (**256k source file**, 1,261,235 bytes, SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`), extracted with `--prompt-slice head-tail` to 61,789 tokens. It is **not the same exact 64k text file as CLI**; do not infer head-to-head PP differences. `llama-bench` recorded 335.508686 tok/s under statistics instrumentation, **not** used as the normal PP baseline.
+- Valid run-local `qsa-union-stats.csv` contains **30 rows, 5,640 sampled groups, dropped_groups=0 in every row**. All rows have groups>0; integer-padded min/max multiples of 256; 0 < unique_min <= unique_mean <= unique_max; 0 < padded_min <= padded_mean <= padded_max; unique_mean <= padded_mean; selected_mean >= unique_mean; KV bins valid and sync 0..29 sequential. `qsa-union active (r5)` and fallback logged in stderr. **STATS=1 CSV collection/format gate PASS.**
+
+Rows are **per-sync/per-16k-KV-bin aggregate**, not per-token or per-run; the table below uses group-weighted averages:
+
+| KV-bin start | CSV rows | Sum groups | Unique mean | Padded mean | Selected mean | Unique / selected |
+|---:|---:|---:|---:|---:|---:|---:|
+| 32768 | 16 | 3072 | **16815.04** | 16943.08 | 131264.00 | 12.810% |
+| 49152 | 14 | 2568 | **18293.45** | 18415.75 | 130928.56 | 13.972% |
+| **Combined** | **30** | **5640** | **17488.18** | **17613.62** | **131111.27** | **13.338%** |
+
+Historical r4 stats investigation reported approx **16863** at bin 32768, **18289** at bin 49152 and **17512** global unique mean for a 64k real-document run. r5 b11535 values are close (−0.28%, +0.02%, and approx −0.14%) but **the 64k real-text input and test runs are not proven identical**; r4 report recorded a different source/input SHA. Similarity strongly supports correct instrumentation, not same-input deterministic equivalence. `selected` counts invalid candidate slots, so `unique/selected` is not a pure duplicate rate.
+
+### Post-verification status / recommended next steps
+
+- **Passed:** Windows build, 64k STATS=0 normal CLI smoke (no evident PP regression), 64k STATS=1 actual Vulkan CSV with no dropped groups, r4-like bins/union values. The new source commit contains no non-opt-in shader changes.
+- **Not evidenced in the supplied ZIP:** a repeat of the **18/18 OFF and 18/18 ON** targeted `Test-QsaUnion.ps1` on b11535; the prior **pre-stats** b11530 correctness suite passed both modes. No extra performance sampling on b11535 was performed. Keep this distinction explicit.
+- Begin genre-specific 64k diagnosis with the same 61,789 raw token target where possible, record source commit/transformer, SHA256 of actual input and the model's tokenizer count, and use a common `PromptSlice` choice (prefer `head` for sequential literary texts). Compare unique/padded/selected counts from STATS=1, and PP independently with STATS=0. The literary full-file counts reported by the user are Japanese `吾輩は猫である` 251,252 and English `The Count of Monte Cristo` 668,434; both cover 64k/128k targets, only English covers previous exact 255,181-token 256k target.
