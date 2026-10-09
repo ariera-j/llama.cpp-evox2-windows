@@ -20,7 +20,8 @@ param(
 
     [switch]$SkipSmoke,
 
-    [string[]]$ExtraCMakeArgs = @()
+    [string[]]$ExtraCMakeArgs = @(),
+    [string[]]$ExtraTargets = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -210,12 +211,8 @@ try {
         'llama-cli',
         'llama-server',
         'llama-bench',
-        'test-backend-ops',
-        'test-mtp-indexer-policy',
-        'test-mtp-dense-indexer',
-        'test-qsa-noop-policy',
-        'test-qsa-noop-invalidation'
-    )
+        'test-backend-ops'
+    ) + $ExtraTargets
 
     $configureRecord = [ordered]@{
         Executed  = $false

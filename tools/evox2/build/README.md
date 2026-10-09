@@ -6,6 +6,26 @@ Use new build directories in the new worktree and pass `-BuildDir .\build-vulkan
 
 Follow the [current Vulkan guide](../../../docs/evox2/BUILD-VULKAN-WINDOWS.md), [current ROCm guide](../../../docs/evox2/BUILD-ROCM-WINDOWS.md) and [handoff](../../../docs/evox2/R5-REFRESH-2026-10-09.md). The carried wrappers are not proof of a successful build on the new upstream.
 
+### Clean-upstream build targets (2026-10-09)
+
+Both wrappers build `llama-cli`, `llama-server`, `llama-bench` and `test-backend-ops` by default. ROCm still builds `ggml-hip` first.
+
+The imported r4 wrappers also requested four downstream MTP/QSA test targets. Their native implementation/CMake definitions are absent from clean r5, so the first Vulkan invocation configured successfully but Ninja stopped with `unknown target 'test-mtp-indexer-policy'`. The same target list was present in the ROCm wrapper; ROCm had not yet been tried on the machine.
+
+Downstream tests are now explicit additions through `-ExtraTargets`, for example `-ExtraTargets @('test-mtp-indexer-policy', 'test-mtp-dense-indexer')` after the corresponding native patch is ported. Missing explicitly requested targets still fail; no test failure is converted to a pass. The build manifest records the complete requested target list.
+
+The completed configure/cache can be reused after pulling the fix:
+
+```powershell
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-clean `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4 -BuildOnly
+```
+
+`-BuildOnly` checks the existing cache and refreshes CMake metadata before building. This repair does not establish a completed Windows build or inference validation; those gates remain pending.
+
 ## Imported r4 reference
 
 The detailed wrapper reference below preserves historical examples and results. The current guides select the new build directories.
