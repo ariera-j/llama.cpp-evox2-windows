@@ -4969,6 +4969,9 @@ vk_device ggml_vk_get_device(size_t idx) {
             device->mmvq_mode = 1;
         }
 
+        GGML_LOG_INFO("ggml_vulkan: QSA grouped-union = %s (group=64, min_kv=%u)\n",
+                      ggml_vk_qsa_union_enabled() ? "on" : "off", ggml_vk_qsa_union_min_kv());
+
         return device;
     }
 

@@ -31,15 +31,13 @@ $arguments = '-b "{0}" -o FLASH_ATTN_EXT -p "{1}"' -f $Backend, $filter
 $environmentNames = @(
     'GGML_VK_QSA_UNION',
     'GGML_VK_QSA_UNION_MIN_KV',
-    'GGML_VK_GET_ROWS_128X4',
     'GGML_VK_FA_SPARSE_DISABLE',
     'GGML_VK_DISABLE_F16',
     'GGML_VK_DISABLE_COOPMAT',
     'GGML_VK_DISABLE_COOPMAT2',
     'GGML_VK_PERF_LOGGER',
     'GGML_VK_PERF_LOGGER_FREQUENCY',
-    'GGML_VK_PERF_LOGGER_CONCURRENT',
-    'GGML_VK_PERF_GET_ROWS_DETAILS'
+    'GGML_VK_PERF_LOGGER_CONCURRENT'
 )
 $savedEnvironment = @{}
 foreach ($name in $environmentNames) {
@@ -83,7 +81,7 @@ try {
         $ranAllTests = $allOutput -match '(?m)^\s*18/18 tests passed\s*$'
         $skippedSeen = $allOutput -match '(?i)not supported'
         $switchSeen = $allOutput.Contains("QSA grouped-union = $label")
-        $activeSeen = $allOutput.Contains("qsa-union active (r4)")
+        $activeSeen = $allOutput.Contains("qsa-union active (r5)")
         $fallbackSeen = $allOutput.Contains("qsa-union fallback:")
         $passed = $exitCode -eq 0 -and $ranAllTests -and $switchSeen -and -not $skippedSeen -and
             ($mode -eq '0' -or ($activeSeen -and $fallbackSeen))
