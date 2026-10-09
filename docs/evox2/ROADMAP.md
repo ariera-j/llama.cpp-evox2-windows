@@ -10,11 +10,11 @@ work. Patch IDs remain stable even when implementation priority changes.
 - Branch: `r5/upstream-refresh-20261009`
 - Pinned upstream: `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`
 - Documentation/tooling source: r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`
-- Native inference source: unchanged from pinned upstream; user-reported builds/backend tests passed, allocation and 64k/128k/256k CLI runs verified (b11517; six of six OK)
+- Native inference source: clean pinned-upstream **reference** remains b11517 (Vulkan/ROCm 64k/128k/256k, six of six OK). Active r5 adds only the minimal COMMON-001 split-PLE compatibility delta at `b45025848`; its b11521 Original/PLE16 Windows validation is now accepted through 64k. VULKAN-002 remains unported.
 - Entry point: [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md)
 - Accepted measurements and environment: [R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md); r4 clean 64k binary replay on Windows 26H2 confirms PP close to old r4, while r5 PP is higher
 - Vulkan MoE tile investigation: [R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md); upstream PR #29936 reverted the per-expert selector, matching the r4 legacy-ON expression: **UPSTREAMED / RETIRE**, no r5 diagnostic switch port
-- r5 COMMON-001 split PLE16 support: [R5-COMMON001-IMPLEMENTATION-2026-10-09.md](R5-COMMON001-IMPLEMENTATION-2026-10-09.md); minimal 4-file additive implementation against pinned clean base, Windows build and Original/PLE16 Vulkan/ROCm runtime gates **pending**; do not confuse committed source with validated r5 performance
+- r5 COMMON-001 split PLE16 support: [implementation](R5-COMMON001-IMPLEMENTATION-2026-10-09.md) / [Windows validation](R5-COMMON001-VALIDATION-2026-10-09.md). **Accepted for allocation, short inference and matched-workload 64k compatibility/performance gate** (b11521; Vulkan/ROCm Original and PLE16, 4/4 OK). Small Vulkan TG layout difference observed but unexplained; no extra repeat now. r5 128k/256k PLE16 measurements are deferred to VULKAN-002.
 - r2/source-fork PLE inspection: [R2-PLE-LEGACY-SOURCE-REVIEW-2026-10-09.md](R2-PLE-LEGACY-SOURCE-REVIEW-2026-10-09.md); **no additional port**, reopen only on relevant LaurentZuijdwijk fork update or changed requirements. Agreed order: validate COMMON-001 → reorganize main/r2/r4 refs → evaluate VULKAN-002
 - Repeatable procedure: [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md)
 

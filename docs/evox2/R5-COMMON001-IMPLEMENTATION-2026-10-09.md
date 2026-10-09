@@ -22,7 +22,11 @@ The r5 implementation is **an additive compatibility branch against r5 clean**, 
 
 ## Status
 
-**Source implementation committed; Windows build and GPU execution are not yet verified.** The assistant's environment cannot reproduce a Windows GPU build or access the user's model files; do not mark this r5 change validated until the gates below pass. The r5 clean b11517 binary and original measurements remain the unchanged baseline.
+**Windows implementation validation accepted (2026-10-09).** User-provided b11521 Vulkan/ROCm allocation + short inference results pass on both Original and PLE16, and 64k real-input single-run comparisons pass all four backend/model combinations with no material Original regression. See [r5 COMMON-001 Windows validation](R5-COMMON001-VALIDATION-2026-10-09.md). Vulkan PLE16 TG was modestly higher, but its cause is unresolved and no extra measurement is scheduled. The saved b11517 clean binaries remain the comparison reference.
+
+## Original implementation handoff (retained for reproducibility; gates now recorded complete through 64k)
+
+The following were the *pre-validation* instructions. The allocation/short and 64k gates have since passed on the Evo-X2; a standalone COMMON-001 128k/256k sweep is **not required** for acceptance. A future VULKAN-002 experiment will use PLE16 at longer contexts.
 
 ## Windows gates (run from the r5 checkout after pulling)
 

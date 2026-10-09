@@ -2,7 +2,7 @@
 
 ## Current r5 status (2026-10-09)
 
-The initial r5 inference source matched pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. A minimal r5 **COMMON-001 split PLE16 compatibility implementation is now committed** (Windows build/model validation pending). VULKAN-002, the dense MTP guard and the two TG candidates are not ported. [Implementation and test gates](R5-COMMON001-IMPLEMENTATION-2026-10-09.md).
+The initial r5 inference source matched pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. A minimal r5 **COMMON-001 split PLE16 compatibility implementation has passed Windows Vulkan/ROCm Original+PLE16 allocation, short inference and 64k comparison gates** (b11521, 4/4 long runs OK, runtime Verified); see [implementation](R5-COMMON001-IMPLEMENTATION-2026-10-09.md) and [measurements](R5-COMMON001-VALIDATION-2026-10-09.md). The modest Vulkan PLE16 TG advantage is observed but not causally established and additional COMMON-001-only repeats are deferred. VULKAN-002, the dense MTP guard and the two TG candidates are not ported.
 
 Documentation, build/measurement utilities and historical test fixtures are imported. Their presence does not mean the corresponding native patch or CMake test target is implemented in r5. The real-prompt bench and union-statistics investigation branches remain separate.
 
