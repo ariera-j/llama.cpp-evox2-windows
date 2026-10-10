@@ -417,3 +417,26 @@ Two measured start/observed KV pairs: (512, 1024) and (50000, 14336). Assuming a
 These are **calibration targets**, not validated KV values. During the next run keep **Dispatch range / count 256 / SQTT High / counters OFF** and `GGML_VK_FA_RGP_MARKERS=1`. Take one Japanese-literature RGP at **start 180000**, check its *actual* `EVOX2_FA_MAIN KV=`, and use that measured value to refine the alignment before capturing the source-code corpus. If 180000 exceeds the useful prompt or fails to capture, reduce the index. Continue to match the same Q layer and shader, not just KV, for comparison.
 
 The earlier time-based 195/198/205-second profiles remain unsuitable for FA identification; the dispatch-index capture correctly enters FA at KV=1024 and KV=14336 in distinct runs. No code change required; stable r5 untouched.
+
+## RGP Dispatch range calibration point 3: 48k KV caught (2026-10-11)
+
+**Success:** Japanese-literature RGP with **Dispatch range start=180000**, count 256, SQTT High, hardware counters OFF; user supplied RGP Event timing screenshot with `EVO` filter.
+
+| Marker / metric | RGP value |
+| --- | --- |
+| Submission / node | `submit 14`, `FLASH_ATTN_EXT node_2900` |
+| Query | `Qcur-19 (view) (permuted)` |
+| Query count | `N=1024` |
+| **Actual KV** | **`KV=49152`** (exactly 48 Ki tokens) |
+| `Br / Bc`, `n_kv_max` | `16 / 64`, `2051` |
+| `EVOX2_FA_MASK_OPT` | `shader=fa_mask_opt`, dispatch `(48,64,1)`, **3667.044 µs** |
+| `EVOX2_FA_MAIN` | `shader=flash_attn_f32_f16_aligned_cm1`, dispatch `(64,24,1)`, **314071.277 µs** |
+| Total `FLASH_ATTN_EXT` | **317738.973 µs** |
+
+The capture lands in the **late-KV interval of interest** rather than initialization or an early prefill batch; the previous two-point estimate of ~49k was close enough for range selection. The main FA dispatch contributes **~98.85%** of this single graph-node GPU duration, while `fa_mask_opt` contributes ~1.15%. **Important:** this does not prove that the mask contents do not cause the FA main's cost; the mask-prepass output could change which KV tiles are skipped. Nor should the RGP single-node GPU time be treated as a full-run FA mean.
+
+### Immediate controlled A/B
+
+Capture the **source-code corpus** with exactly the same **start dispatch=180000 / count=256 / SQTT High / counters OFF**, `GGML_VK_FA_RGP_MARKERS=1`, `GGML_VK_QSA_UNION=0`, and unchanged b11551-descended investigation build, context/prompt size and other bench conditions. Before interpreting times, **verify same `KV=49152`, `N=1024`, `Qcur-19` and main shader name**; the same dispatch ordinal might not imply identical graph position if content-dependent MoE routing changes dispatch counts. If an exact match is observed, compare mask-prepass and FA-main timings and investigate input-dependent tile skipping/memory behavior. If not, adjust the start index based on *observed* `KV=` rather than on process time.
+
+No need to rebuild or change the RGP configuration. Stable r5 source remains unchanged.
