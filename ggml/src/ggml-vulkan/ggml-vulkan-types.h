@@ -1443,6 +1443,9 @@ struct ggml_vk_debug_label {
     // RGP cannot recover the pipeline name on its own, it only has the hash
     ggml_vk_debug_label(vk_context & ctx, const std::string & pipeline_name, uint32_t wg0, uint32_t wg1, uint32_t wg2);
 
+    // Investigation-only custom region (e.g. FA kernel name with KV and query length).
+    ggml_vk_debug_label(vk_context & ctx, const std::string & region_name);
+
 
     // one region per graph node
     // fused nodes are joined with '+', e.g. "RMS_NORM+MUL+ROPE Qcur-19"
