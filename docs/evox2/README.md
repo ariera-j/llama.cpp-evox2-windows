@@ -4,7 +4,7 @@ This directory contains downstream documentation for the Windows Evo-X2 work in 
 
 ## Current refresh
 
-r5 is a clean upstream-first refresh pinned at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Documentation/tooling are imported from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`; upstream inference source is unchanged. Windows Vulkan/ROCm validation is pending.
+r5 began as a clean upstream-first refresh pinned at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Documentation/tooling were imported from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Since the clean baseline, r5 has selectively added COMMON-001, real-prompt llama-bench and opt-in Vulkan QSA grouped union/statistics. **Windows Vulkan/ROCm builds, model-loading and the 64k/128k corpus PP comparison were validated by 2026-10-10**; read the dated r5 reports for exact builds and gates.
 
 The durable current identity is [CURRENT-REFRESH.json](CURRENT-REFRESH.json). Start with [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md) and follow [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md) for the next refresh cycle.
 
@@ -112,6 +112,15 @@ runtime/build facts rather than trusting lookup-key labels.
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
 - [R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md): build/load results and ROCm test discrepancy
 
+## Historical investigation documents imported from r4 (2026-10-10)
+
+These records were copied from the two now-superseded `investigation/` branches **with the original experiment narrative preserved**. Their opening/closing annotations describe the later r5 ports and point to the current comparisons. The original investigations refer to older b11427/b11433 code, environment flags, and some different source-text slices; do not reuse them as current r5 settings.
+
+- [R4-LLAMA-BENCH-REAL-PROMPT-2026-10-07.md](R4-LLAMA-BENCH-REAL-PROMPT-2026-10-07.md): real-file llama-bench semantics, r4 64k/256k real-vs-random PP comparisons, b11433 OFF rank reversal and related MoE tile caveats
+- [R4-VULKAN002-QSA-UNION-STATS-2026-10-08.md](R4-VULKAN002-QSA-UNION-STATS-2026-10-08.md): original diagnostic design, CSV column meanings, group-weighted aggregation, 64k/256k union figures and error/overhead caveats
+
+Original fixed investigation heads: `investigation/llama-bench-real-prompt-20261007` `e3466e8fa769928140f81c93c84889860732ff82` and `investigation/vulkan-qsa-union-stats-20261008` `979ef17eeff14440a58c866a966b355a1b63b17e`.
+
 ## Historical documents
 
 Older r1/r2/r3 Evo-X2 documents are historical records. They may refer to:
@@ -127,7 +136,7 @@ Use the current build guides for commands on this refresh. The dated r3 validati
 
 ## Current performance decisions
 
-r5 has no measured performance result yet. Establish the clean Original/MTP-OFF baseline before evaluating the historical decisions below.
+r5 completed baseline and follow-up PP measurements by 2026-10-10; the old checklist below is historical decision context, **not a current pending-validation status**. For active evidence see [r5 Vulkan 64k/128k real-document A/B](R5-QSA-UNION-CORPUS-AB-64K-128K-2026-10-10.md), [Vulkan 64k seven-corpus union statistics](R5-QSA-UNION-SEVEN-CORPORA-64K-2026-10-10.md), [Vulkan 128k union statistics](R5-QSA-UNION-128K-THREE-CORPUS-STATS-2026-10-10.md), and [ROCm vs Vulkan 64k/128k](R5-ROCM-VULKAN-CORPUS-PP-64K-128K-2026-10-10.md). The Vulkan OFF FA dispatch investigation is isolated in [`investigation/r5-vulkan-off-fa-dispatch-20261010`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-vulkan-off-fa-dispatch-20261010), **not merged into stable r5**.
 
 - [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md) and [ROADMAP.md](ROADMAP.md): current r4 checkpoint and next r5 validation order.
 - [PERFORMANCE-RESEARCH-LOG.md](PERFORMANCE-RESEARCH-LOG.md): 2026-10-09 research, real/random PP findings and refresh priorities.
