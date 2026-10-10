@@ -440,6 +440,20 @@ if ($env:GGML_VK_QSA_UNION_STATS -eq '1') {
     }
 }
 
+# Place opt-in FA dispatch diagnostics beside the normal result artifacts.
+# The native backend writes once when its context is freed, after all PP passes.
+$FaDispatchDiagFile = $null
+$AutoFaDispatchDiagFile = $false
+if ($env:GGML_VK_FA_DISPATCH_DIAG -eq '1') {
+    if ([string]::IsNullOrWhiteSpace($env:GGML_VK_FA_DISPATCH_DIAG_FILE)) {
+        $FaDispatchDiagFile = Join-Path $RunDirectory 'fa-dispatch-diag.csv'
+        $env:GGML_VK_FA_DISPATCH_DIAG_FILE = $FaDispatchDiagFile
+        $AutoFaDispatchDiagFile = $true
+    } else {
+        $FaDispatchDiagFile = $env:GGML_VK_FA_DISPATCH_DIAG_FILE
+    }
+}
+
 $Started = Get-Date
 
 $Conditions = [ordered]@{
@@ -481,6 +495,7 @@ $Conditions = [ordered]@{
     EffectiveCondition = $ConditionFingerprint
     Environment        = $RelevantEnvironment
     QsaUnionStatsFile  = $QsaStatsFile
+    FaDispatchDiagFile = $FaDispatchDiagFile
 
     Notes = @(
         'llama-bench measurements exclude tokenization and sampling time.',
@@ -604,6 +619,9 @@ try {
 } finally {
     if ($AutoQsaStatsFile) {
         Remove-Item Env:GGML_VK_QSA_UNION_STATS_FILE -ErrorAction SilentlyContinue
+    }
+    if ($AutoFaDispatchDiagFile) {
+        Remove-Item Env:GGML_VK_FA_DISPATCH_DIAG_FILE -ErrorAction SilentlyContinue
     }
     if ($null -ne $monitorProcess) {
         try {
@@ -852,6 +870,7 @@ $Result = [ordered]@{
         StdErr     = $StdErrPath
         Resources  = if (Test-Path -LiteralPath $ResourcePath) { $ResourcePath } else { $null }
         QsaUnionStats = if ($QsaStatsFile -and (Test-Path -LiteralPath $QsaStatsFile)) { $QsaStatsFile } else { $null }
+        FaDispatchDiag = if ($FaDispatchDiagFile -and (Test-Path -LiteralPath $FaDispatchDiagFile)) { $FaDispatchDiagFile } else { $null }
     }
 }
 
@@ -876,6 +895,12 @@ Write-Host "llama-bench.json: $NativeJsonPath"
 Write-Host "output.log      : $OutputPath"
 if ($QsaStatsFile) {
     Write-Host "QSA union stats : $QsaStatsFile"
+}
+if ($FaDispatchDiagFile) {
+    Write-Host "FA dispatch diag: $FaDispatchDiagFile"
+    if (-not (Test-Path -LiteralPath $FaDispatchDiagFile -PathType Leaf)) {
+        Write-Warning 'FA dispatch diagnostics were requested, but no CSV was found. Check stderr.log.'
+    }
 }
 if ($ResourceMonitor) {
     Write-Host "resources.csv   : $ResourcePath"
