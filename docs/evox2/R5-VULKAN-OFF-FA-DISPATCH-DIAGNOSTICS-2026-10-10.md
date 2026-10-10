@@ -317,3 +317,35 @@ If labels are visible, determine captured KV position before running code and ad
 **If labels are absent:** preserve `stderr.log`, `conditions.json` and a screenshot of RGP Event timing including the event tree; check the one-time enabled message, RGP capture warning, and `ggml_vk_debug_label` behavior. Do not assume the shader label is displayed simply because the Vulkan extension initialized. Pipeline hash alone is insufficient to align KV and kernel identity.
 
 After testing, remove `GGML_VK_FA_RGP_MARKERS` and any explicitly set `GGML_VK_DEBUG_MARKERS` from the process environment. Keep the known-good b11551 for uninstrumented measurements.
+
+
+## First labelled RGP 64k Japanese literature capture — 2026-10-11 (00:00 JST)
+
+**Preliminary result — Vulkan upstream debug labels visible, but FA KV-specific labels not verified yet.** Capture file: `llama-bench-20261011-000053596.rgp`, 155,014,948 bytes (RDF `AMD_RDF` header confirmed). Captured using RGP's timer workflow after adding `GGML_VK_FA_RGP_MARKERS` support on the investigation branch; inspect the native run's `stderr.log` or `conditions.json` to prove the specific opt-in flag was set and initialization succeeded. Merely seeing ordinary pipeline names does not establish that the **new FA-specific label** was activated.
+
+Observed in user-provided RGP screens:
+
+| RGP field | Result |
+| --- | --- |
+| Target API/device | Vulkan / Radeon 8060S |
+| Profile duration | 182,576.905 µs (~182.58 ms) |
+| GPU idle | 0.36% (RGP says GPU bound) |
+| Queue submissions / command buffers | 16 / 16 |
+| Sync primitive events | 0 |
+| RGP event statistics | 550 events = 325 `vkCmdDispatch` + 225 `vkCmdPipelineBarrier` |
+| Pipeline count | 55 |
+| Top API PSO hash | `0x91D300D08410103C` |
+| Top pipeline GPU time | 24,129.879 µs / 4 dispatches |
+
+**New conclusive name mapping:** screenshot of RGP **Event timing** with the expanded label tree shows that the top pipeline hash `0x91D300D08410103C` corresponds to **MoE `MUL_MAT_ID ffm_moe_gate-0` and the shader `matmul_id_subgroup_iq2_s_f32_f16acc_aligned_1`**, including dispatch `(10, 16, 512)`. Therefore the biggest pipeline in the earlier 195-second RGP snapshots was **not Flash Attention**. Other visible labels include `CONCAT`, `GET_ROWS`, `RMS_NORM`, `MUL_MAT`, and MoE-specific shader names. GPU event naming is working.
+
+The visible two portions of Event timing (near event IDs 53–75 and 123–150) show **no `EVOX2_FA_` label**; however only partial portions of the 550-event trace are visible in screenshots. This is **not proof** that FA-specific labels are absent from the complete capture or that FA was not dispatched within the sampled interval. Profile duration is only ~183 ms, so it is also possible that the sampled interval consists mainly of a MoE section between FA calls. The capture does **not yet** locate a KV=48–60k FA invocation.
+
+**Next minimal user-side gate before another RGP capture:**
+
+1. In **RGP → Events → Event timing**, use `Filter event tree...` to search for **`EVOX2_FA_`**. If matches appear, show the event hierarchy and first `KV=` label, especially `EVOX2_FA_MASK_OPT` and `EVOX2_FA_MAIN`.
+2. If none, inspect the corresponding benchmark's `stderr.log` for `ggml_vulkan: FA RGP markers enabled`, and its `conditions.json` for `GGML_VK_FA_RGP_MARKERS=1` and correct new executable SHA/build key. Note: generic named pipeline labels can come from the preexisting `GGML_VK_DEBUG_MARKERS`.
+3. If confirmed enabled yet no FA markers in this ~183ms window, shift the **capture delay** slightly while retaining the proven 256 dispatch / SQTT High / counters OFF configuration, or collect a small number of indexed adjacent captures to find FA dispatches. Do not alter GPU shaders or equate captures based only on 195s wall-clock delay.
+4. Only after identifying `KV`, shader and matching tensor/layer for FA in each corpus, compare per-kernel FA and mask-prepass timings. The previous whole-run FA attribution remains valid independently of this RGP snapshot.
+
+No new C++ commit, refactoring, or stable r5 change is justified by this preliminary snapshot.
