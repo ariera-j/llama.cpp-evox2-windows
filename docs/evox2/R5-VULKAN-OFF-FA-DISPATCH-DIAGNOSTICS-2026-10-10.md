@@ -493,3 +493,115 @@ Conditions reproduced in all four screenshots: Vulkan QSA union OFF, RGP `Dispat
 - This experiment identifies a **repeatable content-associated difference in the FA compute shader's execution time** at matching reported dimensions/dispatch shape. It does **not yet prove that the cause is mask-tile skip count**. The two-bit masks contain actual data-dependent tile classes and locations, which were not read out or counted.
 
 **Decision:** no further RGP captures are needed merely to establish the existence and approximate magnitude of this difference. Prioritize a minimally intrusive, opt-in **GPU mask-tile category diagnostic** (ALL_NEG_INF / ALL_ZERO / mixed/other) at the fixed `Qcur-19 KV=49152` point, with a separately validated readback or GPU-side tally. The GPU shader has an early `continue` when `MASK_OPT_ALL_NEG_INF` occurs, but tile count/placement, wave divergence and memory behavior have not been isolated. Do not add per-tile atomics or buffer readbacks to the ordinary PP baseline; leave stable r5 unchanged. A one-shot diagnostic plus correctness gate is preferred to continuous heavy profiling.
+
+
+## Opt-in FA mask tile histogram diagnostic: implementation and Windows test gates (2026-10-11)
+
+**Source code committed on investigation branch; Windows compile / GPU runtime / CSV correctness NOT YET VERIFIED.** No changes to stable `r5/upstream-refresh-20261009`, model, GGUF, or existing FA shaders. This implements the next experiment motivated by repeatable **~4.1× matched-KV FA-main GPU time difference** (Japanese literature vs code at `Qcur-19 KV=49152`).
+
+### Mechanism and limits
+
+- New opt-in environment variable: `GGML_VK_FA_MASK_DIAG=1` (literal `1` only). Default **OFF**.
+- Target FA invocation defaults to `GGML_VK_FA_MASK_DIAG_KV=49152`, `GGML_VK_FA_MASK_DIAG_QUERY=Qcur-19`; both can be explicitly overridden for a short smoke. Also require `N=1024`, `Br=16`, `Bc=64`, `use_mask_opt=true`. A query-name prefix is matched on a word boundary, so `Qcur-19 (view) (permuted)` is included and `Qcur-190` is not.
+- After the **existing `fa_mask_opt` dispatch** completes in the Vulkan command buffer, copy only its **packed 2-bit classification words** into an **independent, persistent GPU buffer** using a Vulkan GPU-side buffer copy with barriers. No modification to the FA mask input, FA shader, selected tiles or the model computation. The copy is **one shot per backend context**, capped at 1 MiB. No new shader, GPU atomic operation, per-token readback or extra compute kernel.
+- **After existing backend GPU synchronization**, read the snapshot with the standard `ggml_vk_buffer_read` mechanism (similar to r5 QSA union statistics); decode the 2-bit values on CPU. For each valid `Br×Bc` tile, `1` = `ALL_NEG_INF` / skippable; `2` = `ALL_ZERO`; `0` = mixed/other; `3` is invalid/reserved and reported distinctly.
+- One CSV row per **query-row tile**, plus `scope=total`. Exported columns: `scope,query,kv,n,Br,Bc,n_kv_max,slice,row,all_neg_inf,all_zero,mixed,invalid,total,skippable_fraction`. `row` is a query tile group, not an individual token, and `slice` distinguishes `nem2*nem3` planes. For the known 49152/1024/Br16/Bc64 path, expect **64 row records and 1 total record** if mask planes=1, and **49152 total tile classifications** (64 query tiles × 768 KV tiles).
+- Output location: `GGML_VK_FA_MASK_DIAG_FILE` (native default `fa-mask-tile-diag.csv` in current working directory). `Measure-LlamaBench.ps1` now **automatically sets a run-local file path** `fa-mask-tile-diag.csv` when enabled and no explicit path is supplied, records `FaMaskDiagFile` in `conditions.json`, and adds `Files.FaMaskDiag` in `result.json`; warns if missing.
+- Recorded `GGML_VK_FA_MASK_DIAG` is independent of `GGML_VK_FA_DISPATCH_DIAG`, `GGML_VK_FA_RGP_MARKERS`, and the Vulkan performance logger. **Disable other diagnostics for clean histogram runs.** Histogram-enabled PP is diagnostic only; the one-shot GPU copy and readback can change measured latency.
+- CSV counts identify tile *classes* and query-row variation, **not actual executed GPU instructions or skip efficiency**: the FA shader may also reject mixed tiles based on the contents. A histogram showing a larger ALL_NEG_INF fraction in code would support (not independently prove) the mask-skip hypothesis.
+- When no target was matched (e.g. benchmark prompt too short), the wrapper emits a missing-CSV warning. A matching FA emits `ggml_vulkan: FA mask tile snapshot queued`; successful deferred decode prints `ggml_vulkan: FA mask tile diag wrote` and category totals to stderr. Fatal GPU or file errors may prevent an output file.
+
+### Build in a new directory (do not replace existing known-good RGP binaries)
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+git fetch origin
+git switch investigation/r5-vulkan-off-fa-dispatch-20261010
+git pull --ff-only
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-mask-tiles `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4
+
+$bin = '.\build-vulkan-mask-tiles\bin\Release'
+& "$bin\llama-cli.exe" --version
+& "$bin\llama-cli.exe" --list-devices
+.\tools\evox2\benchmark\Test-QsaUnion.ps1 -BinDir $bin -Backend Vulkan0
+```
+
+Add a new **local-only** entry inside `Builds` in ignored `tools/evox2/benchmark/configs/local.psd1`:
+
+```powershell
+R5FaMaskTilesVulkan = @{
+    BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r5\build-vulkan-mask-tiles\bin\Release'
+    ExpectedBackend = 'Vulkan'
+}
+```
+
+### Smoke: target KV=1024 / Qcur-7, 1024 prompt tokens
+
+The default target `KV=49152` will **not** be reached by a 256-token smoke. Use the 1024-token/2048-context smoke instead (previous RGP confirmed the initial `Qcur-7` layer at KV=1024):
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+$env:GGML_VK_QSA_UNION = '0'
+$env:GGML_VK_QSA_UNION_STATS = '0'
+$env:GGML_VK_FA_MASK_DIAG = '1'
+$env:GGML_VK_FA_MASK_DIAG_KV = '1024'
+$env:GGML_VK_FA_MASK_DIAG_QUERY = 'Qcur-7'
+@('GGML_VK_FA_MASK_DIAG_FILE', 'GGML_VK_FA_DISPATCH_DIAG', 'GGML_VK_FA_RGP_MARKERS',
+  'GGML_VK_PERF_LOGGER', 'GGML_VK_PERF_LOGGER_FREQUENCY', 'GGML_VK_PERF_LOGGER_CONCURRENT',
+  'GGML_VK_DEBUG_MARKERS', 'GGML_VK_FA_SPARSE_DISABLE') | ForEach-Object {
+    Remove-Item "Env:$_" -ErrorAction SilentlyContinue
+}
+$base = 'C:\Users\ai\Desktop\qwen38-flash-next-evo-x2\test_input\qsa-test'
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R5FaMaskTilesVulkan -ModelKey UnslothPle16 `
+  -InputFile (Join-Path $base 'wagahaiwa_nekodearu_utf8.txt') -PromptSlice head `
+  -Context 2048 -PromptTokens @(1024) -GenerationTokens @(0) -Depths @(0) `
+  -Repetitions 1 -NoWarmup -KvType f16 `
+  -Batch 2048 -UBatch 1024 -Threads 4 -GpuLayers 999 -CpuMoe 0 `
+  -FlashAttn auto -UmaLabel '96GB'
+```
+
+**Smoke pass gate:** successful backend and `Status=OK`, stderr snapshot queued + CSV wrote, `Files.FaMaskDiag` non-null and real CSV present. Validate total-category sum == `total`, no invalid class, all nonnegative, row counts consistent with query/KV. Verify one-shot capture (exactly one `scope=total` row). If snapshot is not captured, do not proceed to 64k; inspect `q` naming and FA shape in stderr/RGP labels.
+
+### Full 64k literature / code comparison
+
+After smoke, switch back to default targets:
+
+```powershell
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_KV -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_QUERY -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_FILE -ErrorAction SilentlyContinue
+# Keep GGML_VK_FA_MASK_DIAG='1' and GGML_VK_QSA_UNION='0'.
+
+$inputs = @(
+    (Join-Path $base 'wagahaiwa_nekodearu_utf8.txt'),
+    (Join-Path $base 'qsa-code-test\llamacpp-inference-code.txt')
+)
+foreach ($file in $inputs) {
+    & .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+      -BuildKey R5FaMaskTilesVulkan -ModelKey UnslothPle16 `
+      -InputFile $file -PromptSlice head `
+      -Context 65536 -PromptTokens @(61789) -GenerationTokens @(0) -Depths @(0) `
+      -Repetitions 1 -NoWarmup -KvType f16 `
+      -Batch 2048 -UBatch 1024 -Threads 4 -GpuLayers 999 -CpuMoe 0 `
+      -FlashAttn auto -UmaLabel '96GB'
+}
+Remove-Item Env:GGML_VK_FA_MASK_DIAG -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_KV -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_QUERY -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_FILE -ErrorAction SilentlyContinue
+```
+
+For each corpus, archive `fa-mask-tile-diag.csv`, `stderr.log`, `conditions.json`, `result.json`. Confirm `scope=total` is a **single row** in each run, `KV=49152`, query starts with `Qcur-19`, `invalid=0`, and total tile counts match. Compare per-row skip fractions, especially their distribution rather than only the aggregate. **Do not treat raw counts as an explanation for the ~4.1× FA latency until the correlation is checked.**
+
+### Risks and validation status
+
+- Build correctness: **NOT VERIFIED ON WINDOWS**; source edits were inspected remotely, but Windows/Vulkan compiler/runtime unavailable here.
+- GPU copy synchronization and deferred CPU readback: implement using the existing Vulkan barrier/copy and `ggml_vk_buffer_read` patterns. Test the GPU runtime on **1024 tokens first**, ensure no device-lost / WDDM issue before the 64k workload.
+- For control, run a normal **diagnostics OFF** single case using the same new binary, comparing output behavior and throughput with pre-existing baseline within ordinary run variability. Mask diagnostics should not change the actual computed tensors.
+- The **RGP earlier 4.1× FA-main finding** was independently reproduced twice per corpus and is unaffected by how this histogram diagnostic performs. This experiment measures a candidate explanation, not a replacement performance baseline.
