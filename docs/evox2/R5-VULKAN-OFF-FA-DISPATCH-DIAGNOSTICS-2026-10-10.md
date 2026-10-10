@@ -440,3 +440,36 @@ The capture lands in the **late-KV interval of interest** rather than initializa
 Capture the **source-code corpus** with exactly the same **start dispatch=180000 / count=256 / SQTT High / counters OFF**, `GGML_VK_FA_RGP_MARKERS=1`, `GGML_VK_QSA_UNION=0`, and unchanged b11551-descended investigation build, context/prompt size and other bench conditions. Before interpreting times, **verify same `KV=49152`, `N=1024`, `Qcur-19` and main shader name**; the same dispatch ordinal might not imply identical graph position if content-dependent MoE routing changes dispatch counts. If an exact match is observed, compare mask-prepass and FA-main timings and investigate input-dependent tile skipping/memory behavior. If not, adjust the start index based on *observed* `KV=` rather than on process time.
 
 No need to rebuild or change the RGP configuration. Stable r5 source remains unchanged.
+
+## Matched Japanese literature vs C/C++ RGP FA comparison at KV=49152 (2026-10-11)
+
+**Important matched-shape observation — FA MAIN GPU time is 4.14× longer on Japanese literature than llama.cpp source code.** User captured the code corpus at the same **RDP Dispatch range start=180000 / count=256 / SQTT High / counters OFF**, keeping the same Vulkan investigation executable and FA debug labels as the Japanese-literature run. The supplied RGP Event timing screen confirms matching GPU node, shape, stage shader names, and tensor/layer labels.
+
+| Item | Japanese literature | llama.cpp source code |
+| --- | ---: | ---: |
+| Enclosing event | `submit 14 / FLASH_ATTN_EXT node_2900` | **identical** |
+| FA query / KV | `Qcur-19 (view) (permuted)` / `KV=49152 N=1024` | **identical** |
+| FA parameters | `Br=16 Bc=64 n_kv_max=2051` | **identical** |
+| Mask shader | `fa_mask_opt`, `vkCmdDispatch(48,64,1)` | **identical** |
+| Main shader | `flash_attn_f32_f16_aligned_cm1`, `vkCmdDispatch(64,24,1)` | **identical** |
+| **FA main GPU time** | **314071.277 µs (314.071 ms)** | **75840.256 µs (75.840 ms)** |
+| Mask preprocessing GPU time | 3667.044 µs (3.667 ms) | 3891.743 µs (3.892 ms) |
+| Full FLASH_ATTN_EXT node GPU time | 317738.973 µs (317.739 ms) | 79732.651 µs (79.733 ms) |
+
+Numerical consequences:
+- Main FA literature/code ratio: **4.141×**; code is **75.85% faster by this single-dispatch GPU time** (or the literature FA takes 238.231 ms longer).
+- Mask preprocessing differs in the **opposite direction**: code uses **6.13% more** GPU time (+0.225 ms). It is **not** the ~238 ms direct performance gap.
+- Enclosing FA node literature/code ratio: **3.985×**. The variation is overwhelmingly inside the FA main shader, not the `fa_mask_opt` prepass.
+- This **matches the earlier whole-64k-run perf logger attribution**, where Japanese-literature `FLASH_ATTN_EXT` totals were 102.460 s against code 69.565 s, the primary contributor to the ~29.54 s aggregate GPU-time gap. But a single late-KV event is **not** representative of every FA layer and KV depth, and the single-event 4.14× ratio must not be applied to the whole run.
+
+### Source-grounded mechanism, still not proved
+
+`ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_mask_opt.comp` classifies each `Br×Bc` mask tile with a 2-bit code: **ALL_NEG_INF=1**, **ALL_ZERO=2**, and other=0. `ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_cm1.comp`, within its KV tile loop, reads these codes and **immediately `continue`s on ALL_NEG_INF**, before K/V loads and matrix computation. For other tiles it may need mask reads/checks. Thus matching the same FA kernel, `KV`, `N`, `Br/Bc`, `n_kv_max` *still permits input-dependent actual GPU work* if mask tile occupancy/placement differs. A larger number of ALL_NEG_INF tiles in the code corpus is a **leading hypothesis** for its much shorter FA-main duration, **not yet a verified causal explanation**. `n_kv_max=2051` is the same parameter/upper bound in both captures; it does not establish that their mask occupancy is the same.
+
+### Next validation gate
+
+1. **First verify repeatability**, ideally one additional Japanese-literature/code A/B pair using the already calibrated `Dispatch range start=180000 / count=256 / SQTT High / counters OFF` with `GGML_VK_FA_RGP_MARKERS=1`. Record `RGP` GPU duration of `Qcur-19 KV=49152` each time; avoid accidentally comparing different layers or KV. If repeat matches reasonably closely, the size of the gap is robust against run-to-run variance and capture overhead.
+2. Then add an investigation-only **mask tile histogram** to count `ALL_NEG_INF / ALL_ZERO / mixed` at matching `KV=49152, N=1024, Qcur-19` and compare Japanese literature vs code. Because this buffer is GPU-generated, implementing an exact count requires a carefully gated readback or separate GPU diagnostic; **do not add per-tile atomics to the normal performance baseline** or assume `n_kv_max` is a tile-count. Validate unchanged model output and timing separately.
+3. If mask tile ratios are very different, inspect the relationship to early skips and FA main duration. If they are similar, investigate tile placement/distribution, memory latency, cache hit rates and shader wave occupancy. For RGP, use matched-KV, matched-query labels to disambiguate events. Preserve the prior uninstrumented PP baselines for performance claims.
+
+**Outcome:** The initial question ("does the Vulkan OFF PP document gap come from FA?") is now supported at both full-run op-time and an exact matched single-shader late-KV comparison. Shader-side *causality* remains open. All work remains on the investigation branch; the stable r5 branch is unchanged.
