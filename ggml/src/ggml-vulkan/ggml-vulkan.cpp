@@ -3,6 +3,16 @@
 #include <fstream>
 #include <iomanip>
 
+// RGP markers are read-only. A literal "1" enables FA-specific KV/N labels,
+// together with the existing Vulkan debug-utils marker machinery.
+static bool ggml_vk_fa_rgp_markers_enabled() {
+    static const bool enabled = [] {
+        const char * value = getenv("GGML_VK_FA_RGP_MARKERS");
+        return value != nullptr && strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
 namespace {
 inline std::ostream & operator<<(std::ostream & os, vk::Buffer buffer) {
     return os << static_cast<VkBuffer>(buffer);
@@ -5434,7 +5444,12 @@ void ggml_vk_instance_init() {
 #ifdef __APPLE__
     const bool portability_enumeration_ext = ggml_vk_instance_portability_enumeration_ext_available(instance_extensions);
 #endif
-    const bool debug_utils_ext = ggml_vk_instance_debug_utils_ext_available(instance_extensions) && getenv("GGML_VK_DEBUG_MARKERS") != nullptr;
+    const bool fa_rgp_markers = ggml_vk_fa_rgp_markers_enabled();
+    const bool debug_utils_available = ggml_vk_instance_debug_utils_ext_available(instance_extensions);
+    const bool debug_utils_ext = debug_utils_available && (getenv("GGML_VK_DEBUG_MARKERS") != nullptr || fa_rgp_markers);
+    if (fa_rgp_markers && !debug_utils_available) {
+        std::cerr << "ggml_vulkan: FA RGP markers requested but VK_EXT_debug_utils is unavailable\\n";
+    }
     std::vector<const char*> layers;
 
     if (layer_settings) {
@@ -5481,6 +5496,9 @@ void ggml_vk_instance_init() {
         vk_instance.pfn_vkCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdBeginDebugUtilsLabelEXT");
         vk_instance.pfn_vkCmdEndDebugUtilsLabelEXT =   (PFN_vkCmdEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdEndDebugUtilsLabelEXT");
         vk_instance.pfn_vkCmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdInsertDebugUtilsLabelEXT");
+        if (fa_rgp_markers) {
+            std::cerr << "ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)\\n";
+        }
     }
 
     vk_perf_logger_enabled = getenv("GGML_VK_PERF_LOGGER") != nullptr;
@@ -8426,6 +8444,28 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
     return true;
 }
 
+// Keep RGP annotations adjacent to the exact compute dispatch. When disabled,
+// preserve the existing dispatch path, pipeline choice and shader arguments.
+// Labels never read back GPU data, but do add CPU/Vulkan tracing overhead.
+template <typename PushConstants>
+static void ggml_vk_fa_rgp_dispatch(
+        ggml_backend_vk_context * ctx, vk_context & subctx, vk_pipeline & pipeline,
+        std::initializer_list<vk::DescriptorBufferInfo> buffers, const PushConstants & pc,
+        std::array<uint32_t, 3> groups,
+        const char * stage, uint32_t kv, uint32_t n, uint32_t br, uint32_t bc, int32_t n_kv_max) {
+    if (ggml_vk_fa_rgp_markers_enabled() && vk_instance.debug_utils_support) {
+        const std::string label =
+            std::string("EVOX2_FA_") + stage + " shader=" + pipeline->name +
+            " KV=" + std::to_string(kv) + " N=" + std::to_string(n) +
+            " Br=" + std::to_string(br) + " Bc=" + std::to_string(bc) +
+            " n_kv_max=" + std::to_string(n_kv_max);
+        ggml_vk_debug_label region(subctx, label);
+        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
+    } else {
+        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
+    }
+}
+
 void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const ggml_tensor * q, const ggml_tensor * k, const ggml_tensor * v, const ggml_tensor * mask, const ggml_tensor * sinks, ggml_tensor * dst) {
     if (ggml_vk_qsa_union(ctx, subctx, q, k, v, mask, sinks, dst)) {
         return;
@@ -8828,9 +8868,10 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
             mask_opt_num_dwords * CEIL_DIV(nem1, Br) * nem2,
         };
 
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline_fa_mask_opt,
+        ggml_vk_fa_rgp_dispatch(ctx, subctx, pipeline_fa_mask_opt,
                                   { mask_buf, mask_opt_buf }, opt_pc,
-                                  { mask_opt_num_dwords, CEIL_DIV(nem1, Br), nem2 * nem3 });
+                                  { mask_opt_num_dwords, CEIL_DIV(nem1, Br), nem2 * nem3 },
+                                  "MASK_OPT", KV, N, Br, Bc, n_kv_max);
         ggml_vk_sync_buffers(ctx, subctx);
     }
 
@@ -8846,9 +8887,10 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
             (uint32_t)n_kv_max,
         };
 
-        ggml_vk_dispatch_pipeline(ctx, subctx, sparse_compact_pipeline,
+        ggml_vk_fa_rgp_dispatch(ctx, subctx, sparse_compact_pipeline,
                                   { mask_buf, sparse_buf }, sc_pc,
-                                  { nem1, nem2, nem3 });
+                                  { nem1, nem2, nem3 },
+                                  "SPARSE", KV, N, Br, Bc, n_kv_max);
         ggml_vk_sync_buffers(ctx, subctx);
     }
 
@@ -8959,24 +9001,27 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
         }
 
         vk_subbuffer split_k_buf = ggml_vk_subbuffer(ctx, ctx->prealloc_split_k, 0);
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline,
+        ggml_vk_fa_rgp_dispatch(ctx, subctx, pipeline,
                                     {q_buf, k_buf, v_buf, mask_buf, sinks_buf, split_k_buf, mask_opt_buf, sparse_buf},
-                                    pc, { dispatch_x, workgroups_y, workgroups_z });
+                                    pc, { dispatch_x, workgroups_y, workgroups_z },
+                                    "MAIN_SPLIT", KV, N, Br, Bc, n_kv_max);
 
         ggml_vk_sync_buffers(ctx, subctx);
         const vk_op_flash_attn_split_k_reduce_push_constants pc2 = { HSV, (uint32_t)ne1, (uint32_t)ne2, (uint32_t)ne3, split_k, (sinks != nullptr) };
-        ggml_vk_dispatch_pipeline(ctx, subctx, ctx->device->pipeline_flash_attn_split_k_reduce,
+        ggml_vk_fa_rgp_dispatch(ctx, subctx, ctx->device->pipeline_flash_attn_split_k_reduce,
                                     {split_k_buf, sinks_buf, dst_buf},
-                                    pc2, { (uint32_t)ne1, HSV, (uint32_t)(ne2 * ne3) });
+                                    pc2, { (uint32_t)ne1, HSV, (uint32_t)(ne2 * ne3) },
+                                    "SPLIT_REDUCE", KV, N, Br, Bc, n_kv_max);
         ctx->prealloc_split_k_need_sync = true;
     } else {
         if (gqa_ratio > 1) {
             // When using gqa, we want one actual workgroup per batch, so cancel out wg_denoms
             workgroups_x *= pipeline->wg_denoms[0];
         }
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline,
+        ggml_vk_fa_rgp_dispatch(ctx, subctx, pipeline,
                                     {q_buf, k_buf, v_buf, mask_buf, sinks_buf, dst_buf, mask_opt_buf, sparse_buf},
-                                    pc, { workgroups_x, workgroups_y, workgroups_z });
+                                    pc, { workgroups_x, workgroups_y, workgroups_z },
+                                    "MAIN", KV, N, Br, Bc, n_kv_max);
     }
 
     if (use_dequant_kv) {
@@ -16948,6 +16993,13 @@ ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const std::string & p
         return;
     }
     begin(ctx, pipeline_name + " (" + std::to_string(wg0) + "," + std::to_string(wg1) + "," + std::to_string(wg2) + ")");
+}
+
+ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const std::string & region_name) {
+    if (!vk_instance.debug_utils_support || ctx->s == nullptr) {
+        return;
+    }
+    begin(ctx, region_name);
 }
 
 ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const ggml_cgraph * cgraph, int node_idx, int n_fused) {
