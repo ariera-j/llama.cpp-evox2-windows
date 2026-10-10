@@ -188,3 +188,45 @@ Source-level clue: `ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_mask_opt.comp
 **Next priority:** collect **RGP** profiles for the same two inputs, QSA union OFF, matched conditions. Isolate time in `fa_mask_opt` (mask preprocess) versus actual `flash_attn_cm1` dispatch and check read traffic / wave occupancy / shader duration at representative late-KV depths (~48–60k). If RGP shows a large FA shader rather than mask-prepass difference, instrument or A/B the number of nonempty FA tiles before attempting more optimizations. A temporary **mask-opt disable** flag is possible in the investigation branch but would require a rebuild and CPU-reference correctness gate, so prefer read-only profiling first. Do not merge diagnostics into r5 stable based on this result alone.
 
 **Bottom line:** the Vulkan OFF corpus sensitivity at 64k is now localized to the **`FLASH_ATTN_EXT` operator** in the GPU profiler, rather than MoE, Lightning Indexer, or a different FA host pipeline. Shader-level causality is the remaining unknown.
+
+
+## RGP SQTT exploratory two-corpus comparison (2026-10-10, RDP timer)
+
+**State: two valid, non-truncated RGP captures; shader identity confirmed; equivalent KV position and FA kernel identity NOT YET confirmed.** These are preliminary **~0.18–0.19 second SQTT windows**, not complete 64k PP runs. They must not displace the prior whole-run GPU performance logger result attributing the overall 29.5-second difference primarily to `FLASH_ATTN_EXT`.
+
+Capture settings for both: Radeon Developer Panel on Windows 11, Vulkan, automatically attach `llama-bench.exe`, **Dispatch timer / 195,000 ms / count 256**, SQTT buffer setting **High**, no instruction tracing, no shader instrumentation, hardware counters unchecked. RGP's RDF `TraceConfig` records `captureRenderOpCount=256`, `renderOpMode=dispatch`, `memoryLimitInMb=128`, and SPM disabled. After reducing count from 4096 and raising buffer from default, both RGPs open without the preceding `Truncated SQTT data` warning.
+
+| Item | Japanese literature | llama.cpp C/C++ |
+| --- | ---: | ---: |
+| RGP evidence | `llama-bench-20261010-222243750.rgp` | `llama-bench-20261010-224538527.rgp` |
+| File size | 154,953,898 bytes | 155,963,842 bytes |
+| RGP Profile duration | **183,602.786 µs** | **194,373.615 µs** |
+| GPU idle | 0.35% | 0.37% |
+| Queue submissions/command buffers | 17 / 17 | 20 / 20 |
+| Events (dispatch / barrier) | 550 (325 / 225) | 550 (325 / 225) |
+| Unique pipelines | 55 | 55 |
+| RDF code-object blobs | **69** | **69** |
+
+**Independent binary cross-check:** RDF header magic `AMD_RDF` and chunk directory parsed successfully. All **69/69 CodeObject payloads** are *byte-for-byte identical* between the two RGPs (matching SHA-256 and lengths in order). The `PsoCorrelation` payload is also byte-for-byte identical (6,624 bytes), as are `TraceConfig`, `SystemInfo` and `AsicInfo`. This gives stronger support than visual similarity that both profiles use the **same compiled GPU shader binaries / pipeline correlation map**; it does **not** establish that they process the same KV length or mask contents. The actual SQTT payloads and queue events differ, as expected from different run times and input data.
+
+### Selected matched pipeline timings from RGP's Pipeline summary
+
+Values are **GPU event times within the short captures**, not whole-run operator totals. Hash identity and event counts match; kernel labels such as `flash_attn_cm1` have NOT been recovered. Milliseconds below are calculated from RGP's µs display, rounded.
+
+| RGP API pipeline hash | Call count (each) | Literature, ms | Code, ms | Code relative difference |
+| --- | ---: | ---: | ---: | ---: |
+| `0x91D300D08410103C` | 4 | 24.231 | 29.030 | +19.8% |
+| `0x8E6F51C3BA1CD7C4` | 2 | 20.414 | 25.728 | +26.0% |
+| `0xB035AE81CBB19009` | 21 | 20.822 | 20.927 | +0.5% |
+| `0x3E31874274449F8A` | 14 | 19.643 | 19.554 | −0.5% |
+
+The same shader hashes, but non-identical kernel durations: code is **slower** for the first two in these short captures, although its **whole-run PP is faster**. The captures used the same **195,000 ms process-relative timer**, not the same KV position. Since the source-code corpus has different PP speed, they likely sampled **different KV depths**. The difference here should NOT be attributed to content, FA, cache/occupancy, or regression without aligning KV and mapping pipelines to named shader operations.
+
+The earlier 4096-dispatch Japanese literature file `llama-bench-20261010-211926699.rgp` raised a truncation warning and should not serve as a timing comparison. Do not confuse the **RGP Profile duration (~184/194 ms)** with the **Queue submission overview horizontal span (~3 sec)** or with 195 sec from process startup: these report different things.
+
+### Next profiling gate
+
+1. **Keep 256 dispatch / SQTT High / counters OFF**; both captures are valid with this setting.
+2. Obtain a reliable **KV-depth and shader-name annotation** before interpreting more GPU timing A/B. Preferred investigation-only solution: add read-only Vulkan `VK_EXT_debug_utils` labels around named dispatch paths (`fa_mask_opt`, `flash_attn_cm1`, optional MoE/Indexer) and annotate KV / N at FA dispatch (or emit a minimal dispatch-index-to-KV trace). Confirm in RGP whether the Vulkan driver and capture preserve these labels. Do not alter FA mask/shader math or merge to stable r5 before correctness/overhead checks.
+3. Alternatively use the already collected per-ubatch perf logger curves to estimate equivalent-KV capture offsets; **195 sec fixed timer is not equivalent-KV alignment**. If testing this coarse alternative, code's earlier capture time would be a provisional estimate, not a guaranteed KV-matched pair.
+4. Once matching FA shader and late KV (48–60k) are identified, compare `fa_mask_opt` preprocessing separately from `flash_attn_cm1` and investigate mask tile skip rate. Whole-run FA time remains the established large difference, shader-level cause still unconfirmed.
