@@ -473,3 +473,23 @@ Numerical consequences:
 3. If mask tile ratios are very different, inspect the relationship to early skips and FA main duration. If they are similar, investigate tile placement/distribution, memory latency, cache hit rates and shader wave occupancy. For RGP, use matched-KV, matched-query labels to disambiguate events. Preserve the prior uninstrumented PP baselines for performance claims.
 
 **Outcome:** The initial question ("does the Vulkan OFF PP document gap come from FA?") is now supported at both full-run op-time and an exact matched single-shader late-KV comparison. Shader-side *causality* remains open. All work remains on the investigation branch; the stable r5 branch is unchanged.
+
+
+## Repeated matched-KV RGP A/B confirms ~4.1x FA-main gap (2026-10-11)
+
+**Reproducibility confirmed for two independent captures per corpus**, using the same labelled FA node and dispatch shape. Two user screenshots from the second matched-pair runs identify **code in the first screenshot**, **Japanese literature in the second**. The data remain **single-event measurements** (RGP captures at a fixed dispatch ordinal); they are not statistical estimates of variability across many runs.
+
+Conditions reproduced in all four screenshots: Vulkan QSA union OFF, RGP `Dispatch range start=180000` / count 256 / SQTT High / counters OFF, `FLASH_ATTN_EXT node_2900`, `KV=49152`, `N=1024`, `Br=16`, `Bc=64`, `n_kv_max=2051`, `Qcur-19 (view) (permuted)`. Mask shader `fa_mask_opt` at dispatch `(48,64,1)`, FA main shader `flash_attn_f32_f16_aligned_cm1` at dispatch `(64,24,1)`. Therefore **this is the same host FA path and GPU dispatch shape, including query layer**, not merely the same capture start time.
+
+| Metric | Japanese literature run 1 | Literature run 2 | Code run 1 | Code run 2 |
+| --- | ---: | ---: | ---: | ---: |
+| `EVOX2_FA_MAIN` / `flash_attn...` (µs) | 314071.277 | **310967.586** | 75840.256 | **75989.943** |
+| `EVOX2_FA_MASK_OPT` / `fa_mask_opt` (µs) | 3667.044 | **3728.978** | 3891.743 | **3907.529** |
+| `FLASH_ATTN_EXT` enclosing node (µs) | 317738.973 | **314697.252** | 79732.651 | **79898.132** |
+
+- **Literature/code FA-main ratio: 4.141× on run 1 and 4.092× on run 2** (roughly 4.1× both times).
+- Within-corpus FA-main run-to-run changes: Japanese literature **-0.99%**; source code **+0.20%**. These small differences relative to the ~4.1× corpus effect strengthen confidence that the difference is not merely a one-off GPU perturbation.
+- Code's second-run mask-prepass time is **3.908 ms** versus literature **3.729 ms**, still *slightly longer* for code; main shader alone diverges dramatically. The main-versus-prepass observation reproduced.
+- This experiment identifies a **repeatable content-associated difference in the FA compute shader's execution time** at matching reported dimensions/dispatch shape. It does **not yet prove that the cause is mask-tile skip count**. The two-bit masks contain actual data-dependent tile classes and locations, which were not read out or counted.
+
+**Decision:** no further RGP captures are needed merely to establish the existence and approximate magnitude of this difference. Prioritize a minimally intrusive, opt-in **GPU mask-tile category diagnostic** (ALL_NEG_INF / ALL_ZERO / mixed/other) at the fixed `Qcur-19 KV=49152` point, with a separately validated readback or GPU-side tally. The GPU shader has an early `continue` when `MASK_OPT_ALL_NEG_INF` occurs, but tile count/placement, wave divergence and memory behavior have not been isolated. Do not add per-tile atomics or buffer readbacks to the ordinary PP baseline; leave stable r5 unchanged. A one-shot diagnostic plus correctness gate is preferred to continuous heavy profiling.
