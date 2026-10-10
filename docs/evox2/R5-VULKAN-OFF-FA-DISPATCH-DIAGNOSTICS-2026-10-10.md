@@ -367,3 +367,26 @@ The user acquired additional Japanese-literature 64k RGP captures with **Dispatc
 AMD's Radeon Developer Panel documentation defines **Dispatch timer** as collecting a fixed number of dispatches after an elapsed-time delay; it also exposes a distinct **Dispatch range** mode for deterministic dispatch indices. Source: https://gpuopen.com/manuals/rdp_manual/features/ . For the next controlled test, use **Dispatch range** with deliberately different start indices while keeping the per-capture dispatch count small enough to avoid SQTT truncation. This isolates whether offset within the command stream (rather than just elapsed time) is the missing dimension. Be careful: a dispatch index from process startup is **not** a KV index and may include setup work. If this does not reach FA, implement an investigation-only host dispatch ordinal / FA KV mapping or another verified selective profiler trigger, instead of guessing more timer values.
 
 Historical previous recommendation to adjust 195000 → 198000 → 205000 was exploratory and is now **superseded**. No changes were made to the r5 stable branch or compute kernel code in response to this finding.
+
+## SUCCESS: dispatch-range RGP reveals named FA stage and actual KV (2026-10-11)
+
+**Definitive visibility gate PASSED.** User switched Radeon Developer Panel from a process-time **Dispatch timer** to **Dispatch range**, initial **start dispatch index 512, count 256**, same **SQTT High**, Vulkan target, counters OFF. The automatic RGP capture occurred relatively early during the still-running Japanese-literature 64k `llama-bench` run; the benchmark need not finish before the capture is produced. RGP Event timing, **Group by user events**, filter `EV`, now clearly shows:
+
+| RGP label or event | Value |
+| --- | --- |
+| Graph operation | `FLASH_ATTN_EXT node_1196`, within `submit 8` |
+| FA mask debug region | `EVOX2_FA_MASK_OPT shader=fa_mask_opt KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283 q=Qcur-7` |
+| FA mask Vulkan dispatch | `vkCmdDispatch(1,64,1)` (event 370) |
+| FA mask GPU time | **16.275 µs** (RGP) |
+| FA compute debug region | `EVOX2_FA_MAIN shader=flash_attn_f32_f16_aligned_cm1 KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283 q=Qcur-7` |
+| FA compute Vulkan dispatch | `vkCmdDispatch(64,24,1)` (event 372) |
+| FA compute GPU time | **1,437.321 µs** (RGP) |
+| Enclosing FA node time | **1,454.201 µs** |
+
+**Interpretation:** the investigation-only Vulkan debug region annotations are being emitted, preserved by RGP, and associated with the precise FA kernel dispatch. This also shows why looking only for `vkCmdDispatch(64,16,1)` was not reliable: the actual recorded FA dispatch here is `(64,24,1)`. The identified compute pipeline is **`flash_attn_f32_f16_aligned_cm1`**, whereas a different top pipeline from earlier timer snapshots (`matmul_id_subgroup_iq2_s_f32_f16acc_aligned_1`) was confirmed to be MoE. Mask-prepass and FA-main event times can now be measured separately.
+
+**Crucial limitation:** `KV=1024` is the **first** 1024-token prefill microbatch, not the late **48–60k KV** target needed to explain the corpus-sensitive FA slowdown. Capturing a functioning label does not yet explain the cause, nor measure the nonempty FA mask tile ratio. The benchmark was **still running** when the screenshot was taken.
+
+**Next experimental gate:** leave `GGML_VK_FA_RGP_MARKERS=1` and the stable capture limits (count 256 / SQTT High / counters OFF). Change only the **Dispatch range start index** in a subsequent run, first sampling a substantially later ordinal as a calibration point. Inspect `KV=` directly in RGP rather than inferring it from process elapsed time. Dispatch ordinal is **not linearly proportional to KV or tokens without calibration**, and initialization dispatches may contribute. Use two measured points (start ordinal and observed KV) to target a `KV=49152–61440` capture, with the same query tensor/layer and FA shader for both corpora. Do **not** try more 195/198/205-second timer guesses. Windows source or GPU shaders need no further changes to make the labels work.
+
+No changes to stable r5 source; diagnosis remains on `investigation/r5-vulkan-off-fa-dispatch-20261010`.
