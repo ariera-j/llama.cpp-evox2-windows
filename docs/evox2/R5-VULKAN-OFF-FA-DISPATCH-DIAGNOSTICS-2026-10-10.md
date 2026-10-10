@@ -128,3 +128,63 @@ Code PP is **15.58% faster** relative to Japanese literature. The absolute timed
 - In particular, `mask_opt=1` means `fa_mask_opt` generates compact mask metadata consumed by FA. Different selected-cell positions could change active/empty tiles even when the **upper bound n_kv_max and all tensor shapes coincide**. This is a **hypothesis**, not an established cause.
 - **NEXT:** for the same pair of inputs, QSA union OFF, run a **Vulkan GPU performance-logger** comparison (or RGP after that) with `GGML_VK_PERF_LOGGER=1`, `GGML_VK_PERF_LOGGER_FREQUENCY=1`, `GGML_VK_PERF_LOGGER_CONCURRENT` absent, and **`GGML_VK_FA_DISPATCH_DIAG` absent**. Use the same b11551 binary, prompt tokens, hashes and no-warmup settings. Compare the 61 prefill timing blocks by bucket and op name: `FLASH_ATTN_EXT`, `fa_mask_opt`/FA pipeline, `MUL_MAT_ID` MoE, Lightning Indexer, other operations. These logger-enabled PP numbers are diagnostic and must **not** be conflated with normal non-profiled throughput.
 - Rebuilding more host FA dispatch counters will not help distinguish these two inputs. Keep the diagnostic branch separate until the GPU timing result is interpreted. No r5 stable-source modification is warranted from this result alone.
+
+
+## Vulkan GPU performance logger: Japanese literature vs source code (2026-10-10)
+
+**Status: COMPLETE; 2/2 profiler runs OK.** Evidence archive: `20261010-203441-045-bench-vulkan-b11551-ctx65536-47b0cde1f5ff.zip` (both run directories, `stderr.log`, `result.json`, `conditions.json`, `summary.csv`). The experiment uses **the same b11551 executable** as the prior host-dispatch diagnostic, but with the host-side FA dispatch diagnostic disabled and the built-in GPU logger enabled. Every metric below comes from parsing the 61 complete `Vulkan Timings` blocks in each `stderr.log` (60 full 1024-token microbatches plus a 349-token tail), not from a single example block.
+
+### Fixed conditions / integrity
+
+| Condition | Japanese literature | llama.cpp source code |
+| --- | --- | --- |
+| Run directory | `20261010-203020-728-bench-vulkan-b11551-ctx65536-9394b19c6e70` | `20261010-203441-045-bench-vulkan-b11551-ctx65536-47b0cde1f5ff` |
+| Input SHA-256 | `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143` | `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345` |
+| `Status / ExitCode` | OK / 0 | OK / 0 |
+| PP with Vulkan perf logger | **275.203868 tok/s** | **316.493093 tok/s** |
+| Approx. timed PP wall duration (`p/PP`) | 224.521 seconds | 195.230 seconds |
+| Complete Vulkan timing blocks | **61** | **61** |
+| GPU op-time total (sum of 61 `Total time` lines) | **217.23743 seconds** | **187.70091 seconds** |
+
+Same build: Vulkan b11551 / Clang 20.1.8, exe SHA-256 `ee32d6c6b0658ebcb07a21d999da800564492f8fd2b98bf157ad58d160118a74`, PLE16 UD-IQ3_XXS, Radeon 8060S. Both use ctx **65536**, input `head` **61789 tokens**, `-n 0 -d 0 -r 1 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 --no-warmup`. All relevant environment variables match: `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0`, `GGML_VK_PERF_LOGGER=1`, `GGML_VK_PERF_LOGGER_FREQUENCY=1`; `GGML_VK_PERF_LOGGER_CONCURRENT`, `GGML_VK_FA_DISPATCH_DIAG`, `GGML_VK_FA_SPARSE_DISABLE` absent. Both stderr logs contain **61 complete** timing blocks, and for each block the operation-time sum agrees with that block's printed `Total time` up to log rounding.
+
+The logger-enabled PP rates are lower than the same build's previous diagnostics-on PP (~285.818 / 330.344 tok/s) by ~3.7% / ~4.2%. Profiler PP is **not** a normal-speed baseline, and this cross-run difference should not be interpreted as a calibrated logger overhead measurement.
+
+### GPU op-time decomposition (seconds, all 61 prefill blocks)
+
+| Category | Japanese literature | Code | Code minus literature |
+| --- | ---: | ---: | ---: |
+| **FLASH_ATTN_EXT** | **102.4600** | **69.5648** | **−32.8952** |
+| MoE `MUL_MAT_ID*` | 40.7900 | 45.2403 | **+4.4503** |
+| `LIGHTNING_INDEXER` | 1.1681 | 1.1697 | +0.0015 |
+| All other Vulkan GPU ops | 72.8193 | 71.7261 | −1.0932 |
+| **GPU op-time total** | **217.2374** | **187.7009** | **−29.5365** |
+
+- Code's aggregate `FLASH_ATTN_EXT` GPU op time is **32.1% lower**. This **32.895 s reduction exceeds the total 29.537 s GPU op-time reduction** (~111.4%): the non-FA ops collectively take ~3.359 s *longer* for code, principally MoE (+4.450 s).
+- FA accounts for **47.2%** of Japanese-literature GPU op time versus **37.1%** of code; MoE accounts for 18.8% versus 24.1%.
+- `LIGHTNING_INDEXER` time differs by only ~0.002 seconds over the entire PP. MoE differs but in the **opposite direction** to the observed total PP advantage for code. Thus the previously suspected MoE/Indexer as a primary explanation for the literature-vs-code difference is not supported by the op-time totals.
+- This GPU-op-time decomposition is consistent with the wall-time difference inferred from bench PP (~29.29 seconds) without claiming that GPU `Total time` is the entire wall clock.
+
+### Difference by KV range (FLASH_ATTN_EXT aggregate GPU seconds)
+
+The 61 blocks correspond to progressive 1024-token KV lengths and a 349-token last block; sums below are **per group of blocks**, not average latency per 1024-token microbatch. They do not include warmup or generation.
+
+| KV depth by microbatch | Blocks | Japanese literature FA | Code FA | Literature minus code |
+| --- | ---: | ---: | ---: | ---: |
+| 1–16k | 16 | 4.594 | 4.388 | +0.207 |
+| 17–32k | 16 | 16.636 | 16.624 | +0.013 |
+| **33–48k** | **16** | **36.779** | **26.929** | **+9.849** |
+| **49–60k** | **12** | **43.465** | **21.051** | **+22.414** |
+| 349-token tail (~61.8k KV) | 1 | 0.986 | 0.573 | +0.412 |
+
+**Critical observation: the large FA timing gap appears predominantly *after KV exceeds 32k*.** At 17–32k the FA times are nearly equal (~16.64 vs 16.62 sec), while at 49–60k Japanese-literature FA time is ~2.06× the code FA time (43.465 vs 21.051 sec). This is much more diagnostic than the aggregate PP difference. The `GGML_VK_QSA_UNION` switch stays OFF throughout; there is no union ON transition at 32k. The available evidence cannot yet establish which FA shader instruction or memory-access pattern causes the difference.
+
+### Mechanism hypotheses and next decision
+
+The immediately previous **host FA dispatch CSVs were byte-for-byte identical** for these two inputs at 64k: 732 calls, same KV bins, `FA_COOPMAT1` (`path=1`), `sparse=0`, `mask_opt=1`, `Br=16`, `Bc=64`, `split_k=1`, identical n_kv_max sums. This excludes a *host-selected FA pipeline/shape/count* change as the explanation. It **does not imply identical GPU work** when masks differ.
+
+Source-level clue: `ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_mask_opt.comp` identifies all-negative-infinity versus all-zero mask tiles; `flash_attn_cm1.comp` examines those flags and has a `MASK_OPT_ALL_NEG_INF` fast skip (`continue`) before the key/value computation. Since the QSA selection mask contains input-dependent selected-cell positions, a different number/placement of nonempty tiles is a strong **hypothesis** for the observed FA op-time gap. Neither the mask-tile histogram nor the RGP kernel-level times have been measured yet.
+
+**Next priority:** collect **RGP** profiles for the same two inputs, QSA union OFF, matched conditions. Isolate time in `fa_mask_opt` (mask preprocess) versus actual `flash_attn_cm1` dispatch and check read traffic / wave occupancy / shader duration at representative late-KV depths (~48–60k). If RGP shows a large FA shader rather than mask-prepass difference, instrument or A/B the number of nonempty FA tiles before attempting more optimizations. A temporary **mask-opt disable** flag is possible in the investigation branch but would require a rebuild and CPU-reference correctness gate, so prefer read-only profiling first. Do not merge diagnostics into r5 stable based on this result alone.
+
+**Bottom line:** the Vulkan OFF corpus sensitivity at 64k is now localized to the **`FLASH_ATTN_EXT` operator** in the GPU profiler, rather than MoE, Lightning Indexer, or a different FA host pipeline. Shader-level causality is the remaining unknown.
