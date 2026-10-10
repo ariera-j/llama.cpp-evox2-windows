@@ -13,6 +13,36 @@ static bool ggml_vk_fa_rgp_markers_enabled() {
     return enabled;
 }
 
+// Opt-in one-shot histogram of the existing fa_mask_opt 2-bit tile codes.
+// No shader or compute dispatch is added; only a bounded GPU buffer copy after
+// the selected mask prepass. Readback/decode occur after backend synchronization.
+static bool ggml_vk_fa_mask_diag_enabled() {
+    static const bool enabled = [] {
+        const char * env = getenv("GGML_VK_FA_MASK_DIAG");
+        return env && strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static uint32_t ggml_vk_fa_mask_diag_target_kv() {
+    static const uint32_t kv = [] {
+        const char * env = getenv("GGML_VK_FA_MASK_DIAG_KV");
+        if (!env || !*env) {
+            return uint32_t{49152};
+        }
+        char * end = nullptr;
+        const unsigned long long value = strtoull(env, &end, 10);
+        return end != env && *end == '\0' && value >= 1 && value <= UINT32_MAX ?
+            (uint32_t) value : uint32_t{49152};
+    }();
+    return kv;
+}
+
+static const char * ggml_vk_fa_mask_diag_target_query() {
+    const char * env = getenv("GGML_VK_FA_MASK_DIAG_QUERY");
+    return env && *env ? env : "Qcur-19";
+}
+
 namespace {
 inline std::ostream & operator<<(std::ostream & os, vk::Buffer buffer) {
     return os << static_cast<VkBuffer>(buffer);
@@ -1432,6 +1462,85 @@ static uint32_t ggml_vk_qsa_union_stats_kv_bin() {
 
 // Called *after* ggml_vk_synchronize has waited for the compute fence.
 // No per-group CPU readback or logging is performed in the dispatch path.
+// Reads an isolated snapshot only after all submitted Vulkan work completed.
+static void ggml_vk_fa_mask_diag_flush(ggml_backend_vk_context * ctx) {
+    if (!ctx->fa_mask_diag_pending || !ctx->fa_mask_diag_snapshot) {
+        return;
+    }
+    ctx->fa_mask_diag_pending = false; // one shot even if file I/O fails
+
+    const uint32_t word_count = ctx->fa_mask_diag_words_per_row;
+    const uint32_t tiles = ctx->fa_mask_diag_tiles_per_row;
+    const uint32_t rows = ctx->fa_mask_diag_rows;
+    const uint32_t slices = ctx->fa_mask_diag_slices;
+    const size_t count = (size_t) word_count * rows * slices;
+    std::vector<uint32_t> packed(count);
+    ggml_vk_buffer_read(ctx->fa_mask_diag_snapshot, 0, packed.data(), count * sizeof(uint32_t));
+
+    struct tally {
+        uint64_t neg_inf = 0;
+        uint64_t all_zero = 0;
+        uint64_t mixed = 0;
+        uint64_t invalid = 0;
+    };
+    const char * file_env = getenv("GGML_VK_FA_MASK_DIAG_FILE");
+    const std::string file = file_env && *file_env ? file_env : "fa-mask-tile-diag.csv";
+    std::ifstream probe(file, std::ios::binary | std::ios::ate);
+    const bool header = !probe.good() || probe.tellg() == std::streampos(0);
+    probe.close();
+    std::ofstream out(file, std::ios::app);
+    if (!out) {
+        std::cerr << "ggml_vulkan: unable to open FA mask tile CSV: " << file << "\n";
+        return;
+    }
+    if (header) {
+        out << "scope,query,kv,n,Br,Bc,n_kv_max,slice,row,"
+               "all_neg_inf,all_zero,mixed,invalid,total,skippable_fraction\n";
+    }
+
+    const auto emit = [&](const char * scope, uint32_t slice, uint32_t row, const tally & a) {
+        const uint64_t total = a.neg_inf + a.all_zero + a.mixed + a.invalid;
+        out << scope << ",\"" << ctx->fa_mask_diag_query << "\"," << ctx->fa_mask_diag_kv
+            << ',' << ctx->fa_mask_diag_n << ',' << ctx->fa_mask_diag_br << ','
+            << ctx->fa_mask_diag_bc << ',' << ctx->fa_mask_diag_n_kv_max << ','
+            << slice << ',' << row << ',' << a.neg_inf << ',' << a.all_zero
+            << ',' << a.mixed << ',' << a.invalid << ',' << total << ','
+            << std::fixed << std::setprecision(8)
+            << (total ? (double) a.neg_inf / (double) total : 0.0) << '\n';
+    };
+    tally all;
+    for (uint32_t z = 0; z < slices; ++z) {
+        for (uint32_t y = 0; y < rows; ++y) {
+            tally row;
+            const size_t base = ((size_t) z * rows + y) * word_count;
+            for (uint32_t j = 0; j < tiles; ++j) {
+                const uint32_t bits = (packed[base + j / 16] >> (2 * (j % 16))) & 3u;
+                // Match flash_attn_mask_opt.comp: 1=ALL_NEG_INF, 2=ALL_ZERO, 0=other.
+                if (bits == 1u) {
+                    ++row.neg_inf;
+                } else if (bits == 2u) {
+                    ++row.all_zero;
+                } else if (bits == 0u) {
+                    ++row.mixed;
+                } else {
+                    ++row.invalid;
+                }
+            }
+            emit("row", z, y, row);
+            all.neg_inf += row.neg_inf;
+            all.all_zero += row.all_zero;
+            all.mixed += row.mixed;
+            all.invalid += row.invalid;
+        }
+    }
+    emit("total", 0, 0, all);
+    out.flush();
+    std::cerr << "ggml_vulkan: FA mask tile diag " << (out.good() ? "wrote " : "write error ")
+              << file << " KV=" << ctx->fa_mask_diag_kv
+              << " neg_inf=" << all.neg_inf << " zero=" << all.all_zero
+              << " mixed=" << all.mixed << " invalid=" << all.invalid << "\n";
+}
+
 static void ggml_vk_qsa_union_stats_flush(ggml_backend_vk_context * ctx) {
     const uint32_t n = ctx->qsa_union_stats_records;
     const uint64_t dropped = ctx->qsa_union_stats_dropped;
@@ -8873,6 +8982,43 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
                                   { mask_opt_num_dwords, CEIL_DIV(nem1, Br), nem2 * nem3 },
                                   "MASK_OPT", q->name, KV, N, Br, Bc, n_kv_max);
         ggml_vk_sync_buffers(ctx, subctx);
+        // Preserve the generated mask-opt metadata before prealloc_y gets reused
+        // by a later op. The ordinary FA computation consumes the original buffer.
+        if (ggml_vk_fa_mask_diag_enabled() && !ctx->fa_mask_diag_captured &&
+            KV == ggml_vk_fa_mask_diag_target_kv() && N == 1024 && Br == 16 && Bc == 64) {
+            const char * query = ggml_vk_fa_mask_diag_target_query();
+            const size_t prefix = strlen(query);
+            if (strncmp(q->name, query, prefix) == 0 &&
+                (q->name[prefix] == '\0' || q->name[prefix] == ' ')) {
+                const uint64_t rows = CEIL_DIV(nem1, Br);
+                const uint64_t slices = (uint64_t) nem2 * nem3;
+                const uint64_t words = (uint64_t) mask_opt_num_dwords * rows * slices;
+                const uint64_t bytes = words * sizeof(uint32_t);
+                if (words && bytes <= (1u << 20) && bytes <= mask_opt_buf.size) {
+                    ctx->fa_mask_diag_snapshot = ggml_vk_create_buffer_device(ctx->device, (size_t) bytes);
+                    ggml_vk_buffer_copy_async(subctx, ctx->fa_mask_diag_snapshot, 0,
+                                              mask_opt_buf.buffer, mask_opt_buf.offset, (size_t) bytes);
+                    ggml_vk_sync_buffers(ctx, subctx);
+                    ctx->fa_mask_diag_query = q->name;
+                    ctx->fa_mask_diag_kv = KV;
+                    ctx->fa_mask_diag_n = N;
+                    ctx->fa_mask_diag_br = Br;
+                    ctx->fa_mask_diag_bc = Bc;
+                    ctx->fa_mask_diag_n_kv_max = (uint32_t) std::max<int32_t>(0, n_kv_max);
+                    ctx->fa_mask_diag_words_per_row = mask_opt_num_dwords;
+                    ctx->fa_mask_diag_tiles_per_row = CEIL_DIV(KV, Bc);
+                    ctx->fa_mask_diag_rows = (uint32_t) rows;
+                    ctx->fa_mask_diag_slices = (uint32_t) slices;
+                    ctx->fa_mask_diag_captured = true;
+                    ctx->fa_mask_diag_pending = true;
+                    std::cerr << "ggml_vulkan: FA mask tile snapshot queued for " << q->name
+                              << " KV=" << KV << " bytes=" << bytes << "\n";
+                } else {
+                    std::cerr << "ggml_vulkan: FA mask tile diag rejected invalid snapshot size: "
+                              << bytes << "\n";
+                }
+            }
+        }
     }
 
     if (use_sparse)
@@ -13896,6 +14042,7 @@ void ggml_vk_synchronize(ggml_backend_vk_context * ctx) {
     if (ctx->qsa_union_stats_records || ctx->qsa_union_stats_dropped) {
         ggml_vk_qsa_union_stats_flush(ctx);
     }
+    ggml_vk_fa_mask_diag_flush(ctx);
 }
 
 static void ggml_backend_vk_synchronize(ggml_backend_t backend) {
