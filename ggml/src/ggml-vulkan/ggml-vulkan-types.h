@@ -1264,6 +1264,22 @@ struct ggml_backend_vk_context {
     // Opt-in FA dispatch diagnostics, aggregated on CPU and emitted at backend free.
     std::map<vk_fa_dispatch_diag_key, vk_fa_dispatch_diag_row> fa_dispatch_diag;
 
+    // Investigation-only, one-shot copy of the *already generated* FA mask-opt
+    // metadata. Decoded after GPU synchronization; never mutate the FA input.
+    vk_buffer fa_mask_diag_snapshot;
+    std::string fa_mask_diag_query;
+    uint32_t fa_mask_diag_kv = 0;
+    uint32_t fa_mask_diag_n = 0;
+    uint32_t fa_mask_diag_br = 0;
+    uint32_t fa_mask_diag_bc = 0;
+    uint32_t fa_mask_diag_n_kv_max = 0;
+    uint32_t fa_mask_diag_words_per_row = 0;
+    uint32_t fa_mask_diag_tiles_per_row = 0;
+    uint32_t fa_mask_diag_rows = 0;
+    uint32_t fa_mask_diag_slices = 0;
+    bool fa_mask_diag_captured = false;
+    bool fa_mask_diag_pending = false;
+
     vk_device device;
     bool qsa_union_active_logged = false;
     bool qsa_union_fallback_logged = false;
