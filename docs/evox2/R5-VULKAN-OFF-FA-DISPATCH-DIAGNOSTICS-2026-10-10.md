@@ -349,3 +349,10 @@ The visible two portions of Event timing (near event IDs 53–75 and 123–150) 
 4. Only after identifying `KV`, shader and matching tensor/layer for FA in each corpus, compare per-kernel FA and mask-prepass timings. The previous whole-run FA attribution remains valid independently of this RGP snapshot.
 
 No new C++ commit, refactoring, or stable r5 change is justified by this preliminary snapshot.
+
+
+### FA RGP label activation confirmed, sampled interval not yet FA (2026-10-11)
+
+Follow-up from the user: the native `stderr.log` **does contain** `ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)`, while an RGP Event timing search for `EVOX2_FA_` returned **no matches**. Ordinary ggml pipeline/graph labels such as MoE `MUL_MAT_ID` are rendered in the same RGP trace. Thus the extension initialized and RGP can display upstream labels. The likely explanation is that the ~183 ms sampled interval did not contain the named FA compute dispatch, **but absence of FA labels alone does not prove this**; an FA-only label visibility issue remains possible.
+
+Next gate: search the complete Event timing tree for `FLASH_ATTN_EXT` and `flash_attn`. If absent, retry one Japanese-literature 64k profile at **198000 ms** (previous 195000 ms +3 s), keeping Dispatch timer / 256 / SQTT High / counters OFF and the same new build, with `GGML_VK_FA_RGP_MARKERS=1`. Check `EVOX2_FA_` and `KV=...` before any matched-corpus RGP comparison. This is a timing hypothesis, not proof of KV alignment. Do not change code or merge markers into stable r5 at this stage.
