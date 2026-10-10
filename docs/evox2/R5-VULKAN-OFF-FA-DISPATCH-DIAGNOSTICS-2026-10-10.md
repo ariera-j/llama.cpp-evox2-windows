@@ -390,3 +390,30 @@ Historical previous recommendation to adjust 195000 → 198000 → 205000 was ex
 **Next experimental gate:** leave `GGML_VK_FA_RGP_MARKERS=1` and the stable capture limits (count 256 / SQTT High / counters OFF). Change only the **Dispatch range start index** in a subsequent run, first sampling a substantially later ordinal as a calibration point. Inspect `KV=` directly in RGP rather than inferring it from process elapsed time. Dispatch ordinal is **not linearly proportional to KV or tokens without calibration**, and initialization dispatches may contribute. Use two measured points (start ordinal and observed KV) to target a `KV=49152–61440` capture, with the same query tensor/layer and FA shader for both corpora. Do **not** try more 195/198/205-second timer guesses. Windows source or GPU shaders need no further changes to make the labels work.
 
 No changes to stable r5 source; diagnosis remains on `investigation/r5-vulkan-off-fa-dispatch-20261010`.
+
+## RGP Dispatch range calibration point 2 — Japanese literature (2026-10-11)
+
+**The dispatch-range approach works for targeting progressive prefills.** User captured a second Japanese-literature run with RDP automatic **Dispatch range start=50000**, count 256, SQTT High, counters OFF. In the actual RGP Event timing tree (not inferred from time alone):
+
+| Parameter | Earlier start=512 | New start=50000 |
+| --- | --- | --- |
+| FA graph node | `FLASH_ATTN_EXT node_1196` | `FLASH_ATTN_EXT node_1764` |
+| Q tensor | `Qcur-7` | `Qcur-11 (view) (permuted)` |
+| FA `KV` | **1024** | **14336** |
+| FA `N` | 1024 | 1024 |
+| `Br/Bc` | 16/64 | 16/64 |
+| `n_kv_max` | 1283 | 2051 |
+| Shader | `flash_attn_f32_f16_aligned_cm1` | same |
+| FA mask preprocess time | 16.275 µs | **1225.491 µs** |
+| FA main time | 1437.321 µs | **62758.393 µs** |
+
+For the new capture, RGP showed `EVOX2_FA_MASK_OPT shader=fa_mask_opt KV=14336 N=1024 Br=16 Bc=64 n_kv_max=2051 q=Qcur-11 (view) (permuted)`, compute dispatch `(14,64,1)`. The enclosing FA-main marker was `EVOX2_FA_MAIN shader=flash_attn_f32_f16_aligned_cm1 KV=14336 N=1024 Br=16 Bc=64 n_kv_max=2051 q=Qcur-11 (view) (permuted)`, dispatch `(64,24,1)`. The enclosing `FLASH_ATTN_EXT` GPU duration is ~63.985 ms. **Do not compare times directly as a KV scaling law**: the first and second capture observe different Q tensor/layers.
+
+Two measured start/observed KV pairs: (512, 1024) and (50000, 14336). Assuming approximately constant dispatches per 1024 tokens for coarse calibration (not guaranteed) yields ~3807 dispatches/microbatch. The provisional linear relation is `KV_est ~= 1024 + (start - 512) * 13312 / 49488`. Extrapolated:
+- start 140000 -> KV ~38.5k;
+- **start 180000 -> KV ~49.3k** (next recommended test);
+- start 210000 -> KV ~57.4k.
+
+These are **calibration targets**, not validated KV values. During the next run keep **Dispatch range / count 256 / SQTT High / counters OFF** and `GGML_VK_FA_RGP_MARKERS=1`. Take one Japanese-literature RGP at **start 180000**, check its *actual* `EVOX2_FA_MAIN KV=`, and use that measured value to refine the alignment before capturing the source-code corpus. If 180000 exceeds the useful prompt or fails to capture, reduce the index. Continue to match the same Q layer and shader, not just KV, for comparison.
+
+The earlier time-based 195/198/205-second profiles remain unsuitable for FA identification; the dispatch-index capture correctly enters FA at KV=1024 and KV=14336 in distinct runs. No code change required; stable r5 untouched.
