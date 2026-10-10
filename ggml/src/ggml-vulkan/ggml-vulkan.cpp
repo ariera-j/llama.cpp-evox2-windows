@@ -1,5 +1,7 @@
 #include "ggml-vulkan-common.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 
