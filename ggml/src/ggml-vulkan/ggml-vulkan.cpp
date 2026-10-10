@@ -1524,6 +1524,64 @@ static uint32_t ggml_vk_qsa_union_min_kv() {
     return value;
 }
 
+// Opt-in, host-side FA dispatch diagnostics. This is NOT a kernel timing profiler.
+// Counters are aggregated per Vulkan context, with no per-dispatch output/readback.
+static bool ggml_vk_fa_dispatch_diag_enabled() {
+    static const bool enabled = [] {
+        const char * env = getenv("GGML_VK_FA_DISPATCH_DIAG");
+        return env && strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static void ggml_vk_fa_dispatch_diag_flush(ggml_backend_vk_context * ctx) {
+    if (ctx->fa_dispatch_diag.empty()) {
+        return;
+    }
+    const char * path = getenv("GGML_VK_FA_DISPATCH_DIAG_FILE");
+    if (!path || !*path) {
+        std::cerr << "ggml_vulkan: FA dispatch diag had " << ctx->fa_dispatch_diag.size()
+                  << " bucket(s), but GGML_VK_FA_DISPATCH_DIAG_FILE is not set\n";
+        return;
+    }
+
+    // Multiple Vulkan contexts may append their own aggregate rows to one file.
+    static std::mutex file_mutex;
+    std::lock_guard<std::mutex> guard(file_mutex);
+    std::ifstream probe(path, std::ios::binary | std::ios::ate);
+    const bool write_header = !probe.good() || probe.tellg() == std::streampos(0);
+    probe.close();
+
+    std::ofstream out(path, std::ios::app);
+    if (!out) {
+        std::cerr << "ggml_vulkan: failed to open FA dispatch diag file: " << path << "\n";
+        return;
+    }
+    if (write_header) {
+        out << "context,kv_bin_start,kv_bin_end,n_class,path,sparse,mask_opt,aligned,f32acc,Br,Bc,"
+               "calls,query_tokens,kv_sum,n_kv_max_sum,split_k_sum,split_kv_sum\n";
+    }
+    for (const auto & entry : ctx->fa_dispatch_diag) {
+        const auto & k = entry.first;
+        const auto & v = entry.second;
+        out << ctx->name << ','
+            << std::get<0>(k) << ',' << (std::get<0>(k) + 16384) << ','
+            << std::get<1>(k) << ',' << std::get<2>(k) << ','
+            << std::get<3>(k) << ',' << std::get<4>(k) << ','
+            << std::get<5>(k) << ',' << std::get<6>(k) << ','
+            << std::get<7>(k) << ',' << std::get<8>(k) << ','
+            << v.calls << ',' << v.query_tokens << ',' << v.kv_sum << ','
+            << v.n_kv_max_sum << ',' << v.split_k_sum << ',' << v.split_kv_sum << '\n';
+    }
+    out.flush();
+    if (!out.good()) {
+        std::cerr << "ggml_vulkan: failed to write FA dispatch diag file: " << path << "\n";
+    } else {
+        std::cerr << "ggml_vulkan: FA dispatch diag wrote " << ctx->fa_dispatch_diag.size()
+                  << " bucket(s) to " << path << "\n";
+    }
+}
+
 struct vk_qsa_union_push_constants {
     uint32_t n_kv, n_top, n_batch, top_stride, batch_off;
 };
@@ -8794,6 +8852,21 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
         ggml_vk_sync_buffers(ctx, subctx);
     }
 
+    if (ggml_vk_fa_dispatch_diag_enabled()) {
+        const uint32_t n_class = N <= 8 ? 8u : (N <= 64 ? 64u : (N <= 512 ? 512u : 1024u));
+        const vk_fa_dispatch_diag_key key = std::make_tuple(
+            (KV / 16384u) * 16384u, n_class, static_cast<uint32_t>(tuning_params.path),
+            static_cast<uint32_t>(use_sparse), static_cast<uint32_t>(use_mask_opt),
+            static_cast<uint32_t>(aligned), static_cast<uint32_t>(f32acc), Br, Bc);
+        auto & row = ctx->fa_dispatch_diag[key];
+        ++row.calls;
+        row.query_tokens += N;
+        row.kv_sum += KV;
+        row.n_kv_max_sum += (uint32_t) std::max<int32_t>(n_kv_max, 0);
+        row.split_k_sum += split_k;
+        row.split_kv_sum += split_kv;
+    }
+
     const vk_flash_attn_push_constants pc = { N, KV,
                                               (uint32_t)ne1, (uint32_t)ne2, (uint32_t)ne3,
                                               (uint32_t)neq2, (uint32_t)neq3,
@@ -13502,6 +13575,7 @@ void ggml_backend_vk_free(ggml_backend_t backend) {
     ggml_backend_vk_context * ctx = (ggml_backend_vk_context *)backend->context;
     VK_LOG_DEBUG("ggml_backend_vk_free(" << ctx->name << ")");
 
+    ggml_vk_fa_dispatch_diag_flush(ctx);
     ggml_vk_cleanup(ctx);
 
     delete ctx;
