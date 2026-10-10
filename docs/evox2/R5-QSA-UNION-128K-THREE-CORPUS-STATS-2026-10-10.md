@@ -58,3 +58,7 @@ The present observations are still insufficient to explain why **Vulkan union OF
 3. Then investigate **Vulkan union OFF** kernel dispatch and timings only after reviewing ROCm comparison. ROCm does not implement this Vulkan-specific grouped union; do not label its results as an equivalent “union OFF” mode. Within-backend input ordering and per-context scaling are more informative than attributing cross-backend absolute speed gaps to any one kernel.
 
 References: [r5 stats implementation](R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md); [r5 comparative throughput report](R5-QSA-UNION-CORPUS-AB-64K-128K-2026-10-10.md).
+
+## ROCm study follow-up completed
+
+The subsequent [ROCm vs Vulkan 64k/128k real-prompt PP comparison](R5-ROCM-VULKAN-CORPUS-PP-64K-128K-2026-10-10.md) completed **13/13** ROCm normal-throughput runs. ROCm 128k had only a **4.1%** fastest/slowest PP spread versus Vulkan union OFF **40.5%**, motivating a bounded Vulkan OFF sparse-attention dispatch diagnostic before MTP or ROCmFP4 investigation.
