@@ -1242,8 +1242,27 @@ class vk_perf_logger {
     uint32_t print_count {};
 };
 
+// Host-only Flash Attention dispatch counters. Disabled unless explicitly requested.
+// The key is (KV 16k bin, query-size class, FA path, sparse, mask-opt,
+// aligned, f32acc, Br, Bc); no token values, GPU buffers, or timing probes.
+using vk_fa_dispatch_diag_key = std::tuple<
+    uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+    uint32_t, uint32_t, uint32_t, uint32_t>;
+
+struct vk_fa_dispatch_diag_row {
+    uint64_t calls = 0;
+    uint64_t query_tokens = 0;
+    uint64_t kv_sum = 0;
+    uint64_t n_kv_max_sum = 0;
+    uint64_t split_k_sum = 0;
+    uint64_t split_kv_sum = 0;
+};
+
 struct ggml_backend_vk_context {
     std::string name;
+
+    // Opt-in FA dispatch diagnostics, aggregated on CPU and emitted at backend free.
+    std::map<vk_fa_dispatch_diag_key, vk_fa_dispatch_diag_row> fa_dispatch_diag;
 
     vk_device device;
     bool qsa_union_active_logged = false;
