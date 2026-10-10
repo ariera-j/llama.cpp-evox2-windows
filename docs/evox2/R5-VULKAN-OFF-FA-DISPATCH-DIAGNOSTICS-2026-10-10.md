@@ -230,3 +230,90 @@ The earlier 4096-dispatch Japanese literature file `llama-bench-20261010-2119266
 2. Obtain a reliable **KV-depth and shader-name annotation** before interpreting more GPU timing A/B. Preferred investigation-only solution: add read-only Vulkan `VK_EXT_debug_utils` labels around named dispatch paths (`fa_mask_opt`, `flash_attn_cm1`, optional MoE/Indexer) and annotate KV / N at FA dispatch (or emit a minimal dispatch-index-to-KV trace). Confirm in RGP whether the Vulkan driver and capture preserve these labels. Do not alter FA mask/shader math or merge to stable r5 before correctness/overhead checks.
 3. Alternatively use the already collected per-ubatch perf logger curves to estimate equivalent-KV capture offsets; **195 sec fixed timer is not equivalent-KV alignment**. If testing this coarse alternative, code's earlier capture time would be a provisional estimate, not a guaranteed KV-matched pair.
 4. Once matching FA shader and late KV (48–60k) are identified, compare `fa_mask_opt` preprocessing separately from `flash_attn_cm1` and investigate mask tile skip rate. Whole-run FA time remains the established large difference, shader-level cause still unconfirmed.
+
+
+## Investigation-only RGP kernel and KV-depth labels (2026-10-10)
+
+**Source implemented on `investigation/r5-vulkan-off-fa-dispatch-20261010`; Windows rebuild / Vulkan validation / RGP visibility PENDING.** This follows the two-corpus RGP comparison above; no source code on stable `r5/upstream-refresh-20261009` was changed.
+
+### Discovery: ggml already has Vulkan debug labels
+
+Upstream's existing `GGML_VK_DEBUG_MARKERS` opt-in enables `VK_EXT_debug_utils` and adds **a label around every dispatch with its native pipeline name and workgroup count**, as well as graph-op and submit labels. Previous RGP captures did not enable that flag, explaining why the UI showed only pipeline hashes. Thus custom shader-name infrastructure was unnecessary.
+
+This investigation now adds a more specific, separate `GGML_VK_FA_RGP_MARKERS=1` (literal `1` only) that:
+- Automatically requests `VK_EXT_debug_utils` if available, **even if `GGML_VK_DEBUG_MARKERS` is unset**. It therefore also enables upstream's existing nested per-dispatch name labels for the duration of a capture.
+- Around each FA *compute dispatch* emits an additional parent marker of the form `EVOX2_FA_MAIN shader=<actual pipeline name> KV=49152 N=1024 Br=16 Bc=64 n_kv_max=2051 q=<query tensor name>`. `KV` is the actual K tensor length in that FA invocation, **not the RGP capture timestamp**. `N` is that FA invocation's query dimension after any decode GQA reshaping.
+- Also labels `EVOX2_FA_MASK_OPT` (mask prepass), `EVOX2_FA_SPARSE` (optional sparse compact), `EVOX2_FA_MAIN_SPLIT` (split-K main FA), and `EVOX2_FA_SPLIT_REDUCE` (split-K reduction). For the previous 64k QSA union OFF PP test, we expect `EVOX2_FA_MASK_OPT` and `EVOX2_FA_MAIN`; neither sparse nor split-K is expected.
+- Leaves all workgroup counts, shader binaries, masks, QSA union decisions, and compute arguments unchanged. It adds CPU label formatting and Vulkan debug-region commands when enabled; the resulting profile is **diagnostic, not a normal PP baseline**.
+- Leaves `GGML_VK_FA_DISPATCH_DIAG` (host CSV counters) independent. For RGP, **set `GGML_VK_FA_RGP_MARKERS=1` only** and clear other profiling/diagnostic flags to limit interference.
+- Prints a **one-time stderr log** `ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)`. If `VK_EXT_debug_utils` is unavailable, prints a warning and does **not** add labels. If RGP does not preserve labels despite successful Vulkan registration, RGP label visibility remains a separate, still-unverified tooling issue.
+
+Changes are confined to `ggml/src/ggml-vulkan/ggml-vulkan.cpp` and `ggml/src/ggml-vulkan/ggml-vulkan-types.h`. The common dispatch template `ggml-vulkan-common.h` was intentionally left unchanged. `Measure-LlamaBench.ps1` already records `GGML_` environment variables in `conditions.json`, so it needs no change.
+
+### Build: keep b11551 and stable r5 binaries intact
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+git fetch origin
+git switch investigation/r5-vulkan-off-fa-dispatch-20261010
+git pull --ff-only
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-rgp-kv-labels `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4
+
+$bin = '.\build-vulkan-rgp-kv-labels\bin\Release'
+& "$bin\llama-cli.exe" --version
+& "$bin\llama-cli.exe" --list-devices
+.\tools\evox2\benchmark\Test-QsaUnion.ps1 -BinDir $bin -Backend Vulkan0
+```
+
+`local.psd1` is ignored/untracked. Add **one** entry in its existing `Builds` section (without replacing the old b11551 `R5FaDispatchVulkan`):
+
+```powershell
+R5RgpKvVulkan = @{
+    BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r5\build-vulkan-rgp-kv-labels\bin\Release'
+    ExpectedBackend = 'Vulkan'
+}
+```
+
+### 256-token smoke before RGP
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+$env:GGML_VK_QSA_UNION = '0'
+$env:GGML_VK_QSA_UNION_STATS = '0'
+$env:GGML_VK_FA_RGP_MARKERS = '1'
+
+# Avoid mixing diagnostic mechanisms in the short RGP preparation test.
+@('GGML_VK_FA_DISPATCH_DIAG', 'GGML_VK_FA_DISPATCH_DIAG_FILE',
+  'GGML_VK_PERF_LOGGER', 'GGML_VK_PERF_LOGGER_FREQUENCY',
+  'GGML_VK_PERF_LOGGER_CONCURRENT', 'GGML_VK_FA_SPARSE_DISABLE') | ForEach-Object {
+    Remove-Item "Env:$_" -ErrorAction SilentlyContinue
+}
+
+$base = 'C:\Users\ai\Desktop\qwen38-flash-next-evo-x2\test_input\qsa-test'
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R5RgpKvVulkan -ModelKey UnslothPle16 `
+  -InputFile (Join-Path $base 'wagahaiwa_nekodearu_utf8.txt') -PromptSlice head `
+  -Context 1024 -PromptTokens @(256) -GenerationTokens @(0) -Depths @(0) `
+  -Repetitions 1 -NoWarmup -KvType f16 `
+  -Batch 2048 -UBatch 1024 -Threads 4 -GpuLayers 999 -CpuMoe 0 `
+  -FlashAttn auto -UmaLabel '96GB'
+```
+
+Pass gate: wrapper result `Status=OK`, `ExitCode=0`, detected backend Vulkan, and `stderr.log` containing the one-time FA markers enabled message **and no Vulkan error**. This only confirms that Vulkan instance/extension initialization succeeded. It does **not** prove that RGP can display or preserve debug-region names; that requires an actual capture.
+
+### 64k RGP capture
+
+In Radeon Developer Panel, reuse the **validated non-truncated capture parameters**: Vulkan, Auto capture `Dispatch timer`, time `195000 ms`, `Dispatch count=256`, SQTT buffer **High**, Collect counters OFF, instruction tracing OFF. Keep these fixed in the first labeled run, but do not claim equivalent KV position until the marker is visible. Configure the panel before launching `llama-bench.exe`.
+
+Run the same command as the smoke, but with `-Context 65536 -PromptTokens @(61789)` and unchanged QSA/FA marker env. Start with **Japanese literature** only. When the profile is opened, look for `EVOX2_FA_` in the RGP event hierarchy / grouping and inspect `KV=...` and `shader=...` in the labels. `EVOX2_FA_MASK_OPT` identifies mask preprocessing; `EVOX2_FA_MAIN` identifies the actual FA compute dispatch (expected existing nested pipeline name contains `flash_attn...`).
+
+If labels are visible, determine captured KV position before running code and adjust the code-side timer only as necessary to target an overlapping **KV=48k–60k** range. Prefer comparison of the same `shader` and `KV` at a matching query tensor/layer, not top-of-list pipeline durations at equal wall-clock delay.
+
+**If labels are absent:** preserve `stderr.log`, `conditions.json` and a screenshot of RGP Event timing including the event tree; check the one-time enabled message, RGP capture warning, and `ggml_vk_debug_label` behavior. Do not assume the shader label is displayed simply because the Vulkan extension initialized. Pipeline hash alone is insufficient to align KV and kernel identity.
+
+After testing, remove `GGML_VK_FA_RGP_MARKERS` and any explicitly set `GGML_VK_DEBUG_MARKERS` from the process environment. Keep the known-good b11551 for uninstrumented measurements.
