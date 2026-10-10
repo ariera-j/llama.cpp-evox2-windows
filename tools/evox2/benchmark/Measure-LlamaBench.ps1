@@ -454,6 +454,20 @@ if ($env:GGML_VK_FA_DISPATCH_DIAG -eq '1') {
     }
 }
 
+# FA mask-tile histogram: native Vulkan backend emits the one-shot snapshot
+# after GPU synchronization; place the CSV in the unique run directory.
+$FaMaskDiagFile = $null
+$AutoFaMaskDiagFile = $false
+if ($env:GGML_VK_FA_MASK_DIAG -eq '1') {
+    if ([string]::IsNullOrWhiteSpace($env:GGML_VK_FA_MASK_DIAG_FILE)) {
+        $FaMaskDiagFile = Join-Path $RunDirectory 'fa-mask-tile-diag.csv'
+        $env:GGML_VK_FA_MASK_DIAG_FILE = $FaMaskDiagFile
+        $AutoFaMaskDiagFile = $true
+    } else {
+        $FaMaskDiagFile = $env:GGML_VK_FA_MASK_DIAG_FILE
+    }
+}
+
 $Started = Get-Date
 
 $Conditions = [ordered]@{
@@ -496,6 +510,7 @@ $Conditions = [ordered]@{
     Environment        = $RelevantEnvironment
     QsaUnionStatsFile  = $QsaStatsFile
     FaDispatchDiagFile = $FaDispatchDiagFile
+    FaMaskDiagFile     = $FaMaskDiagFile
 
     Notes = @(
         'llama-bench measurements exclude tokenization and sampling time.',
@@ -622,6 +637,9 @@ try {
     }
     if ($AutoFaDispatchDiagFile) {
         Remove-Item Env:GGML_VK_FA_DISPATCH_DIAG_FILE -ErrorAction SilentlyContinue
+    }
+    if ($AutoFaMaskDiagFile) {
+        Remove-Item Env:GGML_VK_FA_MASK_DIAG_FILE -ErrorAction SilentlyContinue
     }
     if ($null -ne $monitorProcess) {
         try {
@@ -871,6 +889,7 @@ $Result = [ordered]@{
         Resources  = if (Test-Path -LiteralPath $ResourcePath) { $ResourcePath } else { $null }
         QsaUnionStats = if ($QsaStatsFile -and (Test-Path -LiteralPath $QsaStatsFile)) { $QsaStatsFile } else { $null }
         FaDispatchDiag = if ($FaDispatchDiagFile -and (Test-Path -LiteralPath $FaDispatchDiagFile)) { $FaDispatchDiagFile } else { $null }
+        FaMaskDiag = if ($FaMaskDiagFile -and (Test-Path -LiteralPath $FaMaskDiagFile)) { $FaMaskDiagFile } else { $null }
     }
 }
 
@@ -900,6 +919,12 @@ if ($FaDispatchDiagFile) {
     Write-Host "FA dispatch diag: $FaDispatchDiagFile"
     if (-not (Test-Path -LiteralPath $FaDispatchDiagFile -PathType Leaf)) {
         Write-Warning 'FA dispatch diagnostics were requested, but no CSV was found. Check stderr.log.'
+    }
+}
+if ($FaMaskDiagFile) {
+    Write-Host "FA mask tiles   : $FaMaskDiagFile"
+    if (-not (Test-Path -LiteralPath $FaMaskDiagFile -PathType Leaf)) {
+        Write-Warning 'FA mask tile diagnostics were requested but no CSV was found. Check stderr.log for snapshot status.'
     }
 }
 if ($ResourceMonitor) {
