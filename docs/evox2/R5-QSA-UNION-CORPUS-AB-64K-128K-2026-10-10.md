@@ -94,3 +94,7 @@ Previous pre-stats `llama-cli` 128k repeated ANLP result: **179.34 OFF → 307.1
 - Compare the Japanese novel and C/C++ at 128k for Vulkan OFF, plus random if practical, using suitable per-kernel timing/profiling. Confirm actual fallback/sparse/dense dispatch selection; use same input SHA and no diagnostic stats. Reassess profiling priorities after ROCm results.
 
 Raw ZIPs, GGUF and large corpora stay out of Git. Avoid inferring that the repeated ANLP is representative of all business documents: these tests demonstrate variability across the selected sources, not production-wide distributions.
+
+## 128k three-corpus union diagnostics — completed 2026-10-10
+
+The planned 128k STATS ON comparison of Japanese literature, llama.cpp C/C++ and random-token input is **complete (3/3 OK)**. Each run recorded 93 rows / 17,724 groups, zero dropped groups, and unique union means **22,798.57**, **14,155.45**, and **29,598.36** respectively. Code unique union fell in the 48–64k KV bin, then grew through 128k. Methodology, group-weighted six-bin table, SHA-256 and run audit are in the standalone [128k three-corpus QSA union diagnostics report](R5-QSA-UNION-128K-THREE-CORPUS-STATS-2026-10-10.md). **The next step is ROCm real-document llama-bench comparison**, with a fresh current-r5 ROCm build since the existing COMMON-001 ROCm binary lacks the prompt-file extension; Vulkan OFF profiling is intentionally deferred until after ROCm results.
