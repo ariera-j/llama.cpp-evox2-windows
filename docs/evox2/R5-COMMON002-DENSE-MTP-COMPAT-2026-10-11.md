@@ -47,6 +47,10 @@ The draft still allocates a **16 MiB indexer KV cache**; that is expected becaus
 
 **Next gate:** Run real 32k input (~29,557 tokens) with fixed `-n 128 --seed 1234 --ignore-eos --temp 0`, same build/main and MTP OFF vs ON (rather than new 32k allocation-only). Check actual draft acceptance, output/equivalence anomalies, true PP/TG/total and runtime digest. A real-input pair does not replace a forced-rejection rollback test. After both pass, run 64k real input OFF/ON (prefer ABBA), then 128k. If smoke and 32k are sound, decide whether to merge the *compatibility-only* fix into pinned r5 without importing r4 TG optimizations. No additional native code was changed in this documentation update.
 
+## Long-input r5 ROCm MTP ABBA gate — PASSED 2026-10-11
+
+[**R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md**](R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md) records the eight-run 64k/128k MTP OFF/ON ROCm ABBA. All 8/8 completed with the **same** b11560 `f8d24494f` compiled binary and 512 generated tokens. MTP ON gains TG **+22.55% at 64k / +9.01% at 128k**, reduces PP **−6.86% / −6.87%**, and raises **fresh-prompt PP+TG** by **+7.19s / +29.14s**. 64k one ON run has a **model-load delay** ~144s above usual, but native PP/TG rates match the other ON run. This confirms functional longer-input MTP with only the ratio-zero compatibility guard; **no performance patch imported, no output/rollback equivalence established**. Next: r5 Vulkan real-input MTP A/B, then choose an MTP PP-cost investigation or 256k r4 optimization candidate.
+
 ## Original planned Windows gate (historical; steps 1–3 now passed)
 
 1. Check out `investigation/r5-mtp-dense-compat-20261011` from the r5 pinned base, preserving local unrelated work; confirm clean status.
