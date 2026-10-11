@@ -1,9 +1,48 @@
 # Evo-X2 optimization roadmap
 
-Snapshot: 2026-10-09 (r5 clean Vulkan/ROCm baseline verified through 256k; r4 clean 64k replayed on Windows 26H2; Vulkan MoE tile selection classified UPSTREAMED / RETIRE)
+Original baseline snapshot: 2026-10-09 (r5 clean Vulkan/ROCm baseline verified through 256k; r4 clean 64k replayed on Windows 26H2; Vulkan MoE tile selection UPSTREAMED / RETIRE). Active execution priorities last reviewed 2026-10-11; the new dated section below supersedes older future-work lists.
 
 This document records the current execution order for the Evo-X2 optimization
 work. Patch IDs remain stable even when implementation priority changes.
+
+## Active priority decision — 2026-10-11
+
+**Decision:** return from the deep Vulkan OFF FA investigation to a breadth-first project priority review. **First perform a bounded ROCm/HIP FA runtime diagnosis; then make a fresh r5 MTP decision.** Do not start a new Vulkan shader optimization merely to resolve the remaining `non-skippable-tile ratio ≈2.58× vs single-kernel GPU-time ratio ≈4.1×`. Do not silently move the r5 pinned upstream or merge experimental diagnostics into the stable branch.
+
+The evidence and public upstream status checks behind this decision are in [PERFORMANCE-RESEARCH-LOG.md — 2026-10-11](PERFORMANCE-RESEARCH-LOG.md) and the archived [Vulkan FA diagnosis](R5-VULKAN-OFF-FA-DISPATCH-DIAGNOSTICS-2026-10-10.md). The earlier 2026-10-09 refresh sequence, old `NEXT` text in historical sections and pending states in earlier checkpoint descriptions are preserved as *historical*, not a competing current plan.
+
+### Why the order changed
+
+- r5 now has **validated real-input `llama-bench`**, grouped QSA union ON/OFF and statistics on Windows Vulkan, with 64k/128k real-text controls; 64k/128k cross-backend ROCm real-input PP collection is complete. Earlier real/random input mismatch no longer blocks optimization.
+- At 64k Vulkan union ON benefits **all seven** evaluated inputs and gains differ by content; 128k ON is **+46.8% to +74.9%** on the six tested inputs. The union path is a validated local feature, not an untested candidate. At 128k Vulkan union ON outperformed ROCm on **four of six** inputs, so “ROCm always faster” is false.
+- The unusual Vulkan **union OFF** literature/code PP difference has been traced to `FLASH_ATTN_EXT` in whole-run GPU logger timings and to a ~4.1× matched FA-main kernel-time difference at `KV=49152`. A separate mask metadata histogram shows **35.68%** versus **75.03%** completely skip-eligible `16×64` tiles in literature versus code, across 64 matching query-tile rows. This strongly implicates mask-tile occupancy; the residual nonlinear timing relationship is **not itself a reason to spend more time profiling immediately**.
+- ROCm instead showed relatively small per-input PP spread (**5.5% at 64k, 4.1% at 128k**) and different depth scaling. We have **not measured its actual selected HIP FA kernel, suffix mask scan, Stream-K choice or comparable FA GPU time**, so its execution path is a more informative, tractable next unknown than finer-grained Vulkan tile counting.
+- Practical user-facing opportunities outside FA remain: **r5 MTP total-latency/PP cost**, **ROCm 128–256k PP depth scaling**, and **AgentionAI ROCmFP4-FAST support**. These should not disappear from view because profiling is interesting.
+
+### Re-ranked queue and decision gates
+
+| Order | Workstream and classification | Immediate action / stop or promotion gate |
+| --- | --- | --- |
+| **P0 (next)** | **ROCm/HIP Flash Attention runtime path** — `INVESTIGATE`, **bounded** | On stable r5 sources, trace the selected `ggml-hip`/`ggml-cuda` FA kernel for qwen4exp; confirm whether conditional `scan_mask`/`flash_attn_mask_to_KV_max` and FA Stream-K actually apply to **Radeon 8060S** at 64k. Inventory Windows HIP profiler support **before** implementing any GPU instrumentation. If practical, compare the **same Japanese literature vs llama.cpp C/C++** at `-c 65536 -p 61789 -ub 1024` and relevant late-KV/layer shape, reporting FA op-time separately from PP. Stop once kernel path, major FA contribution and likely actionable difference are known; otherwise write down limitations and move on. |
+| **P1 (high practical impact)** | **r5 upstream-native MTP correctness and end-to-end performance** — `INVESTIGATE` | Confirm the existing Unsloth MTP draft loads on current r5, validate short/rollback/output, then short and long MTP ON/OFF with both target+draft prefill latency, TG/acceptance and **fresh-prompt total latency**. The r4 dense-draft indexer and target QSA no-op candidates were **not** wholesale ported; retest relevance rather than porting by habit. Investigate PP overhead before developing additional speculative-kernel complexity. |
+| **P1–P2** | **ROCm 128k/256k PP scaling** — `INVESTIGATE` | Reuse the P0 FA findings; break down FA versus GDN, MoE, CONCAT, copies and scheduling on comparable 64k/128k/256k workloads. The prior 64k→128k decrease is about **25% across six corpora**, but input slice also changes; not proof of a single attention bottleneck. Prior 64k→256k PP fall seen in r4 CLI and bench stays a follow-up, not a duplicate task. |
+| **P1 feature-dependent / P2 otherwise** | **COMMON-003 / VULKAN-001 — AgentionAI ROCmFP4-FAST** — `LOCAL-CANDIDATE` | Audit native current/pinned model type, GGUF reader and Vulkan/ROCm kernels; first target *model load and correct execution*. Raise priority to P1 if comparative use of the AgentionAI FP4 model is immediately required. Keep format compatibility separate from speed claims and from the Vulkan/RGP FA changes. |
+| **P2 / defer** | **Vulkan FA refinements** — `INVESTIGATE only on trigger` | Keep old RGP markers and one-shot mask histogram **on the investigation branch**; stable r5 retains only the report. Potential ROCm-style suffix cutoff, FA Split-K, tile placement/wave occupancy tests only after HIP profiling or a clear actionable benefit. Do not equate [upstream #30280](https://github.com/ggml-org/llama.cpp/pull/30280) **MUL_MAT Split-K** with FA Split-K. |
+| **WATCH-UPSTREAM** | **GDN/CONCAT/recurrent/MTP and other engine updates** | Monitor [#29353](https://github.com/ggml-org/llama.cpp/pull/29353), [#28303](https://github.com/ggml-org/llama.cpp/pull/28303), [#30191](https://github.com/ggml-org/llama.cpp/pull/30191), [#30149](https://github.com/ggml-org/llama.cpp/pull/30149), [#30139](https://github.com/ggml-org/llama.cpp/pull/30139), [#30190](https://github.com/ggml-org/llama.cpp/pull/30190) and new correctness fixes such as **merged [#30103](https://github.com/ggml-org/llama.cpp/pull/30103)**. Verify model/device/shape applicability and same-binary gains; do not predict Evo-X2 gains from unrelated published hardware. Unsloth mix, Strata 0.1.42, and Halogen 0.17.5 remain reference systems, not an automatic switch. |
+
+### Starting the next ROCm chat (handoff / no immediate code changes)
+
+1. **Branch and reproducibility:** use `r5/upstream-refresh-20261009` for stable source inspection; pinned upstream stays `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Record the checked-out repo HEAD, HIP binary b11543/commit `28d0f32d0` if reusing the October 10 baseline, model path/size, input hashes and compiler/HIP toolchain. The separate Vulkan FA investigation branch contains instrumentation; **do not merge it** merely to start ROCm. An isolated new ROCm investigation branch is optional **after** source-only research defines a need for instrumentation.
+2. **Source-first questions:** for `KV≈49152`, `N=1024`, f16 K/V, qwen4exp/QSA, identify the actual HIP FA path and kernel specialization, conditional `scan_mask` and trailing-KV cutoff, Stream-K/workgroup assignment, and what is different from Vulkan `FA_COOPMAT1` `mask_opt` with an interior `ALL_NEG_INF` early skip. The CUDA-only sparse path guarded off under `GGML_USE_HIP` is a different feature from suffix scanning. Do **not** presume Vulkan `Qcur-19` has an identically named HIP event.
+3. **Tool feasibility:** check tools available for Windows HIP timing/dispatch traces before adding diagnostic kernels or relying on Vulkan-only RGP captures. Begin with existing source and low-overhead op attribution; if unavailable, explicitly state the observability limit.
+4. **Narrow measurement:** use matched Japanese novel `wagahaiwa_nekodearu_utf8.txt` (SHA-256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`) and `llamacpp-inference-code.txt` (SHA-256 `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`), `-p 61789 -c 65536 -b 2048 -ub 1024 -ctk f16 -ctv f16`, and the validated GGUF. Measure FA and non-FA contributions separately if feasible; account for different backend algorithms/compilers and ambient conditions.
+5. **Exit gate:** summarize actual HIP FA path and evidence, attribution confidence, potential Vulkan-applicable change **if any**, profiling cost and recommendation to continue ROCm FA, advance r5 MTP, or move to depth-scaling/FP4. Avoid another open-ended series of local shader modifications without a demonstrated payoff.
+
+### Change-control guard
+
+This review is **documentation and prioritization only**. Preserve validated r5 Vulkan union OFF/ON / ROCm baseline build identities and the original raw ZIP evidence; do not merge investigative FA instrumentation into r5, delete saved research documents, upgrade drivers/ROCm, switch GGUF or revise a baseline silently. Re-check upstream PR state on the day of any implementation, and keep article-draft Markdown **outside Git**, as requested.
+
+---
 
 ## Current r5 checkpoint
 
