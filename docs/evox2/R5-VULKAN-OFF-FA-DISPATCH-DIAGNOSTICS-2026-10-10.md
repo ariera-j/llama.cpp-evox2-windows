@@ -1,0 +1,740 @@
+# r5 Vulkan OFF Flash Attention dispatch diagnostics (investigation)
+
+> [!IMPORTANT]
+> **Archived investigation record (copied to stable r5 on 2026-10-11).** This is a research report, not the source-code feature set of `r5/upstream-refresh-20261009`. Diagnostic instrumentation (RGP markers, FA dispatch statistics, FA mask-tile snapshot and benchmark CSV hooks) remains ONLY in [`investigation/r5-vulkan-off-fa-dispatch-20261010`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-vulkan-off-fa-dispatch-20261010) as of this copy. The validated stable r5 build and its default-off performance measurements are not changed by archiving this document.
+>
+> Original investigation snapshot: [`65ed1285`](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/65ed1285c3d6429b4d63c75fba7a87d7f627ac50). Some older sections below record provisional hypotheses, unsuccessful captures, and temporary instructions from the time of investigation; use the latest conclusions and investigation plan at the end for the current interpretation.
+
+
+Status: **source and benchmark-wrapper implementation committed; Windows build and GPU validation PENDING**. Date: 2026-10-10 JST. Branch: `investigation/r5-vulkan-off-fa-dispatch-20261010`, forked from stable r5 HEAD `d89343fe08175fd86944b95028da59d7e3c950df`. **Do not merge this instrumentation before reviewing actual GPU results.** The stable r5 branch and its tested b11535 binary are unchanged.
+
+## Why
+
+User measured 64k prompt-prefill `GGML_VK_QSA_UNION=0` Japanese novel **286.158** PP tok/s versus code **330.443**, while `GGML_VK_FA_SPARSE_DISABLE=1` yielded **285.796** and **330.384** respectively (negligible ~0.13% and ~0.02% changes). All four runs completed without error. Source review: the sparse FA condition in `ggml/src/ggml-vulkan/ggml-vulkan.cpp` requires `gqa_ratio > 1 || (path == FA_SCALAR && N == 1)`; `gqa_ratio` changes from one only for `N <= 8`. In the ordinary prefill with `-ub 1024`, this makes sparse dispatch unlikely. This needs actual dispatch evidence, not inference alone.
+
+Earlier [ROCm vs Vulkan 64k/128k comparison](R5-ROCM-VULKAN-CORPUS-PP-64K-128K-2026-10-10.md) found that ROCm's corpus-dependent PP spread is small (~5.5% at 64k and ~4.1% at 128k), while Vulkan OFF ranges ~20.9% and 40.5%, respectively. A Vulkan-specific input-sensitive path is plausible but not proven.
+
+## Implementation scope
+
+- New `GGML_VK_FA_DISPATCH_DIAG=1` **opt-in**, default **disabled**. Only the literal value `1` turns on data collection. A once-initialized flag adds a branch to the ordinary FA path; with diagnostics off, the original pipeline choice and shader dispatch remain untouched.
+- When QSA union does not capture an FA op (including union OFF), record CPU-side counts in a `std::map` per Vulkan backend context, keyed by: `KV` bucket (16,384 cells), query-size class (`N <= 8`, `<=64`, `<=512`, or `>512`), FA tuning path (numeric enum), sparse flag, mask-opt flag, aligned, F32 accumulation flag, `Br`, `Bc`. This records the **selected host code path**, not which shader dominates GPU time.
+- For each key: `calls`, `query_tokens`, `kv_sum`, `n_kv_max_sum`, `split_k_sum`, and `split_kv_sum`. These can be divided by calls to derive averages. `N` is the FA shader's post-GQA-transform query count, not always original token count. A query-size bucket of 1024 also includes >1024.
+- At Vulkan backend **context free**, append aggregate rows to `GGML_VK_FA_DISPATCH_DIAG_FILE` (CSV, header emitted only for an absent/empty file). Write failure and missing path are reported to stderr. A mutex serializes appends across contexts. No GPU readback, new compute shader, per-token logging, token content or elapsed time; CPU map lookups have overhead when diagnostics are on, so these runs are **not** normal PP baselines.
+- `Measure-LlamaBench.ps1` creates `fa-dispatch-diag.csv` automatically in its unique run directory if diagnostics are enabled and the file path variable is unset; it records `FaDispatchDiagFile` in conditions, `Files.FaDispatchDiag` in results, and warns if requested CSV is missing. It only restores the file environment variable if it automatically set it. Existing `GGML_VK_QSA_UNION_STATS` CSV functionality remains independent.
+- This implementation does **not** add timer queries, alter MoE or Lightning Indexer, override `use_sparse`, or change the existing QSA union ON/OFF behavior. It is specifically to establish whether the literature/code input pair selects the same FA host path and to compare dispatch frequency/bins.
+
+Files:
+- `ggml/src/ggml-vulkan/ggml-vulkan-types.h`: small per-context counters.
+- `ggml/src/ggml-vulkan/ggml-vulkan.cpp`: opt-in setting, aggregation and CSV at backend free.
+- `tools/evox2/benchmark/Measure-LlamaBench.ps1`: capture generated diagnostics in regular benchmark artifacts.
+- This handoff documentation.
+
+## Windows build and validation
+
+Use the existing r5 **Vulkan SDK 1.4.357.0**, LLVM/Clang 20.1.8 setup; create a **new build directory**. Do not replace the known-good b11535 stats build or the ROCm build.
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+git fetch origin
+git switch investigation/r5-vulkan-off-fa-dispatch-20261010
+git pull --ff-only
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-fa-dispatch `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4
+
+$bin = '.\build-vulkan-fa-dispatch\bin\Release'
+& "$bin\llama-cli.exe" --version
+& "$bin\llama-cli.exe" --list-devices
+
+.\tools\evox2\benchmark\Test-QsaUnion.ps1 -BinDir $bin -Backend Vulkan0
+```
+
+Record any build errors verbatim. `test-backend-ops` should run 18/18 OFF and ON, including the union active/fallback tests. This test suite does **not** yet verify diagnostics CSV correctness.
+
+Add a new local `Builds` entry in the ignored `tools/evox2/benchmark/configs/local.psd1` pointing to `build-vulkan-fa-dispatch\bin\Release`, e.g. `R5FaDispatchVulkan` with `BinDir` and `ExpectedBackend = 'Vulkan'`. Keep `UnslothPle16` and the source files already registered. The new build's executable SHA256 must be recorded separately from b11535.
+
+### Short smoke (recommended before 64k)
+
+Use a unique process/run directory; `GGML_VK_FA_DISPATCH_DIAG_FILE` should be **unset** so the wrapper places the CSV beside the logs:
+
+```powershell
+$env:GGML_VK_QSA_UNION = '0'
+$env:GGML_VK_QSA_UNION_STATS = '0'
+$env:GGML_VK_FA_DISPATCH_DIAG = '1'
+Remove-Item Env:GGML_VK_FA_DISPATCH_DIAG_FILE -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_SPARSE_DISABLE -ErrorAction SilentlyContinue
+
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R5FaDispatchVulkan -ModelKey UnslothPle16 `
+  -InputFile 'C:\path\to\wagahaiwa_nekodearu_utf8.txt' -PromptSlice head `
+  -Context 1024 -PromptTokens 256 -GenerationTokens 0 -Depths 0 `
+  -Repetitions 1 -NoWarmup -KvType f16 -Batch 2048 -UBatch 1024 `
+  -Threads 4 -GpuLayers 999 -CpuMoe 0 -FlashAttn auto
+
+# Inspect the resulting run directory's fa-dispatch-diag.csv, conditions.json,
+# result.json, and stderr.log. Do not rely on a PP comparison from this smoke.
+```
+
+After confirming nonempty valid CSV and successful tests, perform **64k Japanese novel and source code** with `-Context 65536 -PromptTokens 61789`, otherwise identical `-NoWarmup -Repetitions 1`, QSA union OFF, STATS OFF. Use the same source file SHA hashes used previously:
+- Japanese novel: `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`.
+- Code corpus: `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`.
+
+**Control run:** repeat each source on the **same newly built binary** with `GGML_VK_FA_DISPATCH_DIAG=0` and QSA union OFF, using the same conditions. Compare PP with diagnostics OFF to the saved b11535 baseline (~286/330 tok/s); evaluate diagnostic overhead separately rather than using diagnostic PP as a speed baseline.
+
+### CSV checks and analysis
+
+- `calls > 0` in all rows, `sparse`/ `mask_opt` are 0 or 1, `n_kv_max_sum / calls`, `split_k_sum / calls`, `kv_sum / calls` are meaningful.
+- Sum calls across rows, compare distribution by KV bucket and FA path for Japanese literature and code. Confirm if prefill really has `sparse=0` and whether `mask_opt`/path/split-K differ.
+- If both inputs have essentially the same dispatch mix, **this diagnostic does not rule out different GPU kernel cost for identical shapes/paths**. Next, use RGP per-kernel timings to check mask processing, FA, Lightning Indexer and MoE. Backend CSV counts are **not elapsed time**.
+- Caveat: the row is emitted at backend destruction; a process abort or forced termination can prevent writing CSV. The wrapper warns when it cannot find the file.
+
+After experiments, restore/remove `GGML_VK_FA_DISPATCH_DIAG`, `GGML_VK_FA_DISPATCH_DIAG_FILE`, `GGML_VK_QSA_UNION` and any experiment-specific environment variables. Keep the diagnostic branch separate until results warrant an upstream change.
+
+
+## Windows 64k result: FA dispatch matches across Japanese literature and C/C++ (2026-10-10)
+
+**Status: PASS, experiment decision completed.** Both opt-in diagnostics on b11551 were supplied in archive `20261010-201416-606-bench-vulkan-b11551-ctx65536-0abd151f45bc.zip` (run-local folders below). Full logs were read, not only printed PP averages.
+
+| Item | Japanese literature | llama.cpp C/C++ |
+| --- | ---: | ---: |
+| Run ID | `20261010-201004-197-bench-vulkan-b11551-ctx65536-38192f507814` | `20261010-201416-606-bench-vulkan-b11551-ctx65536-0abd151f45bc` |
+| Input SHA-256 | `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143` | `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345` |
+| Measured PP | **285.818046 tok/s** | **330.343839 tok/s** |
+| Timed PP time | 216.1829904 seconds | 187.0445056 seconds |
+| Exit status | OK / 0 | OK / 0 |
+| FA dispatch CSV rows | 5 | 5 |
+| Aggregated FA calls | **732** | **732** |
+| Sum query tokens | 741,468 | 741,468 |
+| Sum KV length | 23,230,464 | 23,230,464 |
+| Sum n_kv_max | 1,492,116 | 1,492,116 |
+
+Fixed conditions: **b11551**, Clang 20.1.8, native commit `26814cb93`, executable SHA-256 `ee32d6c6b0658ebcb07a21d999da800564492f8fd2b98bf157ad58d160118a74`, Qwen3.8-Flash-Next PLE16, Vulkan0 Radeon 8060S, c65536/p61789, generation 0, depth 0, `-b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16`, raw-file `head` slice, warmup OFF, one timed repetition. Recorded environment: `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0`, `GGML_VK_FA_DISPATCH_DIAG=1`. All settings and executable identity match across runs.
+
+**The two `fa-dispatch-diag.csv` files are byte-for-byte identical**, including all five bin rows. Their FA tuning `path=1` means **`FA_COOPMAT1`** (enum `FA_SCALAR=0`, `FA_COOPMAT1=1`, `FA_COOPMAT2=2` from `ggml-vulkan-types.h`). Every row has `sparse=0`, `mask_opt=1`, `aligned=1`, `f32acc=1`, `Br=16`, `Bc=64`, mean `split_k=1`. Full bin contents:
+
+| KV bin | N class | FA calls | Query tokens | KV sum | n_kv_max sum |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0–16384 | 1024 | 180 | 184320 | 1474560 | 359964 |
+| 16384–32768 | 1024 | 192 | 196608 | 4620288 | 393792 |
+| 32768–49152 | 1024 | 192 | 196608 | 7766016 | 393792 |
+| 49152–65536 | 512 | 12 | 4188 | 743424 | 24612 |
+| 49152–65536 | 1024 | 156 | 159744 | 8626176 | 319956 |
+
+For 61,789 input tokens the expected prefill layout is **60 full 1024-token microbatches plus one 349-token tail**, each with 12 QSA attention instances: `(60+1)*12 = 732` FA calls and `61789*12 = 741468` summed FA query tokens. The diagnostic therefore collected a complete and consistent dispatch census.
+
+Code PP is **15.58% faster** relative to Japanese literature. The absolute timed PP difference is ~**29.14 seconds**. Compared with the immediate earlier sparse-disable screen on b11535, the diagnosed PP rates differ by only **−0.119% (Japanese)** and **−0.030% (code)** from the regular-`sparse` values of 286.158 and 330.443 tok/s. These are different binaries and separate runs, **not** a controlled instrumentation overhead measurement; nevertheless there is no obvious large regression.
+
+### Interpretation / next gate
+
+- This directly **confirms zero sparse FA selections** in all 732 recorded prefill FA calls per corpus; it explains why `GGML_VK_FA_SPARSE_DISABLE` had negligible effect.
+- This rules out **differences in the recorded host FA dispatch classes, shapes, or `n_kv_max` upper bounds** as the cause of the **15.6% PP gap**. The CSV does not report the actual selected mask contents, GPU kernel elapsed time, MoE routing distribution, Lightning Indexer timings, or per-layer timings. The same host-selected shader can do different GPU work when the *mask bits or expert routing* differ.
+- In particular, `mask_opt=1` means `fa_mask_opt` generates compact mask metadata consumed by FA. Different selected-cell positions could change active/empty tiles even when the **upper bound n_kv_max and all tensor shapes coincide**. This is a **hypothesis**, not an established cause.
+- **NEXT:** for the same pair of inputs, QSA union OFF, run a **Vulkan GPU performance-logger** comparison (or RGP after that) with `GGML_VK_PERF_LOGGER=1`, `GGML_VK_PERF_LOGGER_FREQUENCY=1`, `GGML_VK_PERF_LOGGER_CONCURRENT` absent, and **`GGML_VK_FA_DISPATCH_DIAG` absent**. Use the same b11551 binary, prompt tokens, hashes and no-warmup settings. Compare the 61 prefill timing blocks by bucket and op name: `FLASH_ATTN_EXT`, `fa_mask_opt`/FA pipeline, `MUL_MAT_ID` MoE, Lightning Indexer, other operations. These logger-enabled PP numbers are diagnostic and must **not** be conflated with normal non-profiled throughput.
+- Rebuilding more host FA dispatch counters will not help distinguish these two inputs. Keep the diagnostic branch separate until the GPU timing result is interpreted. No r5 stable-source modification is warranted from this result alone.
+
+
+## Vulkan GPU performance logger: Japanese literature vs source code (2026-10-10)
+
+**Status: COMPLETE; 2/2 profiler runs OK.** Evidence archive: `20261010-203441-045-bench-vulkan-b11551-ctx65536-47b0cde1f5ff.zip` (both run directories, `stderr.log`, `result.json`, `conditions.json`, `summary.csv`). The experiment uses **the same b11551 executable** as the prior host-dispatch diagnostic, but with the host-side FA dispatch diagnostic disabled and the built-in GPU logger enabled. Every metric below comes from parsing the 61 complete `Vulkan Timings` blocks in each `stderr.log` (60 full 1024-token microbatches plus a 349-token tail), not from a single example block.
+
+### Fixed conditions / integrity
+
+| Condition | Japanese literature | llama.cpp source code |
+| --- | --- | --- |
+| Run directory | `20261010-203020-728-bench-vulkan-b11551-ctx65536-9394b19c6e70` | `20261010-203441-045-bench-vulkan-b11551-ctx65536-47b0cde1f5ff` |
+| Input SHA-256 | `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143` | `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345` |
+| `Status / ExitCode` | OK / 0 | OK / 0 |
+| PP with Vulkan perf logger | **275.203868 tok/s** | **316.493093 tok/s** |
+| Approx. timed PP wall duration (`p/PP`) | 224.521 seconds | 195.230 seconds |
+| Complete Vulkan timing blocks | **61** | **61** |
+| GPU op-time total (sum of 61 `Total time` lines) | **217.23743 seconds** | **187.70091 seconds** |
+
+Same build: Vulkan b11551 / Clang 20.1.8, exe SHA-256 `ee32d6c6b0658ebcb07a21d999da800564492f8fd2b98bf157ad58d160118a74`, PLE16 UD-IQ3_XXS, Radeon 8060S. Both use ctx **65536**, input `head` **61789 tokens**, `-n 0 -d 0 -r 1 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 --no-warmup`. All relevant environment variables match: `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0`, `GGML_VK_PERF_LOGGER=1`, `GGML_VK_PERF_LOGGER_FREQUENCY=1`; `GGML_VK_PERF_LOGGER_CONCURRENT`, `GGML_VK_FA_DISPATCH_DIAG`, `GGML_VK_FA_SPARSE_DISABLE` absent. Both stderr logs contain **61 complete** timing blocks, and for each block the operation-time sum agrees with that block's printed `Total time` up to log rounding.
+
+The logger-enabled PP rates are lower than the same build's previous diagnostics-on PP (~285.818 / 330.344 tok/s) by ~3.7% / ~4.2%. Profiler PP is **not** a normal-speed baseline, and this cross-run difference should not be interpreted as a calibrated logger overhead measurement.
+
+### GPU op-time decomposition (seconds, all 61 prefill blocks)
+
+| Category | Japanese literature | Code | Code minus literature |
+| --- | ---: | ---: | ---: |
+| **FLASH_ATTN_EXT** | **102.4600** | **69.5648** | **−32.8952** |
+| MoE `MUL_MAT_ID*` | 40.7900 | 45.2403 | **+4.4503** |
+| `LIGHTNING_INDEXER` | 1.1681 | 1.1697 | +0.0015 |
+| All other Vulkan GPU ops | 72.8193 | 71.7261 | −1.0932 |
+| **GPU op-time total** | **217.2374** | **187.7009** | **−29.5365** |
+
+- Code's aggregate `FLASH_ATTN_EXT` GPU op time is **32.1% lower**. This **32.895 s reduction exceeds the total 29.537 s GPU op-time reduction** (~111.4%): the non-FA ops collectively take ~3.359 s *longer* for code, principally MoE (+4.450 s).
+- FA accounts for **47.2%** of Japanese-literature GPU op time versus **37.1%** of code; MoE accounts for 18.8% versus 24.1%.
+- `LIGHTNING_INDEXER` time differs by only ~0.002 seconds over the entire PP. MoE differs but in the **opposite direction** to the observed total PP advantage for code. Thus the previously suspected MoE/Indexer as a primary explanation for the literature-vs-code difference is not supported by the op-time totals.
+- This GPU-op-time decomposition is consistent with the wall-time difference inferred from bench PP (~29.29 seconds) without claiming that GPU `Total time` is the entire wall clock.
+
+### Difference by KV range (FLASH_ATTN_EXT aggregate GPU seconds)
+
+The 61 blocks correspond to progressive 1024-token KV lengths and a 349-token last block; sums below are **per group of blocks**, not average latency per 1024-token microbatch. They do not include warmup or generation.
+
+| KV depth by microbatch | Blocks | Japanese literature FA | Code FA | Literature minus code |
+| --- | ---: | ---: | ---: | ---: |
+| 1–16k | 16 | 4.594 | 4.388 | +0.207 |
+| 17–32k | 16 | 16.636 | 16.624 | +0.013 |
+| **33–48k** | **16** | **36.779** | **26.929** | **+9.849** |
+| **49–60k** | **12** | **43.465** | **21.051** | **+22.414** |
+| 349-token tail (~61.8k KV) | 1 | 0.986 | 0.573 | +0.412 |
+
+**Critical observation: the large FA timing gap appears predominantly *after KV exceeds 32k*.** At 17–32k the FA times are nearly equal (~16.64 vs 16.62 sec), while at 49–60k Japanese-literature FA time is ~2.06× the code FA time (43.465 vs 21.051 sec). This is much more diagnostic than the aggregate PP difference. The `GGML_VK_QSA_UNION` switch stays OFF throughout; there is no union ON transition at 32k. The available evidence cannot yet establish which FA shader instruction or memory-access pattern causes the difference.
+
+### Mechanism hypotheses and next decision
+
+The immediately previous **host FA dispatch CSVs were byte-for-byte identical** for these two inputs at 64k: 732 calls, same KV bins, `FA_COOPMAT1` (`path=1`), `sparse=0`, `mask_opt=1`, `Br=16`, `Bc=64`, `split_k=1`, identical n_kv_max sums. This excludes a *host-selected FA pipeline/shape/count* change as the explanation. It **does not imply identical GPU work** when masks differ.
+
+Source-level clue: `ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_mask_opt.comp` identifies all-negative-infinity versus all-zero mask tiles; `flash_attn_cm1.comp` examines those flags and has a `MASK_OPT_ALL_NEG_INF` fast skip (`continue`) before the key/value computation. Since the QSA selection mask contains input-dependent selected-cell positions, a different number/placement of nonempty tiles is a strong **hypothesis** for the observed FA op-time gap. Neither the mask-tile histogram nor the RGP kernel-level times have been measured yet.
+
+**Next priority:** collect **RGP** profiles for the same two inputs, QSA union OFF, matched conditions. Isolate time in `fa_mask_opt` (mask preprocess) versus actual `flash_attn_cm1` dispatch and check read traffic / wave occupancy / shader duration at representative late-KV depths (~48–60k). If RGP shows a large FA shader rather than mask-prepass difference, instrument or A/B the number of nonempty FA tiles before attempting more optimizations. A temporary **mask-opt disable** flag is possible in the investigation branch but would require a rebuild and CPU-reference correctness gate, so prefer read-only profiling first. Do not merge diagnostics into r5 stable based on this result alone.
+
+**Bottom line:** the Vulkan OFF corpus sensitivity at 64k is now localized to the **`FLASH_ATTN_EXT` operator** in the GPU profiler, rather than MoE, Lightning Indexer, or a different FA host pipeline. Shader-level causality is the remaining unknown.
+
+
+## RGP SQTT exploratory two-corpus comparison (2026-10-10, RDP timer)
+
+**State: two valid, non-truncated RGP captures; shader identity confirmed; equivalent KV position and FA kernel identity NOT YET confirmed.** These are preliminary **~0.18–0.19 second SQTT windows**, not complete 64k PP runs. They must not displace the prior whole-run GPU performance logger result attributing the overall 29.5-second difference primarily to `FLASH_ATTN_EXT`.
+
+Capture settings for both: Radeon Developer Panel on Windows 11, Vulkan, automatically attach `llama-bench.exe`, **Dispatch timer / 195,000 ms / count 256**, SQTT buffer setting **High**, no instruction tracing, no shader instrumentation, hardware counters unchecked. RGP's RDF `TraceConfig` records `captureRenderOpCount=256`, `renderOpMode=dispatch`, `memoryLimitInMb=128`, and SPM disabled. After reducing count from 4096 and raising buffer from default, both RGPs open without the preceding `Truncated SQTT data` warning.
+
+| Item | Japanese literature | llama.cpp C/C++ |
+| --- | ---: | ---: |
+| RGP evidence | `llama-bench-20261010-222243750.rgp` | `llama-bench-20261010-224538527.rgp` |
+| File size | 154,953,898 bytes | 155,963,842 bytes |
+| RGP Profile duration | **183,602.786 µs** | **194,373.615 µs** |
+| GPU idle | 0.35% | 0.37% |
+| Queue submissions/command buffers | 17 / 17 | 20 / 20 |
+| Events (dispatch / barrier) | 550 (325 / 225) | 550 (325 / 225) |
+| Unique pipelines | 55 | 55 |
+| RDF code-object blobs | **69** | **69** |
+
+**Independent binary cross-check:** RDF header magic `AMD_RDF` and chunk directory parsed successfully. All **69/69 CodeObject payloads** are *byte-for-byte identical* between the two RGPs (matching SHA-256 and lengths in order). The `PsoCorrelation` payload is also byte-for-byte identical (6,624 bytes), as are `TraceConfig`, `SystemInfo` and `AsicInfo`. This gives stronger support than visual similarity that both profiles use the **same compiled GPU shader binaries / pipeline correlation map**; it does **not** establish that they process the same KV length or mask contents. The actual SQTT payloads and queue events differ, as expected from different run times and input data.
+
+### Selected matched pipeline timings from RGP's Pipeline summary
+
+Values are **GPU event times within the short captures**, not whole-run operator totals. Hash identity and event counts match; kernel labels such as `flash_attn_cm1` have NOT been recovered. Milliseconds below are calculated from RGP's µs display, rounded.
+
+| RGP API pipeline hash | Call count (each) | Literature, ms | Code, ms | Code relative difference |
+| --- | ---: | ---: | ---: | ---: |
+| `0x91D300D08410103C` | 4 | 24.231 | 29.030 | +19.8% |
+| `0x8E6F51C3BA1CD7C4` | 2 | 20.414 | 25.728 | +26.0% |
+| `0xB035AE81CBB19009` | 21 | 20.822 | 20.927 | +0.5% |
+| `0x3E31874274449F8A` | 14 | 19.643 | 19.554 | −0.5% |
+
+The same shader hashes, but non-identical kernel durations: code is **slower** for the first two in these short captures, although its **whole-run PP is faster**. The captures used the same **195,000 ms process-relative timer**, not the same KV position. Since the source-code corpus has different PP speed, they likely sampled **different KV depths**. The difference here should NOT be attributed to content, FA, cache/occupancy, or regression without aligning KV and mapping pipelines to named shader operations.
+
+The earlier 4096-dispatch Japanese literature file `llama-bench-20261010-211926699.rgp` raised a truncation warning and should not serve as a timing comparison. Do not confuse the **RGP Profile duration (~184/194 ms)** with the **Queue submission overview horizontal span (~3 sec)** or with 195 sec from process startup: these report different things.
+
+### Next profiling gate
+
+1. **Keep 256 dispatch / SQTT High / counters OFF**; both captures are valid with this setting.
+2. Obtain a reliable **KV-depth and shader-name annotation** before interpreting more GPU timing A/B. Preferred investigation-only solution: add read-only Vulkan `VK_EXT_debug_utils` labels around named dispatch paths (`fa_mask_opt`, `flash_attn_cm1`, optional MoE/Indexer) and annotate KV / N at FA dispatch (or emit a minimal dispatch-index-to-KV trace). Confirm in RGP whether the Vulkan driver and capture preserve these labels. Do not alter FA mask/shader math or merge to stable r5 before correctness/overhead checks.
+3. Alternatively use the already collected per-ubatch perf logger curves to estimate equivalent-KV capture offsets; **195 sec fixed timer is not equivalent-KV alignment**. If testing this coarse alternative, code's earlier capture time would be a provisional estimate, not a guaranteed KV-matched pair.
+4. Once matching FA shader and late KV (48–60k) are identified, compare `fa_mask_opt` preprocessing separately from `flash_attn_cm1` and investigate mask tile skip rate. Whole-run FA time remains the established large difference, shader-level cause still unconfirmed.
+
+
+## Investigation-only RGP kernel and KV-depth labels (2026-10-10)
+
+**Source implemented on `investigation/r5-vulkan-off-fa-dispatch-20261010`; Windows rebuild / Vulkan validation / RGP visibility PENDING.** This follows the two-corpus RGP comparison above; no source code on stable `r5/upstream-refresh-20261009` was changed.
+
+### Discovery: ggml already has Vulkan debug labels
+
+Upstream's existing `GGML_VK_DEBUG_MARKERS` opt-in enables `VK_EXT_debug_utils` and adds **a label around every dispatch with its native pipeline name and workgroup count**, as well as graph-op and submit labels. Previous RGP captures did not enable that flag, explaining why the UI showed only pipeline hashes. Thus custom shader-name infrastructure was unnecessary.
+
+This investigation now adds a more specific, separate `GGML_VK_FA_RGP_MARKERS=1` (literal `1` only) that:
+- Automatically requests `VK_EXT_debug_utils` if available, **even if `GGML_VK_DEBUG_MARKERS` is unset**. It therefore also enables upstream's existing nested per-dispatch name labels for the duration of a capture.
+- Around each FA *compute dispatch* emits an additional parent marker of the form `EVOX2_FA_MAIN shader=<actual pipeline name> KV=49152 N=1024 Br=16 Bc=64 n_kv_max=2051 q=<query tensor name>`. `KV` is the actual K tensor length in that FA invocation, **not the RGP capture timestamp**. `N` is that FA invocation's query dimension after any decode GQA reshaping.
+- Also labels `EVOX2_FA_MASK_OPT` (mask prepass), `EVOX2_FA_SPARSE` (optional sparse compact), `EVOX2_FA_MAIN_SPLIT` (split-K main FA), and `EVOX2_FA_SPLIT_REDUCE` (split-K reduction). For the previous 64k QSA union OFF PP test, we expect `EVOX2_FA_MASK_OPT` and `EVOX2_FA_MAIN`; neither sparse nor split-K is expected.
+- Leaves all workgroup counts, shader binaries, masks, QSA union decisions, and compute arguments unchanged. It adds CPU label formatting and Vulkan debug-region commands when enabled; the resulting profile is **diagnostic, not a normal PP baseline**.
+- Leaves `GGML_VK_FA_DISPATCH_DIAG` (host CSV counters) independent. For RGP, **set `GGML_VK_FA_RGP_MARKERS=1` only** and clear other profiling/diagnostic flags to limit interference.
+- Prints a **one-time stderr log** `ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)`. If `VK_EXT_debug_utils` is unavailable, prints a warning and does **not** add labels. If RGP does not preserve labels despite successful Vulkan registration, RGP label visibility remains a separate, still-unverified tooling issue.
+
+Changes are confined to `ggml/src/ggml-vulkan/ggml-vulkan.cpp` and `ggml/src/ggml-vulkan/ggml-vulkan-types.h`. The common dispatch template `ggml-vulkan-common.h` was intentionally left unchanged. `Measure-LlamaBench.ps1` already records `GGML_` environment variables in `conditions.json`, so it needs no change.
+
+### Build: keep b11551 and stable r5 binaries intact
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+git fetch origin
+git switch investigation/r5-vulkan-off-fa-dispatch-20261010
+git pull --ff-only
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-rgp-kv-labels `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4
+
+$bin = '.\build-vulkan-rgp-kv-labels\bin\Release'
+& "$bin\llama-cli.exe" --version
+& "$bin\llama-cli.exe" --list-devices
+.\tools\evox2\benchmark\Test-QsaUnion.ps1 -BinDir $bin -Backend Vulkan0
+```
+
+`local.psd1` is ignored/untracked. Add **one** entry in its existing `Builds` section (without replacing the old b11551 `R5FaDispatchVulkan`):
+
+```powershell
+R5RgpKvVulkan = @{
+    BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r5\build-vulkan-rgp-kv-labels\bin\Release'
+    ExpectedBackend = 'Vulkan'
+}
+```
+
+### 256-token smoke before RGP
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+$env:GGML_VK_QSA_UNION = '0'
+$env:GGML_VK_QSA_UNION_STATS = '0'
+$env:GGML_VK_FA_RGP_MARKERS = '1'
+
+# Avoid mixing diagnostic mechanisms in the short RGP preparation test.
+@('GGML_VK_FA_DISPATCH_DIAG', 'GGML_VK_FA_DISPATCH_DIAG_FILE',
+  'GGML_VK_PERF_LOGGER', 'GGML_VK_PERF_LOGGER_FREQUENCY',
+  'GGML_VK_PERF_LOGGER_CONCURRENT', 'GGML_VK_FA_SPARSE_DISABLE') | ForEach-Object {
+    Remove-Item "Env:$_" -ErrorAction SilentlyContinue
+}
+
+$base = 'C:\Users\ai\Desktop\qwen38-flash-next-evo-x2\test_input\qsa-test'
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R5RgpKvVulkan -ModelKey UnslothPle16 `
+  -InputFile (Join-Path $base 'wagahaiwa_nekodearu_utf8.txt') -PromptSlice head `
+  -Context 1024 -PromptTokens @(256) -GenerationTokens @(0) -Depths @(0) `
+  -Repetitions 1 -NoWarmup -KvType f16 `
+  -Batch 2048 -UBatch 1024 -Threads 4 -GpuLayers 999 -CpuMoe 0 `
+  -FlashAttn auto -UmaLabel '96GB'
+```
+
+Pass gate: wrapper result `Status=OK`, `ExitCode=0`, detected backend Vulkan, and `stderr.log` containing the one-time FA markers enabled message **and no Vulkan error**. This only confirms that Vulkan instance/extension initialization succeeded. It does **not** prove that RGP can display or preserve debug-region names; that requires an actual capture.
+
+### 64k RGP capture
+
+In Radeon Developer Panel, reuse the **validated non-truncated capture parameters**: Vulkan, Auto capture `Dispatch timer`, time `195000 ms`, `Dispatch count=256`, SQTT buffer **High**, Collect counters OFF, instruction tracing OFF. Keep these fixed in the first labeled run, but do not claim equivalent KV position until the marker is visible. Configure the panel before launching `llama-bench.exe`.
+
+Run the same command as the smoke, but with `-Context 65536 -PromptTokens @(61789)` and unchanged QSA/FA marker env. Start with **Japanese literature** only. When the profile is opened, look for `EVOX2_FA_` in the RGP event hierarchy / grouping and inspect `KV=...` and `shader=...` in the labels. `EVOX2_FA_MASK_OPT` identifies mask preprocessing; `EVOX2_FA_MAIN` identifies the actual FA compute dispatch (expected existing nested pipeline name contains `flash_attn...`).
+
+If labels are visible, determine captured KV position before running code and adjust the code-side timer only as necessary to target an overlapping **KV=48k–60k** range. Prefer comparison of the same `shader` and `KV` at a matching query tensor/layer, not top-of-list pipeline durations at equal wall-clock delay.
+
+**If labels are absent:** preserve `stderr.log`, `conditions.json` and a screenshot of RGP Event timing including the event tree; check the one-time enabled message, RGP capture warning, and `ggml_vk_debug_label` behavior. Do not assume the shader label is displayed simply because the Vulkan extension initialized. Pipeline hash alone is insufficient to align KV and kernel identity.
+
+After testing, remove `GGML_VK_FA_RGP_MARKERS` and any explicitly set `GGML_VK_DEBUG_MARKERS` from the process environment. Keep the known-good b11551 for uninstrumented measurements.
+
+
+## First labelled RGP 64k Japanese literature capture — 2026-10-11 (00:00 JST)
+
+**Preliminary result — Vulkan upstream debug labels visible, but FA KV-specific labels not verified yet.** Capture file: `llama-bench-20261011-000053596.rgp`, 155,014,948 bytes (RDF `AMD_RDF` header confirmed). Captured using RGP's timer workflow after adding `GGML_VK_FA_RGP_MARKERS` support on the investigation branch; inspect the native run's `stderr.log` or `conditions.json` to prove the specific opt-in flag was set and initialization succeeded. Merely seeing ordinary pipeline names does not establish that the **new FA-specific label** was activated.
+
+Observed in user-provided RGP screens:
+
+| RGP field | Result |
+| --- | --- |
+| Target API/device | Vulkan / Radeon 8060S |
+| Profile duration | 182,576.905 µs (~182.58 ms) |
+| GPU idle | 0.36% (RGP says GPU bound) |
+| Queue submissions / command buffers | 16 / 16 |
+| Sync primitive events | 0 |
+| RGP event statistics | 550 events = 325 `vkCmdDispatch` + 225 `vkCmdPipelineBarrier` |
+| Pipeline count | 55 |
+| Top API PSO hash | `0x91D300D08410103C` |
+| Top pipeline GPU time | 24,129.879 µs / 4 dispatches |
+
+**New conclusive name mapping:** screenshot of RGP **Event timing** with the expanded label tree shows that the top pipeline hash `0x91D300D08410103C` corresponds to **MoE `MUL_MAT_ID ffm_moe_gate-0` and the shader `matmul_id_subgroup_iq2_s_f32_f16acc_aligned_1`**, including dispatch `(10, 16, 512)`. Therefore the biggest pipeline in the earlier 195-second RGP snapshots was **not Flash Attention**. Other visible labels include `CONCAT`, `GET_ROWS`, `RMS_NORM`, `MUL_MAT`, and MoE-specific shader names. GPU event naming is working.
+
+The visible two portions of Event timing (near event IDs 53–75 and 123–150) show **no `EVOX2_FA_` label**; however only partial portions of the 550-event trace are visible in screenshots. This is **not proof** that FA-specific labels are absent from the complete capture or that FA was not dispatched within the sampled interval. Profile duration is only ~183 ms, so it is also possible that the sampled interval consists mainly of a MoE section between FA calls. The capture does **not yet** locate a KV=48–60k FA invocation.
+
+**Next minimal user-side gate before another RGP capture:**
+
+1. In **RGP → Events → Event timing**, use `Filter event tree...` to search for **`EVOX2_FA_`**. If matches appear, show the event hierarchy and first `KV=` label, especially `EVOX2_FA_MASK_OPT` and `EVOX2_FA_MAIN`.
+2. If none, inspect the corresponding benchmark's `stderr.log` for `ggml_vulkan: FA RGP markers enabled`, and its `conditions.json` for `GGML_VK_FA_RGP_MARKERS=1` and correct new executable SHA/build key. Note: generic named pipeline labels can come from the preexisting `GGML_VK_DEBUG_MARKERS`.
+3. If confirmed enabled yet no FA markers in this ~183ms window, shift the **capture delay** slightly while retaining the proven 256 dispatch / SQTT High / counters OFF configuration, or collect a small number of indexed adjacent captures to find FA dispatches. Do not alter GPU shaders or equate captures based only on 195s wall-clock delay.
+4. Only after identifying `KV`, shader and matching tensor/layer for FA in each corpus, compare per-kernel FA and mask-prepass timings. The previous whole-run FA attribution remains valid independently of this RGP snapshot.
+
+No new C++ commit, refactoring, or stable r5 change is justified by this preliminary snapshot.
+
+
+### FA RGP label activation confirmed, sampled interval not yet FA (2026-10-11)
+
+Follow-up from the user: the native `stderr.log` **does contain** `ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)`, while an RGP Event timing search for `EVOX2_FA_` returned **no matches**. Ordinary ggml pipeline/graph labels such as MoE `MUL_MAT_ID` are rendered in the same RGP trace. Thus the extension initialized and RGP can display upstream labels. The likely explanation is that the ~183 ms sampled interval did not contain the named FA compute dispatch, **but absence of FA labels alone does not prove this**; an FA-only label visibility issue remains possible.
+
+Next gate: search the complete Event timing tree for `FLASH_ATTN_EXT` and `flash_attn`. If absent, retry one Japanese-literature 64k profile at **198000 ms** (previous 195000 ms +3 s), keeping Dispatch timer / 256 / SQTT High / counters OFF and the same new build, with `GGML_VK_FA_RGP_MARKERS=1`. Check `EVOX2_FA_` and `KV=...` before any matched-corpus RGP comparison. This is a timing hypothesis, not proof of KV alignment. Do not change code or merge markers into stable r5 at this stage.
+
+
+### Correction: repeated 195 / 198 / 205 second timer captures did not expose FA (2026-10-11)
+
+The user acquired additional Japanese-literature 64k RGP captures with **Dispatch timer at 198000 and 205000 ms**, keeping **256 dispatches** and SQTT buffer **High**. RGP **Event timing** search was verified to be in the correct pane, including **Group by user events**. Searches for `EVO`, `FLASH`, and `flash` found **no event label**, despite the earlier stderr confirmation that `GGML_VK_FA_RGP_MARKERS=1` initialized `VK_EXT_debug_utils`. The wavefront occupancy patterns of the 195- and 198-second captures were nearly indistinguishable; the 205-second profile also showed the same pattern according to the user.
+
+**Stop varying timer delay as a blind way to locate FA.** The three similar waveforms are consistent with repeated microbatch graph execution, in which the first fixed number of dispatches after capture starts may repeatedly contain an early MoE-heavy portion of the command stream before an FA layer. They **do not prove** the timer is ignored by the driver, nor do they prove that labels are broken. The fixed-size 256-dispatch window explains why even shifted samples may show similar shader inventories and shapes. The current capture position **cannot be equated to a given KV length**.
+
+AMD's Radeon Developer Panel documentation defines **Dispatch timer** as collecting a fixed number of dispatches after an elapsed-time delay; it also exposes a distinct **Dispatch range** mode for deterministic dispatch indices. Source: https://gpuopen.com/manuals/rdp_manual/features/ . For the next controlled test, use **Dispatch range** with deliberately different start indices while keeping the per-capture dispatch count small enough to avoid SQTT truncation. This isolates whether offset within the command stream (rather than just elapsed time) is the missing dimension. Be careful: a dispatch index from process startup is **not** a KV index and may include setup work. If this does not reach FA, implement an investigation-only host dispatch ordinal / FA KV mapping or another verified selective profiler trigger, instead of guessing more timer values.
+
+Historical previous recommendation to adjust 195000 → 198000 → 205000 was exploratory and is now **superseded**. No changes were made to the r5 stable branch or compute kernel code in response to this finding.
+
+## SUCCESS: dispatch-range RGP reveals named FA stage and actual KV (2026-10-11)
+
+**Definitive visibility gate PASSED.** User switched Radeon Developer Panel from a process-time **Dispatch timer** to **Dispatch range**, initial **start dispatch index 512, count 256**, same **SQTT High**, Vulkan target, counters OFF. The automatic RGP capture occurred relatively early during the still-running Japanese-literature 64k `llama-bench` run; the benchmark need not finish before the capture is produced. RGP Event timing, **Group by user events**, filter `EV`, now clearly shows:
+
+| RGP label or event | Value |
+| --- | --- |
+| Graph operation | `FLASH_ATTN_EXT node_1196`, within `submit 8` |
+| FA mask debug region | `EVOX2_FA_MASK_OPT shader=fa_mask_opt KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283 q=Qcur-7` |
+| FA mask Vulkan dispatch | `vkCmdDispatch(1,64,1)` (event 370) |
+| FA mask GPU time | **16.275 µs** (RGP) |
+| FA compute debug region | `EVOX2_FA_MAIN shader=flash_attn_f32_f16_aligned_cm1 KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283 q=Qcur-7` |
+| FA compute Vulkan dispatch | `vkCmdDispatch(64,24,1)` (event 372) |
+| FA compute GPU time | **1,437.321 µs** (RGP) |
+| Enclosing FA node time | **1,454.201 µs** |
+
+**Interpretation:** the investigation-only Vulkan debug region annotations are being emitted, preserved by RGP, and associated with the precise FA kernel dispatch. This also shows why looking only for `vkCmdDispatch(64,16,1)` was not reliable: the actual recorded FA dispatch here is `(64,24,1)`. The identified compute pipeline is **`flash_attn_f32_f16_aligned_cm1`**, whereas a different top pipeline from earlier timer snapshots (`matmul_id_subgroup_iq2_s_f32_f16acc_aligned_1`) was confirmed to be MoE. Mask-prepass and FA-main event times can now be measured separately.
+
+**Crucial limitation:** `KV=1024` is the **first** 1024-token prefill microbatch, not the late **48–60k KV** target needed to explain the corpus-sensitive FA slowdown. Capturing a functioning label does not yet explain the cause, nor measure the nonempty FA mask tile ratio. The benchmark was **still running** when the screenshot was taken.
+
+**Next experimental gate:** leave `GGML_VK_FA_RGP_MARKERS=1` and the stable capture limits (count 256 / SQTT High / counters OFF). Change only the **Dispatch range start index** in a subsequent run, first sampling a substantially later ordinal as a calibration point. Inspect `KV=` directly in RGP rather than inferring it from process elapsed time. Dispatch ordinal is **not linearly proportional to KV or tokens without calibration**, and initialization dispatches may contribute. Use two measured points (start ordinal and observed KV) to target a `KV=49152–61440` capture, with the same query tensor/layer and FA shader for both corpora. Do **not** try more 195/198/205-second timer guesses. Windows source or GPU shaders need no further changes to make the labels work.
+
+No changes to stable r5 source; diagnosis remains on `investigation/r5-vulkan-off-fa-dispatch-20261010`.
+
+## RGP Dispatch range calibration point 2 — Japanese literature (2026-10-11)
+
+**The dispatch-range approach works for targeting progressive prefills.** User captured a second Japanese-literature run with RDP automatic **Dispatch range start=50000**, count 256, SQTT High, counters OFF. In the actual RGP Event timing tree (not inferred from time alone):
+
+| Parameter | Earlier start=512 | New start=50000 |
+| --- | --- | --- |
+| FA graph node | `FLASH_ATTN_EXT node_1196` | `FLASH_ATTN_EXT node_1764` |
+| Q tensor | `Qcur-7` | `Qcur-11 (view) (permuted)` |
+| FA `KV` | **1024** | **14336** |
+| FA `N` | 1024 | 1024 |
+| `Br/Bc` | 16/64 | 16/64 |
+| `n_kv_max` | 1283 | 2051 |
+| Shader | `flash_attn_f32_f16_aligned_cm1` | same |
+| FA mask preprocess time | 16.275 µs | **1225.491 µs** |
+| FA main time | 1437.321 µs | **62758.393 µs** |
+
+For the new capture, RGP showed `EVOX2_FA_MASK_OPT shader=fa_mask_opt KV=14336 N=1024 Br=16 Bc=64 n_kv_max=2051 q=Qcur-11 (view) (permuted)`, compute dispatch `(14,64,1)`. The enclosing FA-main marker was `EVOX2_FA_MAIN shader=flash_attn_f32_f16_aligned_cm1 KV=14336 N=1024 Br=16 Bc=64 n_kv_max=2051 q=Qcur-11 (view) (permuted)`, dispatch `(64,24,1)`. The enclosing `FLASH_ATTN_EXT` GPU duration is ~63.985 ms. **Do not compare times directly as a KV scaling law**: the first and second capture observe different Q tensor/layers.
+
+Two measured start/observed KV pairs: (512, 1024) and (50000, 14336). Assuming approximately constant dispatches per 1024 tokens for coarse calibration (not guaranteed) yields ~3807 dispatches/microbatch. The provisional linear relation is `KV_est ~= 1024 + (start - 512) * 13312 / 49488`. Extrapolated:
+- start 140000 -> KV ~38.5k;
+- **start 180000 -> KV ~49.3k** (next recommended test);
+- start 210000 -> KV ~57.4k.
+
+These are **calibration targets**, not validated KV values. During the next run keep **Dispatch range / count 256 / SQTT High / counters OFF** and `GGML_VK_FA_RGP_MARKERS=1`. Take one Japanese-literature RGP at **start 180000**, check its *actual* `EVOX2_FA_MAIN KV=`, and use that measured value to refine the alignment before capturing the source-code corpus. If 180000 exceeds the useful prompt or fails to capture, reduce the index. Continue to match the same Q layer and shader, not just KV, for comparison.
+
+The earlier time-based 195/198/205-second profiles remain unsuitable for FA identification; the dispatch-index capture correctly enters FA at KV=1024 and KV=14336 in distinct runs. No code change required; stable r5 untouched.
+
+## RGP Dispatch range calibration point 3: 48k KV caught (2026-10-11)
+
+**Success:** Japanese-literature RGP with **Dispatch range start=180000**, count 256, SQTT High, hardware counters OFF; user supplied RGP Event timing screenshot with `EVO` filter.
+
+| Marker / metric | RGP value |
+| --- | --- |
+| Submission / node | `submit 14`, `FLASH_ATTN_EXT node_2900` |
+| Query | `Qcur-19 (view) (permuted)` |
+| Query count | `N=1024` |
+| **Actual KV** | **`KV=49152`** (exactly 48 Ki tokens) |
+| `Br / Bc`, `n_kv_max` | `16 / 64`, `2051` |
+| `EVOX2_FA_MASK_OPT` | `shader=fa_mask_opt`, dispatch `(48,64,1)`, **3667.044 µs** |
+| `EVOX2_FA_MAIN` | `shader=flash_attn_f32_f16_aligned_cm1`, dispatch `(64,24,1)`, **314071.277 µs** |
+| Total `FLASH_ATTN_EXT` | **317738.973 µs** |
+
+The capture lands in the **late-KV interval of interest** rather than initialization or an early prefill batch; the previous two-point estimate of ~49k was close enough for range selection. The main FA dispatch contributes **~98.85%** of this single graph-node GPU duration, while `fa_mask_opt` contributes ~1.15%. **Important:** this does not prove that the mask contents do not cause the FA main's cost; the mask-prepass output could change which KV tiles are skipped. Nor should the RGP single-node GPU time be treated as a full-run FA mean.
+
+### Immediate controlled A/B
+
+Capture the **source-code corpus** with exactly the same **start dispatch=180000 / count=256 / SQTT High / counters OFF**, `GGML_VK_FA_RGP_MARKERS=1`, `GGML_VK_QSA_UNION=0`, and unchanged b11551-descended investigation build, context/prompt size and other bench conditions. Before interpreting times, **verify same `KV=49152`, `N=1024`, `Qcur-19` and main shader name**; the same dispatch ordinal might not imply identical graph position if content-dependent MoE routing changes dispatch counts. If an exact match is observed, compare mask-prepass and FA-main timings and investigate input-dependent tile skipping/memory behavior. If not, adjust the start index based on *observed* `KV=` rather than on process time.
+
+No need to rebuild or change the RGP configuration. Stable r5 source remains unchanged.
+
+## Matched Japanese literature vs C/C++ RGP FA comparison at KV=49152 (2026-10-11)
+
+**Important matched-shape observation — FA MAIN GPU time is 4.14× longer on Japanese literature than llama.cpp source code.** User captured the code corpus at the same **RDP Dispatch range start=180000 / count=256 / SQTT High / counters OFF**, keeping the same Vulkan investigation executable and FA debug labels as the Japanese-literature run. The supplied RGP Event timing screen confirms matching GPU node, shape, stage shader names, and tensor/layer labels.
+
+| Item | Japanese literature | llama.cpp source code |
+| --- | ---: | ---: |
+| Enclosing event | `submit 14 / FLASH_ATTN_EXT node_2900` | **identical** |
+| FA query / KV | `Qcur-19 (view) (permuted)` / `KV=49152 N=1024` | **identical** |
+| FA parameters | `Br=16 Bc=64 n_kv_max=2051` | **identical** |
+| Mask shader | `fa_mask_opt`, `vkCmdDispatch(48,64,1)` | **identical** |
+| Main shader | `flash_attn_f32_f16_aligned_cm1`, `vkCmdDispatch(64,24,1)` | **identical** |
+| **FA main GPU time** | **314071.277 µs (314.071 ms)** | **75840.256 µs (75.840 ms)** |
+| Mask preprocessing GPU time | 3667.044 µs (3.667 ms) | 3891.743 µs (3.892 ms) |
+| Full FLASH_ATTN_EXT node GPU time | 317738.973 µs (317.739 ms) | 79732.651 µs (79.733 ms) |
+
+Numerical consequences:
+- Main FA literature/code ratio: **4.141×**; code is **75.85% faster by this single-dispatch GPU time** (or the literature FA takes 238.231 ms longer).
+- Mask preprocessing differs in the **opposite direction**: code uses **6.13% more** GPU time (+0.225 ms). It is **not** the ~238 ms direct performance gap.
+- Enclosing FA node literature/code ratio: **3.985×**. The variation is overwhelmingly inside the FA main shader, not the `fa_mask_opt` prepass.
+- This **matches the earlier whole-64k-run perf logger attribution**, where Japanese-literature `FLASH_ATTN_EXT` totals were 102.460 s against code 69.565 s, the primary contributor to the ~29.54 s aggregate GPU-time gap. But a single late-KV event is **not** representative of every FA layer and KV depth, and the single-event 4.14× ratio must not be applied to the whole run.
+
+### Source-grounded mechanism, still not proved
+
+`ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_mask_opt.comp` classifies each `Br×Bc` mask tile with a 2-bit code: **ALL_NEG_INF=1**, **ALL_ZERO=2**, and other=0. `ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_cm1.comp`, within its KV tile loop, reads these codes and **immediately `continue`s on ALL_NEG_INF**, before K/V loads and matrix computation. For other tiles it may need mask reads/checks. Thus matching the same FA kernel, `KV`, `N`, `Br/Bc`, `n_kv_max` *still permits input-dependent actual GPU work* if mask tile occupancy/placement differs. A larger number of ALL_NEG_INF tiles in the code corpus is a **leading hypothesis** for its much shorter FA-main duration, **not yet a verified causal explanation**. `n_kv_max=2051` is the same parameter/upper bound in both captures; it does not establish that their mask occupancy is the same.
+
+### Next validation gate
+
+1. **First verify repeatability**, ideally one additional Japanese-literature/code A/B pair using the already calibrated `Dispatch range start=180000 / count=256 / SQTT High / counters OFF` with `GGML_VK_FA_RGP_MARKERS=1`. Record `RGP` GPU duration of `Qcur-19 KV=49152` each time; avoid accidentally comparing different layers or KV. If repeat matches reasonably closely, the size of the gap is robust against run-to-run variance and capture overhead.
+2. Then add an investigation-only **mask tile histogram** to count `ALL_NEG_INF / ALL_ZERO / mixed` at matching `KV=49152, N=1024, Qcur-19` and compare Japanese literature vs code. Because this buffer is GPU-generated, implementing an exact count requires a carefully gated readback or separate GPU diagnostic; **do not add per-tile atomics to the normal performance baseline** or assume `n_kv_max` is a tile-count. Validate unchanged model output and timing separately.
+3. If mask tile ratios are very different, inspect the relationship to early skips and FA main duration. If they are similar, investigate tile placement/distribution, memory latency, cache hit rates and shader wave occupancy. For RGP, use matched-KV, matched-query labels to disambiguate events. Preserve the prior uninstrumented PP baselines for performance claims.
+
+**Outcome:** The initial question ("does the Vulkan OFF PP document gap come from FA?") is now supported at both full-run op-time and an exact matched single-shader late-KV comparison. Shader-side *causality* remains open. All work remains on the investigation branch; the stable r5 branch is unchanged.
+
+
+## Repeated matched-KV RGP A/B confirms ~4.1x FA-main gap (2026-10-11)
+
+**Reproducibility confirmed for two independent captures per corpus**, using the same labelled FA node and dispatch shape. Two user screenshots from the second matched-pair runs identify **code in the first screenshot**, **Japanese literature in the second**. The data remain **single-event measurements** (RGP captures at a fixed dispatch ordinal); they are not statistical estimates of variability across many runs.
+
+Conditions reproduced in all four screenshots: Vulkan QSA union OFF, RGP `Dispatch range start=180000` / count 256 / SQTT High / counters OFF, `FLASH_ATTN_EXT node_2900`, `KV=49152`, `N=1024`, `Br=16`, `Bc=64`, `n_kv_max=2051`, `Qcur-19 (view) (permuted)`. Mask shader `fa_mask_opt` at dispatch `(48,64,1)`, FA main shader `flash_attn_f32_f16_aligned_cm1` at dispatch `(64,24,1)`. Therefore **this is the same host FA path and GPU dispatch shape, including query layer**, not merely the same capture start time.
+
+| Metric | Japanese literature run 1 | Literature run 2 | Code run 1 | Code run 2 |
+| --- | ---: | ---: | ---: | ---: |
+| `EVOX2_FA_MAIN` / `flash_attn...` (µs) | 314071.277 | **310967.586** | 75840.256 | **75989.943** |
+| `EVOX2_FA_MASK_OPT` / `fa_mask_opt` (µs) | 3667.044 | **3728.978** | 3891.743 | **3907.529** |
+| `FLASH_ATTN_EXT` enclosing node (µs) | 317738.973 | **314697.252** | 79732.651 | **79898.132** |
+
+- **Literature/code FA-main ratio: 4.141× on run 1 and 4.092× on run 2** (roughly 4.1× both times).
+- Within-corpus FA-main run-to-run changes: Japanese literature **-0.99%**; source code **+0.20%**. These small differences relative to the ~4.1× corpus effect strengthen confidence that the difference is not merely a one-off GPU perturbation.
+- Code's second-run mask-prepass time is **3.908 ms** versus literature **3.729 ms**, still *slightly longer* for code; main shader alone diverges dramatically. The main-versus-prepass observation reproduced.
+- This experiment identifies a **repeatable content-associated difference in the FA compute shader's execution time** at matching reported dimensions/dispatch shape. It does **not yet prove that the cause is mask-tile skip count**. The two-bit masks contain actual data-dependent tile classes and locations, which were not read out or counted.
+
+**Decision:** no further RGP captures are needed merely to establish the existence and approximate magnitude of this difference. Prioritize a minimally intrusive, opt-in **GPU mask-tile category diagnostic** (ALL_NEG_INF / ALL_ZERO / mixed/other) at the fixed `Qcur-19 KV=49152` point, with a separately validated readback or GPU-side tally. The GPU shader has an early `continue` when `MASK_OPT_ALL_NEG_INF` occurs, but tile count/placement, wave divergence and memory behavior have not been isolated. Do not add per-tile atomics or buffer readbacks to the ordinary PP baseline; leave stable r5 unchanged. A one-shot diagnostic plus correctness gate is preferred to continuous heavy profiling.
+
+
+## Opt-in FA mask tile histogram diagnostic: implementation and Windows test gates (2026-10-11)
+
+**Source code committed on investigation branch; Windows compile / GPU runtime / CSV correctness NOT YET VERIFIED.** No changes to stable `r5/upstream-refresh-20261009`, model, GGUF, or existing FA shaders. This implements the next experiment motivated by repeatable **~4.1× matched-KV FA-main GPU time difference** (Japanese literature vs code at `Qcur-19 KV=49152`).
+
+### Mechanism and limits
+
+- New opt-in environment variable: `GGML_VK_FA_MASK_DIAG=1` (literal `1` only). Default **OFF**.
+- Target FA invocation defaults to `GGML_VK_FA_MASK_DIAG_KV=49152`, `GGML_VK_FA_MASK_DIAG_QUERY=Qcur-19`; both can be explicitly overridden for a short smoke. Also require `N=1024`, `Br=16`, `Bc=64`, `use_mask_opt=true`. A query-name prefix is matched on a word boundary, so `Qcur-19 (view) (permuted)` is included and `Qcur-190` is not.
+- After the **existing `fa_mask_opt` dispatch** completes in the Vulkan command buffer, copy only its **packed 2-bit classification words** into an **independent, persistent GPU buffer** using a Vulkan GPU-side buffer copy with barriers. No modification to the FA mask input, FA shader, selected tiles or the model computation. The copy is **one shot per backend context**, capped at 1 MiB. No new shader, GPU atomic operation, per-token readback or extra compute kernel.
+- **After existing backend GPU synchronization**, read the snapshot with the standard `ggml_vk_buffer_read` mechanism (similar to r5 QSA union statistics); decode the 2-bit values on CPU. For each valid `Br×Bc` tile, `1` = `ALL_NEG_INF` / skippable; `2` = `ALL_ZERO`; `0` = mixed/other; `3` is invalid/reserved and reported distinctly.
+- One CSV row per **query-row tile**, plus `scope=total`. Exported columns: `scope,query,kv,n,Br,Bc,n_kv_max,slice,row,all_neg_inf,all_zero,mixed,invalid,total,skippable_fraction`. `row` is a query tile group, not an individual token, and `slice` distinguishes `nem2*nem3` planes. For the known 49152/1024/Br16/Bc64 path, expect **64 row records and 1 total record** if mask planes=1, and **49152 total tile classifications** (64 query tiles × 768 KV tiles).
+- Output location: `GGML_VK_FA_MASK_DIAG_FILE` (native default `fa-mask-tile-diag.csv` in current working directory). `Measure-LlamaBench.ps1` now **automatically sets a run-local file path** `fa-mask-tile-diag.csv` when enabled and no explicit path is supplied, records `FaMaskDiagFile` in `conditions.json`, and adds `Files.FaMaskDiag` in `result.json`; warns if missing.
+- Recorded `GGML_VK_FA_MASK_DIAG` is independent of `GGML_VK_FA_DISPATCH_DIAG`, `GGML_VK_FA_RGP_MARKERS`, and the Vulkan performance logger. **Disable other diagnostics for clean histogram runs.** Histogram-enabled PP is diagnostic only; the one-shot GPU copy and readback can change measured latency.
+- CSV counts identify tile *classes* and query-row variation, **not actual executed GPU instructions or skip efficiency**: the FA shader may also reject mixed tiles based on the contents. A histogram showing a larger ALL_NEG_INF fraction in code would support (not independently prove) the mask-skip hypothesis.
+- When no target was matched (e.g. benchmark prompt too short), the wrapper emits a missing-CSV warning. A matching FA emits `ggml_vulkan: FA mask tile snapshot queued`; successful deferred decode prints `ggml_vulkan: FA mask tile diag wrote` and category totals to stderr. Fatal GPU or file errors may prevent an output file.
+
+### Build in a new directory (do not replace existing known-good RGP binaries)
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+git fetch origin
+git switch investigation/r5-vulkan-off-fa-dispatch-20261010
+git pull --ff-only
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-mask-tiles `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4
+
+$bin = '.\build-vulkan-mask-tiles\bin\Release'
+& "$bin\llama-cli.exe" --version
+& "$bin\llama-cli.exe" --list-devices
+.\tools\evox2\benchmark\Test-QsaUnion.ps1 -BinDir $bin -Backend Vulkan0
+```
+
+Add a new **local-only** entry inside `Builds` in ignored `tools/evox2/benchmark/configs/local.psd1`:
+
+```powershell
+R5FaMaskTilesVulkan = @{
+    BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r5\build-vulkan-mask-tiles\bin\Release'
+    ExpectedBackend = 'Vulkan'
+}
+```
+
+### Smoke: target KV=1024 / Qcur-7, 1024 prompt tokens
+
+The default target `KV=49152` will **not** be reached by a 256-token smoke. Use the 1024-token/2048-context smoke instead (previous RGP confirmed the initial `Qcur-7` layer at KV=1024):
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r5
+$env:GGML_VK_QSA_UNION = '0'
+$env:GGML_VK_QSA_UNION_STATS = '0'
+$env:GGML_VK_FA_MASK_DIAG = '1'
+$env:GGML_VK_FA_MASK_DIAG_KV = '1024'
+$env:GGML_VK_FA_MASK_DIAG_QUERY = 'Qcur-7'
+@('GGML_VK_FA_MASK_DIAG_FILE', 'GGML_VK_FA_DISPATCH_DIAG', 'GGML_VK_FA_RGP_MARKERS',
+  'GGML_VK_PERF_LOGGER', 'GGML_VK_PERF_LOGGER_FREQUENCY', 'GGML_VK_PERF_LOGGER_CONCURRENT',
+  'GGML_VK_DEBUG_MARKERS', 'GGML_VK_FA_SPARSE_DISABLE') | ForEach-Object {
+    Remove-Item "Env:$_" -ErrorAction SilentlyContinue
+}
+$base = 'C:\Users\ai\Desktop\qwen38-flash-next-evo-x2\test_input\qsa-test'
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+  -BuildKey R5FaMaskTilesVulkan -ModelKey UnslothPle16 `
+  -InputFile (Join-Path $base 'wagahaiwa_nekodearu_utf8.txt') -PromptSlice head `
+  -Context 2048 -PromptTokens @(1024) -GenerationTokens @(0) -Depths @(0) `
+  -Repetitions 1 -NoWarmup -KvType f16 `
+  -Batch 2048 -UBatch 1024 -Threads 4 -GpuLayers 999 -CpuMoe 0 `
+  -FlashAttn auto -UmaLabel '96GB'
+```
+
+**Smoke pass gate:** successful backend and `Status=OK`, stderr snapshot queued + CSV wrote, `Files.FaMaskDiag` non-null and real CSV present. Validate total-category sum == `total`, no invalid class, all nonnegative, row counts consistent with query/KV. Verify one-shot capture (exactly one `scope=total` row). If snapshot is not captured, do not proceed to 64k; inspect `q` naming and FA shape in stderr/RGP labels.
+
+### Full 64k literature / code comparison
+
+After smoke, switch back to default targets:
+
+```powershell
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_KV -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_QUERY -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_FILE -ErrorAction SilentlyContinue
+# Keep GGML_VK_FA_MASK_DIAG='1' and GGML_VK_QSA_UNION='0'.
+
+$inputs = @(
+    (Join-Path $base 'wagahaiwa_nekodearu_utf8.txt'),
+    (Join-Path $base 'qsa-code-test\llamacpp-inference-code.txt')
+)
+foreach ($file in $inputs) {
+    & .\tools\evox2\benchmark\Measure-LlamaBench.ps1 `
+      -BuildKey R5FaMaskTilesVulkan -ModelKey UnslothPle16 `
+      -InputFile $file -PromptSlice head `
+      -Context 65536 -PromptTokens @(61789) -GenerationTokens @(0) -Depths @(0) `
+      -Repetitions 1 -NoWarmup -KvType f16 `
+      -Batch 2048 -UBatch 1024 -Threads 4 -GpuLayers 999 -CpuMoe 0 `
+      -FlashAttn auto -UmaLabel '96GB'
+}
+Remove-Item Env:GGML_VK_FA_MASK_DIAG -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_KV -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_QUERY -ErrorAction SilentlyContinue
+Remove-Item Env:GGML_VK_FA_MASK_DIAG_FILE -ErrorAction SilentlyContinue
+```
+
+For each corpus, archive `fa-mask-tile-diag.csv`, `stderr.log`, `conditions.json`, `result.json`. Confirm `scope=total` is a **single row** in each run, `KV=49152`, query starts with `Qcur-19`, `invalid=0`, and total tile counts match. Compare per-row skip fractions, especially their distribution rather than only the aggregate. **Do not treat raw counts as an explanation for the ~4.1× FA latency until the correlation is checked.**
+
+### Risks and validation status
+
+- Build correctness: **NOT VERIFIED ON WINDOWS**; source edits were inspected remotely, but Windows/Vulkan compiler/runtime unavailable here.
+- GPU copy synchronization and deferred CPU readback: implement using the existing Vulkan barrier/copy and `ggml_vk_buffer_read` patterns. Test the GPU runtime on **1024 tokens first**, ensure no device-lost / WDDM issue before the 64k workload.
+- For control, run a normal **diagnostics OFF** single case using the same new binary, comparing output behavior and throughput with pre-existing baseline within ordinary run variability. Mask diagnostics should not change the actual computed tensors.
+- The **RGP earlier 4.1× FA-main finding** was independently reproduced twice per corpus and is unaffected by how this histogram diagnostic performs. This experiment measures a candidate explanation, not a replacement performance baseline.
+
+
+## FA mask tile histogram: Windows/Vulkan 1024-token smoke PASSED (2026-10-11 JST)
+
+Uploaded evidence: `20261011-091324-941-bench-vulkan-b11571-ctx2048-65756cdcfdcd.zip` (8 files; including native `llama-bench.json`, `result.json`, `conditions.json`, `stderr.log`, and `fa-mask-tile-diag.csv`).
+
+**Build and runtime:** r5 Vulkan diagnostic source `0a2a7970c54cc8cb8fc7eb1db4806aa5b6845e1d`, llama.cpp **b11571**, Clang 20.1.8, Radeon 8060S, manually labelled UMA 96GB, Qwen3.8-Flash-Next UD-IQ3_XXS PLE16. Input `wagahaiwa_nekodearu_utf8.txt` SHA-256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`; `-p 1024 -c 2048 -b 2048 -ub 1024 -ctk f16 -ctv f16 -n 0 -d 0 -r 1 -ncmoe 0 -fa auto --no-warmup --prompt-slice head`. Exact enabled env recorded in `conditions.json`: `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0`, `GGML_VK_FA_MASK_DIAG=1`, `GGML_VK_FA_MASK_DIAG_KV=1024`, `GGML_VK_FA_MASK_DIAG_QUERY=Qcur-7`.
+
+Result **Status OK / ExitCode 0**; detected Vulkan; one `pp 1024` row at **236.893662 tok/s** (diagnostic-enabled one repetition, **not a speed baseline**). `stderr.log` contains both `FA mask tile snapshot queued for Qcur-7 (view) (permuted) KV=1024 bytes=256` and `FA mask tile diag wrote ... KV=1024 neg_inf=480 zero=480 mixed=64 invalid=0`. The standalone CSV was actually included in the run ZIP; no missing-file warnings.
+
+CSV integrity checks:
+- **65 rows**: 64 `scope=row` and exactly 1 `scope=total`, all `slice=0` for row entries.
+- Each query row contains 16 mask tiles (`1024/Bc64`); **1024** tiles in total. Row sums equal total counts in each category.
+- `ALL_NEG_INF=480` (**46.875%**), `ALL_ZERO=480` (**46.875%**), `mixed=64` (**6.25%**), `invalid=0`. `skippable_fraction=0.46875` overall. This pattern is compatible with a causal triangular mask (with mixed boundary tiles).
+- Mask source shape: `KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283`, query label `Qcur-7 (view) (permuted)`.
+- `result.json` and `conditions.json` contain the run-specific diagnostic CSV path. Executable SHA-256 is `848176ef72619eaa9582a963c83ac595d3e801778aae3ce93561e2db57241324`.
+
+**Conclusion:** the new source **compiles and runs on Windows/Vulkan**, snapshots the existing GPU-generated packed mask-opt metadata, decodes categories correctly enough to pass structural and causal-pattern checks, writes the expected CSV, and completes the benchmark. This validates the short smoke only; it **does not yet validate KV=49152**, guard against all possible synchronization/driver issues at 64k, establish unchanged inference output, or explain the measured ~4.1× corpus effect.
+
+**Next gated step:** remove `GGML_VK_FA_MASK_DIAG_KV` and `GGML_VK_FA_MASK_DIAG_QUERY` overrides (native defaults `49152` / `Qcur-19`). Keep `GGML_VK_FA_MASK_DIAG=1`, `GGML_VK_QSA_UNION=0`; run **Japanese literature first at `-c 65536 -p 61789`**, one repetition, other logging/profiling envs OFF. Check `scope=total` for `KV=49152`, query `Qcur-19`, 64 row entries, 49152 tile classifications (1 plane), `invalid=0`, and benchmark Status OK before running source code with identical settings. Code corpus input path must be verified locally rather than assumed. Once both totals and row distributions are obtained, test whether skip fraction and distribution correlate with 314ms vs 76ms FA-main timings from matched-KV RGP.
+
+
+## 64k Japanese literature FA mask tile histogram: PASSED (2026-10-11 09:19 JST)
+
+User-supplied evidence archive: `20261011-091932-161-bench-vulkan-b11571-ctx65536-8be689902002.zip`. All 7 expected artifacts are present including `fa-mask-tile-diag.csv`, `stderr.log`, `conditions.json` and `result.json`.
+
+- Build: **b11571**, Git commit `0a2a7970c54cc8cb8fc7eb1db4806aa5b6845e1d`, Clang 20.1.8, Vulkan / Radeon 8060S, 96GB manual UMA label. Executable SHA-256: `848176ef72619eaa9582a963c83ac595d3e801778aae3ce93561e2db57241324`.
+- Input: Japanese literature `wagahaiwa_nekodearu_utf8.txt`, SHA-256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`. Prompt `-p 61789`, context `-c 65536`, `-b 2048 -ub 1024 -n 0 -d 0 -r 1`, `--prompt-slice head --no-warmup`, KV f16, QSA union OFF and its stats OFF.
+- Run: **Status=OK, ExitCode=0**; one `pp 61789` sample at **286.031469 tok/s**, native benchmark eval **216.0216853 s** (diagnostic ON; should not be compared to uninstrumented PP baselines as a pure speed metric).
+- Diagnostic stderr: `FA mask tile snapshot queued for Qcur-19 (view) (permuted) KV=49152 bytes=12288`; then `FA mask tile diag wrote ... KV=49152 neg_inf=17538 zero=3 mixed=31611 invalid=0`.
+- The `conditions.json` environment contains `GGML_VK_FA_MASK_DIAG=1` with no KV/query override: the intended **default target `KV=49152 / Qcur-19`** matched.
+
+| Histogram field | Count | Fraction of all tiles |
+| --- | ---: | ---: |
+| `ALL_NEG_INF` (skip-eligible) | **17,538** | **35.681152%** |
+| `ALL_ZERO` | 3 | 0.006104% |
+| `mixed / other` | **31,611** | **64.312744%** |
+| `invalid / reserved` | 0 | 0% |
+| **Total** | **49,152** | **100%** |
+
+CSV consistency: 64 `row` entries (query tiles `N/Br = 1024/16 = 64`) and one `total` entry, only slice 0; **768 KV tiles per query row** (`KV/Bc = 49152/64`), **64×768 = 49152** total classifications. All category row sums agree with the total; `invalid=0`. `n_kv_max=2051` and `Br=16/Bc=64` match the previously RGP-verified `Qcur-19` late-KV FA call.
+
+Row-level `ALL_NEG_INF` variation is substantial: min **151/768 = 19.66%** (row 17); max **382/768 = 49.74%** (row 55); average **274.03/768 = 35.68%**. 3 `ALL_ZERO` tiles occur in query rows 12 (2) and 19 (1), so nearly all non-`ALL_NEG_INF` tiles are classified mixed. These are **mask-opt 2-bit classes**, not a count of GPU instructions or necessarily fully computed tiles. Shader may reject mixed blocks after a finer mask inspection, and mask placement across workgroups may matter.
+
+**Interpretation:** long-KV histogram recording and readback **work on the actual 64k test**. The ~35.68% strictly ALL_NEG_INF category provides a concrete first corpus measurement. **Cannot yet attribute** the earlier 4.1× RGP shader time contrast to mask skipping without the **matching source-code corpus** histogram under identical conditions.
+
+**Next gate:** Run source-code input `llamacpp-inference-code.txt` (use its verified local path) with the same `-p 61789 -c 65536 -b 2048 -ub 1024 -r 1`, same `R5FaMaskTilesVulkan` build, `GGML_VK_FA_MASK_DIAG=1`, QSA union OFF, no KV/query overrides. Require `scope=total`, `KV=49152`, `Qcur-19`, 49152 classification total, and `invalid=0`. Compare both aggregate skip fraction and row-level distribution, without claiming causality solely from percentages. Do not take more RGP captures until needed. Stable r5 unchanged.
+
+## Matched 64k FA mask tile histogram: Japanese literature vs llama.cpp source code (2026-10-11 09:27 JST)
+
+**Major result: the hypothesized content-dependent early-skip classification difference is confirmed.** This follows the prior matched late-KV RGP evidence: `Qcur-19 KV=49152`, same `flash_attn_f32_f16_aligned_cm1` GPU pipeline and dispatch shape, with repeatable **~311–314 ms** literature versus **~75.8–76.0 ms** code FA-main latency in separate RGP captures. The mask snapshot is an independent run, **not simultaneous with RGP**.
+
+**Raw user archives:**
+- Literature: `20261011-091932-161-bench-vulkan-b11571-ctx65536-8be689902002.zip`
+- Code: `20261011-092702-831-bench-vulkan-b11571-ctx65536-8e6899f2c8b5.zip`
+
+Both archives contain `fa-mask-tile-diag.csv`, `conditions.json`, `result.json`, `stderr.log`, `llama-bench.json`, `summary.csv`, `output.log`. Both are **Status=OK / ExitCode=0 / BackendDetected=Vulkan**, exactly one 64k PP test (61789 input tokens; `-c 65536 -b 2048 -ub 1024 -r 1 -n 0 -d 0 --prompt-slice head --no-warmup`), same `R5FaMaskTilesVulkan` executable **b11571**, commit `0a2a7970c`, SHA-256 `848176ef72619eaa9582a963c83ac595d3e801778aae3ce93561e2db57241324`, QSA union OFF, other diagnostic flags off, `GGML_VK_FA_MASK_DIAG=1`. Inputs verified by SHA-256: literature `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`, code `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`.
+
+| FA mask 2-bit category | Japanese literature | Code | Code − literature |
+| --- | ---: | ---: | ---: |
+| `ALL_NEG_INF` / eligible full-tile skips | **17,538 (35.6812%)** | **36,881 (75.0346%)** | **+19,343 tiles / +39.35 percentage points** |
+| `ALL_ZERO` | 3 (0.0061%) | 92 (0.1872%) | +89 |
+| Mixed / other | 31,611 (64.3127%) | 12,179 (24.7782%) | −19,432 |
+| Invalid | 0 | 0 | 0 |
+| **Total** | **49,152** | **49,152** | 0 |
+| Non-`ALL_NEG_INF` tiles (potential work) | **31,614** | **12,271** | **−19,343** |
+
+**CSV integrity:** 65 lines each (64 row entries + one total), `slice=0`, each row 768 KV tiles and `64×768=49152` total, invalid code 0. Both snapshots report `KV=49152 N=1024 Br=16 Bc=64 n_kv_max=2051 q=Qcur-19 (view) (permuted)`; both snapshotted 12,288 bytes. All row totals and category subtotals agree with each CSV's total row. Stderr explicitly confirms the one-shot GPU snapshot and completed CSV emission.
+
+**Crucially the difference holds in ALL 64 query-tile rows**, not just a few outliers: code has more `ALL_NEG_INF` tiles in **64/64** matching rows. Row minima/maxima:
+- Literature: 151/768 (19.66%, row 17) through 382/768 (49.74%, row 55), median 279.
+- Code: 495/768 (64.45%, row 48) through 640/768 (83.33%, row 16), median 577.
+- The code-minus-literature skip advantage ranges **+184 through +460** tiles per query row. The largest is row 17: 611 vs 151.
+- Grouped mean `ALL_NEG_INF` tiles per query row, ordered by 8-row bins:
+
+| Rows | Literature | Code |
+| --- | ---: | ---: |
+| 0–7 | 251.625 | 590.875 |
+| 8–15 | 252.250 | 602.125 |
+| 16–23 | 239.125 | 612.500 |
+| 24–31 | 305.125 | 602.000 |
+| 32–39 | 279.625 | 556.125 |
+| 40–47 | 274.000 | 563.000 |
+| 48–55 | 297.750 | 542.125 |
+| 56–63 | 292.750 | 541.375 |
+
+**Whole-run context:** Diagnostic-enabled PP is 286.031469 tok/s (literature) vs 330.868894 tok/s (code), ~**15.68% faster** for code in tokens/s, consistent with earlier content-dependent Vulkan OFF whole-run measurements. Since diagnostics are enabled, do not use these as uninstrumented baselines.
+
+**Mechanism and limitations:** `flash_attn_mask_opt.comp` encodes `ALL_NEG_INF=1`; `flash_attn_cm1.comp` checks this code to `continue` before normal K/V processing for completely masked-out tiles. Code's extra **19,343 ALL_NEG_INF** codes therefore provide a concrete, measured route to less FA work at identical dispatch dimensions. This strongly supports mask-driven tile elimination as a major contributor. But the non-skippable count ratio is **31,614 / 12,271 = 2.576×**, versus the observed single-node RGP FA-main time ratio ~4.1×; these quantities need not scale linearly. Tile placement, per-workgroup worst-case behavior, additional shader-side tests, wave divergence and memory traffic may contribute. **Do not claim full ~4.1× causality from the histogram alone**, and note that mask snapshot and prior RGP sample were separate executions.
+
+**Decision:** initial hypothesis is confirmed at the level of actual mask tile classes: source-code input has ~75% skippable FA tiles at 48k, vs ~36% for Japanese literature. No further generic RGP profiling is needed to establish the *existence* of the difference. For the next isolated causal step, consider an optional **FA kernel workload counter** or a controlled test of skip-path distribution, not an optimization patch yet. Keep r5 stable branch and the benchmark comparison baselines unchanged. Histograms by query row, including their broad differential, are the key result for Qiita/report reproduction.
+
+## Investigation conclusion and next steps: Vulkan FA vs ROCm/HIP (2026-10-11)
+
+### Evidence established on Vulkan OFF (not a proposed optimization yet)
+
+- Same late-prefill FA kernel `flash_attn_f32_f16_aligned_cm1`, same `Qcur-19 (view) (permuted)`, `KV=49152`, `N=1024`, `Br=16/Bc=64`, `n_kv_max=2051`, and dispatch `(64,24,1)` in both corpora.
+- Two RGP runs per corpus showed **literature FA-main ~314.071 / 310.968 ms vs source-code ~75.840 / 75.990 ms**, ratio **4.14× / 4.09×** at that single FA node; mask-prepass duration was ~3.7–3.9 ms in both.
+- Independent GPU snapshot of the *already-generated* 2-bit mask-opt metadata on the same query/KV showed **ALL_NEG_INF=17,538 / 49,152 (35.68%) literature** against **36,881 / 49,152 (75.03%) code**. Both yielded 64 row records plus total, no invalid codes. **Every one of the 64 query-tile rows** has more fully skippable tiles on code.
+- The code input has **19,343 more completely skippable tiles** and non-ALL_NEG_INF totals of **31,614 vs 12,271** (ratio ~2.58×). The distinct ~4.1× main-kernel latency ratio cannot be derived directly from tile count; placement, workgroup imbalance, memory traffic and execution overhead remain open.
+- Shader proof point: Vulkan `flash_attn_mask_opt.comp` emits `ALL_NEG_INF` / `ALL_ZERO` / other, and `flash_attn_cm1.comp` skips entire `ALL_NEG_INF` blocks before K/V loads and matrix work. **This mask classification changes potential work; it does not alter attention semantics.**
+- 64k whole-run PP (~286 vs ~331 tok/s in the histogram-enabled runs) is a *different measurement* from per-node RGP GPU duration. Do not extrapolate 4.1× to total PP.
+- The diagnostic code is opt-in, disabled by default, validated on Windows Vulkan with 1k and 64k prompts; mask snapshots themselves were validated for internal CSV consistency. Long-run performance and model-output equivalence with all diagnostic flags off were not additionally established by the histogram test.
+
+### Source-level ROCm/HIP comparison: facts vs hypotheses
+
+The `ggml-hip` target compiles much of the shared `ggml-cuda` Flash Attention implementation (see `ggml/src/ggml-hip/CMakeLists.txt`). This is **not** the same shader source as Vulkan.
+
+- In `ggml/src/ggml-cuda/fattn-common.cuh`, **`scan_mask` is conditional**: non-sparse mask present, KV size divisible by 256, and `Q->ne[1] >= 1024` or multiple sequences. `flash_attn_mask_to_KV_max` scans trailing 256-KV blocks that are fully masked, and computes a maximum relevant KV extent for the kernel. When used, this can avoid looping over *trailing* masked KV ranges.
+- ROCm/HIP is **not** generally using Vulkan's packed 2-bit `16×64` full-interior-tile classification + `continue` implementation. However, one cannot claim ROCm performs no mask-based skipping: the conditional suffix-scan mechanism above is present, and actual use depends on the selected HIP FA kernel.
+- `ggml/src/ggml-cuda/fattn.cu` has `GGML_USE_HIP` guards that **disable the NVIDIA-only sparse gather path**. Do not confuse this with `scan_mask`.
+- The HIP FA launch code has a **Stream-K / work allocation** strategy, including RDNA-specific tuning, while Vulkan has a distinct host **Split-K** strategy and optional reduction pass. The matching RGP trace captured the regular `EVOX2_FA_MAIN` (not `MAIN_SPLIT`) for the observed late-KV Vulkan node. This is evidence about **one node**, not every Vulkan FA call.
+- **Not yet known from measurement**: which exact ROCm FA kernel variants run for the 64k Japanese and code corpora on Evo-X2, whether `scan_mask` is selected for those calls, whether Stream-K is selected, and the per-op/per-node ROCm FA runtime. All possible performance benefit from porting one technique is **hypothesis until a controlled Vulkan A/B**.
+
+### Candidates in preferred investigation order
+
+1. **ROCm source + runtime path and performance attribution (P0, non-invasive):** verify selected HIP FA kernel (MMA/tile/vector), `scan_mask`, Stream-K or other work distribution at `KV≈49152,N=1024`; profile total FA time and, if possible, comparable late-KV kernel time for both corpora. Separate ROCm FA from MoE and non-FA contributors to full PP. Use targeted instrumentation where HIP tooling permits; do not assume that Vulkan RGP numbers directly compare to ROCm per-dispatch timings.
+2. **Estimate ROCm-style trailing-KV cutoff benefit on Vulkan (P1, analytical before patch):** extend offline analysis of the existing mask 2-bit snapshots to find the rightmost non-`ALL_NEG_INF` tile in each query row, compute how many 64-KV iterations a suffix limit might avoid, and compare literature vs code. Because masks are at tile granularity and may contain internal holes, measure suffix length instead of assuming the overall skip fraction estimates the potential gain. A dynamic cutoff read in shader or host prepass adds overhead.
+3. **Test existing Vulkan Split-K tuning (P1/P2, isolated feature flag):** first document current `split_k` for matching FA calls and the scheduler/workgroup distribution; then compare controlled Split-K=1/2/4 at 48–64k if the implementation supports a safe opt-in clamp. Preserve correct per-split partial sums and reductions. More splits improve parallelism only when reduced imbalance outweighs temp-buffer and reduction costs. Do not change the stable tuning baseline without output correctness + A/B evidence.
+4. **Compare ROCm FA tile layout / wavefront / matrix operations (P2, costly):** if ROCm FA itself is substantially more efficient, study kernel data layout and GPU execution rather than blindly copying ROCm code into GLSL. This may require shader redesign and specialized RDNA tuning.
+5. **Vulkan full-tile skip count vs 4.1× runtime (defer):** only prioritize fine-grained GPU workload/occupancy diagnostics if options 1–4 cannot explain the gap or if a modifiable hotspot is identified.
+
+**Decision gate:** conduct ROCm *runtime* diagnosis and source review **before** committing to any Vulkan port. The mask/skip implementation is already confirmed effective in Vulkan; merely adding another mask scan risks duplicate work. There is no evidence yet that ROCm's trailing scan or Stream-K will speed up this workload when transplanted.
+
+### Branch and integration guidance pending explicit review
+
+This investigation branch includes benchmark tracing, RGP debug markers, FA-mask histogram instrumentation, CSV plumbing and detailed research documentation. Keep its **source changes separate from the stable r5 performance baseline** until reviewing the exact diff and deciding which minimal, default-OFF instrumentation warrants upkeep. Documentation can be carried forward independently; do not wholesale merge experimental commits by default. Prefer either a small cherry-picked instrumentation subset with source/CI validation or preserving this branch as an archived reproducible experiment.
