@@ -16,7 +16,7 @@
 | **MTP-NOOP-001** — suppress target QSA no-op invalidation | Not ported | Ported / Vulkan verified; ROCm long output gate open | Not ported | r4 Vulkan 256k TG **20.205→22.830 (+12.99%)** with dense omission already ON ([report](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md)); ROCm 256k attribution/equivalence not established |
 | **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | **Planned for first integrated snapshot preparation**: AgentionAI ROCmFP4-FAST GGUF loader/core + HIP correctness and model inference; not yet implemented or validated, no r5 speed claim |
 | **COMMON-004** — incremental pooled-key cache | Ported / verified | Upstream functionally covered; old patch not ported | Upstream functionally covered; old patch not ported | Major pooled-key path revised via [#29751](https://github.com/ggml-org/llama.cpp/pull/29751), graph stability via [#29958](https://github.com/ggml-org/llama.cpp/pull/29958). Avoid treating this as source-identical port |
-| **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | Not ported | r3 ROCm 256k TG **11.68→17.37 (+48.7%)**, PP approximately unchanged ([ABBA and RGP](COMMON005-ROCM-VALIDATION-2026-10-02.md)); r5 re-port only when studying ROCm decode/integration |
+| **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | **Not ported; adaptation required; deferred** | r3 ROCm 256k TG **11.68→17.37 (+48.7%)** ([ABBA/RGP](COMMON005-ROCM-VALIDATION-2026-10-02.md)). [r5 source review](R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md): same gather *principle*, but `top_k` replaced with additive `sel` + `selected_rows` including dump ids; old text cannot be cherry-picked safely. Not a normal MTP-verification optimization; defer until non-MTP deep decode/integration. |
 | **COMMON-006** — block-domain QSA select | Proposed; not ported | Upstream-covered | Upstream-covered | Direction implemented in [#29751](https://github.com/ggml-org/llama.cpp/pull/29751); retain semantic checks, not a standing port |
 | **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | Not ported | **Conditional** on target model/Vulkan path during first integration; separate compatibility and backend decision from COMMON-003 |
 | **VULKAN-002** — grouped-union prefill QSA | Not ported (r2 donor existed) | **Ported / verified** | **Ported / verified, opt-in** | r5 PLE16 64k **+25.61%**, 128k **+71.27%**, 256k **+105.54% PP** with f16 K/V; native Vulkan FA OFF/ON 18/18, real runs 12/12 ([report](R5-VULKAN002-VALIDATION-2026-10-09.md)); model-level quality/default ON not certified |
@@ -543,6 +543,8 @@ upstream k-pool path rather than blindly re-applying COMMON-004.
 
 Detailed RGP and source-trace notes are recorded in
 [ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
+
+> **r5 migration assessment (2026-10-11):** [R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md](R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md). The r3 compact-K/V **concept** remains usable, but the old patch is not source-portable: r5's `selected_rows` contains invalid dump rows, and `build_qsa_sel` constructs an additive mask rather than passing per-cell top-k IDs. Separate correctness-first r5 adaptation needed; deferred for now. The historical validation below remains r3-only.
 
 ## COMMON-005 - gather-based QSA decode
 
