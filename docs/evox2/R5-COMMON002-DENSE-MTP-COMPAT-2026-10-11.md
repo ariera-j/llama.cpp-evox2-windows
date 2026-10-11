@@ -1,6 +1,6 @@
 # r5 COMMON-002: ratio-zero Unsloth MTP input compatibility gate (2026-10-11)
 
-**Status: source candidate committed; Windows build / MTP smoke NOT YET VERIFIED.** This is an isolated research branch; stable `r5/upstream-refresh-20261009` is unchanged. No speed or acceptance claim. Source change mirrors the validated r4 dense-MTP k-pool input guard and does **not** port the later r4 dense indexer omission, target no-op suppression or historical MTP-QSA prototype.
+**Status: ROCm Windows 32k allocation short-prompt MTP smoke PASSED on 2026-10-11; deterministic 32k long input, rollback equivalence, Vulkan backend, and 64k/128k performance NOT YET VERIFIED.** This is an isolated research branch; stable `r5/upstream-refresh-20261009` is unchanged. No speed or acceptance claim. Source change mirrors the validated r4 dense-MTP k-pool input guard and does **not** port the later r4 dense indexer omission, target no-op suppression or historical MTP-QSA prototype.
 
 ## Failure evidence (before patch)
 
@@ -23,7 +23,31 @@ File: `src/models/qwen4exp.cpp`, **MTP graph only** (not trunk). Add `hparams.ds
 
 This is strictly **compatibility**, not a TG/PP optimization. r4's separate `LLAMA_MTP_SKIP_DENSE_INDEXER` later removes unused indexer storage/update overhead and is **not included here**. Draft indexer KV allocation can still appear in log.
 
-## Next Windows gate (after isolated build)
+## Post-fix ROCm runtime gate: passed (2026-10-11)
+
+User-supplied successful archive: `20261011-145731-788-cli-rocm-b11560-ctx32768-a50d4bbf70c8.zip`, ZIP SHA256 `994f1ac82cdac7ccc0f764fd86e01d8ff544320b21b620ae24bc1d1d2f14be28`. Run `20261011-145731-788-cli-rocm-b11560-ctx32768-a50d4bbf70c8`, 14:57:31–14:58:17 JST, status **OK / ExitCode 0**. Verified build manifest and runtime identity:
+
+| Field | Verified successful value |
+| --- | --- |
+| Branch/commit in built manifest | `investigation/r5-mtp-dense-compat-20261011` / `f8d24494fcacee01f8c9858595c3e778a1698d11`, clean |
+| Executable | Windows ROCm `llama-cli.exe`, **b11560**, Clang 23.0.0, executable SHA256 `cb50e8092d18381d682c32e3218c5f343eb13108542e5bf8027db0765e22ad11` |
+| Runtime DLL group digest | `063406ed83587bd6ce41250c284b97fb7a7610d78f0a801fedaabbd7a0254f7e` |
+| Main model | 81,961,816,672 byte Unsloth `UD-IQ3_XXS-ple16.gguf`; file SHA not recorded |
+| Draft model | 4,137,429,120 byte self-contained Unsloth `mtp-Qwen3.8-Flash-Next-Q8_0.gguf`; file SHA not recorded |
+| Generation | MTP ON, `DraftMax=2`, `DraftPMin=0`, f16 main/draft K/V, ctx 32768, 18 prompt tokens, **32 generated tokens**; `--temp 0 --top-p 0.8 --seed 1234 --ignore-eos` |
+| Prompt evaluation | **522.40 ms / 18 tokens = 34.46 tokens/s** |
+| Generation evaluation | **1,168.07 ms / 32 generated tokens = 26.54 tokens/s** |
+| Reported eval total | **1,690.47 ms** (excludes ~42 s model startup/load) |
+| Draft acceptance | **13 accepted / 34 proposed = 38.235%**, mean accepted run length 1.76 |
+| Additional trace | `graphs reused = 16`; speculative driver active; no assertion; normal process exit |
+
+**Interpretation:** The original r5 baseline **failed before any prompt decode**. The minimal MTP-only ratio-zero input guard and new standalone ROCm build now produce valid speculative generation and accepted draft tokens for the **same self-contained Q8_0 sidecar**. This is strong practical confirmation of the r4-source-diagnosed failure mechanism, but no backtrace was recorded for the original failure, so do not claim formally proven cause or bitwise correct hidden-state/rollback. No new performance win is claimed from comparing the 18-token MTP ON and historical MTP OFF runs: they are different binaries and prefill/acceptance overhead is incomparable at that scale. The 38.2% acceptance is **not comparable to r2's 64k/128k ~72–73% long-text acceptance**.
+
+The draft still allocates a **16 MiB indexer KV cache**; that is expected because the r4 optimization to remove its unnecessary storage was **not ported**. Presence of this allocation is **not** a patch failure. The 32-token chat output also contains text beyond “OK” because generation was forced via `--ignore-eos`.
+
+**Next gate:** Run real 32k input (~29,557 tokens) with fixed `-n 128 --seed 1234 --ignore-eos --temp 0`, same build/main and MTP OFF vs ON (rather than new 32k allocation-only). Check actual draft acceptance, output/equivalence anomalies, true PP/TG/total and runtime digest. A real-input pair does not replace a forced-rejection rollback test. After both pass, run 64k real input OFF/ON (prefer ABBA), then 128k. If smoke and 32k are sound, decide whether to merge the *compatibility-only* fix into pinned r5 without importing r4 TG optimizations. No additional native code was changed in this documentation update.
+
+## Original planned Windows gate (historical; steps 1–3 now passed)
 
 1. Check out `investigation/r5-mtp-dense-compat-20261011` from the r5 pinned base, preserving local unrelated work; confirm clean status.
 2. Rebuild ROCm (prefer an explicitly **new** build directory if the currently validated b11543 binary should remain untouched), or carefully rebuild the already configured build dir and record source/binary identity. At minimum verify the new `llama-cli.exe` SHA differs from `cd6aab33...`.
