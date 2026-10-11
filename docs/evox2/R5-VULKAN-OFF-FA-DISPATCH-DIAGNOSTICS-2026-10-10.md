@@ -605,3 +605,23 @@ For each corpus, archive `fa-mask-tile-diag.csv`, `stderr.log`, `conditions.json
 - GPU copy synchronization and deferred CPU readback: implement using the existing Vulkan barrier/copy and `ggml_vk_buffer_read` patterns. Test the GPU runtime on **1024 tokens first**, ensure no device-lost / WDDM issue before the 64k workload.
 - For control, run a normal **diagnostics OFF** single case using the same new binary, comparing output behavior and throughput with pre-existing baseline within ordinary run variability. Mask diagnostics should not change the actual computed tensors.
 - The **RGP earlier 4.1× FA-main finding** was independently reproduced twice per corpus and is unaffected by how this histogram diagnostic performs. This experiment measures a candidate explanation, not a replacement performance baseline.
+
+
+## FA mask tile histogram: Windows/Vulkan 1024-token smoke PASSED (2026-10-11 JST)
+
+Uploaded evidence: `20261011-091324-941-bench-vulkan-b11571-ctx2048-65756cdcfdcd.zip` (8 files; including native `llama-bench.json`, `result.json`, `conditions.json`, `stderr.log`, and `fa-mask-tile-diag.csv`).
+
+**Build and runtime:** r5 Vulkan diagnostic source `0a2a7970c54cc8cb8fc7eb1db4806aa5b6845e1d`, llama.cpp **b11571**, Clang 20.1.8, Radeon 8060S, manually labelled UMA 96GB, Qwen3.8-Flash-Next UD-IQ3_XXS PLE16. Input `wagahaiwa_nekodearu_utf8.txt` SHA-256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`; `-p 1024 -c 2048 -b 2048 -ub 1024 -ctk f16 -ctv f16 -n 0 -d 0 -r 1 -ncmoe 0 -fa auto --no-warmup --prompt-slice head`. Exact enabled env recorded in `conditions.json`: `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0`, `GGML_VK_FA_MASK_DIAG=1`, `GGML_VK_FA_MASK_DIAG_KV=1024`, `GGML_VK_FA_MASK_DIAG_QUERY=Qcur-7`.
+
+Result **Status OK / ExitCode 0**; detected Vulkan; one `pp 1024` row at **236.893662 tok/s** (diagnostic-enabled one repetition, **not a speed baseline**). `stderr.log` contains both `FA mask tile snapshot queued for Qcur-7 (view) (permuted) KV=1024 bytes=256` and `FA mask tile diag wrote ... KV=1024 neg_inf=480 zero=480 mixed=64 invalid=0`. The standalone CSV was actually included in the run ZIP; no missing-file warnings.
+
+CSV integrity checks:
+- **65 rows**: 64 `scope=row` and exactly 1 `scope=total`, all `slice=0` for row entries.
+- Each query row contains 16 mask tiles (`1024/Bc64`); **1024** tiles in total. Row sums equal total counts in each category.
+- `ALL_NEG_INF=480` (**46.875%**), `ALL_ZERO=480` (**46.875%**), `mixed=64` (**6.25%**), `invalid=0`. `skippable_fraction=0.46875` overall. This pattern is compatible with a causal triangular mask (with mixed boundary tiles).
+- Mask source shape: `KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283`, query label `Qcur-7 (view) (permuted)`.
+- `result.json` and `conditions.json` contain the run-specific diagnostic CSV path. Executable SHA-256 is `848176ef72619eaa9582a963c83ac595d3e801778aae3ce93561e2db57241324`.
+
+**Conclusion:** the new source **compiles and runs on Windows/Vulkan**, snapshots the existing GPU-generated packed mask-opt metadata, decodes categories correctly enough to pass structural and causal-pattern checks, writes the expected CSV, and completes the benchmark. This validates the short smoke only; it **does not yet validate KV=49152**, guard against all possible synchronization/driver issues at 64k, establish unchanged inference output, or explain the measured ~4.1× corpus effect.
+
+**Next gated step:** remove `GGML_VK_FA_MASK_DIAG_KV` and `GGML_VK_FA_MASK_DIAG_QUERY` overrides (native defaults `49152` / `Qcur-19`). Keep `GGML_VK_FA_MASK_DIAG=1`, `GGML_VK_QSA_UNION=0`; run **Japanese literature first at `-c 65536 -p 61789`**, one repetition, other logging/profiling envs OFF. Check `scope=total` for `KV=49152`, query `Qcur-19`, 64 row entries, 49152 tile classifications (1 plane), `invalid=0`, and benchmark Status OK before running source code with identical settings. Code corpus input path must be verified locally rather than assumed. Once both totals and row distributions are obtained, test whether skip fraction and distribution correlate with 314ms vs 76ms FA-main timings from matched-KV RGP.
