@@ -51,6 +51,10 @@ The draft still allocates a **16 MiB indexer KV cache**; that is expected becaus
 
 [**R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md**](R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md) records the eight-run 64k/128k MTP OFF/ON ROCm ABBA. All 8/8 completed with the **same** b11560 `f8d24494f` compiled binary and 512 generated tokens. MTP ON gains TG **+22.55% at 64k / +9.01% at 128k**, reduces PP **−6.86% / −6.87%**, and raises **fresh-prompt PP+TG** by **+7.19s / +29.14s**. 64k one ON run has a **model-load delay** ~144s above usual, but native PP/TG rates match the other ON run. This confirms functional longer-input MTP with only the ratio-zero compatibility guard; **no performance patch imported, no output/rollback equivalence established**. Next: r5 Vulkan real-input MTP A/B, then choose an MTP PP-cost investigation or 256k r4 optimization candidate.
 
+## Long-input r5 Vulkan MTP ABBA gate — PASSED 2026-10-11
+
+[**R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md**](R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md) confirms 8/8 **same b11560** Vulkan MTP OFF/ON real-prompt ABBA through 128k with grouped QSA union ON. **64k:** TG +10.52%, PP −7.61%; **128k:** TG −2.75%, PP −9.39%. Acceptance remained ~68.6–68.8%, so acceptance decline is not enough to explain reversal. Native PP+TG increased +12.224s / +39.586s for 512 output tokens. r2's old Vulkan positive 128k effect is **not comparable without rerunning r2 with matched fixed 512 tokens, same input, seed/temp and diagnostics OFF**. r5 Vulkan/ROCm 64k→128k PP crossover persists with or without MTP. No patch imported beyond compatibility guard.
+
 ## Original planned Windows gate (historical; steps 1–3 now passed)
 
 1. Check out `investigation/r5-mtp-dense-compat-20261011` from the r5 pinned base, preserving local unrelated work; confirm clean status.
