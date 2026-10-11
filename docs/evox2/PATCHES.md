@@ -6,6 +6,12 @@
 
 **How to read the tables:** “ported” means native code is in that series, **not** that a particular runtime flag was enabled. “verified” is scoped to the cited backend/model/context. “upstream-covered” means the relevant functionality was audited in the indicated pinned upstream; it does not assert byte-identical source or speed parity. “not ported” is a deliberate absence, not a regression verdict. Each row's r3/r4/r5 status is **independent**; historical wins do not automatically transfer to r5.
 
+### TG-only MTP follow-up and Agention compatibility scope — 2026-10-11 evening
+
+- User chose **MTP ON TG first**. Compare [matched b10813 r2 Vulkan 64k/128k](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md): +10.99% / +16.40% MTP TG versus r5 +10.52% / −2.75%. **MTP OFF** long-depth r3 regression is **out of scope** now (COMMON-004/upstream considered covered), and **MTP PP** optimization waits until the TG issue is at a stopping point.
+- **MTP-DENSE-001 r5 gate:** QWEN4EXP MTP single-block ratio0 only; keep indexer for **positive compression ratios**. **MTP-NOOP-001 r5 gate:** target-context true no-op only; never skip real suffix removal. Neither has been ported to r5 at this checkpoint. Source comparison shows **r2/r3 used plain MTP attention KV**, r4/r5 upstream uses hybrid-indexer and hence introduced the measured unnecessary ratio0 bookkeeping.
+- **First integrated snapshot:** require **AgentionAI ROCmFP4 main + matching FP4 MTP draft** (not only main model) for planned answer-quality comparisons. [FP4/MTP interference and artifact review](R5-MTP-AGENTION-FP4-INTERACTION-2026-10-11.md): no proven source-level conflict with narrowly gated TG patches, **no actual FP4 GGUF header inspection or r5 FP4 load/short validation yet**. Require ratio0/ratio>0 tests and custom Vulkan/HIP backend separation. ROCmFP4 quantization name does **not** itself demonstrate ROCm/HIP kernel support.
+
 ### Downstream feature/optimization matrix
 
 | ID / feature | r3 | r4 | r5 | Best established local evidence / next gate |

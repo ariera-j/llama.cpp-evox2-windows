@@ -1,5 +1,19 @@
 # Evo-X2 optimization roadmap
 
+## User decision: focus MTP ON TG and future Agention FP4/MTP compatibility — 2026-10-11 evening
+
+**This section supersedes older "current priority" prose below, which is retained as an historical sequence.** The paired r2 b10813 64k/128k real-input Vulkan ABBA is **complete 8/8**. Within r2, MTP ON TG benefit **+10.99% / +16.40%** versus r5 Vulkan **+10.52% / −2.75%**. See [matched r2/r5 TG review](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md). Historical r2 b10811 measurements should not be substituted for this newer b10813 binary.
+
+Research scope from now:
+- **ACTIVE:** resolve the extra/depth-dependent **MTP ON TG** cost; first isolate r4 **MTP-DENSE-001** (dense draft indexer omission) on r5 at 128k, then **MTP-NOOP-001** (target no-op invalidation) independently, with correctness and one-change-only ABBA. If necessary, investigate r2 vs r5 short-query Vulkan union verification. Extend to 256k only when safe.
+- **PARKED:** MTP ON **PP** overhead since r2. Record PP as a control/telemetry metric in TG A/B, but **do not optimize PP yet**.
+- **CLOSED FOR THIS PHASE:** r3 **MTP OFF TG** pooled-summary full-context recomputation was addressed by COMMON-004, and the functional equivalent is included upstream in r4/r5. **Do not reopen** absent a new strong regression or correctness issue. r3 COMMON-005 remains a separate later non-MTP deep-decode topic.
+- **INTEGRATION REQUIREMENT, NOT CURRENT IMPLEMENTATION:** include AgentionAI ROCmFP4-FAST main **and matching ROCmFP4-FAST MTP draft** as quality-comparison choices in the first integrated build. [Compatibility review](R5-MTP-AGENTION-FP4-INTERACTION-2026-10-11.md) finds no necessary structural conflict **if** draft indexer omission applies only to **ratio0** and target no-op suppression only to verified no-change state; the actual Agention MTP GGUF ratio/tensor names, custom FP4 loaders and backend kernels are **unverified**. Do not mix new FP4 format port with the current MTP TG A/B.
+- Historical r2 predates build manifests: **`MissingManifest` / `build-unknown` on the r5 runner is a metadata limitation**, not a runtime failure. Identify with r2 executable SHA and embedded b10813 version; do not retrofit an invented manifest.
+
+No inference source change or upstream refresh is implied by this decision.
+
+
 ## Planned follow-on program — 2026-10-11 (research first; no release yet)
 
 The user has chosen the following **order of intentions**, not fixed deadlines or a requirement to interrupt the active research branch:

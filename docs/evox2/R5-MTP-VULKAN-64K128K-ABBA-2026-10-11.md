@@ -41,6 +41,10 @@ For memory assessment, peak sampled **process GPU Local**: 64k OFF/ON **80.614 /
 
 **Output identity:** with temp0/seed1234, the *generated text* in A1/A2 and B1/B2 within each context matches; stdout log endings differ due to printed timing figures. **OFF vs ON generated content differs** in both contexts despite greedy sampling. Acceptance and output quality should not be inferred from tok/s alone. A forced full/partial rejection test was **not** performed in these eight runs. \`graphs reused\` was 507 for OFF vs 210 for ON; different graph-call counts are **not** evidence of a graph-reuse bug.
 
+## Matched 2026-10-11 r2 b10813 ABBA now complete
+
+[**r2 versus r5 MTP TG matched recheck**](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md) supersedes the **old r2 b10811, temp0.2, variable-length** control as the fairer comparator. The recovered **b10813** binary SHA is `daef251a001809a48cb337cafe858f10fc8d36829302267e2f88248b03e189f5`; MTP TG benefit is **+10.99% at 64k and +16.40% at 128k**, versus current r5 **+10.52% / −2.75%**. The r2 binary has **no build manifest**, which is expected for that historical toolchain; `build-unknown` is an r5 harness metadata parsing limitation. A *cause* has **not** been proved: r2/r3 plain NextN draft attention KV differs from r4/r5 hybrid indexer, acceptance differs, and small-query union eligibility changed. The user currently studies **MTP ON TG only**; PP and MTP OFF TG depth study are parked.
+
 ## Historical cross-check: measure relative effects inside a version
 
 | Backend / version | 64k MTP TG ON change | 128k MTP TG ON change | 64k PP ON change | 128k PP ON change |
