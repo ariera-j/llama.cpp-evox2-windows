@@ -10,6 +10,12 @@ r5 starts from upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b` and imports d
 
 Start with the Original Unsloth Qwen3.8-Flash-Next UD-IQ3_XXS model, joined PLE tensor layout, MTP OFF and f16 KV. Use the existing first GGUF shard; physically joining GGUF files is not required.
 
+## Research and future integrated snapshots
+
+This is a personal performance-research downstream, not a continuously updated optimized distribution. A pinned research branch can stay on its upstream SHA for an entire experiment; only COMMON-001 PLE16 compatibility is a standard required port when comparing the established converted model. Other optimizations are imported only when they affect the selected study.
+
+Separately, a periodically reviewed integrated build is **planned but has not been created**. At a convenient research checkpoint (roughly 4–6 weeks if useful), the chosen newer upstream will be combined with **selected, still-needed and revalidated** historical optimizations. No integration tag, all-patches speed claim or stable integrated binary exists yet. See [integration policy](docs/evox2/INTEGRATION-POLICY.md), [integrated snapshot index](docs/evox2/INTEGRATED-RELEASES.md), and [cross-branch patch registry](docs/evox2/PATCHES.md).
+
 ## Documentation and tools
 
 - [Refresh handoff and current validation gates](docs/evox2/R5-REFRESH-2026-10-09.md)

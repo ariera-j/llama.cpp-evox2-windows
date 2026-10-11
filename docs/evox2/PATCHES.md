@@ -1,18 +1,67 @@
 # Evo-X2 downstream patch registry
 
-## Current r5 status (2026-10-09)
+## Current cross-branch patch and candidate register — 2026-10-11
 
-The initial r5 inference source matched pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. A minimal r5 **COMMON-001 split PLE16 compatibility implementation has passed Windows Vulkan/ROCm Original+PLE16 allocation, short inference and 64k comparison gates** (b11521, 4/4 long runs OK, runtime Verified); see [implementation](R5-COMMON001-IMPLEMENTATION-2026-10-09.md) and [measurements](R5-COMMON001-VALIDATION-2026-10-09.md). The modest Vulkan PLE16 TG advantage is observed but not causally established and additional COMMON-001-only repeats are deferred. VULKAN-002 grouped-union **is ported**, with Vulkan0 OFF/ON native reference tests each 18/18 passed ([Windows correctness](R5-VULKAN002-IMPLEMENTATION-2026-10-09.md)); model-level PP/TG validation completed for 64k/128k/256k; see [accepted results](R5-VULKAN002-VALIDATION-2026-10-09.md). The dense MTP guard and the two TG candidates are not ported.
+**Research policy:** [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md). **Integrated snapshots:** [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md) — **none created yet; first checkpoint planned**. The research objective is understanding and testing performance mechanisms, not continuously shipping the newest upstream. r5 remains pinned at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Neither this registry nor the new policy changes a runtime binary, source pin or experimental code.
 
-Documentation, build/measurement utilities and historical test fixtures are imported. Their presence does not mean the corresponding native patch or CMake test target is implemented in r5. The real-prompt bench and union-statistics investigation branches remain separate. Their selective r5 adoption is staged in [R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md](R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md). **Phase A real-prompt llama-bench source and wrapper are ported** (see [handoff](R5-LLAMA-BENCH-REAL-PROMPT-PORT-2026-10-09.md)); Windows build/light smoke gate **passed** (b11526; random/head-tail/head 3/3 OK, [record](R5-LLAMA-BENCH-REAL-PROMPT-PORT-2026-10-09.md)). **VULKAN-002 grouped-union source is now selectively ported; Windows Vulkan0 native correctness PASSED (18/18 OFF and ON), while 64k+ model-level performance remains PENDING**: [implementation](R5-VULKAN002-IMPLEMENTATION-2026-10-09.md), [plan](R5-VULKAN002-BENCH-AND-STATS-PORT-PLAN-2026-10-09.md). Optional QSA union statistics were selectively **ported as opt-in source** in commit `37ba95673a061c1b4c0991e8eeea5eb003bbe898` ([handoff](R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md)), but its separate Windows build, `STATS=0` performance check and `STATS=1` CSV test are **PENDING**.
+**How to read the tables:** “ported” means native code is in that series, **not** that a particular runtime flag was enabled. “verified” is scoped to the cited backend/model/context. “upstream-covered” means the relevant functionality was audited in the indicated pinned upstream; it does not assert byte-identical source or speed parity. “not ported” is a deliberate absence, not a regression verdict. Each row's r3/r4/r5 status is **independent**; historical wins do not automatically transfer to r5.
 
-**r5 VULKAN-002 long-context validation CLOSED (pre-stats b11530):** 12/12 Windows Vulkan0 normal CLI runs OK with 64k Original/PLE16 ABBA and 128k/256k PLE16 OFF/ON pairs; same-build PP gain +26.30/+25.61/+71.27/+105.54% respectively. See [complete r5 validation](R5-VULKAN002-VALIDATION-2026-10-09.md) and [r4 comparison](R4-VULKAN002-VALIDATION-2026-10-04.md). Phase C stats b11535 Windows build, 64k STATS=0 CLI and STATS=1 CSV runtime checks passed (30 rows / 5640 groups / dropped=0; [runtime verification](R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md)). Native 18/18 OFF+ON rerun on b11535 has not been evidenced.
+### Downstream feature/optimization matrix
 
-See [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md) for validation gates and [ROADMAP.md](ROADMAP.md) for the current order.
+| ID / feature | r3 | r4 | r5 | Best established local evidence / next gate |
+| --- | --- | --- | --- | --- |
+| **COMMON-001** — split PLE16 loading | Ported / verified | Ported / verified | **Ported / verified** | Mandatory on every new base before established PLE16 comparison; r5 Original + PLE16 Vulkan/ROCm 64k gates [passed](R5-COMMON001-VALIDATION-2026-10-09.md) |
+| **COMMON-002** — MTP compatibility *umbrella* | Evaluate/native MTP | Native MTP + minimal dense draft guard | Native upstream MTP; local guard **not ported** | Do not assume the Unsloth sidecar or rollback works on r5 until revalidated; separate subpatches below |
+| **MTP-DENSE-001** — omit dead dense-draft indexer | Not ported | Ported / Vulkan verified | Not ported | r4 Vulkan 256k MTP ON TG **15.220→20.185 (+32.62%)**, matched response/acceptance ([report](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md)); not a total-latency win against MTP OFF |
+| **MTP-NOOP-001** — suppress target QSA no-op invalidation | Not ported | Ported / Vulkan verified; ROCm long output gate open | Not ported | r4 Vulkan 256k TG **20.205→22.830 (+12.99%)** with dense omission already ON ([report](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md)); ROCm 256k attribution/equivalence not established |
+| **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | Format/model compatibility candidate, no established local r5 speed claim |
+| **COMMON-004** — incremental pooled-key cache | Ported / verified | Upstream functionally covered; old patch not ported | Upstream functionally covered; old patch not ported | Major pooled-key path revised via [#29751](https://github.com/ggml-org/llama.cpp/pull/29751), graph stability via [#29958](https://github.com/ggml-org/llama.cpp/pull/29958). Avoid treating this as source-identical port |
+| **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | Not ported | r3 ROCm 256k TG **11.68→17.37 (+48.7%)**, PP approximately unchanged ([ABBA and RGP](COMMON005-ROCM-VALIDATION-2026-10-02.md)); r5 re-port only when studying ROCm decode/integration |
+| **COMMON-006** — block-domain QSA select | Proposed; not ported | Upstream-covered | Upstream-covered | Direction implemented in [#29751](https://github.com/ggml-org/llama.cpp/pull/29751); retain semantic checks, not a standing port |
+| **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | Not ported | Dependent on COMMON-003/model need |
+| **VULKAN-002** — grouped-union prefill QSA | Not ported (r2 donor existed) | **Ported / verified** | **Ported / verified, opt-in** | r5 PLE16 64k **+25.61%**, 128k **+71.27%**, 256k **+105.54% PP** with f16 K/V; native Vulkan FA OFF/ON 18/18, real runs 12/12 ([report](R5-VULKAN002-VALIDATION-2026-10-09.md)); model-level quality/default ON not certified |
+| **VULKAN-MOE-001** — legacy per-expert tile selection | Not ported | Ported / verified | **Upstream-covered; no port** | r4 64k PP **+8.25%**; [#29936](https://github.com/ggml-org/llama.cpp/pull/29936), merged **2026-10-05**, restored selector semantics on r5 ([audit](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md)) |
+| **VULKAN-GR-001** — GET_ROWS 128x4 experiment | Not ported | Ported experiment / **no useful measured gain** | Not ported | r4 [profile](R4-GET-ROWS-128X4-AB-2026-10-03.md); do not carry by default |
+| **MTP-QSA prototype** | Historical investigation | Not part of r4 normal stack | Not ported | Revisit only on a specific upstream-native MTP gap, not a standing integration candidate |
 
-**r2 specialized-fork PLE extras: DEFER / WATCH FOR FORK UPDATE.** The historical `main`/r2 tree and LaurentZuijdwijk donor contain a lossless PLE split converter, an alternate token-major/strided split gather, and **Linux-only** disk-backed joined-table / sidecar / row-cache code. The useful split support is already provided by r5 COMMON-001; no additional PLE16-specific speed patch was identified. No extra code will be ported now, and the old disk reader expressly rejects Windows. [Frozen source review and revisit trigger](R2-PLE-LEGACY-SOURCE-REVIEW-2026-10-09.md).
+**Historical r3 names:** COMMON-002 is an umbrella, not a single always-portable patch. `MTP-DENSE-001`, `MTP-NOOP-001`, `VULKAN-MOE-001` and `VULKAN-GR-001` are new **registry aliases**, not claims that earlier commits used those identifiers. Exact source commits, controls and test conditions remain in linked dated records.
 
-**r5 MoE tile selection: UPSTREAMED / RETIRE.** Upstream commit `3c9e747f7e8b` / PR #29936 (2026-10-05) reverted the per-expert `MUL_MAT_ID` selector back to the `nei1` (total tokens) expression. This matches the r4 `GGML_VK_MOE_LEGACY_TILE_SELECTION=1` path for selector/alignment decisions; the local r4 diagnostic switch is not needed in r5. The measured r4 same-binary 64k PP gain was +8.25%; r5 PP is compatible with the revert, but cross-build attribution is qualified. [Source investigation and metrics](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md). r4 patch status in the historical section below is unchanged.
+### Candidates and upstream watch (no local speed claim unless stated)
+
+| ID / type | Candidate and upstream relationship | State at r5 pin / re-evaluation gate |
+| --- | --- | --- |
+| **UPSTREAM-FIX-001** (correctness) | [#30103](https://github.com/ggml-org/llama.cpp/pull/30103): HIP/CUDA FA tile synchronization for `nbatch_combine != DKQ/2` | Merged **2026-10-10**, **after** r5 pinned upstream; **not cherry-picked or tested on r5**. Inspect actual selected HIP MMA config before an isolated correctness backport; no local race reproduction established |
+| **ROCM-001** (research/possible patch) | **HIP sparse QSA prefill**: enable/adapt compact sparse FA, grouped gather, or safe interior-mask tile skipping | **Proposed, no implementation**. HIP path in pinned code excludes NVIDIA sparse compact; first collect matched 64k FA/operator timing, then assess design, WMMA correctness and remaining graph cost |
+| **ROCM-PP-001** (diagnostic) | HIP FA specialization / `scan_mask` suffix cutoff / Stream-K / 64k→256k operator-time scaling | **Research only**; source clues exist, runtime attribution not yet measured. RGP on ROCm has historical r3 precedent; avoid an open-ended profiling detour |
+| **VULKAN-KV-001** (configuration A/B) | [#29639](https://github.com/ggml-org/llama.cpp/pull/29639): quantized K/V sparse Flash Attention | Merged and in r5 pinned source, **not validated in this project's q8_0 KV A/B**. VULKAN-002 grouped-union supports **f16 K/V only**; with q8_0 it falls back. Compare f16 union OFF/ON and q8_0 as **different paths**, not “q8_0 + union acceleration” |
+| **UPSTREAM-PERF-001** | [#29353](https://github.com/ggml-org/llama.cpp/pull/29353) CUDA/HIP chunked GDN | Open at 2026-10-11 watch snapshot; model/`ub1024` shape and ROCm operator share first |
+| **UPSTREAM-PERF-002** | [#28303](https://github.com/ggml-org/llama.cpp/pull/28303) ROCm tiled transposed CONCAT | Open at 2026-10-11 snapshot; strong gfx1151 relevance but Flash-Next tensor shape/time unverified |
+| **UPSTREAM-PERF-003** | [#30139](https://github.com/ggml-org/llama.cpp/pull/30139) recurrent-state view/identity GET_ROWS removal | Open at 2026-10-11 snapshot; candidate decode improvement, not local verified |
+| **UPSTREAM-PERF-004** | [#30149](https://github.com/ggml-org/llama.cpp/pull/30149) Vulkan tiled transposed CONCAT | Draft at 2026-10-11 snapshot; inspect graph shape and published PR status before trial |
+| **UPSTREAM-PERF-005** | [#30191](https://github.com/ggml-org/llama.cpp/pull/30191) Vulkan deep-KV FA query-row slicing | Draft at 2026-10-11 snapshot; narrow eligibility, do not assume it affects union ON |
+| **UPSTREAM-PERF-006** | [#30190](https://github.com/ggml-org/llama.cpp/pull/30190) MTP verification-token/GQA path | Draft at 2026-10-11 snapshot; only after actual Flash-Next target/draft eligibility and r5 MTP correctness |
+| **UPSTREAM-FIX-002** | [#30141](https://github.com/ggml-org/llama.cpp/pull/30141) MTP hidden-state checkpoint restore | Open at 2026-10-11 snapshot; correctness watch if cache/checkpoints become an experimental focus |
+| **TOOL-001** (measurement) | `llama-bench` real prompt input / prompt slicing | r4 investigation, **selectively ported to r5**; r5 smoke plus 64k/128k corpus studies verified ([r5 record](R5-LLAMA-BENCH-REAL-PROMPT-PORT-2026-10-09.md)) |
+| **DIAG-001** (measurement) | Vulkan QSA union statistics | r4 investigation, **selectively ported to r5**; r5 opt-in CSV / STATS=0 smoke verified ([r5 report](R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md)); not a default inferencing feature |
+| **DIAG-002** (investigation) | Vulkan union-OFF FA dispatch labels and mask-tile histogram | Instrumentation lives only on `investigation/r5-vulkan-off-fa-dispatch-20261010`; report [archived on r5](R5-VULKAN-OFF-FA-DISPATCH-DIAGNOSTICS-2026-10-10.md), **not merged** into stable r5 |
+
+The public upstream status labels above are a **dated snapshot**, not claims of continuously refreshed PR state. Also watch graph/k-pool issue [#30005](https://github.com/ggml-org/llama.cpp/issues/30005), speculative MMVQ changes [#25666](https://github.com/ggml-org/llama.cpp/pull/25666) / [#29679](https://github.com/ggml-org/llama.cpp/pull/29679) and external engines per [research log](PERFORMANCE-RESEARCH-LOG.md), but do not make them mandatory refresh tasks.
+
+### Upstream replacement / porting chronology
+
+| When / series | Observation | Local patch disposition and evidence |
+| --- | --- | --- |
+| r3 baseline (b11247) | COMMON-004 pooled-key and COMMON-005 compact selected-KV decode locally implemented | COMMON-005's ROCm long-context benefit **measured on r3 only**; [record](COMMON005-VALIDATION-2026-10-02.md) |
+| r4 refresh (2026-10-02) | [#29751](https://github.com/ggml-org/llama.cpp/pull/29751) changed QSA pool-domain selection/caching | COMMON-004 and COMMON-006 **not automatically re-ported**; review by behavioral overlap ([COMMON-006 notes](#common-006---block-domain-qsa-selection-upstream-evaluation)) |
+| r4 experiments (2026-10-03–05) | Local MoE tile selection and Vulkan grouped-union independently accelerated PP; MTP-DENSE / MTP-NOOP TG improved on their tested paths | r4 exact measurements preserved below and in dated reports; not a blanket commitment to future ports |
+| r5 upstream pin (2026-10-09, SHA `de7fa0a3`) | [#29936](https://github.com/ggml-org/llama.cpp/pull/29936) MoE tile revert (merged 2026-10-05) reproduces r4 legacy selector behavior; [#29958](https://github.com/ggml-org/llama.cpp/pull/29958) k-pool graph-stability work present | VULKAN-MOE-001 **retired from r5 port list** after source audit; older r4 measurements preserved. COMMON-005 still not ported, VULKAN-002 ported and measured |
+| Upstream after r5 pin (2026-10-10) | [#30103](https://github.com/ggml-org/llama.cpp/pull/30103) HIP/CUDA FA race fix merged | Registry **backport candidate**, not present in r5; evaluate actual dispatch/need before cherry-pick |
+
+### Registry maintenance on each experiment or integration checkpoint
+
+For each patch/candidate, record **(a)** source category and exact upstream/local commit or PR, **(b)** explicit branch source-presence and effective runtime control, **(c)** correctness gate scope, **(d)** performance table with backend/context/KV/model/source SHA and linked raw evidence, **(e)** dependencies and known incompatibilities, **(f)** first upstream overlap/merge date and first series where tested, **(g)** planned integration decision: eligible / inapplicable / replaced / blocked / insufficient evidence. Do not use a single global “validated” flag across versions. Append a new dated checkpoint rather than mutating the meaning of old data.
+
+**Older sections below are chronological r3/r4/r5 evidence and can contain historical TODO/PENDING text.** The cross-branch matrix above is the status index as of 2026-10-11; [ROADMAP.md](ROADMAP.md) governs the currently chosen research question.
 
 ## Preserved r4 status (2026-10-09)
 
@@ -202,7 +251,7 @@ The r3 branch remains the fixed comparison point while a separate upstream-refre
 branch is evaluated. A patch marked `validated` below means validated on this r3 base;
 it does not mean the patch should automatically be re-applied to the refresh branch.
 
-## Registry
+## Historical r3 registry (not the current branch matrix)
 
 | ID | Scope | Status | Purpose |
 |---|---|---|---|

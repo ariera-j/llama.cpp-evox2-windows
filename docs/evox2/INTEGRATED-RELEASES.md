@@ -1,0 +1,30 @@
+# Evo-X2 integrated snapshots
+
+**Status as of 2026-10-11 JST: PLANNED / NOT CREATED.**
+
+No integrated release branch, validated all-patches snapshot, final binary, release tag or integrated benchmark has been produced under this policy yet. Do not infer a release from the existence of the r3/r4/r5 research branches. The first integration checkpoint is intended for a convenient upcoming research break; the approximate 4–6 week cadence is a guideline, not a booked date.
+
+See [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md) for selection, upstream pinning, execution gates and acceptance policy; see [PATCHES.md](PATCHES.md) for candidates and tested historical improvements.
+
+## Release/attempt index
+
+| Snapshot | State | Upstream SHA | Integration ref/tag | Notes |
+| --- | --- | --- | --- | --- |
+| First integrated checkpoint (date not decided) | **Planned; not started** | Not selected | None | Will re-evaluate all verified beneficial patches; COMMON-001 is mandatory for PLE16 |
+
+Only append an **accepted** row after passing the combined integration gate. If an attempt stalls, record it distinctly as `candidate / incomplete`; never label it the latest validated build.
+
+## Template for an eventual checkpoint
+
+- Date / name / state: `candidate`, `validated`, or `incomplete`
+- Branch HEAD, immutable tag (if validated), chosen clean upstream SHA and included upstream commits/cherry-picks
+- Machine, Windows build, driver, compiler/SDK/HIP runtime, actual compiled GPU target
+- Model source, PLE layout, quantization, KV type, prompt hashes/context, runtime switches, MTP/cache conditions
+- Clean upstream → COMMON-001 acceptance, tested binaries and their SHA256 hashes
+- Per-candidate disposition: `included` / `covered by upstream` / `excluded` / `failed` / `deferred`, reason and source/test link
+- Correctness: backend ops, short/long model runs, any output-equivalence or rollback checks
+- Combined Vulkan/ROCm PP/TG (64k/128k/256k where feasible), repetition/ABBA scope, total time/memory and differences from clean control
+- Limitations, untested combinations, raw archive identities, next research-only issues
+- Explicit go/no-go for tagging and whether the last accepted integrated snapshot remains the recommended stable one
+
+Historical r5 results (including Vulkan grouped-union measurements) remain **research-series** results until retested and admitted to an integrated checkpoint.

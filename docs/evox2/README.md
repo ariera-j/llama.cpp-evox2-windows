@@ -12,6 +12,12 @@ The validated r3 comparison branch and the [r4 checkpoint](R4-CHECKPOINT-2026-10
 
 Use the same source revision for Vulkan and ROCm. Re-port only downstream changes justified by the clean baseline and the roadmap.
 
+### Research lane and planned integrated lane (2026-10-11)
+
+This is a hobby research project: pinned research branches are allowed to run until a hypothesis is closed even if upstream refreshes weekly. On each research branch, COMMON-001 is restored to compare PLE16 models; additional downstream patches are applied only when relevant to that particular investigation. A separate future integration session will evaluate the recorded beneficial candidates on a selected newer upstream, approximately every 4–6 weeks if convenient or at a natural stopping point.
+
+**No integrated snapshot has been created yet.** The first is planned for a future checkpoint; do not treat r5 or a current measurement as an all-patches integrated build. The proposed integrated branch/tag convention and acceptance procedure are in [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md); pending and accepted snapshots are tracked in [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md). The [PATCHES.md cross-branch matrix](PATCHES.md) distinguishes implemented, validated, upstream-covered, and merely proposed candidates.
+
 ## Target machine
 
 Primary validation machine:
@@ -99,7 +105,9 @@ runtime/build facts rather than trusting lookup-key labels.
 
 ## Documentation map
 
-- [CURRENT-REFRESH.json](CURRENT-REFRESH.json): current branch and pinned source identities
+- [CURRENT-REFRESH.json](CURRENT-REFRESH.json): current research branch and pinned source identities
+- [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md): optional upstream intake, selective porting and future integrated-snapshot gates
+- [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md): integrated snapshot index (first release not yet created)
 - [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md): r5 bootstrap and pending validation gates
 - [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md): reusable branch/import/verification procedure
 - [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md): current r4 implementation state, open gates, investigation heads and r5 validation decision

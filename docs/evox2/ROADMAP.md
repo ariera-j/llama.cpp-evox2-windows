@@ -1,5 +1,18 @@
 # Evo-X2 optimization roadmap
 
+## Research/refresh policy update — 2026-10-11
+
+The goal is **personal optimization research and repeatable experiments**, not continually delivering the fastest current end-user build. The pinned r5 branch and the technical ROCm FA investigation queue below remain valid; upstream changes alone do **not** mandate an immediate r6 refresh.
+
+- **New upstream/research branch:** take a clean baseline and **always restore COMMON-001** before using the historic PLE16 benchmark model. Port other patches only when necessary for the selected hypothesis. The branch can stay pinned while the experiment continues.
+- **Integration lane (future):** at a natural stopping point, roughly every 4–6 weeks if convenient, choose a reasonably current upstream SHA and **evaluate all previously verified beneficial patches**. Apply only those still required and passing in combination. No new optimization investigation is required during that session. An integration attempt may defer a patch instead of blocking research indefinitely.
+- **No integrated snapshot exists yet.** First integrated branch/tag and combined Vulkan/ROCm performance results are **planned**, not created/verified. See [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md) and [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md).
+- **Records:** [PATCHES.md](PATCHES.md) now indexes source-presence, validation and upstream replacement by r3/r4/r5, and holds not-yet-implemented ROCm/upstream candidates. Historical implementation/measurement sections remain intact. Upstream correctness fixes may be evaluated as isolated cherry-picks without moving the research pin; merged performance fixes wait until relevant to the current experiment or the next integration checkpoint.
+- **Current next research question is unchanged:** bounded ROCm/HIP FA path attribution, with #30103 applicability review and later independent COMMON-005 decode re-evaluation. This is an exploration order, **not** a deadline or prerequisite for an integrated build.
+
+The dated “Active priority decision” section below was written **before** this workflow distinction. Read it as the current technical research handoff only, not an instruction to refresh upstream or port every successful historical patch.
+
+
 Original baseline snapshot: 2026-10-09 (r5 clean Vulkan/ROCm baseline verified through 256k; r4 clean 64k replayed on Windows 26H2; Vulkan MoE tile selection UPSTREAMED / RETIRE). Active execution priorities last reviewed 2026-10-11; the new dated section below supersedes older future-work lists.
 
 This document records the current execution order for the Evo-X2 optimization

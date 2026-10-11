@@ -18,5 +18,8 @@
     ".github/workflows"
   ],
   "inference_source_policy": "unchanged from pinned upstream; re-evaluate downstream patches separately",
-  "validation_status": "pending Windows Vulkan/ROCm builds and model/performance gates"
+  "validation_status": "r5 clean Vulkan/ROCm 64k/128k/256k baseline verified; COMMON-001 PLE16 gates passed; VULKAN-002 opt-in Vulkan tests and PP validations passed; see dated reports",
+  "integration_snapshot_status": "not_created",
+  "first_integration_checkpoint": "planned_at_convenient_research_break",
+  "research_refresh_policy": "keep pinned upstream until current research requires change; COMMON-001 always required for PLE16 comparison"
 }
