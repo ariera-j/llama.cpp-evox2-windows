@@ -11,6 +11,21 @@
 
 Source-inspection prerequisite: r5 `llama-memory-hybrid-idx.cpp` already checks null indexer in allocation/next/seq-remove/write/load and restricts `kpool_track` to a present indexer. This is **not enough to claim correctness** without native rollback and output tests.
 
+## Windows native test results: 2026-10-11 (user-run on EVO-X2)
+
+**Both first-stage gates PASS; performance ABBA pending.**
+
+- **Policy:** `test-mtp-indexer-policy.exe` prints **`MTP indexer policy: PASS`** (direct user console report). This covers the fail-closed ratio0 policy with synthetic positive ratio etc; not a real compressed MTP GGUF.
+- **Model/state:** `test-mtp-dense-indexer.exe` prints **`MTP dense indexer: PASS (append, no-op, accept 0/1/2, full/partial restore, A/B logits and hidden)`**. User-provided native-output capture `output.txt` in external chat attachment, **UTF-16 LE**, 10,683 decoded lines, ~1.5 MB. Captures new Windows Vulkan binary under `build-vulkan-r5-mtp-dense\bin\Release`, Radeon 8060S, main Unsloth PLE16 GGUF; executable/DLL SHA not included in this log (take from manifest for TG run).
+- Runtime policy proof: OFF **`requested=0 eligible=1 omitted=0 layer=48 ratio=0 reason=disabled`**; ON **`requested=1 eligible=1 omitted=1 layer=48 ratio=0 reason=dense_single_block`**. Target indexer cache creation remains in the log; draft ON omits the unnecessary indexer. Tests cover no-op, append, accepted=0/1/2 rollback, FULL and PARTIAL restore.
+- All eight same-trace A/B logits and hidden checks show **NMSE=0, max_abs=0**. Rollback/reference numerical tests passed NMSE<=1e-5. **Full-state** size OFF **15,688 bytes**, ON **12,508 bytes** (−3,180 B; −20.3% **saved-state size only**, not a statement about physical VRAM). PARTIAL_ONLY state 28 bytes in both arms.
+- **Not a failure:** diagnostic-only *different batch partition* comparisons show `partition_matched=0` at tails 6 and 7 **in both A and B**, with identical NMSEs for A and B; these are expressly non-gating numerical diagnostics, not an indexer-policy A/B regression. Investigate partition sensitivity separately only if it affects real MTP output/acceptance.
+- PowerShell 5.1 wraps the native stderr backend-load line in `NativeCommandError`; **the native test proceeds to final PASS**. This does not demonstrate an inference failure. Native exit code was not separately included in the capture, but the code prints PASS at the end.
+- `ggml_vulkan: QSA grouped-union = off` in this native model/state gate: it uses **n_ctx=1024**, below the PP QSA union threshold and is not the 128k performance configuration.
+- **Next gate**: same new r5 binary and main/draft pair, short real `llama-cli` smoke then **128k ABBA with MTP ON throughout, `LLAMA_MTP_SKIP_DENSE_INDEXER` OFF→ON→ON→OFF**, fixed output512, temp0 seed1234, union ON/min KV32768, f16 KV, no NOOP-001. Fail fast if benchmark wrapper reports missing/evidence-mismatch and collect condition/result/stdout/stderr/resource logs. Compare TG, accept rates, and generated text, not PP improvement.
+
+**Do not call this r5 TG optimization validated until the paired 128k real-cli A/B is complete.**
+
 ## Windows build and first tests (operator-run; no hardware in this session)
 
 From Windows PowerShell 5.1, in the **new source checkout/branch**; keep the validated `build-vulkan-r5-mtp-compat` untouched. Paths are examples; use your installed LLVM/Vulkan SDK.
