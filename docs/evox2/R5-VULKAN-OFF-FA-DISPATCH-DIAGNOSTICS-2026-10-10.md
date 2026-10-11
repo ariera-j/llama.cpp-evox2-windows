@@ -625,3 +625,30 @@ CSV integrity checks:
 **Conclusion:** the new source **compiles and runs on Windows/Vulkan**, snapshots the existing GPU-generated packed mask-opt metadata, decodes categories correctly enough to pass structural and causal-pattern checks, writes the expected CSV, and completes the benchmark. This validates the short smoke only; it **does not yet validate KV=49152**, guard against all possible synchronization/driver issues at 64k, establish unchanged inference output, or explain the measured ~4.1× corpus effect.
 
 **Next gated step:** remove `GGML_VK_FA_MASK_DIAG_KV` and `GGML_VK_FA_MASK_DIAG_QUERY` overrides (native defaults `49152` / `Qcur-19`). Keep `GGML_VK_FA_MASK_DIAG=1`, `GGML_VK_QSA_UNION=0`; run **Japanese literature first at `-c 65536 -p 61789`**, one repetition, other logging/profiling envs OFF. Check `scope=total` for `KV=49152`, query `Qcur-19`, 64 row entries, 49152 tile classifications (1 plane), `invalid=0`, and benchmark Status OK before running source code with identical settings. Code corpus input path must be verified locally rather than assumed. Once both totals and row distributions are obtained, test whether skip fraction and distribution correlate with 314ms vs 76ms FA-main timings from matched-KV RGP.
+
+
+## 64k Japanese literature FA mask tile histogram: PASSED (2026-10-11 09:19 JST)
+
+User-supplied evidence archive: `20261011-091932-161-bench-vulkan-b11571-ctx65536-8be689902002.zip`. All 7 expected artifacts are present including `fa-mask-tile-diag.csv`, `stderr.log`, `conditions.json` and `result.json`.
+
+- Build: **b11571**, Git commit `0a2a7970c54cc8cb8fc7eb1db4806aa5b6845e1d`, Clang 20.1.8, Vulkan / Radeon 8060S, 96GB manual UMA label. Executable SHA-256: `848176ef72619eaa9582a963c83ac595d3e801778aae3ce93561e2db57241324`.
+- Input: Japanese literature `wagahaiwa_nekodearu_utf8.txt`, SHA-256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`. Prompt `-p 61789`, context `-c 65536`, `-b 2048 -ub 1024 -n 0 -d 0 -r 1`, `--prompt-slice head --no-warmup`, KV f16, QSA union OFF and its stats OFF.
+- Run: **Status=OK, ExitCode=0**; one `pp 61789` sample at **286.031469 tok/s**, native benchmark eval **216.0216853 s** (diagnostic ON; should not be compared to uninstrumented PP baselines as a pure speed metric).
+- Diagnostic stderr: `FA mask tile snapshot queued for Qcur-19 (view) (permuted) KV=49152 bytes=12288`; then `FA mask tile diag wrote ... KV=49152 neg_inf=17538 zero=3 mixed=31611 invalid=0`.
+- The `conditions.json` environment contains `GGML_VK_FA_MASK_DIAG=1` with no KV/query override: the intended **default target `KV=49152 / Qcur-19`** matched.
+
+| Histogram field | Count | Fraction of all tiles |
+| --- | ---: | ---: |
+| `ALL_NEG_INF` (skip-eligible) | **17,538** | **35.681152%** |
+| `ALL_ZERO` | 3 | 0.006104% |
+| `mixed / other` | **31,611** | **64.312744%** |
+| `invalid / reserved` | 0 | 0% |
+| **Total** | **49,152** | **100%** |
+
+CSV consistency: 64 `row` entries (query tiles `N/Br = 1024/16 = 64`) and one `total` entry, only slice 0; **768 KV tiles per query row** (`KV/Bc = 49152/64`), **64×768 = 49152** total classifications. All category row sums agree with the total; `invalid=0`. `n_kv_max=2051` and `Br=16/Bc=64` match the previously RGP-verified `Qcur-19` late-KV FA call.
+
+Row-level `ALL_NEG_INF` variation is substantial: min **151/768 = 19.66%** (row 17); max **382/768 = 49.74%** (row 55); average **274.03/768 = 35.68%**. 3 `ALL_ZERO` tiles occur in query rows 12 (2) and 19 (1), so nearly all non-`ALL_NEG_INF` tiles are classified mixed. These are **mask-opt 2-bit classes**, not a count of GPU instructions or necessarily fully computed tiles. Shader may reject mixed blocks after a finer mask inspection, and mask placement across workgroups may matter.
+
+**Interpretation:** long-KV histogram recording and readback **work on the actual 64k test**. The ~35.68% strictly ALL_NEG_INF category provides a concrete first corpus measurement. **Cannot yet attribute** the earlier 4.1× RGP shader time contrast to mask skipping without the **matching source-code corpus** histogram under identical conditions.
+
+**Next gate:** Run source-code input `llamacpp-inference-code.txt` (use its verified local path) with the same `-p 61789 -c 65536 -b 2048 -ub 1024 -r 1`, same `R5FaMaskTilesVulkan` build, `GGML_VK_FA_MASK_DIAG=1`, QSA union OFF, no KV/query overrides. Require `scope=total`, `KV=49152`, `Qcur-19`, 49152 classification total, and `invalid=0`. Compare both aggregate skip fraction and row-level distribution, without claiming causality solely from percentages. Do not take more RGP captures until needed. Stable r5 unchanged.
