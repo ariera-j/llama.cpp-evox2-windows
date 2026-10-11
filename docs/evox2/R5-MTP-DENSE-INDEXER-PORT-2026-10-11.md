@@ -50,6 +50,16 @@ Source-inspection prerequisite: r5 `llama-memory-hybrid-idx.cpp` already checks 
 - r4 **256k +32.62%** is not directly comparable to current r5 **128k +15.52%** (different context and source). The unoptimized r5 128k OFF-dense mean **23.42** closely matches previous b11560 MTP-ON **23.475**. New ON-dense **27.055** is above previous different-build MTP-OFF **24.14** (illustrative +12.1%), but a **same-binary MTP OFF control is required to establish net MTP ON gain**.
 - Research next gates: consider same new-binary MTP OFF 128k control; extend DENSE-only to 256k ABBA subject to memory/commit safety; ROCm independent tests. **Do not** introduce NOOP-001 or Agention FP4 model-format changes into this A/B. Preserve the tested code on the experiment branch until integration review.
 
+## Console-only CJK display corruption and safe logging fix — 2026-10-11 late evening
+
+**Observed:** The PowerShell console copy of model output showed duplicated/dropped Japanese characters in 32k smoke input preview, 128k A2 (DENSE OFF) and 256k safety (DENSE ON). The **same run's captured `stdout.log` and combined `output.log` generation text were intact**. This refines the earlier "output quality normal" statement: it applies to the **saved raw capture**, not the visibly garbled console playback. Since both DENSE states and multiple context sizes show it, the symptom is **not evidence of MTP-DENSE-001 or 256k inference corruption**. Exact terminal/host defect remains unproven.
+
+**Correction:** `tools/evox2/benchmark/Measure-LlamaCli.ps1` no longer reads the whole `stdout.log` into a single string and executes `[Console]::WriteLine($stdoutText)` after the run. The console prints only the saved `stdout.log` path; inspect it with Notepad or a text editor. This is a **reporting-only change**, with **no modifications** to `Start-Process -RedirectStandardOutput`, `Start-Process -RedirectStandardError`, combined `output.log` construction, parser, timings, MTP/NOOP evidence detection, native DLL/executable hashes, tests or CMake builds.
+
+**Scope:** The same benchmark script is used by Vulkan and ROCm. Pull this branch to update the script; **no recompile is needed**, including if the ROCm binary has already been built. A post-pull `GitCommit` may be newer than `ExecutableCommit` because reporting/docs changed since building, but unchanged runtime binaries must still pass the manifest/digest check; do not misattribute a binary commit from source checkout identity.
+
+**Verification:** Static change review completed. A live PowerShell 5.1 console smoke after the update is still required to confirm that no garbled replay appears. Prior saved 128k DENSE TG +15.52% and accepted/output identity remain valid.
+
 ## Windows build and first tests (operator-run; no hardware in this session)
 
 From Windows PowerShell 5.1, in the **new source checkout/branch**; keep the validated `build-vulkan-r5-mtp-compat` untouched. Paths are examples; use your installed LLVM/Vulkan SDK.

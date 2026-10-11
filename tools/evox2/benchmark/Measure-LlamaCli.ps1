@@ -878,13 +878,13 @@ if ($ResourceMonitor) {
 Write-Host '========================================'
 Write-Host ''
 
+# The captured UTF-8 output is preserved in stdout.log and output.log above.
+# Replaying an entire (potentially very long) Japanese output with
+# [Console]::WriteLine($stdoutText) can corrupt text as rendered by the Windows
+# PowerShell 5.1 console/terminal. It does not reflect the actual model output.
+# Keep the authoritative files intact and print their location instead.
 if (Test-Path -LiteralPath $StdOutPath -PathType Leaf) {
-    $stdoutText = [IO.File]::ReadAllText($StdOutPath, $Utf8NoBom)
-    if (-not [string]::IsNullOrWhiteSpace($stdoutText)) {
-        Write-Host '================ Model stdout ================'
-        [Console]::WriteLine($stdoutText)
-        Write-Host '================================================'
-    }
+    Write-Host "Model stdout saved (console replay disabled): $StdOutPath"
 }
 
 if (-not $AllocationOnly -and -not $EnoughInput) {
