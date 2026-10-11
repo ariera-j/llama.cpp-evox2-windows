@@ -76,6 +76,44 @@ Artifacts supplied by EVO-X2 operator (not stored in Git):
 
 **Decision:** Proceed to **ROCm 128k MTP ON-only DENSE OFF→ON→ON→OFF ABBA** using exactly the above executable and same 126,253-token input used for Vulkan's 128k DENSE ABBA. Confirm the performance changes against the ROCm OFF arm in **this same new binary**, and match acceptance and generated text before attributing the gain to DENSE. **Do not** infer an ROCm 128k gain from the 32k smoke alone.
 
+## ROCm 128k DENSE-001 MTP ON TG ABBA — 2026-10-11 22:52–23:31 JST
+
+**Measured ROCm TG improvement +17.42% under same-binary A/B; unlike Vulkan, output text and draft acceptance are NOT identical across runs.** Treat this as a strong performance signal rather than output-identical causality proof. This finding does **not** mean that DENSE itself caused text differences: each OFF repeat differs from the other OFF repeat, and each ON repeat also differs from the other ON repeat.
+
+Archive: `r5-mtp-dense-rocm-128k-abba-20261011-225255.zip`, **SHA256 `9371f4131eac0f3189374dbccf2f72ccb45b6da08fde6d45a5f78d47327c9edf`**, 38 members, four directories containing condition/result/stdout/stderr/resource logs, archived summary, run-info (ZIP is retained in the user's external artifacts, not in Git).
+
+**Runtime identity and conditions:** Windows EVO-X2 96GB UMA label, ROCm/HIP `ggml-hip.dll` for Radeon8060S/gfx1151, Clang23.0.0, b11566, `llama-cli.exe` SHA256 `b0602a7983459bc6c0f32e662bc391164c1c9b7c9314aaea4acca4238da26b62`, DLL/artifact digest `a13befc7328e321b7a438e71406b3a58c2c34a0f48c0e61f2b8bdc1cbecfc525`, executable/build source `5b6a21557f5d8943527e18bca9809fe74b825f38`. Script checkout at testing `5fd2a4db` (newer reporting script, *not* recompiled source). All 4: `Status=OK`, `ExitCode=0`, `RuntimeArtifactStatus=Verified`, `MtpDenseIndexerEvidence.Status=Verified`.
+
+Same main/draft GGUF as Vulkan, **126,253 prompt tokens**, n_ctx=131072, `nlp-survey-ch3-d15-b1.txt` SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`, output512, `--temp 0 --seed 1234 --ignore-eos`, `--spec-draft-n-max 2 --spec-draft-p-min 0`, f16 target+draft KV, `-b 2048 -ub 1024 -t 4 -tb 4 -ngl 999 -ncmoe 0 --ctx-checkpoints 0t`. No Vulkan-only QSA union environment, and no NOOP-001. Recursive `conditions.json` comparison A1 vs B1 shows only the two representations of `LLAMA_MTP_SKIP_DENSE_INDEXER` switch plus auto-generated timestamps/run IDs/condition IDs. No other meaningful A/B setting difference. OFF policy marker `requested=0 eligible=1 omitted=0 layer=48 ratio=0 reason=disabled`; ON marker `requested=1 eligible=1 omitted=1 layer=48 ratio=0 reason=dense_single_block`.
+
+| Order | Arm | PP tok/s (telemetry) | **TG tok/s** | TG elapsed ms | Draft accepted/generated | Acceptance |
+|---|---|---:|---:|---:|---:|---:|
+| A1 | OFF | 275.45 | 18.40 | 27778.20 | 297/427 | 69.555% |
+| B1 | ON | 274.59 | **21.39** | 23893.34 | 298/424 | 70.283% |
+| B2 | ON | 275.44 | **21.00** | 24338.15 | 297/428 | 69.393% |
+| A2 | OFF | 274.74 | 17.70 | 28863.37 | 299/424 | 70.519% |
+| **OFF mean** | | **275.095** | **18.050** | **28320.785** | 298/425.5 | **70.037%** |
+| **ON mean** | | **275.015** | **21.195** | **24115.745** | 297.5/426 | **69.838%** |
+
+**Measured effect:** TG **+3.145 tok/s / +17.42%**; 512-token generation eval time **−4205.04 ms / −14.85%** (means). Two ONs faster than both OFFs. PP means **−0.03%**, an incidental observation outside current PP investigation.
+
+**Quality/reproducibility caveat:**
+- The four generated Japanese texts (after removing the common prompt-preview and timing banner) have **four distinct SHA256 hashes**; **even A1 and A2 (both OFF) differ**, as do B1/B2 (both ON). Excerpt content is topical and coherent in all four, with no duplicated-character corruption, but no full output-identical assertion is possible. Draft acceptance likewise varies **69.393–70.519%**. Unlike Vulkan's exact-output ABBA, variation means attribution is less strict, even though the ON/OFF timing separation is larger than in-arm variability.
+- Neither temp0 nor fixed seed guarantees bitwise identical ROCm/GPU outputs; **the exact source of ROCm nondeterminism remains uninvestigated**. This observation does **not** establish a DENSE-specific correctness regression; the OFF-OFF repeat also diverges. Model-dependent test earlier passed same-trace OFF/ON hidden/logits NMSE=0, but only short context, not 128k runtime output equivalence.
+- The `stdout.log` buffers contain a known invalid UTF-8 byte in the *prompt-preview* truncation at `3.2� ... (truncated)` on each run; the **actual generated response** portion is valid UTF-8, natural Japanese with **zero U+FFFD**. This is unrelated to the repaired console replay issue and must not be described as corrupt model generation.
+
+**Resource peaks** across each arm (Windows counters from sampled `resources.csv`):
+- GPU Local OFF **60.895 GiB** vs ON **60.832 GiB**, dedicated OFF **58.873 GiB** vs ON **58.810 GiB** (~64 MiB sampled difference); GPU Shared both **2.022 GiB**. Windows GPU Local/UMA accounting is not the exact physical dedicated VRAM allocation.
+- System committed OFF max **100.859 / 100.845 GiB**, ON max **100.818 / 100.776 GiB**, commit limit **127.647 GiB**. No OOM or backend error in supplied logs.
+- End-to-end run durations A1 **530.571s**, B1 **529.146s**, B2 **655.873s**, A2 **538.580s**. These include non-generation time and initialization and must not be treated as TG; B2 longer wall-clock run despite similar PP and TG.
+
+**Cross-backend reference, same input but different compiled backend:**
+- **Vulkan 128k** DENSE OFF **23.420**, ON **27.055**, **+15.52%**, identical acceptance/output in four runs.
+- **ROCm 128k** DENSE OFF **18.050**, ON **21.195**, **+17.42%**, *nonidentical* acceptance/output even in same-arm repeats.
+- Do **not** ascribe the absolute Vulkan/ROCm speed difference solely to DENSE, as backend implementation and runtime environment differ.
+
+**Disposition:** DENSE-001 TG 128k gain is established separately in both backends, with stronger output-equivalence proof for Vulkan. Preserve this as a single-patch measurement, no NOOP-001. The user's next planned step is **nighttime Vulkan 256k DENSE OFF→ON→ON→OFF**; 256k ON solo safety previously completed at TG21.03tok/s, GPU Local94.56GiB and system commit107.9/127.65GiB. Continue resource monitoring and inspect outputs from saved `stdout.log`, not console copies. After overnight run, assess 256k gains; the ROCm temp0 repeatability question may be addressed later in a separate targeted investigation.
+
 ## Windows build and first tests (operator-run; no hardware in this session)
 
 From Windows PowerShell 5.1, in the **new source checkout/branch**; keep the validated `build-vulkan-r5-mtp-compat` untouched. Paths are examples; use your installed LLVM/Vulkan SDK.
