@@ -1,6 +1,6 @@
 # r5 MTP-DENSE-001: isolated source port and Windows validation plan — 2026-10-11
 
-**Source implementation: prepared / NOT Windows-built or benchmark-validated.** This is a one-mechanism experiment, **not an approved integrated-release patch**. Source branch `investigation/r5-mtp-dense-indexer-20261011` starts from `investigation/r5-mtp-dense-compat-20261011` at `5492421d898ceb8a86d7594e26f5086d0371dd2d` (r5 Vulkan/ROCm MTP 64k/128k ABBA documented). The baseline r5 and all existing compiled binaries remain unchanged.
+**Source port completed; native policy/model tests PASS and r5 Vulkan 128k DENSE-only TG ABBA +15.52%.** This is a one-mechanism experiment, **not an approved integrated-release patch**. Source branch `investigation/r5-mtp-dense-indexer-20261011` starts from `investigation/r5-mtp-dense-compat-20261011` at `5492421d898ceb8a86d7594e26f5086d0371dd2d` (r5 Vulkan/ROCm MTP 64k/128k ABBA documented). The baseline r5 and all existing compiled binaries remain unchanged.
 
 ## Exact port scope
 
@@ -13,7 +13,7 @@ Source-inspection prerequisite: r5 `llama-memory-hybrid-idx.cpp` already checks 
 
 ## Windows native test results: 2026-10-11 (user-run on EVO-X2)
 
-**Both first-stage gates PASS; performance ABBA pending.**
+**Both first-stage gates PASS; 128k performance ABBA subsequently completed (see below).**
 
 - **Policy:** `test-mtp-indexer-policy.exe` prints **`MTP indexer policy: PASS`** (direct user console report). This covers the fail-closed ratio0 policy with synthetic positive ratio etc; not a real compressed MTP GGUF.
 - **Model/state:** `test-mtp-dense-indexer.exe` prints **`MTP dense indexer: PASS (append, no-op, accept 0/1/2, full/partial restore, A/B logits and hidden)`**. User-provided native-output capture `output.txt` in external chat attachment, **UTF-16 LE**, 10,683 decoded lines, ~1.5 MB. Captures new Windows Vulkan binary under `build-vulkan-r5-mtp-dense\bin\Release`, Radeon 8060S, main Unsloth PLE16 GGUF; executable/DLL SHA not included in this log (take from manifest for TG run).
@@ -25,6 +25,30 @@ Source-inspection prerequisite: r5 `llama-memory-hybrid-idx.cpp` already checks 
 - **Next gate**: same new r5 binary and main/draft pair, short real `llama-cli` smoke then **128k ABBA with MTP ON throughout, `LLAMA_MTP_SKIP_DENSE_INDEXER` OFF→ON→ON→OFF**, fixed output512, temp0 seed1234, union ON/min KV32768, f16 KV, no NOOP-001. Fail fast if benchmark wrapper reports missing/evidence-mismatch and collect condition/result/stdout/stderr/resource logs. Compare TG, accept rates, and generated text, not PP improvement.
 
 **Do not call this r5 TG optimization validated until the paired 128k real-cli A/B is complete.**
+
+## Windows Vulkan 128k: native DENSE-001 TG ABBA PASS — 2026-10-11
+
+**DENSE-001 independently improves r5 Vulkan 128k MTP ON TG by +15.52% (same binary, ABBA).** This is a scoped TG result; MTP-NOOP-001 was **not** ported or enabled, and MTP ON PP optimization remains deferred.
+
+- User archive `r5-mtp-dense-128k-abba-20261011-204709.zip`, SHA256 `6ddd1d7c78d35077c1454e7417d3925d4ec15ed61df4a2dcd1f0acf21780d18e`; 38 entries with all four `conditions.json`/`result.json`, stdout, stderr, resources and summary. Original ZIP retained outside Git.
+- Runtime: EVO-X2 96GB UMA, Windows Vulkan Radeon8060S, b11566 / executable source `5b6a21557`, Clang20.1.8, executable SHA256 `ffad8bb05be1de30f0fc2be87772bef6f518a8d7af414bd430ba5e508e99df04`, runtime DLL digest `d5504292bfa98f562a84f6d0ffddae3e6ec36ba953ee1115aa64f85e7bf3dbf2`. Four runs **OK/exit0**, `RuntimeArtifactStatus=Verified`.
+- Identical settings in four runs: main Unsloth PLE16 GGUF, MTP Unsloth Q8_0, 128k n_ctx=131072, 126,253 prompt tokens, input SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`, 512 generated tokens, seed1234 temp0 ignore-eos, DraftMax2 p-min0, f16 target+draft K/V, Vulkan QSA union ON/minKV32768. Only substantive `conditions.json` A/B difference: `LLAMA_MTP_SKIP_DENSE_INDEXER=0/1`; IDs/timestamps differ as expected.
+- Evidence in stdout/stderr for every run: OFF `requested=0 eligible=1 omitted=0 layer=48 ratio=0 reason=disabled`, ON `requested=1 eligible=1 omitted=1 layer=48 ratio=0 reason=dense_single_block`. All statuses **Verified**, not just environment requests.
+
+| Run | DENSE | PP tok/s (telemetry) | **TG tok/s** | TG elapsed sec | Accepted/generated |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A1 | OFF | 303.60 | 23.44 | 21.79874 | 295/429 |
+| B1 | ON | 304.38 | **27.07** | 18.87426 | 295/429 |
+| B2 | ON | 303.89 | **27.04** | 18.89466 | 295/429 |
+| A2 | OFF | 303.39 | 23.40 | 21.83934 | 295/429 |
+| **OFF mean** | | **303.495** | **23.420** | **21.81904** | 68.765% |
+| **ON mean** | | **304.135** | **27.055** | **18.88446** | 68.765% |
+
+- **TG +3.635 tok/s / +15.52%; native 512-token generation elapsed −2.93458 sec / −13.45%.** PP +0.21% is incidental telemetry, not a PP-optimization result. On and off runs have tight intra-condition repeatability.
+- **Generated output is identical across all four runs** after replacing only the final dynamic timing banner (`[ Prompt: ... | Generation: ... ]`); resulting normalized stdout SHA256 `557c7c9c991bc0880f56d5768f3cf97a4aaea147521b28503ccc63c223213402` in every run. MTP acceptance all runs **295/429 = 68.765%**. Therefore neither text nor acceptance divergence explains the speedup.
+- Resource monitor peaks: `TargetGPULocal_GiB` OFF **88.674**, ON **88.611**; `TargetGPUDedicated_GiB` OFF **86.820**, ON **86.757**. System committed OFF peaks **101.963/101.929 GiB**, ON **101.878/101.849 GiB**; Windows GPU Local/UMA metrics must not be equated to exact physical VRAM savings. Reduction ~64MiB local, much smaller than relative TG change.
+- r4 **256k +32.62%** is not directly comparable to current r5 **128k +15.52%** (different context and source). The unoptimized r5 128k OFF-dense mean **23.42** closely matches previous b11560 MTP-ON **23.475**. New ON-dense **27.055** is above previous different-build MTP-OFF **24.14** (illustrative +12.1%), but a **same-binary MTP OFF control is required to establish net MTP ON gain**.
+- Research next gates: consider same new-binary MTP OFF 128k control; extend DENSE-only to 256k ABBA subject to memory/commit safety; ROCm independent tests. **Do not** introduce NOOP-001 or Agention FP4 model-format changes into this A/B. Preserve the tested code on the experiment branch until integration review.
 
 ## Windows build and first tests (operator-run; no hardware in this session)
 
@@ -80,4 +104,4 @@ The AgentionAI FP4 MTP draft was previously tested successfully in the dedicated
 - r4 Vulkan 256k, MTP **ON in both arms**: indexer omission OFF vs ON **15.220→20.185 tok/s** (**+32.62% TG**), output/acceptance matched, PP effectively unchanged. [r4 ABBA](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md).
 - r5 current baseline 128k Vulkan MTP ON **23.475 tok/s** vs MTP OFF **24.140 tok/s**, and matched r2 b10813 MTP ON **25.625 tok/s** vs OFF **22.015 tok/s**. These are distinct version-level controls, **not a forecast** for the new toggle. See [r2/r5 TG recheck](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md).
 
-**Validation status at commit:** static source review only; native builds, policy CTest, model/state/rollback tests and model TG A/B pending user-side Windows execution.
+**Validation status as of this update:** Windows policy/model-state tests PASS; r5 Vulkan 128k DENSE-only MTP-ON TG ABBA **+15.52%** validated. 256k and ROCm pending; integrated-release acceptance not decided.
