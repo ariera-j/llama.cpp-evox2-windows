@@ -11,7 +11,7 @@
 | ID / feature | r3 | r4 | r5 | Best established local evidence / next gate |
 | --- | --- | --- | --- | --- |
 | **COMMON-001** — split PLE16 loading | Ported / verified | Ported / verified | **Ported / verified** | Mandatory on every new base before established PLE16 comparison; r5 Original + PLE16 Vulkan/ROCm 64k gates [passed](R5-COMMON001-VALIDATION-2026-10-09.md) |
-| **COMMON-002** — MTP compatibility *umbrella* | Evaluate/native MTP | Native MTP + minimal dense draft guard | Native upstream MTP; local guard **not ported** | Do not assume the Unsloth sidecar or rollback works on r5 until revalidated; separate subpatches below |
+| **COMMON-002** — MTP compatibility *umbrella* | Evaluate/native MTP | Native MTP + minimal dense draft guard | Native upstream MTP; local guard **not ported** | [Recovered r2 64k/128k MTP ON/OFF logs](R2-MTP-LOG-RECOVERY-2026-10-11.md) verify r2 MTP works with Unsloth self-contained Q8_0 and PP/TG trade-off; r5 not yet smoke-tested, likely ratio-zero draft input issue. r4 minimal guard candidate first, before performance ports |
 | **MTP-DENSE-001** — omit dead dense-draft indexer | Not ported | Ported / Vulkan verified | Not ported | r4 Vulkan 256k MTP ON TG **15.220→20.185 (+32.62%)**, matched response/acceptance ([report](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md)); not a total-latency win against MTP OFF |
 | **MTP-NOOP-001** — suppress target QSA no-op invalidation | Not ported | Ported / Vulkan verified; ROCm long output gate open | Not ported | r4 Vulkan 256k TG **20.205→22.830 (+12.99%)** with dense omission already ON ([report](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md)); ROCm 256k attribution/equivalence not established |
 | **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | **Planned for first integrated snapshot preparation**: AgentionAI ROCmFP4-FAST GGUF loader/core + HIP correctness and model inference; not yet implemented or validated, no r5 speed claim |
@@ -69,7 +69,7 @@ The public upstream status labels above are a **dated snapshot**, not claims of 
 
 For each patch/candidate, record **(a)** source category and exact upstream/local commit or PR, **(b)** explicit branch source-presence and effective runtime control, **(c)** correctness gate scope, **(d)** performance table with backend/context/KV/model/source SHA and linked raw evidence, **(e)** dependencies and known incompatibilities, **(f)** first upstream overlap/merge date and first series where tested, **(g)** planned integration decision: eligible / inapplicable / replaced / blocked / insufficient evidence. Do not use a single global “validated” flag across versions. Append a new dated checkpoint rather than mutating the meaning of old data.
 
-**Older sections below are chronological r3/r4/r5 evidence and can contain historical TODO/PENDING text.** The cross-branch matrix above is the status index as of 2026-10-11; [ROADMAP.md](ROADMAP.md) governs the currently chosen research question.
+**Recovered pre-r3 r2 MTP evidence:** [R2-MTP-LOG-RECOVERY-2026-10-11.md](R2-MTP-LOG-RECOVERY-2026-10-11.md) (Vulkan MTP ON/OFF, QSA prototype failure/gates and synthetic rollback; source/metrics strictly historical). **Older sections below are chronological r3/r4/r5 evidence and can contain historical TODO/PENDING text.** The cross-branch matrix above is the status index as of 2026-10-11; [ROADMAP.md](ROADMAP.md) governs the currently chosen research question.
 
 ## Preserved r4 status (2026-10-09)
 
