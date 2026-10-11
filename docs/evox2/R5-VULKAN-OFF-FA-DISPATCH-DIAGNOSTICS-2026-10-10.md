@@ -652,3 +652,47 @@ Row-level `ALL_NEG_INF` variation is substantial: min **151/768 = 19.66%** (row 
 **Interpretation:** long-KV histogram recording and readback **work on the actual 64k test**. The ~35.68% strictly ALL_NEG_INF category provides a concrete first corpus measurement. **Cannot yet attribute** the earlier 4.1× RGP shader time contrast to mask skipping without the **matching source-code corpus** histogram under identical conditions.
 
 **Next gate:** Run source-code input `llamacpp-inference-code.txt` (use its verified local path) with the same `-p 61789 -c 65536 -b 2048 -ub 1024 -r 1`, same `R5FaMaskTilesVulkan` build, `GGML_VK_FA_MASK_DIAG=1`, QSA union OFF, no KV/query overrides. Require `scope=total`, `KV=49152`, `Qcur-19`, 49152 classification total, and `invalid=0`. Compare both aggregate skip fraction and row-level distribution, without claiming causality solely from percentages. Do not take more RGP captures until needed. Stable r5 unchanged.
+
+## Matched 64k FA mask tile histogram: Japanese literature vs llama.cpp source code (2026-10-11 09:27 JST)
+
+**Major result: the hypothesized content-dependent early-skip classification difference is confirmed.** This follows the prior matched late-KV RGP evidence: `Qcur-19 KV=49152`, same `flash_attn_f32_f16_aligned_cm1` GPU pipeline and dispatch shape, with repeatable **~311–314 ms** literature versus **~75.8–76.0 ms** code FA-main latency in separate RGP captures. The mask snapshot is an independent run, **not simultaneous with RGP**.
+
+**Raw user archives:**
+- Literature: `20261011-091932-161-bench-vulkan-b11571-ctx65536-8be689902002.zip`
+- Code: `20261011-092702-831-bench-vulkan-b11571-ctx65536-8e6899f2c8b5.zip`
+
+Both archives contain `fa-mask-tile-diag.csv`, `conditions.json`, `result.json`, `stderr.log`, `llama-bench.json`, `summary.csv`, `output.log`. Both are **Status=OK / ExitCode=0 / BackendDetected=Vulkan**, exactly one 64k PP test (61789 input tokens; `-c 65536 -b 2048 -ub 1024 -r 1 -n 0 -d 0 --prompt-slice head --no-warmup`), same `R5FaMaskTilesVulkan` executable **b11571**, commit `0a2a7970c`, SHA-256 `848176ef72619eaa9582a963c83ac595d3e801778aae3ce93561e2db57241324`, QSA union OFF, other diagnostic flags off, `GGML_VK_FA_MASK_DIAG=1`. Inputs verified by SHA-256: literature `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`, code `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`.
+
+| FA mask 2-bit category | Japanese literature | Code | Code − literature |
+| --- | ---: | ---: | ---: |
+| `ALL_NEG_INF` / eligible full-tile skips | **17,538 (35.6812%)** | **36,881 (75.0346%)** | **+19,343 tiles / +39.35 percentage points** |
+| `ALL_ZERO` | 3 (0.0061%) | 92 (0.1872%) | +89 |
+| Mixed / other | 31,611 (64.3127%) | 12,179 (24.7782%) | −19,432 |
+| Invalid | 0 | 0 | 0 |
+| **Total** | **49,152** | **49,152** | 0 |
+| Non-`ALL_NEG_INF` tiles (potential work) | **31,614** | **12,271** | **−19,343** |
+
+**CSV integrity:** 65 lines each (64 row entries + one total), `slice=0`, each row 768 KV tiles and `64×768=49152` total, invalid code 0. Both snapshots report `KV=49152 N=1024 Br=16 Bc=64 n_kv_max=2051 q=Qcur-19 (view) (permuted)`; both snapshotted 12,288 bytes. All row totals and category subtotals agree with each CSV's total row. Stderr explicitly confirms the one-shot GPU snapshot and completed CSV emission.
+
+**Crucially the difference holds in ALL 64 query-tile rows**, not just a few outliers: code has more `ALL_NEG_INF` tiles in **64/64** matching rows. Row minima/maxima:
+- Literature: 151/768 (19.66%, row 17) through 382/768 (49.74%, row 55), median 279.
+- Code: 495/768 (64.45%, row 48) through 640/768 (83.33%, row 16), median 577.
+- The code-minus-literature skip advantage ranges **+184 through +460** tiles per query row. The largest is row 17: 611 vs 151.
+- Grouped mean `ALL_NEG_INF` tiles per query row, ordered by 8-row bins:
+
+| Rows | Literature | Code |
+| --- | ---: | ---: |
+| 0–7 | 251.625 | 590.875 |
+| 8–15 | 252.250 | 602.125 |
+| 16–23 | 239.125 | 612.500 |
+| 24–31 | 305.125 | 602.000 |
+| 32–39 | 279.625 | 556.125 |
+| 40–47 | 274.000 | 563.000 |
+| 48–55 | 297.750 | 542.125 |
+| 56–63 | 292.750 | 541.375 |
+
+**Whole-run context:** Diagnostic-enabled PP is 286.031469 tok/s (literature) vs 330.868894 tok/s (code), ~**15.68% faster** for code in tokens/s, consistent with earlier content-dependent Vulkan OFF whole-run measurements. Since diagnostics are enabled, do not use these as uninstrumented baselines.
+
+**Mechanism and limitations:** `flash_attn_mask_opt.comp` encodes `ALL_NEG_INF=1`; `flash_attn_cm1.comp` checks this code to `continue` before normal K/V processing for completely masked-out tiles. Code's extra **19,343 ALL_NEG_INF** codes therefore provide a concrete, measured route to less FA work at identical dispatch dimensions. This strongly supports mask-driven tile elimination as a major contributor. But the non-skippable count ratio is **31,614 / 12,271 = 2.576×**, versus the observed single-node RGP FA-main time ratio ~4.1×; these quantities need not scale linearly. Tile placement, per-workgroup worst-case behavior, additional shader-side tests, wave divergence and memory traffic may contribute. **Do not claim full ~4.1× causality from the histogram alone**, and note that mask snapshot and prior RGP sample were separate executions.
+
+**Decision:** initial hypothesis is confirmed at the level of actual mask tile classes: source-code input has ~75% skippable FA tiles at 48k, vs ~36% for Japanese literature. No further generic RGP profiling is needed to establish the *existence* of the difference. For the next isolated causal step, consider an optional **FA kernel workload counter** or a controlled test of skip-path distribution, not an optimization patch yet. Keep r5 stable branch and the benchmark comparison baselines unchanged. Histograms by query row, including their broad differential, are the key result for Qiita/report reproduction.
