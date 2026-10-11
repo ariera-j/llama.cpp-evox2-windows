@@ -14,17 +14,25 @@
 | **COMMON-002** — MTP compatibility *umbrella* | Evaluate/native MTP | Native MTP + minimal dense draft guard | Native upstream MTP; local guard **not ported** | Do not assume the Unsloth sidecar or rollback works on r5 until revalidated; separate subpatches below |
 | **MTP-DENSE-001** — omit dead dense-draft indexer | Not ported | Ported / Vulkan verified | Not ported | r4 Vulkan 256k MTP ON TG **15.220→20.185 (+32.62%)**, matched response/acceptance ([report](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md)); not a total-latency win against MTP OFF |
 | **MTP-NOOP-001** — suppress target QSA no-op invalidation | Not ported | Ported / Vulkan verified; ROCm long output gate open | Not ported | r4 Vulkan 256k TG **20.205→22.830 (+12.99%)** with dense omission already ON ([report](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md)); ROCm 256k attribution/equivalence not established |
-| **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | Format/model compatibility candidate, no established local r5 speed claim |
+| **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | **Planned for first integrated snapshot preparation**: AgentionAI ROCmFP4-FAST GGUF loader/core + HIP correctness and model inference; not yet implemented or validated, no r5 speed claim |
 | **COMMON-004** — incremental pooled-key cache | Ported / verified | Upstream functionally covered; old patch not ported | Upstream functionally covered; old patch not ported | Major pooled-key path revised via [#29751](https://github.com/ggml-org/llama.cpp/pull/29751), graph stability via [#29958](https://github.com/ggml-org/llama.cpp/pull/29958). Avoid treating this as source-identical port |
 | **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | Not ported | r3 ROCm 256k TG **11.68→17.37 (+48.7%)**, PP approximately unchanged ([ABBA and RGP](COMMON005-ROCM-VALIDATION-2026-10-02.md)); r5 re-port only when studying ROCm decode/integration |
 | **COMMON-006** — block-domain QSA select | Proposed; not ported | Upstream-covered | Upstream-covered | Direction implemented in [#29751](https://github.com/ggml-org/llama.cpp/pull/29751); retain semantic checks, not a standing port |
-| **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | Not ported | Dependent on COMMON-003/model need |
+| **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | Not ported | **Conditional** on target model/Vulkan path during first integration; separate compatibility and backend decision from COMMON-003 |
 | **VULKAN-002** — grouped-union prefill QSA | Not ported (r2 donor existed) | **Ported / verified** | **Ported / verified, opt-in** | r5 PLE16 64k **+25.61%**, 128k **+71.27%**, 256k **+105.54% PP** with f16 K/V; native Vulkan FA OFF/ON 18/18, real runs 12/12 ([report](R5-VULKAN002-VALIDATION-2026-10-09.md)); model-level quality/default ON not certified |
 | **VULKAN-MOE-001** — legacy per-expert tile selection | Not ported | Ported / verified | **Upstream-covered; no port** | r4 64k PP **+8.25%**; [#29936](https://github.com/ggml-org/llama.cpp/pull/29936), merged **2026-10-05**, restored selector semantics on r5 ([audit](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md)) |
 | **VULKAN-GR-001** — GET_ROWS 128x4 experiment | Not ported | Ported experiment / **no useful measured gain** | Not ported | r4 [profile](R4-GET-ROWS-128X4-AB-2026-10-03.md); do not carry by default |
 | **MTP-QSA prototype** | Historical investigation | Not part of r4 normal stack | Not ported | Revisit only on a specific upstream-native MTP gap, not a standing integration candidate |
 
 **Historical r3 names:** COMMON-002 is an umbrella, not a single always-portable patch. `MTP-DENSE-001`, `MTP-NOOP-001`, `VULKAN-MOE-001` and `VULKAN-GR-001` are new **registry aliases**, not claims that earlier commits used those identifiers. Exact source commits, controls and test conditions remain in linked dated records.
+
+### Planned first integration and later non-patch experiments
+
+- **First integration preparation:** target **COMMON-003 ROCmFP4-FAST support** (initial target AgentionAI ROCmFP4 model) with format/core/HIP build+load+correctness gates; no source change or working model claim yet. Evaluate **VULKAN-001** only if the selected Vulkan model requires it. Compare verified speed patches against newer chosen upstream; never substitute this future integration for current r5 research.
+- **After an accepted integrated tag:** try **Strata** as a distinct runtime on Evo-X2 (planned, not started). It is not a downstream patch and will not be bundled into the llama.cpp integrated snapshot.
+- **Separate accuracy study (later):** reuse Qwen3.5 long-context prompt/question fixtures as the test set to compare **Qwen3.8-Flash-Next** quantizations; distinguish the model under test from the corpus origin, fix scoring/engine/decoding factors, and record correctness independently of PP/TG. No measurements yet.
+
+See [ROADMAP.md](ROADMAP.md) and [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md).
 
 ### Candidates and upstream watch (no local speed claim unless stated)
 

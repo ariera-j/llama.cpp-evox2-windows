@@ -1,5 +1,16 @@
 # Evo-X2 optimization roadmap
 
+## Planned follow-on program — 2026-10-11 (research first; no release yet)
+
+The user has chosen the following **order of intentions**, not fixed deadlines or a requirement to interrupt the active research branch:
+
+1. **Continue bounded r5 ROCm/HIP Flash Attention source/runtime research now.** Preserve the pinned upstream and validated baseline. Decide after this gate whether to study COMMON-005 ROCm decode or another narrowly justified question. No forced upstream refresh.
+2. **At a convenient future research boundary, prepare the first integrated snapshot.** Re-evaluate the previously verified beneficial patches on a deliberately selected newer upstream, with COMMON-001 mandatory for PLE16 comparisons. **Add ROCmFP4 compatibility work to the first integration preparation**, not just a passive backlog item: audit the AgentionAI ROCmFP4-FAST GGUF format, COMMON-003 loader/core support and actual Windows HIP kernels; separately decide whether VULKAN-001 is needed. Validate load, short inference and correctness before any optimization claims; then test the combined source.
+3. **Only after an integrated snapshot has passed and been tagged**, try [Niko1221/Strata](https://github.com/Niko1221/Strata) as a separate experimental runtime/engine. Do not fold Strata into the llama.cpp integration acceptance test or claim it has been tested on Windows Evo-X2 yet.
+4. **Later research: quantization-dependent answer accuracy of Qwen3.8-Flash-Next.** Reuse the long-context question/prompt fixtures created for the earlier **Qwen3.5** testing, but keep the prompt/data provenance separate from the **Qwen3.8-Flash-Next** model under comparison. Compare quantizations of the **same Qwen3.8-Flash-Next model**, scoring predefined answer keys; hold model revision, prompt tokens/slices, context, decoding parameters and engine fixed where possible. If comparing Strata/llama.cpp, report engine as a distinct factor, not quantization alone. No accuracy run or result has been produced for this question yet.
+
+**Release gate:** ROCmFP4 is an intended *first-snapshot prerequisite* rather than an already-verified patch. If its build/correctness cannot be completed in the integration session, keep the snapshot **candidate/incomplete** or explicitly re-decide scope; do not label an FP4-less build as having met this plan. The first integrated branch, tag, binary and tests are **not created yet**. Reference [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md) and [PATCHES.md](PATCHES.md).
+
 ## Research/refresh policy update — 2026-10-11
 
 The goal is **personal optimization research and repeatable experiments**, not continually delivering the fastest current end-user build. The pinned r5 branch and the technical ROCm FA investigation queue below remain valid; upstream changes alone do **not** mandate an immediate r6 refresh.

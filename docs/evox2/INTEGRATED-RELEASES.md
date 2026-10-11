@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 JST: PLANNED / NOT CREATED.**
 
-No integrated release branch, validated all-patches snapshot, final binary, release tag or integrated benchmark has been produced under this policy yet. Do not infer a release from the existence of the r3/r4/r5 research branches. The first integration checkpoint is intended for a convenient upcoming research break; the approximate 4–6 week cadence is a guideline, not a booked date.
+No integrated release branch, validated all-patches snapshot, final binary, release tag or integrated benchmark has been produced under this policy yet. Do not infer a release from the existence of the r3/r4/r5 research branches. The first integration checkpoint is intended for a convenient upcoming research break; the approximate 4–6 week cadence is a guideline, not a booked date. **The first checkpoint is intended to include a separate ROCmFP4 compatibility port and correctness gate (COMMON-003) before the integrated release is accepted.** VULKAN-001 remains conditional on the target model/backend.
 
 See [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md) for selection, upstream pinning, execution gates and acceptance policy; see [PATCHES.md](PATCHES.md) for candidates and tested historical improvements.
 
@@ -10,9 +10,15 @@ See [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md) for selection, upstream pinni
 
 | Snapshot | State | Upstream SHA | Integration ref/tag | Notes |
 | --- | --- | --- | --- | --- |
-| First integrated checkpoint (date not decided) | **Planned; not started** | Not selected | None | Will re-evaluate all verified beneficial patches; COMMON-001 is mandatory for PLE16 |
+| First integrated checkpoint (date not decided) | **Planned; not started** | Not selected | None | Will re-evaluate verified beneficial patches; COMMON-001 mandatory for PLE16; **ROCmFP4 (COMMON-003) compatibility/correctness planned before acceptance**, VULKAN-001 conditional |
 
 Only append an **accepted** row after passing the combined integration gate. If an attempt stalls, record it distinctly as `candidate / incomplete`; never label it the latest validated build.
+
+## Follow-ups after the first accepted snapshot
+
+After the integrated stack passes and is tagged, trial **Strata on Evo-X2** independently of the llama.cpp integration gate. This is planned, **not yet attempted**; record Strata version, operating system/backend and required model conversions if successful.
+
+A separate later study will reuse the long-context test prompts originally generated for Qwen3.5, testing the **answer-key accuracy of different Qwen3.8-Flash-Next quantizations**, not automatically treating Qwen3.5 and Qwen3.8 as the same model. Hold prompt tokens, scoring rules, model revision and decoding settings constant; separate engine effects if Strata is included. Neither quantization accuracy nor Strata feasibility has been established.
 
 ## Template for an eventual checkpoint
 
