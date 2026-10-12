@@ -1,4 +1,5 @@
 #include "speculative.h"
+#include "mtp-pp-trace.h"
 
 #include "common.h"
 #include "ggml.h"
@@ -1387,7 +1388,10 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
     }
 };
 
+static thread_local int mtp_pp_process_phase = 0; // explicit server phase, not inferred from batch size
+
 struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+    mtp_pp_trace::recorder pp_trace{"draft"};
     common_params_speculative_draft params; // reuses the draft-model params slot (ctx_tgt/ctx_dft)
 
     common_batch batch;
@@ -1547,6 +1551,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
 
         const int32_t n_tokens = batch_in.size();
+        const bool tracing = mtp_pp_trace::mode() != 0 && !is_mem_shared;
+        const int64_t trace_start = tracing ? mtp_pp_trace::now_us() : 0;
+        int64_t hidden_get_us = 0;
+        int64_t prepare_us = 0;
+        int64_t draft_process_us = 0;
 
         // remember the first and last batch index for each sequence
         std::fill(i_batch_beg.begin(), i_batch_beg.end(), -1);
@@ -1578,7 +1587,12 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
             //                                                       ^--- this is a problem
             // TODO:this is generally true, but would be nice to assert it
+            const int64_t t_hidden = tracing ? mtp_pp_trace::now_us() : 0;
             const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
+            if (tracing) {
+                hidden_get_us = mtp_pp_trace::now_us() - t_hidden;
+            }
+            const int64_t t_prepare = tracing ? mtp_pp_trace::now_us() : 0;
 
             for (int k = 0; k < n_tokens; ++k) {
                 const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
@@ -1592,8 +1606,12 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 batch.set_embd(idx, { h_row, 1, (size_t) n_embd });
             }
 
+            if (tracing) {
+                prepare_us = mtp_pp_trace::now_us() - t_prepare;
+            }
             auto * mem_dft = llama_get_memory(ctx_dft);
 
+            const int64_t t_draft = tracing ? mtp_pp_trace::now_us() : 0;
             bool ok = true;
             for (int head = 0; head < n_mtp_layers; ++head) {
                 if (chain_heads) {
@@ -1619,11 +1637,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             if (chain_heads) {
                 llama_set_nextn_layer_offset(ctx_dft, 0); // restore default for non-draft decodes
             }
+            if (tracing) {
+                draft_process_us = mtp_pp_trace::now_us() - t_draft;
+            }
             if (!ok) {
                 return false;
             }
         }
 
+        const int64_t t_verify = tracing ? mtp_pp_trace::now_us() : 0;
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             if (i_batch_end[seq_id] < 0) {
                 continue;
@@ -1640,6 +1662,25 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             std::memcpy(pending_h[seq_id].data(),
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
+        }
+
+        if (tracing) {
+            const int64_t finish = mtp_pp_trace::now_us();
+            int64_t end_pos = 0;
+            for (int32_t i = 0; i < n_tokens; ++i) {
+                end_pos = std::max<int64_t>(end_pos, batch_in.tokens[i].pos[0]);
+            }
+            mtp_pp_trace::sample observation;
+            observation.role           = "draft";
+            observation.phase          = mtp_pp_process_phase;
+            observation.end_pos        = end_pos;
+            observation.n_tokens       = n_tokens;
+            observation.total_us       = finish - trace_start;
+            observation.hidden_get_us  = hidden_get_us;
+            observation.prepare_us     = prepare_us;
+            observation.draft_us       = draft_process_us;
+            observation.verify_copy_us = finish - t_verify;
+            pp_trace.add(observation);
         }
 
         return true;
@@ -2854,16 +2895,20 @@ void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, co
     }
 }
 
-bool common_speculative_process(common_speculative * spec, const common_batch & batch) {
+bool common_speculative_process(common_speculative * spec, const common_batch & batch, int trace_phase) {
     bool result = true;
 
     if (spec == nullptr) {
         return result;
     }
 
+    // Explicit phase only affects diagnostic classification; no inference behavior change.
+    const int saved_phase = mtp_pp_process_phase;
+    mtp_pp_process_phase = trace_phase;
     for (auto & impl : spec->impls) {
         result = result && impl->process(batch);
     }
+    mtp_pp_process_phase = saved_phase;
 
     return result;
 }
