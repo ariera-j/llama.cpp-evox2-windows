@@ -360,6 +360,11 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
     llama_build_and_test(test-alloc.cpp)
 endif()
 
+# Target QSA no-op policy is model-independent and belongs to CTest.
+# The full target/state test requires a real GGUF and is invoked explicitly.
+llama_build_and_test(test-qsa-noop-policy.cpp)
+llama_build(test-qsa-noop-invalidation.cpp)
+
 llama_build(test-export-graph-ops.cpp)
 if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)

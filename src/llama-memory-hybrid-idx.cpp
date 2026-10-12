@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <type_traits>
 
 #include "llama-impl.h"
@@ -42,7 +44,8 @@ llama_memory_hybrid_idx::llama_memory_hybrid_idx(
                             /* layer filters */
     const layer_filter_cb & filter_attn,
     const layer_filter_cb & filter_recr,
-    const layer_filter_cb & filter_idx) :
+    const layer_filter_cb & filter_idx,
+                     bool   target_context) :
     llama_memory_hybrid(
         model,
         type_k, type_v, v_trans, kv_size, n_pad, n_swa, swa_type,
@@ -71,7 +74,20 @@ llama_memory_hybrid_idx::llama_memory_hybrid_idx(
             model, hparams_idx, type_k, type_v, v_trans, offload, unified,
             kv_size, n_seq_max, n_pad, n_swa, swa_type,
             nullptr, filter_idx, nullptr, nullptr, "idx_");
-    }()) {}
+    }()) {
+    const char * setting = std::getenv("LLAMA_QSA_SKIP_NOOP_INVALIDATION");
+    const uint32_t streams = mem_idx ? mem_idx->get_n_stream() : 0;
+    qsa_noop = llama_qsa_noop::decide(setting, model.arch == LLM_ARCH_QWEN4EXP,
+        target_context, bool(mem_idx), get_kpool_by_order(), get_kpool(),
+        n_seq_max, streams, n_swa != 0 || swa_type != LLAMA_SWA_TYPE_NONE);
+    const char * trace_setting = std::getenv("LLAMA_QSA_NOOP_TRACE");
+    qsa_noop_trace = trace_setting && std::strcmp(trace_setting, "1") == 0;
+    if (setting) {
+        LLAMA_LOG_INFO("%s: QSA no-op invalidation: requested=%d eligible=%d enabled=%d target=%d kpool=%u streams=%u seq_max=%u reason=%s\n",
+            __func__, int(qsa_noop.requested), int(qsa_noop.eligible), int(qsa_noop.enabled),
+            int(target_context), get_kpool(), streams, n_seq_max, qsa_noop.reason);
+    }
+}
 
 llama_memory_context_ptr llama_memory_hybrid_idx::init_batch(llama_batch_allocr & balloc, uint32_t n_ubatch, bool embd_all) {
     // note: repeats llama_memory_hybrid::init_batch, as the indexer needs the attention slot infos that the base context hides
@@ -190,8 +206,28 @@ bool llama_memory_hybrid_idx::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_po
 
     if (mem_idx) {
         const llama_pos stale = mem_idx_stale_pos(seq_id, p0);
+
+        // Exactly one configured sequence and one indexer stream are required.
+        // No other sequence can share these cells. r5 has no kpool_layout_shared();
+        // preserve its newer pool layout/copy/restore logic without backport.
+        const bool inspected = llama_qsa_noop::inspect(qsa_noop, seq_id, false, qsa_noop_trace);
+        const size_t before = inspected ? mem_idx->get_cells(0).seq_pos_get(0).size() : 0;
+        const llama_pos stale_before = inspected ? mem_idx_stale[0] : POS_CLEAN;
+
         mem_idx->seq_rm(seq_id, p0, p1);
-        mem_idx_stale_set(seq_id, stale);
+
+        const size_t after = inspected ? mem_idx->get_cells(0).seq_pos_get(0).size() : 0;
+        const bool suppressed = llama_qsa_noop::suppress(qsa_noop, inspected, before, after);
+        if (!suppressed) {
+            mem_idx_stale_set(seq_id, stale);
+        }
+
+        // Debug evidence is explicitly opt-in and never used for normal ABBA.
+        if (qsa_noop_trace && inspected) {
+            LLAMA_LOG_INFO("%s: QSA no-op trim: enabled=%d inspected=1 before=%zu after=%zu stale_before=%lld stale_after=%lld suppressed=%d marked=%d\n",
+                __func__, int(qsa_noop.enabled), before, after, (long long) stale_before,
+                (long long) mem_idx_stale[0], int(suppressed), int(!suppressed));
+        }
     }
 
     return get_mem_attn()->seq_rm(seq_id, p0, p1);
