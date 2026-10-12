@@ -17,6 +17,8 @@
 
 **Reading rule:** a source patch in an investigation branch does *not* become a stable feature just because its report is copied to the stable documentation directory. The main matrix below retains its stable-only meanings; individual older dated checkpoints below are historical. Exact runtime binary SHA/artifact digest and raw ZIP identifiers are in the linked reports. See [README](README.md) for the docs synchronization policy.
 
+**2026-10-13 external-review triage (no source port):** A pre-update DeepSeek review suggested (1) draft catch-up time **by KV depth**, (2) check **draft-specific f16 FA versus fallback**, (3) possible **draft KV-only prefill/query pruning**, and (4) optional hidden-state handoff and memory-budget checks. Adopt **(1) and (2) as measurement gates**, with (4) conditional on traced costs; retain (3) as a *correctness-gated hypothesis only*, **not an implemented feature or guaranteed O(N) optimization**. r4 3-point quadratic fits are descriptive and do **not** demonstrate that draft FA explains 82%/68% of PP time. Existing r4 diagnostic plan and script are carried over but the r4 source helper `ggml-mtp-diag.h` is absent from r5; `LLAMA_MTP_DIAG=wall` will not produce sidecars by itself. Original r5 b11560 Vulkan/ROCm ABBA and r2 MTP-QSA **NO-PORT** decision unchanged. [Full review disposition](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md#independent-deepseek-review-triage--2026-10-13-incorporated-with-qualifications). No stable inference source changed.
+
 ### Downstream feature/optimization matrix
 
 | ID / feature | r3 | r4 | r5 | Best established local evidence / next gate |
