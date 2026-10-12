@@ -1,6 +1,6 @@
 # r5 MTP-NOOP-001 — source implementation and Windows validation handoff (2026-10-12)
 
-**Status: SOURCE IMPLEMENTED / NOT YET BUILT OR VALIDATED ON EVO-X2.** This is an isolated candidate, not a merged, verified, or integrated release. No real model tests, backend build, benchmark, or Windows artifact identity have been run by the assistant. **Do not claim throughput gains** until paired A/B runs pass.
+**Status: Vulkan native and real-MTP correctness + 64k/128k/256k same-binary ABBA COMPLETE (2026-10-12, user-run Evo-X2).** All three contexts passed 4/4 runs with identical generated stdout after removing only CLI timing lines and matching draft acceptance within each context. TG gains: **+2.10%, +6.73%, +14.40%** at 64k/128k/256k. **ROCm NOOP validation NOT YET RUN; PP-side performance investigation NOT YET STARTED.** This remains an isolated branch, not a stable merge or release. Detailed evidence: [Vulkan validation](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md).
 
 ## Exact source identity and branch boundaries
 
@@ -143,3 +143,20 @@ Add optional ROCm 64k/256k jobs only after review. For ROCm, **temp=0 nondetermi
 8. NOOP default remains OFF. No r5 stable merge or integrated release promotion without separate user decision.
 
 See [implementation plan](R5-MTP-NOOP-IMPLEMENTATION-PLAN-2026-10-12.md), [DENSE-only closure](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md), [r4 NOOP validation](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md).
+
+
+## Vulkan validation closure — 2026-10-12
+
+The user ran SourceOnly (after fixing the `$kind:` parsing issue and ROCm plan build-key mix-up in `b84d18870`), completed the Vulkan build, passed native model/policy and short real-MTP tests, and measured 12 normal Vulkan runs across three contexts. **The validated runtime was built at source `b84d18870` (embedded `b11577-b84d18870`)**; subsequent documentation commits are not a new compiled baseline.
+
+| Depth | Input | PP OFF/ON (tok/s) | TG OFF/ON (tok/s) | TG delta | Acceptance (all four) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 64k | 61,789 | 335.865 / 335.230 | 31.385 / 32.045 | **+2.10%** | 295/430 |
+| 128k | 126,253 | 303.645 / 303.365 | 26.960 / 28.775 | **+6.73%** | 295/429 |
+| 256k | 255,181 | 266.035 / 265.690 | 21.075 / 24.110 | **+14.40%** | 300/421 |
+
+All 12 executions returned `OK` / exit0, evidence Verified for DENSE draft indexer omission and NOOP target policy, runtime identity Verified, same binary SHA and DLL digest, and generated text identical **within each depth** after removing printed speed lines. ABBA A1/B1/B2/A2; MTP ON, DENSE=1, NOOP=0/1/1/0; no performance diagnostics. As PP dominates fresh long-prompt elapsed time, total PP+TG time saved is negligible (~0.00%, ~0.19%, ~0.18% at 64k,128k,256k). This is a **TG**, not a full-request latency, improvement.
+
+The [full validation record](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md) contains per-run timing, startup evidence, exact runtime hashes, native mechanism proof, ZIP names and SHA256, and caveats. Retain the raw ZIP files outside Git; no large logs were committed.
+
+**Next active steps:** (1) separate Windows ROCm build of this exact source candidate, (2) native policy/model/state checks, (3) ROCm short A/B and same-binary 128k ABBA before optional 64k/256k; interpret ROCm text/acceptance nondeterminism against same-setting repeat controls, (4) **only after ROCm NOOP concludes**, open a separate PP-overhead research plan/branch; keep NOOP source untouched and distinguish MTP ON/OFF PP from speculative decode TG. No integrated release promotion is authorized.

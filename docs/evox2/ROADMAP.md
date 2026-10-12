@@ -1,5 +1,13 @@
 # Evo-X2 optimization roadmap
 
+## Current execution order — 2026-10-12 evening (supersedes earlier NEXT sections)
+
+1. **MTP-NOOP-001 Vulkan VALIDATED on isolated r5 branch:** native policy/model/rollback and short real-MTP gates passed on Evo-X2; normal same-binary A1/B1/B2/A2 64k/128k/256k **12/12 OK**, MTP ON/DENSE ON throughout, equal text and acceptance per depth. NOOP TG OFF→ON **31.385→32.045 (+2.10%)**, **26.960→28.775 (+6.73%)**, **21.075→24.110 (+14.40%)** tok/s. PP essentially unchanged, PP+TG total impact tiny. Source/runtime `b84d18870` / `b11577`. Details: [r5 NOOP Vulkan validation](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md).
+2. **NOW: MTP-NOOP-001 ROCm verification.** Build separate ROCm binaries from the NOOP investigation branch; run native policy/model/state/rollback before short real-MTP and 128k same-binary A/B; proceed to 64k/256k only if gates pass. Hold `LLAMA_MTP_SKIP_DENSE_INDEXER=1` and MTP ON, toggle only NOOP. Temp0 ROCm results were nondeterministic within identical conditions during DENSE-001, so correctness and isolated TG attribution need separate caution; do not import Vulkan equality to ROCm.
+3. **THEN: MTP ON PP overhead investigation.** After ROCm NOOP closes or an explicit blocker is documented, plan a **separate** branch/workstream targeting MTP ON prompt-processing costs rather than modifying verified TG optimization mid-test. Compare PP ON/OFF with identical real inputs and model/runtime, examine target/draft prefill and speculative bookkeeping, and profile before changing kernels or merging patches. Measure 64k/128k first; decide 256k and backend priority based on evidence.
+4. **No stable merge/refresh or release promotion.** Preserve `r5/upstream-refresh-20261009`, validated DENSE branch and NOOP candidate binaries. Earlier roadmap sections below are historical and do not override this sequence.
+
+
 ## Current measurement closure and next research — 2026-10-12 (supersedes the 2026-10-11 active queue)
 
 - **MTP-DENSE-001 isolated TG validation COMPLETE:** b11566, same-binary MTP ON DENSE OFF/ON ABBA at 64k/128k/256k, both Vulkan and ROCm **24/24** successful runs. TG gains Vulkan **+6.81%, +15.52%, +36.22%**; ROCm **+7.72%, +17.42%, +23.48%**. Vulkan outputs/acceptance are identical in each four-run matrix; ROCm temp0 outputs/acceptance vary even within same-setting repeats. Detailed hashes, controls and caveats: [r5 DENSE-001 validation](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md).
