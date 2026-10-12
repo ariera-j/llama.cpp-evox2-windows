@@ -35,12 +35,6 @@ python -m unittest discover -s .\tools\evox2\tests -p 'test_mtp_pp_trace.py' -v
   -Parallel 4
 ```
 
-**The sample uses ```powershell** and then replace placeholder ` with real PowerShell backticks (line continuation); full ready-to-paste single-line build command is shown below:
-
-```powershell
-.\tools\evox2\build\Build-Vulkan.ps1 -BuildDir .\build-vulkan-mtp-pp-trace -VulkanSdk C:\VulkanSDK\1.4.357.0 -LlvmBin 'C:\Program Files\LLVM\bin' -Parallel 4
-```
-
 The current branch has no Windows build validation yet. Check compiler errors before attempting any long run. After a successful build check `llama-cli.exe --version` and `evox2-build.json`, source commit and executable/DLL digest (do not assume the build wrapper's default path matches the new build).
 
 ## Windows gate B: short OFF/ON and 64k OFF/ON
@@ -67,12 +61,6 @@ python .\tools\evox2\benchmark\summarize_mtp_pp_trace.py `
   --log 'C:\path\to\on-detail\stderr.log' `
   --outdir 'C:\path\to\on-detail\mtp-pp-analysis' `
   --require-prompt-draft --require-detail
-```
-
-For an exact copy-paste one-line version:
-
-```powershell
-python .\tools\evox2\benchmark\summarize_mtp_pp_trace.py --log 'C:\path\to\on-detail\stderr.log' --outdir 'C:\path\to\on-detail\mtp-pp-analysis' --require-prompt-draft --require-detail
 ```
 
 For the OFF run omit `--require-prompt-draft`. Confirm: (1) summary records from **both** server target and non-shared draft on ON; (2) the prompt-binned token totals agree between target and draft for 64k; (3) CSV detail rows plotted with `end_pos` on X, `draft_us_per_token` on Y; (4) late prompt batch/first generation classification is sensible; (5) normal output/acceptance and error status remain credible. Detail timings are biased by timer and buffering overhead. **Do not report speed gains/losses from these diagnostic runs.**
