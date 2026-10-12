@@ -1,6 +1,6 @@
 # r5 MTP-NOOP-001: isolated target QSA no-op invalidation port plan — 2026-10-12
 
-**Status: PLAN ONLY — implementation not started.** This document approves neither the source port nor any performance claim. Implement only after the user reviews the plan. Keep `r5/upstream-refresh-20261009` untouched. Never silently refresh the pinned upstream or combine another optimization.
+**Status (2026-10-12): source candidate and test harness implemented on this branch; Windows Vulkan/ROCm build, native correctness, and ABBA throughput gates are NOT YET RUN.** See [implementation handoff](R5-MTP-NOOP-IMPLEMENTATION-2026-10-12.md). The original planning criteria below remain the acceptance gates; none is implicitly waived. Keep `r5/upstream-refresh-20261009` untouched. Never silently refresh the pinned upstream or combine another optimization.
 
 ## 1. Source and branch identity
 
