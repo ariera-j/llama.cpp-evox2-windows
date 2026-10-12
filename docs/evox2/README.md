@@ -11,6 +11,7 @@ Find research results here:
 - **Source and verification matrix:** [PATCHES.md](PATCHES.md); **next research:** [ROADMAP.md](ROADMAP.md) — after MTP DENSE/NOOP TG, investigate MTP ON **PP overhead**.
 - **MTP-DENSE-001:** [r5 candidate implementation and 64k–256k Vulkan/ROCm measurements](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md); actual source stays on `investigation/r5-mtp-dense-indexer-20261011`.
 - **MTP-NOOP-001:** [implementation + correctness gates](R5-MTP-NOOP-IMPLEMENTATION-2026-10-12.md), [Vulkan 64k–256k](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md), [ROCm 64k–256k](R5-MTP-NOOP-ROCM-VALIDATION-2026-10-12.md), [ROCm 128k detail](R5-MTP-NOOP-ROCM-128K-2026-10-12.md); source/tests/scripts stay on `investigation/r5-mtp-noop-20261012`.
+- **MTP ON PP investigation (2026-10-13):** [source trace, 64k/128k OFF/ON baselines, opt-in phase-tracing plan and r2 MTP-QSA no-port decision](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md). Source diagnostics belong only to `investigation/r5-mtp-pp-trace-20261013`; stable r5 carries **documentation only**.
 - **Earlier MTP controls and compatibility:** [Unsloth sidecar](R5-COMMON002-DENSE-MTP-COMPAT-2026-10-11.md), [Vulkan](R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md) and [ROCm](R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md) baseline measurements, [r2–r5 recheck](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md), [Agention FP4 risks](R5-MTP-AGENTION-FP4-INTERACTION-2026-10-11.md).
 
 **Repeatable documentation sync:** finish the experiment report with the branch name, actual *compiled* commit/build/binary fingerprint, conditions and raw log ZIP checksums; at a test milestone, copy the **finalized documentation files only** onto this docs home. Merge **content** of PATCHES/ROADMAP/README rather than replacing canonical indices blindly. **Do not merge/cherry-pick a source experiment into stable simply to sync docs**, and do not overwrite stable-specific investigation logs or upstream pins. Keep original raw ZIPs external to Git, linked by file name/sha. Time-stamped historical “NEXT” messages are snapshots, not current instructions. Choose the next stable docs home explicitly at a future refresh instead of implicitly scattering new reports.
@@ -131,6 +132,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md): ROCm 10.0 / TheRock build and runtime procedure
 - [BENCHMARKING.md](BENCHMARKING.md): measurement methodology and logging requirements
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
+- [R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md): MTP ON prompt-wall slowdown breakdown plan and historical r2 QSA re-evaluation
 - [R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md): build/load results and ROCm test discrepancy
 
 ## Historical investigation documents imported from r4 (2026-10-10)
