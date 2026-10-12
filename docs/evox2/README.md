@@ -2,6 +2,19 @@
 
 This directory contains downstream documentation for the Windows Evo-X2 work in this repository.
 
+## Completed research documentation and sync rule — 2026-10-12
+
+**`r5/upstream-refresh-20261009` is the canonical home for completed r5 research documents**, but is **not an integrated optimized runtime**. The fact that `docs/evox2/` contains an experimental validation report does *not* mean the experimental source, tests, flags, build configuration, or measurement scripts are in this stable branch. [PATCHES.md](PATCHES.md) explicitly separates pinned stable source from experiment-branch source and the scope of validation.
+
+Find research results here:
+
+- **Source and verification matrix:** [PATCHES.md](PATCHES.md); **next research:** [ROADMAP.md](ROADMAP.md) — after MTP DENSE/NOOP TG, investigate MTP ON **PP overhead**.
+- **MTP-DENSE-001:** [r5 candidate implementation and 64k–256k Vulkan/ROCm measurements](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md); actual source stays on `investigation/r5-mtp-dense-indexer-20261011`.
+- **MTP-NOOP-001:** [implementation + correctness gates](R5-MTP-NOOP-IMPLEMENTATION-2026-10-12.md), [Vulkan 64k–256k](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md), [ROCm 64k–256k](R5-MTP-NOOP-ROCM-VALIDATION-2026-10-12.md), [ROCm 128k detail](R5-MTP-NOOP-ROCM-128K-2026-10-12.md); source/tests/scripts stay on `investigation/r5-mtp-noop-20261012`.
+- **Earlier MTP controls and compatibility:** [Unsloth sidecar](R5-COMMON002-DENSE-MTP-COMPAT-2026-10-11.md), [Vulkan](R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md) and [ROCm](R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md) baseline measurements, [r2–r5 recheck](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md), [Agention FP4 risks](R5-MTP-AGENTION-FP4-INTERACTION-2026-10-11.md).
+
+**Repeatable documentation sync:** finish the experiment report with the branch name, actual *compiled* commit/build/binary fingerprint, conditions and raw log ZIP checksums; at a test milestone, copy the **finalized documentation files only** onto this docs home. Merge **content** of PATCHES/ROADMAP/README rather than replacing canonical indices blindly. **Do not merge/cherry-pick a source experiment into stable simply to sync docs**, and do not overwrite stable-specific investigation logs or upstream pins. Keep original raw ZIPs external to Git, linked by file name/sha. Time-stamped historical “NEXT” messages are snapshots, not current instructions. Choose the next stable docs home explicitly at a future refresh instead of implicitly scattering new reports.
+
 ## Current refresh
 
 r5 began as a clean upstream-first refresh pinned at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Documentation/tooling were imported from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Since the clean baseline, r5 has selectively added COMMON-001, real-prompt llama-bench and opt-in Vulkan QSA grouped union/statistics. **Windows Vulkan/ROCm builds, model-loading and the 64k/128k corpus PP comparison were validated by 2026-10-10**; read the dated r5 reports for exact builds and gates.

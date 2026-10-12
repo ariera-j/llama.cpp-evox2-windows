@@ -1,5 +1,37 @@
 # Evo-X2 optimization roadmap
 
+**Research documentation source of truth (2026-10-12):** this copy on pinned r5 stable records completed experiment results; neither DENSE-001 nor NOOP-001 code is integrated into stable source. See [PATCHES.md](PATCHES.md) for branch-specific status and [README](README.md) for synchronization rules.
+
+## Current execution order — 2026-10-12 evening (supersedes earlier NEXT sections)
+
+1. **MTP-NOOP-001 Vulkan VALIDATED on isolated r5 branch:** native policy/model/rollback and short real-MTP gates passed on Evo-X2; normal same-binary A1/B1/B2/A2 64k/128k/256k **12/12 OK**, MTP ON/DENSE ON throughout, equal text and acceptance per depth. NOOP TG OFF→ON **31.385→32.045 (+2.10%)**, **26.960→28.775 (+6.73%)**, **21.075→24.110 (+14.40%)** tok/s. PP essentially unchanged, PP+TG total impact tiny. Source/runtime `b84d18870` / `b11577`. Details: [r5 NOOP Vulkan validation](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md).
+2. **MTP-NOOP-001 ROCm measurement CLOSED (qualified):** Native/short gates PASS; normal same-binary A1/B1/B2/A2 64k/128k/256k **12/12 OK**, TG OFF→ON +4.55%/+6.42%/+8.08% (observational). Unlike Vulkan, output and MTP draft acceptance differ even for identical-condition repeats at all three depths. Do not infer deterministic equivalence or exact causal speedup. See [full ROCm validation](R5-MTP-NOOP-ROCM-VALIDATION-2026-10-12.md).
+3. **NOW: MTP ON PP overhead investigation.** After ROCm NOOP measurement closure, plan a **separate** branch/workstream targeting MTP ON prompt-processing costs rather than modifying verified TG optimization mid-test. Compare PP ON/OFF with identical real inputs and model/runtime, examine target/draft prefill and speculative bookkeeping, and profile before changing kernels or merging patches. Measure 64k/128k first; decide 256k and backend priority based on evidence.
+4. **No stable merge/refresh or release promotion.** Preserve `r5/upstream-refresh-20261009`, validated DENSE branch and NOOP candidate binaries. Earlier roadmap sections below are historical and do not override this sequence.
+
+
+## Current measurement closure and next research — 2026-10-12 (supersedes the 2026-10-11 active queue)
+
+- **MTP-DENSE-001 isolated TG validation COMPLETE:** b11566, same-binary MTP ON DENSE OFF/ON ABBA at 64k/128k/256k, both Vulkan and ROCm **24/24** successful runs. TG gains Vulkan **+6.81%, +15.52%, +36.22%**; ROCm **+7.72%, +17.42%, +23.48%**. Vulkan outputs/acceptance are identical in each four-run matrix; ROCm temp0 outputs/acceptance vary even within same-setting repeats. Detailed hashes, controls and caveats: [r5 DENSE-001 validation](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md).
+- **NEXT: MTP-NOOP-001 bounded r4→r5 source review, then opt-in candidate only if still applicable.** Use a new investigation branch from validated DENSE source, not the pinned stable r5. When testing MTP ON, fix `LLAMA_MTP_SKIP_DENSE_INDEXER=1` in both arms; only change no-op invalidation switch. Keep the earlier r4 default-OFF target-only policy as the reference and redo native state/rollback and same-binary TG A/B. Never assume r4's +12.99% Vulkan 256k carries over.
+- **THEN: PP cost of MTP ON** (64k/128k prompt overhead observed); revisit ROCm generation nondeterminism separately, sooner if it prevents a correctness gate. 256k MTP OFF is intentionally deferred; missing 64k/128k MTP OFF values are from a different b11560 build and must be labeled.
+- **NO RELEASE PROMOTION:** This closes a measurement workstream, not AgentionAI compressed-ratio support, combined-patch correctness, first integrated snapshot or external correctness review. Preserve original runtime binaries and raw ZIPs.
+
+
+## User decision: focus MTP ON TG and future Agention FP4/MTP compatibility — 2026-10-11 evening
+
+**This section supersedes older "current priority" prose below, which is retained as an historical sequence.** The paired r2 b10813 64k/128k real-input Vulkan ABBA is **complete 8/8**. Within r2, MTP ON TG benefit **+10.99% / +16.40%** versus r5 Vulkan **+10.52% / −2.75%**. See [matched r2/r5 TG review](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md). Historical r2 b10811 measurements should not be substituted for this newer b10813 binary.
+
+Research scope from now:
+- **ACTIVE:** resolve the extra/depth-dependent **MTP ON TG** cost; first isolate r4 **MTP-DENSE-001** (dense draft indexer omission) on r5 at 128k, then **MTP-NOOP-001** (target no-op invalidation) independently, with correctness and one-change-only ABBA. If necessary, investigate r2 vs r5 short-query Vulkan union verification. Extend to 256k only when safe.
+- **PARKED:** MTP ON **PP** overhead since r2. Record PP as a control/telemetry metric in TG A/B, but **do not optimize PP yet**.
+- **CLOSED FOR THIS PHASE:** r3 **MTP OFF TG** pooled-summary full-context recomputation was addressed by COMMON-004, and the functional equivalent is included upstream in r4/r5. **Do not reopen** absent a new strong regression or correctness issue. r3 COMMON-005 remains a separate later non-MTP deep-decode topic.
+- **INTEGRATION REQUIREMENT, NOT CURRENT IMPLEMENTATION:** include AgentionAI ROCmFP4-FAST main **and matching ROCmFP4-FAST MTP draft** as quality-comparison choices in the first integrated build. [Compatibility review](R5-MTP-AGENTION-FP4-INTERACTION-2026-10-11.md) finds no necessary structural conflict **if** draft indexer omission applies only to **ratio0** and target no-op suppression only to verified no-change state; the actual Agention MTP GGUF ratio/tensor names, custom FP4 loaders and backend kernels are **unverified**. Do not mix new FP4 format port with the current MTP TG A/B.
+- Historical r2 predates build manifests: **`MissingManifest` / `build-unknown` on the r5 runner is a metadata limitation**, not a runtime failure. Identify with r2 executable SHA and embedded b10813 version; do not retrofit an invented manifest.
+
+No inference source change or upstream refresh is implied by this decision.
+
+
 ## Planned follow-on program — 2026-10-11 (research first; no release yet)
 
 The user has chosen the following **order of intentions**, not fixed deadlines or a requirement to interrupt the active research branch:
