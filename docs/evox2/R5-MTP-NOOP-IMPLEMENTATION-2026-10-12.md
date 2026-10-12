@@ -1,6 +1,6 @@
 # r5 MTP-NOOP-001 — source implementation and Windows validation handoff (2026-10-12)
 
-**Status: Vulkan native and real-MTP correctness + 64k/128k/256k same-binary ABBA COMPLETE (2026-10-12, user-run Evo-X2).** All three contexts passed 4/4 runs with identical generated stdout after removing only CLI timing lines and matching draft acceptance within each context. TG gains: **+2.10%, +6.73%, +14.40%** at 64k/128k/256k. **ROCm native/short correctness PASSED; ROCm 128k ABBA 4/4 OK with ON TG +6.42%, but output and draft acceptance differ even within OFF/OFF and ON/ON repetitions (provisional throughput only). ROCm 64k/256k pending; PP-side investigation not started.** This remains an isolated branch, not a stable merge or release. Detailed evidence: [Vulkan validation](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md).
+**Status: Vulkan native and real-MTP correctness + 64k/128k/256k same-binary ABBA COMPLETE (2026-10-12, user-run Evo-X2).** All three contexts passed 4/4 runs with identical generated stdout after removing only CLI timing lines and matching draft acceptance within each context. TG gains: **+2.10%, +6.73%, +14.40%** at 64k/128k/256k. **ROCm native/short gates PASS; ROCm 64k/128k/256k same-binary ABBA COMPLETE (12/12 OK) with TG OFF→ON +4.55% / +6.42% / +8.08% respectively. All ROCm long-context outputs/acceptance vary within same NOOP setting, so ROCm TG gains are provisional observational, unlike deterministic Vulkan. PP-side investigation is NEXT, not yet started.** This remains an isolated branch, not a stable merge or release. Detailed evidence: [Vulkan validation](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md).
 
 ## Exact source identity and branch boundaries
 
@@ -198,3 +198,18 @@ User ZIP `20261012-200801-743-qwen38-r5-mtp-noop-rocm-abba.zip`, SHA256 `b1edf09
 - **Important constraint:** four distinct generated texts, **including A1 != A2 and B1 != B2**; draft accepted/generated counts differ. This corroborates previously observed ROCm long-context temp0 nondeterminism and precludes a same-trajectory correctness/equivalence claim. Native and short ROCm correctness gates passed independently, and both B rates exceed both A rates, but the **+6.42% is a provisional observed TG association, not a deterministic isolated speedup proof**.
 
 Detailed per-run timing, provenance and limitations: [ROCm 128k checkpoint](R5-MTP-NOOP-ROCM-128K-2026-10-12.md). **Next:** collect 64k and 256k normal A1/B1/B2/A2 on this same ROCm runtime using the existing `qwen38-r5-mtp-noop-rocm-abba.psd1` plan, then close the ROCm NOOP measurement with appropriate nondeterminism caveat and proceed to independent MTP ON PP research. No source modification or release promotion.
+
+
+## ROCm full three-depth measurement closure — 2026-10-12
+
+The user's final 64k/256k ROCm matrix archive `20261012-205808-054-qwen38-r5-mtp-noop-rocm-abba.zip` (SHA256 `93268e99b7d4eb563b23b46308e9e745c6f52417c7433632004cd3be00f04b0a`) contains **8/8 OK**, 0 failures/stops, ABBA by depth. Combined with the earlier 128k ROCm **4/4 OK** this finishes all 12 normal ROCm runs. All three depths used the same `b11579-f62ca1cd4` executable and verified runtime artifact digest; all DENSE/NOOP startup evidence Verified; MTP ON and DENSE ON fixed, only NOOP changed between A/B. Do not confuse the last docs-only Git SHA with this compiled source.
+
+| ROCm context | TG NOOP OFF→ON (tok/s) | Rate Δ | PP OFF→ON (tok/s) | PP rate Δ | stdout/acceptance per depth |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 64k | 27.145→28.380 | **+4.55%** | 365.845→366.885 | +0.28% | all four varied, including same-arm repeats |
+| 128k | 20.640→21.965 | **+6.42%** | 273.995→275.530 | +0.56% | all four varied, including same-arm repeats |
+| 256k | 13.730→14.840 | **+8.08%** | 182.170→182.410 | +0.13% | all four varied, including same-arm repeats |
+
+**Interpretation:** ON TG was higher than both OFF repeats at every depth, consistent with an advantage, but due to ROCm temperature-zero same-arm nondeterminism and variable draft accepted/generated paths **do not claim a proven isolated causal +4.55/+6.42/+8.08%** nor long-context exact output equality. PP small positive deltas are not demonstrated PP optimizations. Fresh long-prompt PP dominates end-to-end time. Vulkan three-depth deterministic equivalence and same-binary TG gains remain established independently. See [full ROCm validation](R5-MTP-NOOP-ROCM-VALIDATION-2026-10-12.md).
+
+**Closure decision:** no further NOOP source changes or ROCm reruns required to proceed with prioritized **MTP ON PP overhead investigation**. ROCm nondeterminism may be studied as a separate quality/reproducibility item, but is not silently fixed/assumed by this experiment. Keep both experimental and pinned stable source isolated, and synchronize finalized records to the r5 stable **docs only**, not source/scripts.
