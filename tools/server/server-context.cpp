@@ -15,6 +15,7 @@
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
+#include "mtp-pp-trace.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
@@ -4160,15 +4161,36 @@ private:
             has_output |= batch.tokens[i].output;
         }
 
+        const bool trace = mtp_pp_trace::mode() != 0;
+        // Use the server's explicit is_prompt bit. MTP-ON prompt batches may all
+        // require output; token count or has_output cannot identify the phase.
+        int trace_phase = 0;
+        int64_t trace_pos = 0;
+        if (trace) {
+            int n_prompt = 0;
+            for (int i = off; i < off + batch.view.size(); ++i) {
+                n_prompt += batch.tokens[i].is_prompt ? 1 : 0;
+                trace_pos = std::max<int64_t>(trace_pos, batch.tokens[i].pos[0]);
+            }
+            trace_phase = n_prompt == 0 ? 0 : n_prompt == batch.view.size() ? 1 : 2;
+        }
+        const int64_t t_target_begin = trace ? mtp_pp_trace::now_us() : 0;
+        int64_t target_sync_us = 0;
+
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
         queue_tasks.yield_to_queue([&]() {
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
             if (ret == 0 && has_output) {
+                const int64_t sync_begin = trace ? mtp_pp_trace::now_us() : 0;
                 llama_synchronize(ctx_tgt);
+                if (trace) {
+                    target_sync_us += mtp_pp_trace::now_us() - sync_begin;
+                }
             }
         });
+        const int64_t t_target_end = trace ? mtp_pp_trace::now_us() : 0;
 
         if (ret != 0) {
             {
@@ -4226,10 +4248,11 @@ private:
         // TODO: avoid restoring the draft context and re-evaluating the drafted tokens when not needed [TAG_SPEC_AVOID_DRAFT_REEVAL]
         //       for now, always re-evaluate for simplicity
         //       ref: https://github.com/ggml-org/llama.cpp/pull/22728#issuecomment-4400925384
+        const int64_t t_spec_begin = trace ? mtp_pp_trace::now_us() : 0;
         if (spec) {
             bool ok = true;
             queue_tasks.yield_to_queue([&]() {
-                ok = common_speculative_process(spec.get(), batch.view);
+                ok = common_speculative_process(spec.get(), batch.view, trace_phase);
             });
 
             if (!ok) {
@@ -4238,6 +4261,21 @@ private:
                 // TODO: handle error
                 throw std::runtime_error("failed to process speculative batch");
             }
+        }
+
+        if (trace) {
+            static mtp_pp_trace::recorder pp_trace("target");
+            const int64_t t_after_spec = mtp_pp_trace::now_us();
+            mtp_pp_trace::sample observation;
+            observation.role           = "target";
+            observation.phase          = trace_phase;
+            observation.end_pos        = trace_pos;
+            observation.n_tokens       = batch.view.size();
+            observation.total_us       = t_after_spec - t_target_begin;
+            observation.target_us      = t_target_end - t_target_begin;
+            observation.target_sync_us = target_sync_us;
+            observation.spec_us        = spec ? t_after_spec - t_spec_begin : 0;
+            pp_trace.add(observation);
         }
 
         // handle `n_cmpl > 1` tasks - when the main prompt is processed, activate all child tasks too
