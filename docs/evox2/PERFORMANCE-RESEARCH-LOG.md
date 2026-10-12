@@ -785,3 +785,116 @@ This dated intake supports, but does not replace, the active [ROADMAP priority c
 6. **WATCH-UPSTREAM** for GDN/CONCAT/large-tile matmul/MTP/recurrent-state candidates; reprioritize only when actual runtime bottleneck, applicability and a same-build A/B gate are established.
 
 **Bounded ROCm next-chat handoff:** stay on validated stable `r5/upstream-refresh-20261009`; do not mix Vulkan investigation source or re-pin upstream. First trace `ggml-hip` → `ggml-cuda/fattn.cu`/FA specialization for the actual qwen4exp model shapes; distinguish `flash_attn_mask_to_KV_max` suffix scans, HIP-disabled CUDA sparse gather, and FA/matmul Stream-K. Second inventory Windows HIP profiling options and select the least invasive logging/timing method. Third, *only if feasible*, collect Japanese literature and code under identical ROCm binary, model, prompt SHA, KV depth and batch parameters. Record call/kernel identity and measured time separately from overall PP. Stop and re-rank if instrumentation is disproportionate to expected optimization benefit. **No source or benchmark changes are authorized by this intake alone.**
+
+---
+
+## 2026-10-12 — upstream, mix, Strix Halo engines, and Qwen3.8-Flash-Next research refresh
+
+**Observed:** 2026-10-12 JST. **Research only; no source patch, rebase, test run, release tag, or ROADMAP priority decision.** Existing dated entries remain historically valid as snapshots at their stated times. Sources below are GitHub releases, PR descriptions/statuses, project changelogs, and the repository's own measurements. External speed/quality percentages are developer reports **not reproduced on this Windows Evo-X2**.
+
+**Target/policy:** Windows 11 / GMKtec Evo-X2 / Ryzen AI Max+ 395 (gfx1151) / configured 96GB UMA; main workload Qwen3.8-Flash-Next GGUF, long 64k–256k context, Vulkan and ROCm/HIP. Stable r5 research branch is `r5/upstream-refresh-20261009`, pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b` (`docs/evox2/CURRENT-REFRESH.json`). The more recent isolated MTP investigation branch must not be confused with a repinned or integrated r5. Per `ROADMAP.md` / `INTEGRATION-POLICY.md`, continue bounded experiments on pinned sources; an integrated snapshot will be prepared at a natural research boundary, with planned ROCmFP4 compatibility validation in its first acceptance scope; Strata smoke comes after a validated integrated snapshot.
+
+### 1. Change summary and immediate applicability
+
+| Project | Current snapshot (verified on 2026-10-12) | What changed since the 2026-10-11 log | Evo-X2 / action |
+| --- | --- | --- | --- |
+| `ggml-org/llama.cpp` | master/automated build **b11559**, SHA `f2cc7282ce0042641df55e0e563b75e824e2b647`; released 2026-10-11 19:14 UTC (10/12 04:14 JST). **Stable** GitHub release `v0.6.0` is a separate release channel. | Merged Vulkan MoE #29998; HIP FA #30103 and MTP/graph correctness fixes in recent commits. b11559's own release-head change is an **OpenCL/Gemma-4** change, not a measured Strix Halo improvement. | **WATCH / next integration A/B**; no source repin now. |
+| `unslothai/llama.cpp` | **b11541-mix-2500203**, 2026-10-11 01:24 UTC; composition starts from upstream b11541, not b11559. | Updated mix carrying Qwen shared/self-contained MTP compatibility #240, residual patches #241, MoE auto cache sizing #251. | **Compatibility reference**, not clean upstream. Native Windows `gfx1151` ROCm + Windows Vulkan archives supplied. |
+| `Niko1221/Strata` | **v0.1.43**, 2026-10-11 14:40 UTC, Windows HIP release ZIP present. | gfx12/R9700 and discrete-GPU optimizations, Windows disk-streaming fix, reproducible `BENCH.bat` suite. | **LATER independent Windows HIP smoke**, no demonstrated gfx1151 performance. |
+| `peonist-ai/halogen-flash-server` | Public changelog / image **0.18.1**; main commit `a83cfbf4dee782a07ec8d3800496415b622f95d6`, 2026-10-11 23:12 UTC (10/12 JST). | 0.18.0 sessions/NPU features; 0.18.1 request/cache/scheduling/API features, with unchanged Flash checkpoints. | **Linux-only reference**, not direct Windows/WSL port or evidence of new engine PP/TG boost. |
+| `vahpetr/llama.cpp-s1-fork` | Public branch `s1-public`, SHA `6fd3d69374cffe39c6572c0fe51a6f494f37e9b0`; published Oct 2026; docs report image v59. | A substantial **gfx1151-specific Vulkan + QSA + sparse-MTP + graph/cache** research fork with 1M-context measurements. | **HIGH-INTEREST source/idea audit**; different Linux/128GB/memory/weights, not directly deployable to 96GB Windows. |
+| `SelfRef/llama.cpp-rdna` | Public `rdna` branch; based on LaurentZuijdwijk plus upstream refresh through Oct 7 per its README. | ROCmFPx GGUF types 100–107 plus selectively carried Vulkan RDNA3/3.5 Flash Attention and recurrent/CONCAT ideas. | **FP4 format + Vulkan comparison reference**, not a verified Windows build nor a ready-made integrated source. |
+
+References: [llama.cpp b11559](https://github.com/ggml-org/llama.cpp/releases/tag/b11559), [Unsloth mix b11541](https://github.com/unslothai/llama.cpp/releases/tag/b11541-mix-2500203), [Strata v0.1.43](https://github.com/Niko1221/Strata/releases/tag/v0.1.43), [Halogen changelog](https://github.com/peonist-ai/halogen-flash-server/blob/main/CHANGELOG.md), [s1 fork README](https://github.com/vahpetr/llama.cpp-s1-fork/blob/s1-public/README.md), [SelfRef RDNA fork](https://github.com/SelfRef/llama.cpp-rdna/blob/rdna/README.md).
+
+### 2. Upstream source changes with a concrete test gate
+
+**Merged (as of this research):**
+
+- [#29998 Vulkan MUL_MAT_ID duplicate prepass](https://github.com/ggml-org/llama.cpp/pull/29998), merged Oct 11: hoists duplicate routed-MoE rows to a compact tile-description prepass rather than executing repeated row loops; author suggests only about **1%** on their system. The model has many experts, so this is relevant, but not a reason to assume a major gain on Windows AMD or that it replaces all r5 grouped-union / legacy MoE work. At integration: diff against local Vulkan MoE selection, verify eligible shapes, compare matched 64k and 128k real prompts.
+- [#30103 HIP/CUDA FA race](https://github.com/ggml-org/llama.cpp/pull/30103), merged Oct 10: fixes `flash_attn_ext_f16_process_tile` when `nbatch_combine != DKQ/2`. **Correctness fix**, not established performance change or a reproduced Evo-X2 race. Check selected HIP FA specialization and geometry first, then accept at a new baseline.
+- [#30160 embedding GET_ROWS graph order](https://github.com/ggml-org/llama.cpp/pull/30160), merged Oct 9: puts GET_ROWS before graph split-interleaved PAD/MUL/SCALE for mixed/token/raw embeddings, avoiding unwanted scheduling/CPU splits. This is not a split-PLE16 GGUF loader, and does not retire COMMON-001. May change PP profiles/scheduling in an integrated version.
+- [#30257 mtmd input for MTP](https://github.com/ggml-org/llama.cpp/pull/30257), merged Oct 10: image/multimodal draft input no longer becomes zeros; published acceptance check uses Qwen3.5-4B image inputs. **Not** proof of text-only Qwen3.8-Flash-Next acceptance or Windows vision compatibility.
+- [#30223 static backend sampling graph](https://github.com/ggml-org/llama.cpp/pull/30223), merged Oct 9: fixes inconsistent sampling graph topology/reallocation across draft ubatches; ordinary no-draft graph unaffected. Observe if experimenting with `--backend-sampling`; not a direct explanation for current default MTP TG or PP.
+- [#30145 Vulkan RMS_NORM workgroup overflow](https://github.com/ggml-org/llama.cpp/pull/30145), merged Oct 9: bounds dispatch via looping; carry as correctness hygiene when relevant rather than claim unconditional PP speedup.
+- [#29887 MoE host-expert GPU LRU cache](https://github.com/ggml-org/llama.cpp/pull/29887), merged Oct 7, and [#30112 multi-GPU extension](https://github.com/ggml-org/llama.cpp/pull/30112), merged Oct 8: `--moe-cache-mib N` brings selected CPU-resident experts to GPU for small batches (at most 32 tokens). Huge third-party gains are from **PCIe discrete-GPU systems with experts deliberately offloaded to host**: for Qwen3.8-Flash-Next Q4_0, 4090 25.0→39.4 t/s and 5090 30.8→54.5 t/s in #29887's examples. **Low direct benefit** in current `-ngl 999 -ncmoe 0` 96GB UMA resident-expert setup. Do not translate these percentages to Evo-X2; useful only if a new format/size causes host spill or experiments explicitly change MoE placement.
+
+**Open upstream watch, with guards rather than speculative gains:**
+
+| PR | Status/reported external result | Exact candidate gate |
+| --- | --- | --- |
+| [#29353 chunked GDN CUDA/HIP](https://github.com/ggml-org/llama.cpp/pull/29353) | Open; Radeon 8060S **Qwen3.8-27B** PP2048/4096 +6.75/+6.98%, on `-ub 2048` | Real Flash-Next operation + shape time, `-ub 1024`, long-context scaling. No 177B forecast. |
+| [#28303 tiled F32 transposed CONCAT HIP](https://github.com/ggml-org/llama.cpp/pull/28303) | Open; Radeon 8060S Qwen3.6-35B-A3B +5.54–9.92% PP on selected shapes | Confirm the exact transposed concat tensors in this model and meaningful time before port. |
+| [#30149 Vulkan transposed CONCAT](https://github.com/ggml-org/llama.cpp/pull/30149) | Open/draft; W7800 results | Check Vulkan recurrent/CONCAT path and isolate from QSA union/mask. |
+| [#30139 recurrent-state view in place](https://github.com/ggml-org/llama.cpp/pull/30139) | Open; removes redundant GET_ROWS/copies in recurrent-state read | Potential TG not necessarily equivalent to r3 COMMON-004 pooled-key path; correctness/restore first. |
+| [#30190 Vulkan MTP verify token/GQA fold](https://github.com/ggml-org/llama.cpp/pull/30190) | Open WIP; W7800/Qwen3.8-27B MTP decode +14.57% author report | Applies to narrow GQA/token/masked-dense FA geometry, **not** guaranteed for Flash-Next target/draft or grouped-union sparse paths. |
+| [#30191 deep-KV Vulkan FA query slicing](https://github.com/ggml-org/llama.cpp/pull/30191) | Open/draft; W7800 at KV16384, deep prefill; dense-only selected paths | gfx1151 driver gate, `Q>512`, `KV>=12288`, ordinary dense path; no assumption for QSA sparse/union. |
+| [#30146 small-N Vulkan split-K](https://github.com/ggml-org/llama.cpp/pull/30146), [#30280 large-tile split-K](https://github.com/ggml-org/llama.cpp/pull/30280) | Open; RDNA3/4 hardware/shape-specific | **Matrix multiplication split-K, not Flash Attention split-K**. #30146 is regular MUL_MAT, not routed MUL_MAT_ID; #30280 has large tile and N/K limits. |
+| [#30141 MTP hidden-state checkpoint save/restore](https://github.com/ggml-org/llama.cpp/pull/30141) | Open; speculative hidden-state correctness | Track for snapshot/restore/rollback semantics; not a demonstrated cure for fresh-prompt MTP PP overhead. |
+
+**Judgment:** #29998 is the newest MoE match; #30103 the concrete HIP correctness delta. Most larger claimed prefill gains are different model, batch, device, or tensor shape. Do not displace the bounded r5 MTP work with a collection of cherry-picks.
+
+### 3. Unsloth mix: version and material residual differences
+
+Official [b11541-mix-2500203 release manifest](https://github.com/unslothai/llama.cpp/releases/tag/b11541-mix-2500203) lists a **Windows gfx1151 ROCm** package named `app-b11541-mix-2500203-windows-x64-rocm-gfx1151.zip` and a **Windows Vulkan** package named `app-b11541-mix-2500203-windows-x64-vulkan.zip`. The upstream base is b11541, so the mix binary is not “newer than upstream b11559” just because it has mix-only patches.
+
+- [Unsloth #240](https://github.com/unslothai/llama.cpp/pull/240), open and included: Qwen `qwen4exp` MTP models sharing the target's token embedding/output; self-contained ratio-zero dense head's k-pool/indexer allocation guard. The known upstream errors described by the PR include missing `token_embd.weight` in shared heads and `GGML_ASSERT(buffer)` on first decode of a self-contained dense head. **This is directly related to the user's independently validated r5 dense-head compatibility branch**, not an instruction to blindly duplicate all of #240.
+- [Unsloth #241](https://github.com/unslothai/llama.cpp/pull/241), open/included: shape-aware CUDA graph caching and a number of residual features from upstream-superseded pins. Differentiate these from wholesale Unsloth MTP support already upstream and from current Windows Vulkan/HIP observations.
+- [Unsloth #251](https://github.com/unslothai/llama.cpp/pull/251), open/included: `--moe-cache-mib auto` sizes upstream's GPU expert cache from `--fit`, only for single GPU / no explicit `-ngl`, `-ts`, `-ot`; recommends load mode `none` for fast host-to-GPU misses. **Does not activate in the user's explicit `-ngl 999` setup**; not a next-step win for UMA resident experts.
+- Existing mix-only HIP iGPU memory behavior and sampling changes should remain isolated reference topics. Do not use generic “newer mix faster” claims in place of matched real-input, fixed binary A/B; match actual source pin, model, driver, quant, prompt, KV, and draft settings.
+
+### 4. Strata v0.1.43: practical readiness vs marketing headline
+
+Sources [v0.1.42](https://github.com/Niko1221/Strata/releases/tag/v0.1.42), [v0.1.43](https://github.com/Niko1221/Strata/releases/tag/v0.1.43).
+
+- Windows `strata-windows-x64-hip.zip` remains available. v0.1.42 limits Windows AMD **automatic** prefill chunks to 6,144 (RX7900 XTX high Windows commit/reservation crash at 8,192; developer notes a trade-off in prompt speed) and adds commit/free-memory warnings. Unified-memory APU setups now use conservative explicit cache values; authors do **not** claim tested Strix Halo Windows hardware.
+- v0.1.43 reports AMD Radeon AI PRO R9700 (gfx1200/gfx1201 RDNA4) IQ3_XXS improvements up to +38% TG in constrained cache configurations, and other 64k PP gains on R9700. Its notes expressly retain older RDNA3/gfx11 behavior rather than supplying an equivalent gfx1151 A/B. The headlines **must not be relabeled as Evo-X2 gains**.
+- A Windows GGUF in-place expert streaming fix removes serialized NTFS unbuffered shard reads; measured on RTX5070 with experts needing file/RAM tiers: 1.35–1.85x developer-reported decode improvement. For models resident in Windows Evo-X2's UMA this is largely a different bottleneck.
+- New `BENCH.bat` / `tools/strata_bench.py` (4k/16k prompts, short chat, five-turn agent, optional long/client count) enables later reproducible cross-engine assessment. User's long 64/128/256k corpus suite still needs a separate engine-neutral timed setup.
+- **Do not install or benchmark now as a dependency for MTP-NOOP**. On the next planned external-engine smoke: verify the AMD/HIP runtime actually loads, ROCm/HIP DLL source, `gfx1151` support/model load, requested context, PLE and MTP, GPU versus CPU routing, and text correctness **before** interpreting timings.
+
+### 5. Halogen 0.18.1: software/service changes, not a portable engine patch
+
+Sources [CHANGELOG 0.18.1](https://github.com/peonist-ai/halogen-flash-server/blob/main/CHANGELOG.md), [README](https://github.com/peonist-ai/halogen-flash-server/blob/main/README.md).
+
+- **0.17.5** reported faster prompt reading and drafted decode, prompt/cache metrics and stream stall fixes; keep its performance claims distinct from subsequent changes.
+- **0.18.0** added opt-in fork/join sessions, NPU Qwen3-ASR transcription, larger Flux images, and prompt-cache rewrite fix for agent clients.
+- **0.18.1** adds JSON/schema constrained sampling above temperature 0, cache-avoiding `prompt_cache_policy: "no_store"`, retry-resume after disconnect, opt-in Claude Code sessions, and shorter-request scheduling during long prefills. **Flash checkpoints unchanged**, and README says greedy output preserved. Treat mainly as serving/observability design ideas, not a newly demonstrated intrinsic Qwen PP/TG step-change.
+- Native Linux amdGPU/KFD context; Windows 11 / WSL2 not a supported drop-in execution target. Quantization, memory budget, context/caching and hardware can differ substantially from local r5, so raw Halogen leaderboard numbers cannot be used as a fair r5 A/B.
+
+### 6. New Strix Halo-specific fork: high-value research, but not a like-for-like benchmark
+
+Primary sources: [s1 README](https://github.com/vahpetr/llama.cpp-s1-fork/blob/s1-public/README.md), [measured suite](https://github.com/vahpetr/llama.cpp-s1-fork/blob/s1-public/docs/s1/BENCHMARKS.md), [numbered 226 patches](https://github.com/vahpetr/llama.cpp-s1-fork/blob/s1-public/docs/s1/PATCHES.md), [weights/memory](https://github.com/vahpetr/llama.cpp-s1-fork/blob/s1-public/docs/s1/WEIGHTS.md).
+
+- Machine is **Ryzen AI Max+ 395 with 128GB physical memory, Linux Ubuntu/RADV Vulkan, 110GiB GTT**, host kernel/`amd_iommu` tuned. Weights are **Qwen3.8-Flash-Next-Uncensored i1-Q4_K_M** with n-gram PLE in CPU memory and a **privately vocabulary-pruned MTP draft head**, KV q8_0, YaRN ×4. **Not** the user's Windows 96GB UMA, Unsloth UD-IQ3_XXS PLE16, unpruned Q8 draft, f16 KV.
+- Developers report current implementation **61 tok/s cold TG**, **45 tok/s TG at 524k**, **35.5 tok/s TG near 1M**; **524k fill ~25.6 min**, **1M fill ~1.09h**, steady **102.7GiB GTT at 1M**, 8k PP ~550 tok/s. Reports include single-run experiments and some paired per-lever gates; “stock” column uses other quants/older dates, so it is **not an equal-model/equal-platform before/after**. 1M accuracy is not fully validated; 1M exceeds 262k native context through extension.
+- Main engineering ideas: indexer-driven sparse QSA ~2,051 selected cells/query, efficient incremental QSA census, indexed prefill and compact KQ mask, sparse MTP draft, faster QSA top-k selection, cache-optimized graph/allocation plans and recurrent checkpoints/disk prompt caching. Their per-lever gates report **MTP 23.4 vs 35.1 ms/token at 81k**, QSA-specific improvements at deep context and **graph+plan cache −5.8% ms/token**; these are on **their own Linux build**.
+- **Memory mismatch matters:** 102.7 GiB of GPU memory already exceeds the user's manually configured **96GB UMA allocation**. Not a drop-in 1M solution; Windows driver/WDDM/GTT semantics also differ. No HIP path for fork's new kernels.
+- Suggested later **read-only narrow code audit**: (1) sparse draft + no-op/catch-up semantics compared with r5 MTP-DENSE/NOOP, (2) QSA top-k/census/pooled-key copy elimination, (3) GPU FA/MoE transposed kernels and model/shape gates, (4) graph/plan cache and recurrent checkpoint correctness. Compare with existing upstream and r5 patches before borrowing ideas; isolate each and measure on the **same Windows r5 build/model**. Do not attempt to import 226 patches or copy benchmark headline.
+
+### 7. FP4 / ROCmFPx specialization reference
+
+[SelfRef/llama.cpp-rdna](https://github.com/SelfRef/llama.cpp-rdna/blob/rdna/README.md) explicitly targets **gfx1100/gfx1101/gfx1151** and assembles LaurentZuijdwijk's ROCmFPx type IDs **100–107** (`Q4_0_ROCMFP4*` and `Q2/Q3/Q6/Q8_0_ROCMFPX`) with upstream refreshed to 2026-10-07 and several measured Vulkan coopmat1 FA/CONCAT and recurrent patches. This is useful for the first-integration **COMMON-003 / VULKAN-001 ROCmFP4-FAST loading/kernels audit**, because upstream generic NVFP4/MXFP4 support must not be mistaken for matching proprietary fork GGUF type IDs and data layouts.
+
+The README's +33–38% TG comparison involves **RX7900XTX, Qwen3.8-27B, ROCmFP4-FAST vs Q4_K_M**, not Flash-Next on Windows gfx1151; its “matched output” caveats are model/quant specific. It also documents rejecting a checkpoint patch after a measured −23%/−24% decode regression and different greedy output. Important lesson for r5: **benchmark/rollback correctness beats patch count**. No ROCmFP4 or RDNA fork kernels have been incorporated or validated here.
+
+### 8. Update to active experiment priority and acceptance gates
+
+**2026-10-12 local experiment checkpoint (new since the preceding log):** [r5 MTP-DENSE-001 report on the isolated branch](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-dense-indexer-20261011/docs/evox2/R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md) closes Windows ABBA validation: 3 context lengths × 2 backends × 4 OFF→ON→ON→OFF = **24/24 OK**. Dense-indexer omission enabled **only for eligible ratio-zero MTP indexer**. Relative *MTP ON TG* improvements:
+
+| Context | Vulkan: DENSE OFF → ON TG (tok/s) | Delta | ROCm: DENSE OFF → ON TG (tok/s) | Delta |
+| --- | --- | --- | --- | --- |
+| 64k | 29.275 → 31.270 | **+6.81%** | 25.840 → 27.835 | **+7.72%** |
+| 128k | 23.420 → 27.055 | **+15.52%** | 18.050 → 21.195 | **+17.42%** |
+| 256k | 15.490 → 21.100 | **+36.22%** | 11.160 → 13.780 | **+23.48%** |
+
+Vulkan ABBA response text/acceptance were identical; **ROCm temp0 generated text and acceptance varied even between same-arm controls**, so distinct output remains its own determinism investigation. DENSE-001 has minimal impact on PP: it does **not** remove the baseline MTP ON prefill overhead (~7–9% PP rate loss in earlier r5 native ON/OFF 64k/128k tests), nor prove fresh-prompt 512-token end-to-end latency is improved. The user intentionally did not run a new 256k MTP-OFF baseline. The MTP investigation binaries embed a distinct local `b11566` build label, **not an upstream/master rebase of stable r5**. Retain native and source provenance by branch; no invented cross-version ratios.
+
+**Recommended order, consistent with the user-selected work and ROADMAP rather than an imposed deadline:**
+
+1. **MTP-NOOP-001 next (isolated branch)**. Source-review r4 target-context QSA no-op invalidation first; fix DENSE-001 ON as control, NOOP default OFF/fail-closed; run native rollback/acceptance, text correctness and Vulkan ABBA before drawing HIP speed conclusions. Preserve ROCm's existing nondeterminism as independent evidence.
+2. **Then MTP ON PP and ROCm deep-context path attribution**. Distinguish draft prefill cost, target QSA, HIP Flash Attention selected kernel/race applicability, GDN/CONCAT/MoE and 64k→128k→256k depth behavior. Use actual operator timing and 2–3 representative text corpora, not all branches of speculative upstream.
+3. **Prepare first integrated snapshot at a natural stopping point**: recheck then-current upstream pin (today's b11559 is **observation, not a selected future pin**); port mandatory PLE16; assess demonstrated local beneficial patches and ROCmFP4-FAST support (common format/core, Windows HIP kernels, optional Vulkan); validate model load, short inference, rollback and 64k/128k/256k f16-KV baselines before tagging. Avoid mixing toolchain/driver upgrades.
+4. **After integrated acceptance, independent Strata v0.1.43+ smoke** on Windows gfx1151; separately explore s1 fork / RDNA fork **source ideas**, not broad replacements. Defer quantization/accuracy study to its already planned separate lane.
+
+**Explicit non-claims:** No third-party reported speedup in this entry was benchmarked on the user's Evo-X2 today; no upgrade is proven to fix ROCm temp0 nondeterminism; no 1M context at 96GB Windows or Strata gfx1151 Windows throughput is established; no new integrated release, tag or source merge has been performed by this documentation update.
