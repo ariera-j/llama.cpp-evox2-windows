@@ -18,6 +18,16 @@ The [r5 MTP ON PP investigation plan](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md
 
 **Next gate:** isolated opt-in aggregate timing on the compatibility-only ancestor (`f8d24494f`) for target process, NextN hidden getter/synchronization/host copy, draft input preparation and `llama_process(ctx_dft)`, with coarse KV bins and no per-ubatch logging. Normal timing and forced synchronization/profiler timing remain separate. **No stable source code, TG patch merge, or upstream refresh** as part of this gate. The DENSE/NOOP TG branches and tested binaries remain frozen.
 
+### 2026-10-13 independent DeepSeek review: adopted diagnostics, gated KV-only candidate
+
+The user supplied an independent review based on a **pre-documentation-update** snapshot. Reconciliation and source-specific limitations are now in the [MTP PP plan — DeepSeek review triage](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md#independent-deepseek-review-triage--2026-10-13-incorporated-with-qualifications).
+
+- **Add to the FIRST diagnostic gate:** chart draft catch-up **duration/ubatch versus cumulative KV**, including token count and hidden getter/sync separation; independently confirm **draft** f16 FA dispatch (a target union log is not draft proof); watch GPU memory budget/paging using normal r5 resource logs.
+- **Retain the draft KV-only / early attention-query pruning hypothesis**, but **do not implement yet**: the r5 `graph_mtp` final output-row mask is after FA/FFN, so output selection alone cannot eliminate attention work. Prove same-block pre-attention KV independence, required tail output rows, target hidden input coverage and draft KV state continuity, then test output/acceptance/rollback before any benchmark claim.
+- **Do not port r4 `LLAMA_MTP_DIAG=wall` or use inherited `qwen38-r4-mtp-diagnostics.psd1` as-is**. The matrix/script exists in r5 docs/tooling, but the r4 `ggml-mtp-diag.h`/source instrumentation is absent and its BuildKey/128k/256k settings are not this experiment's controls. Reuse only narrowly applicable instrumentation design and r5-specific build artifacts.
+- **Do not declare dense attention already proven as the cause.** Three-point r4 quadratic fitting is a descriptive screen, not a measured “82%/68% GPU time” breakdown. r5 already has working b11560 ABBA and remains pinned; source refresh/MTP-OFF repeat is not a prerequisite.
+- **Do not treat MTP GGUF ratio>0 reconversion as a safe speed fix** absent evidence the head's *trained* attention definition expects it. The r2 MTP-QSA negative outcome stands.
+
 ## Current measurement closure and next research — 2026-10-12 (supersedes the 2026-10-11 active queue)
 
 - **MTP-DENSE-001 isolated TG validation COMPLETE:** b11566, same-binary MTP ON DENSE OFF/ON ABBA at 64k/128k/256k, both Vulkan and ROCm **24/24** successful runs. TG gains Vulkan **+6.81%, +15.52%, +36.22%**; ROCm **+7.72%, +17.42%, +23.48%**. Vulkan outputs/acceptance are identical in each four-run matrix; ROCm temp0 outputs/acceptance vary even within same-setting repeats. Detailed hashes, controls and caveats: [r5 DENSE-001 validation](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md).
