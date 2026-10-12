@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [string]$LocalConfig = '',
-    [string]$BuildKey = 'R4QsaUnionVulkan',
+    [string]$BuildKey = 'R5MtpNoopVulkan',
     [string]$ModelKey = 'UnslothPle16',
     [ValidateRange(0, 9999)][int]$GpuLayers = 999,
     [switch]$SourceOnly,
@@ -73,49 +73,54 @@ try {
         (Join-Path $repo 'tools\evox2\build\Build-ROCm.ps1'),
         (Join-Path $repo 'tools\evox2\build\Evox2.Build.psm1')
     )
-    $plans = @(Get-ChildItem -LiteralPath (Join-Path $benchmark 'configs') -Filter 'qwen38-r4-*.psd1' -File)
+    $plans = @(Get-ChildItem -LiteralPath (Join-Path $benchmark 'configs') -Filter 'qwen38-r5-mtp-noop-*.psd1' -File)
+    Assert-Check ($plans.Count -eq 3) 'Expected r5 short/Vulkan ABBA/ROCm ABBA plan files not found.'
     $parsePaths += @($plans | ForEach-Object { $_.FullName })
     foreach ($path in $parsePaths) {
         $tokens = $null; $errors = $null
         [void][Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
         Assert-Check (-not $errors.Count) "$path : $($errors.Message -join '; ')"
     }
-    foreach ($file in $plans) {
-        $plan = Import-PowerShellDataFile -LiteralPath $file.FullName
-        Assert-Check ($plan.Defaults.Environment.ContainsKey('LLAMA_QSA_SKIP_NOOP_INVALIDATION') -and
-            $null -eq $plan.Defaults.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION) "$($file.Name): inherited candidate is not cleared."
-    }
-    $expectedPlans = @{
-        'check' = @('control-mtp-off', 'A-normal', 'B-normal', 'A-wall', 'B-wall')
-        'wall' = @('A-wall', 'B-wall')
+    $expectedVariants = @{
+        'check' = @('A-normal', 'B-normal', 'A-proof', 'B-proof')
         'abba' = @('A1', 'B1', 'B2', 'A2')
+        'rocm-abba' = @('A1', 'B1', 'B2', 'A2')
     }
-    foreach ($kind in $expectedPlans.Keys) {
-        $path = Join-Path $benchmark "configs\qwen38-r4-qsa-noop-$kind.psd1"
+    foreach ($kind in @('check', 'abba', 'rocm-abba')) {
+        $path = Join-Path $benchmark "configs\qwen38-r5-mtp-noop-$kind.psd1"
         $plan = Import-PowerShellDataFile -LiteralPath $path
-        Assert-Check ($plan.Jobs.Count -eq 1 -and $plan.Jobs[0].Cases.Count -eq 1) "${kind}: unexpected job/case expansion."
-        $job = $plan.Jobs[0]
-        $labels = @($job.Variants | ForEach-Object { $_.Name })
-        Assert-Check (($labels -join ',') -eq ($expectedPlans[$kind] -join ',')) "${kind}: wrong variant order/count."
-        $expectedContext = if ($kind -eq 'check') { 32768 } else { 262144 }
-        Assert-Check ($job.Cases[0].Parameters.Context -eq $expectedContext) "${kind}: wrong context."
-        Assert-Check ($plan.Defaults.CliParameters.PromptCacheMiB -eq 0 -and
-            ($plan.Defaults.CliParameters.ExtraArgs -join ' ') -match '--ctx-checkpoints 0t') "${kind}: state reuse must be disabled."
-        foreach ($variant in $job.Variants) {
-            $isControl = $variant.Name -eq 'control-mtp-off'
-            $candidate = if ($variant.Name.StartsWith('A')) { '0' } else { '1' }
-            $diag = if ($variant.Name.EndsWith('-wall')) { 'wall' } else { 'off' }
-            Assert-Check ($variant.Environment.LLAMA_MTP_SKIP_DENSE_INDEXER -eq '1' -and
-                $variant.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -eq $candidate -and
-                $variant.Environment.LLAMA_MTP_DIAG -eq $diag) "$kind/$($variant.Name): wrong candidate/diagnostic setting."
-            if (-not $isControl) {
+        Assert-Check ($plan.Defaults.Environment.ContainsKey('LLAMA_QSA_SKIP_NOOP_INVALIDATION') -and
+            $null -eq $plan.Defaults.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -and
+            $null -eq $plan.Defaults.Environment.LLAMA_QSA_NOOP_TRACE) "$kind inherited candidate/trace is not cleared."
+        $expectedJobs = if ($kind -eq 'check') { 1 } else { 3 }
+        Assert-Check ($plan.Jobs.Count -eq $expectedJobs) "$kind unexpected job count."
+        foreach ($job in $plan.Jobs) {
+            Assert-Check ($job.Cases.Count -eq 1) "$kind must have exactly one case per job."
+            $context = [int]$job.Cases[0].Parameters.Context
+            $expectedContext = if ($kind -eq 'check') { 32768 }
+                elseif ($job.Name -match '128k$') { 131072 }
+                elseif ($job.Name -match '64k$') { 65536 }
+                elseif ($job.Name -match '256k$') { 262144 }
+                else { throw "Unexpected job $($job.Name)" }
+            Assert-Check ($context -eq $expectedContext) "$kind/$($job.Name) wrong context."
+            $expectedBuild = if ($kind -eq 'rocm-abba') { 'R5MtpNoopROCm' } else { 'R5MtpNoopVulkan' }
+            Assert-Check ($job.BuildKeys.Count -eq 1 -and $job.BuildKeys[0] -eq $expectedBuild) "$kind/$($job.Name) wrong build."
+            $labels = @($job.Variants | ForEach-Object { $_.Name })
+            Assert-Check (($labels -join ',') -eq ($expectedVariants[$kind] -join ',')) "$kind/$($job.Name) invalid variant order."
+            Assert-Check ($plan.Defaults.CliParameters.PromptCacheMiB -eq 0 -and
+                ($plan.Defaults.CliParameters.ExtraArgs -join ' ') -match '--ctx-checkpoints 0t') "$kind: cache/checkpoint defaults changed."
+            foreach ($variant in $job.Variants) {
+                $candidate = if ($variant.Name.StartsWith('A')) { '0' } else { '1' }
+                $trace = if ($variant.Name.EndsWith('-proof')) { '1' } else { '0' }
+                Assert-Check ($variant.Environment.LLAMA_MTP_SKIP_DENSE_INDEXER -eq '1' -and
+                    $variant.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -eq $candidate -and
+                    $variant.Environment.LLAMA_QSA_NOOP_TRACE -eq $trace -and
+                    $variant.Environment.LLAMA_MTP_DIAG -eq 'off') "$kind/$($variant.Name) toggle/dense/trace mismatch."
                 Assert-Check ($variant.Parameters.Mtp -eq $true -and $variant.Parameters.DraftMax -eq 2 -and
-                    $variant.Parameters.DraftPMin -eq 0) "$kind/$($variant.Name): both candidate arms must keep MTP ON."
-            } else {
-                Assert-Check (-not $plan.Defaults.CliParameters.Mtp -and -not $variant.Parameters.ContainsKey('Mtp')) 'MTP OFF control changed.'
-            }
-            if ($kind -eq 'abba') {
-                Assert-Check ($variant.Environment.EVOX2_ABBA_RUN -eq $variant.Name) 'ABBA repetition identity missing.'
+                    $variant.Parameters.DraftPMin -eq 0) "$kind/$($variant.Name) must preserve MTP ON/DraftMax2."
+                if ($kind -ne 'check') {
+                    Assert-Check ($variant.Environment.EVOX2_ABBA_RUN -eq $variant.Name) "$kind ABBA identity missing."
+                }
             }
         }
     }
@@ -177,7 +182,7 @@ try {
                 [Environment]::SetEnvironmentVariable($name, $null, 'Process')
             }
             try {
-                $env:GGML_VK_MOE_LEGACY_TILE_SELECTION = '1'; $env:GGML_VK_GET_ROWS_128X4 = '0'; $env:GGML_VK_QSA_UNION = '1'
+                $env:GGML_VK_QSA_UNION = '1'; $env:GGML_VK_QSA_UNION_MIN_KV = '32768'
                 Invoke-NativeGate -Executable (Join-Path $binDir 'test-qsa-noop-invalidation.exe') `
                     -Arguments @('-m', $mainPath, '-ngl', "$GpuLayers") `
                     -Name 'model' -PassMarker 'QSA no-op invalidation: PASS ('
