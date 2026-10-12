@@ -74,7 +74,7 @@ try {
         (Join-Path $repo 'tools\evox2\build\Evox2.Build.psm1')
     )
     $plans = @(Get-ChildItem -LiteralPath (Join-Path $benchmark 'configs') -Filter 'qwen38-r5-mtp-noop-*.psd1' -File)
-    Assert-Check ($plans.Count -eq 3) 'Expected r5 short/Vulkan ABBA/ROCm ABBA plan files not found.'
+    Assert-Check ($plans.Count -eq 4) 'Expected r5 Vulkan/ROCm short and ABBA plan files not found.'
     $parsePaths += @($plans | ForEach-Object { $_.FullName })
     foreach ($path in $parsePaths) {
         $tokens = $null; $errors = $null
@@ -83,31 +83,32 @@ try {
     }
     $expectedVariants = @{
         'check' = @('A-normal', 'B-normal', 'A-proof', 'B-proof')
+        'rocm-check' = @('A-normal', 'B-normal', 'A-proof', 'B-proof')
         'abba' = @('A1', 'B1', 'B2', 'A2')
         'rocm-abba' = @('A1', 'B1', 'B2', 'A2')
     }
-    foreach ($kind in @('check', 'abba', 'rocm-abba')) {
+    foreach ($kind in @('check', 'rocm-check', 'abba', 'rocm-abba')) {
         $path = Join-Path $benchmark "configs\qwen38-r5-mtp-noop-$kind.psd1"
         $plan = Import-PowerShellDataFile -LiteralPath $path
         Assert-Check ($plan.Defaults.Environment.ContainsKey('LLAMA_QSA_SKIP_NOOP_INVALIDATION') -and
             $null -eq $plan.Defaults.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -and
             $null -eq $plan.Defaults.Environment.LLAMA_QSA_NOOP_TRACE) "$kind inherited candidate/trace is not cleared."
-        $expectedJobs = if ($kind -eq 'check') { 1 } else { 3 }
+        $expectedJobs = if ($kind -in @('check', 'rocm-check')) { 1 } else { 3 }
         Assert-Check ($plan.Jobs.Count -eq $expectedJobs) "$kind unexpected job count."
         foreach ($job in $plan.Jobs) {
             Assert-Check ($job.Cases.Count -eq 1) "$kind must have exactly one case per job."
             $context = [int]$job.Cases[0].Parameters.Context
-            $expectedContext = if ($kind -eq 'check') { 32768 }
+            $expectedContext = if ($kind -in @('check', 'rocm-check')) { 32768 }
                 elseif ($job.Name -match '128k$') { 131072 }
                 elseif ($job.Name -match '64k$') { 65536 }
                 elseif ($job.Name -match '256k$') { 262144 }
                 else { throw "Unexpected job $($job.Name)" }
             Assert-Check ($context -eq $expectedContext) "$kind/$($job.Name) wrong context."
-            $expectedBuild = if ($kind -eq 'rocm-abba') { 'R5MtpNoopROCm' } else { 'R5MtpNoopVulkan' }
+            $expectedBuild = if ($kind -in @('rocm-abba', 'rocm-check')) { 'R5MtpNoopROCm' } else { 'R5MtpNoopVulkan' }
             Assert-Check ($job.BuildKeys.Count -eq 1 -and $job.BuildKeys[0] -eq $expectedBuild) "$kind/$($job.Name) wrong build."
             # A plan must never silently target the other backend or inherit its
             # launch-only flags. These checks run even in -SourceOnly mode.
-            if ($kind -eq 'rocm-abba') {
+            if ($kind -in @('rocm-abba', 'rocm-check')) {
                 Assert-Check ($job.Environment.ContainsKey('GGML_VK_QSA_UNION') -and
                     $null -eq $job.Environment.GGML_VK_QSA_UNION -and
                     $job.Environment.ContainsKey('GGML_VK_QSA_UNION_MIN_KV') -and
@@ -129,7 +130,7 @@ try {
                     $variant.Environment.LLAMA_MTP_DIAG -eq 'off') "$kind/$($variant.Name) toggle/dense/trace mismatch."
                 Assert-Check ($variant.Parameters.Mtp -eq $true -and $variant.Parameters.DraftMax -eq 2 -and
                     $variant.Parameters.DraftPMin -eq 0) "$kind/$($variant.Name) must preserve MTP ON/DraftMax2."
-                if ($kind -ne 'check') {
+                if ($kind -notin @('check', 'rocm-check')) {
                     Assert-Check ($variant.Environment.EVOX2_ABBA_RUN -eq $variant.Name) "$kind ABBA identity missing."
                 }
             }
