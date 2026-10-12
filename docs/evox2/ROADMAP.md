@@ -1,5 +1,13 @@
 # Evo-X2 optimization roadmap
 
+## Current measurement closure and next research — 2026-10-12 (supersedes the 2026-10-11 active queue)
+
+- **MTP-DENSE-001 isolated TG validation COMPLETE:** b11566, same-binary MTP ON DENSE OFF/ON ABBA at 64k/128k/256k, both Vulkan and ROCm **24/24** successful runs. TG gains Vulkan **+6.81%, +15.52%, +36.22%**; ROCm **+7.72%, +17.42%, +23.48%**. Vulkan outputs/acceptance are identical in each four-run matrix; ROCm temp0 outputs/acceptance vary even within same-setting repeats. Detailed hashes, controls and caveats: [r5 DENSE-001 validation](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md).
+- **NEXT: MTP-NOOP-001 bounded r4→r5 source review, then opt-in candidate only if still applicable.** Use a new investigation branch from validated DENSE source, not the pinned stable r5. When testing MTP ON, fix `LLAMA_MTP_SKIP_DENSE_INDEXER=1` in both arms; only change no-op invalidation switch. Keep the earlier r4 default-OFF target-only policy as the reference and redo native state/rollback and same-binary TG A/B. Never assume r4's +12.99% Vulkan 256k carries over.
+- **THEN: PP cost of MTP ON** (64k/128k prompt overhead observed); revisit ROCm generation nondeterminism separately, sooner if it prevents a correctness gate. 256k MTP OFF is intentionally deferred; missing 64k/128k MTP OFF values are from a different b11560 build and must be labeled.
+- **NO RELEASE PROMOTION:** This closes a measurement workstream, not AgentionAI compressed-ratio support, combined-patch correctness, first integrated snapshot or external correctness review. Preserve original runtime binaries and raw ZIPs.
+
+
 ## User decision: focus MTP ON TG and future Agention FP4/MTP compatibility — 2026-10-11 evening
 
 **This section supersedes older "current priority" prose below, which is retained as an historical sequence.** The paired r2 b10813 64k/128k real-input Vulkan ABBA is **complete 8/8**. Within r2, MTP ON TG benefit **+10.99% / +16.40%** versus r5 Vulkan **+10.52% / −2.75%**. See [matched r2/r5 TG review](R5-MTP-TG-R2-R5-RECHECK-2026-10-11.md). Historical r2 b10811 measurements should not be substituted for this newer b10813 binary.
