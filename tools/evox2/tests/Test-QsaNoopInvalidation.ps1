@@ -105,10 +105,21 @@ try {
             Assert-Check ($context -eq $expectedContext) "$kind/$($job.Name) wrong context."
             $expectedBuild = if ($kind -eq 'rocm-abba') { 'R5MtpNoopROCm' } else { 'R5MtpNoopVulkan' }
             Assert-Check ($job.BuildKeys.Count -eq 1 -and $job.BuildKeys[0] -eq $expectedBuild) "$kind/$($job.Name) wrong build."
+            # A plan must never silently target the other backend or inherit its
+            # launch-only flags. These checks run even in -SourceOnly mode.
+            if ($kind -eq 'rocm-abba') {
+                Assert-Check ($job.Environment.ContainsKey('GGML_VK_QSA_UNION') -and
+                    $null -eq $job.Environment.GGML_VK_QSA_UNION -and
+                    $job.Environment.ContainsKey('GGML_VK_QSA_UNION_MIN_KV') -and
+                    $null -eq $job.Environment.GGML_VK_QSA_UNION_MIN_KV) "$kind/$($job.Name) Vulkan-specific overrides must be unset."
+            } else {
+                Assert-Check ($job.Environment.GGML_VK_QSA_UNION -eq '1' -and
+                    $job.Environment.GGML_VK_QSA_UNION_MIN_KV -eq '32768') "$kind/$($job.Name) Vulkan QSA union overrides changed."
+            }
             $labels = @($job.Variants | ForEach-Object { $_.Name })
             Assert-Check (($labels -join ',') -eq ($expectedVariants[$kind] -join ',')) "$kind/$($job.Name) invalid variant order."
             Assert-Check ($plan.Defaults.CliParameters.PromptCacheMiB -eq 0 -and
-                ($plan.Defaults.CliParameters.ExtraArgs -join ' ') -match '--ctx-checkpoints 0t') "$kind: cache/checkpoint defaults changed."
+                ($plan.Defaults.CliParameters.ExtraArgs -join ' ') -match '--ctx-checkpoints 0t') "${kind}: cache/checkpoint defaults changed."
             foreach ($variant in $job.Variants) {
                 $candidate = if ($variant.Name.StartsWith('A')) { '0' } else { '1' }
                 $trace = if ($variant.Name.EndsWith('-proof')) { '1' } else { '0' }

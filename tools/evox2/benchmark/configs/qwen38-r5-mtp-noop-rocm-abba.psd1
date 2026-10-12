@@ -66,8 +66,8 @@
     Jobs = @(
         @{
             Name = 'rocm-128k'; Tool = 'cli'
-            BuildKeys = @('R5MtpNoopVulkan'); ModelKeys = @('UnslothPle16')
-            Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
+            BuildKeys = @('R5MtpNoopROCm'); ModelKeys = @('UnslothPle16')
+            Environment = @{ GGML_VK_QSA_UNION = $null; GGML_VK_QSA_UNION_MIN_KV = $null }
             Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
             Variants = @(
                 @{ Name = 'A1'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_QSA_NOOP_TRACE = '0'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'A1' } }
@@ -78,8 +78,8 @@
         }
         @{
             Name = 'rocm-64k'; Tool = 'cli'
-            BuildKeys = @('R5MtpNoopVulkan'); ModelKeys = @('UnslothPle16')
-            Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
+            BuildKeys = @('R5MtpNoopROCm'); ModelKeys = @('UnslothPle16')
+            Environment = @{ GGML_VK_QSA_UNION = $null; GGML_VK_QSA_UNION_MIN_KV = $null }
             Cases = @(@{ Name = '64k'; Parameters = @{ Context = 65536; InputKey = '64k' } })
             Variants = @(
                 @{ Name = 'A1'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_QSA_NOOP_TRACE = '0'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'A1' } }
@@ -90,8 +90,8 @@
         }
         @{
             Name = 'rocm-256k'; Tool = 'cli'
-            BuildKeys = @('R5MtpNoopVulkan'); ModelKeys = @('UnslothPle16')
-            Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
+            BuildKeys = @('R5MtpNoopROCm'); ModelKeys = @('UnslothPle16')
+            Environment = @{ GGML_VK_QSA_UNION = $null; GGML_VK_QSA_UNION_MIN_KV = $null }
             Cases = @(@{ Name = '256k'; Parameters = @{ Context = 262144; InputKey = '256k' } })
             Variants = @(
                 @{ Name = 'A1'; Parameters = @{ Mtp = $true; DraftModelKey = 'UnslothMtp'; DraftMax = 2; DraftPMin = 0.0 }; Environment = @{ LLAMA_MTP_SKIP_DENSE_INDEXER = '1'; LLAMA_QSA_SKIP_NOOP_INVALIDATION = '0'; LLAMA_QSA_NOOP_TRACE = '0'; LLAMA_MTP_DIAG = 'off'; EVOX2_ABBA_RUN = 'A1' } }
