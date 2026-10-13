@@ -108,6 +108,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [CURRENT-REFRESH.json](CURRENT-REFRESH.json): current research branch and pinned source identities
 - [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md): optional upstream intake, selective porting and future integrated-snapshot gates
 - [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md): integrated snapshot index (first release not yet created)
+- [R5-MTP-PP-RGP-MARKERS-IMPLEMENTATION-2026-10-14.md](R5-MTP-PP-RGP-MARKERS-IMPLEMENTATION-2026-10-14.md): MTP Vulkan RGP target/draft labels adapted from prior llama-bench work, build/short smoke pending.
 - [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md): r5 bootstrap and pending validation gates
 - [UPSTREAM-REFRESH.md](UPSTREAM-REFRESH.md): reusable branch/import/verification procedure
 - [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md): current r4 implementation state, open gates, investigation heads and r5 validation decision
