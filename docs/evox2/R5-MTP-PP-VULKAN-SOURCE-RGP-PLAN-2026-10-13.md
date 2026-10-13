@@ -93,3 +93,38 @@ RGP lists **63 pipeline configurations**, shows wavefront occupancy from **both 
 
 
 **OFF capture timer calibration from historical native OFF stderr:** 64k b11569 OFF run started **21:21:44** with prompt 49,152/51,200/53,248 logged at **2:43.624 / 2:49.941 / 2:56.202** relative to process start, and repeat started **21:50:55** with those points at **2:47.647 / 2:54.026 / 3:00.320**. Thus a second OFF RGP slice at about **170–175 seconds after launch** should overlap ~50–53k KV, **provided RDP timer/filename refer to the same launch anchor**. ON filename occurred at ~186s after launch at the 51,200-token marker; OFF requires roughly 12–16 s less wall time because it omits draft initialization and prefill overhead. For an RDP timer whose trigger was **180,000ms** in ON, suggest **165,000ms** for OFF as a first attempt, then confirm via OFF trace stderr and the RGP filename. This is calibration, not a hard phase trigger.
+
+
+## Paired 64k Vulkan OFF RGP capture — 2026-10-14 00:40 JST
+
+**Capture / comparable-KV gate: PASS. Incremental MTP-specific GPU dispatch identified: NO.** The ON/OFF heavy shader hashes are **near-identical** at matched ~51–52k prompt depth, demonstrating that the 512-dispatch windows largely sample the **shared target GPU compute** rather than an easily isolated extra draft/final-layer component. Do **not** conclude MTP has no GPU overhead; the full PP ON–OFF difference remains +13.74s and the RGP windows are <1s slices.
+
+**Original evidence (not committed in Git):**
+- OFF run ZIP \`20261014-003724-476-cli-vulkan-b11569-ctx65536-e9bd074ab6f9.zip\`, SHA256 \`4d25a31e93421f5f950967fd4d7ddd77fb6d71a214416dcc0d49396ee839bbe9\`, 9 ZIP members. OFF native RGP \`llama-cli-20261014-004017342.rgp\`, **215,611,177 bytes**, SHA256 \`8461fd30d8dd14f188dca9b655167441ec8cd829ca440a567a77f7a339d773e1\`. Three OFF RGP screenshots show Overview/Most expensive, Overview/Pipelines, Events/Wavefront occupancy. ON RGP and native prompt-run ZIP are documented immediately above.
+- **Same verified executable binary and runtime digest** for ON/OFF: b11569 source \`4b136c5bf\`, exe SHA256 \`8118a4334c52060a7c8ede371ac5f0ad33cdf94b1f017d3a28a84106044f1657\`, artifact digest \`06e04e991de8d49fbc31fc68fce9f02957db6bbd16eac2efe5e445d9cc512a9b\`. Identical input SHA256 \`2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751\`, 61,789 prompt tokens, context65536, \`-b2048 -ub1024\`, KV=f16, Vulkan \`GGML_VK_QSA_UNION=1\` threshold32768, optional detail trace. Only ON has the Q8_0 draft model, and it is pre-Oct-5 revision.
+- **Run result:** ON started \`2026-10-13 23:45:12.813 +09\`, PP 183.40488s (336.90 tok/s), TG17.41959s (29.33 tok/s), 295/430 draft accepted. OFF started \`2026-10-14 00:37:24.478 +09\`, PP **169.66402s** (364.18 tok/s), TG **19.61853s** (26.10 tok/s), no speculative draft. Both \`Status=OK\`, \`ExitCode=0\`. Same ON–OFF **+13.74086s PP**, ~**+8.10%** elapsed / ~**−7.49%** token rate. The TG values are separate and **not** an optimization target for this DENSE/NOOP-free branch. Neither pair is a fresh untraced ABBA.
+- **Capture position:** ON .rgp filename has \`23:48:18.732\` = **+185.919s** since ON run started; ON stderr progress logs 49,152 @ +178.923s, 51,200 @ +186.009s, 53,248 @ +193.119s. OFF filename has \`00:40:17.342\` = **+172.864s** after OFF run started; stderr 49,152 @ +163.136s, 51,200 @ +169.539s, 53,248 @ +176.150s. Thus both .rgp timestamps lie inside **steady 64k prompt at ~51–53k KV**, **not generation**. Still timestamp alignment is conditional on RGP filename reflecting capture acquisition time.
+- OFF RGP also reports **63 detected pipeline configurations** and screenshot captures top **512 dispatches** in a roughly 0.36–0.37s compute slice; ON has 63 and 512. These are limited *time samples*, not the full PP duration.
+
+**Cross-capture RGP Pipelines table transcription, sorted in the same rank order**. Full offline screenshot-derived 13-row comparison recorded separately in conversation artifact \`r5_mtp_rgp_64k_on_off_top13.csv\`; not added as repository binary asset.
+
+| API PSO hash (short) | ON sum (ms) | OFF sum (ms) | ON/OFF events | Same hash? |
+| --- | ---: | ---: | ---: | --- |
+| \`486A…C3A9\` | **96.306** | **95.810** | 16/16 | yes |
+| \`91D3…103C\` | **38.360** | **38.493** | 6/6 | yes |
+| \`E318…9F8A\` | **28.159** | **28.145** | 20/20 | yes |
+| \`035A…9009\` | 25.879 | 26.081 | 23/23 | yes |
+| \`E6F5…D7C4\` | 24.088 | 23.937 | 2/2 | yes |
+| \`6A8D…2BDD\` | 17.783 | 17.726 | 4/4 | yes |
+| \`B1E6…2126\` | 15.109 | 15.538 | 29/30 | yes |
+| \`1CDA…15C4\` | 14.313 | 14.536 | 16/16 | yes |
+| \`7276…EDEA\` | 13.571 | 12.668 | 9/9 | yes |
+| \`88F3…4E5D\` | 9.389 | 9.359 | 21/21 | yes |
+| \`97F8…7640\` | 5.988 | 6.572 | 9/10 | yes |
+| \`26B8…877D\` | 5.895 | 6.016 | 12/12 | yes |
+| \`21DE…9813\` | 5.622 | 5.592 | 42/43 | yes |
+| **Top-13 sum** | **300.462 ms** | **300.473 ms** | — | top-13 same hashes |
+
+The top-13 sums differ only **0.011ms** across these two 512-dispatch samples, despite overall prefill penalty **13.74s**. This is **not a rigorous differential microbenchmark** (RGP sampling shape/timing differ slightly), but an exceptionally strong sign that the sampled time is mainly **common-path work**. 1st hash dispatch shape \`(4,24,1)\` and 2nd hash \`(10,16,512)\` appear in both; neither is *per se* MTP-specific. Do not attach QSA union or indexed MoE identities based on workgroup dimensions alone. Screenshot Most Expensive also reports top5% events account for ~62% of GPU time in **each sampled frame**, which is a within-slice concentration statistic, not a prompt-wide distribution.
+
+**Decision / next step:** The matched single-slice RGP control is now COMPLETE. **Do not request yet another blind same-timer full 64k ON/OFF pair**, since two captures both sampled common GPU work. Rather, make an opt-in, GPU-side **source-level kernel attribution plan** on \`investigation/r5-mtp-pp-trace-20261013\`: distinguish target vs draft compute graph submissions via a reliable RGP-visible Vulkan label or a bounded pipeline-name/dispatch-tag log; verify capture tool support and overhead *before implementation*. If this proves impractical, perform one short ON-only captured slice during **confirmed draft processing** (e.g. instrument host monotonic start/end timestamps then calibrate RDP auto trigger), ideally correlate with targeted \`ggml_vk_flash_attn\` pipeline selection and final HC/MoE work. Preserve existing b11569 binary, source/manifest validity, and untraced ABBA controls; require a new uniquely named build for any extra instrumentation. Only after kernel identity is confirmed choose target Last-FFN/HC vs draft-FA vs readback/fallback optimizations.
