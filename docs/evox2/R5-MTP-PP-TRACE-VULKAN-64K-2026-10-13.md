@@ -78,3 +78,71 @@ During the overlapping post-load **50–190 seconds after process start** resour
 3. **Verify draft dense FA/f16 dispatch independently** using backend logs or focused GPU profiling, distinguishing target GPU work waited by `get_embeddings_nextn` from actual draft GPU operator time. No evidence yet that the MTP-KV-only prototype is implementable or faster.
 4. Run bounded ROCm 64k trace only after Vulkan diagnosis is clear, or earlier if kernel-selection evidence points there. Keep r2 MTP-QSA **NO PORT**, no DENSE/NOOP source merge. Sync only documentation to stable r5, never trace source.
 
+
+## Repeat 64k Vulkan OFF/ON diagnostic — 2026-10-13 21:50–21:59 JST
+
+**Status: repeat PASS 2/2; results match the existing runtime, input, output and trace schema.** User reports manually launching no other application or file operation during the repeat; Windows Update auto-update was believed to be off, but running system processes were not captured. Do not assume a particular Windows service was responsible for earlier I/O.
+
+### Original evidence / reproducibility
+
+- New raw ZIP outside Git: `20261013-215053-386-qwen38-r5-mtp-pp-trace-64k.zip`, SHA256 **`c2764fdd63f3d8cd1bc2152ff604f74c5ce83eb2cc9524aff29024c7650f7a36`**; **23 archive entries** including two complete CLI run directories and matrix metadata. OFF run `20261013-215055-480-cli-vulkan-b11569-ctx65536-e9bd074ab6f9`; ON `20261013-215459-514-cli-vulkan-b11569-ctx65536-d9a9555fe20f`.
+- Same Windows Vulkan b11569 **compiled source `4b136c5bf48e14dc162f96b7457379684287cd20`**, executable hash and Verified runtime digest as first collection. 61,789 identical input tokens, same source/model/driver-context parameters (`GGML_VK_QSA_UNION=1`, threshold32768, f16 K/V, ubatch1024, `LLAMA_MTP_PP_TRACE=detail`); 512 generated, OFF and ON `Status=OK/ExitCode=0`.
+- Both conditions' **generated stdout content matches exactly between the two collection rounds**, after normalizing only the CLI timing-status footer; OFF and ON do **not** have to match one another. ON draft acceptance is **295/430 (68.605%)** in both sessions.
+- Independently checked **detail-vs-bin consistency** for all fields; OFF **3 bins / 542 detail rows**, ON **6 bins / 494 detail rows** (prompt and generation); exactly **31 target prompt batches** in both arms and 31 draft prompt batches in ON. The ZIP contains raw native trace stderr rather than pre-generated summary CSV.
+
+### Paired observations: traced, one OFF/ON pair per time period
+
+| 64k native metric | First pair 21:21 | Repeat pair 21:50 | Change repeat − first |
+| --- | ---: | ---: | ---: |
+| OFF PP seconds | 171.12167 | 171.73129 | +0.60962 |
+| ON PP seconds | 181.30886 | 186.20973 | +4.90087 |
+| **ON − OFF prompt penalty** | **+10.18719** | **+14.47844** | **+4.29125** |
+| OFF TG seconds | 19.66147 | 19.43124 | −0.23023 |
+| ON TG seconds | 18.20075 | 17.28665 | −0.91410 |
+| ON − OFF total PP+TG seconds | +8.72647 | +12.33385 | +3.60738 |
+
+The new **+14.478s** ON−OFF trace penalty is close to, but is **not interchangeable with**, the original **b11560 untraced ABBA +14.084s**. Both time periods use trace-enabled single OFF/ON pairs, not fresh untraced ABBA confidence estimates. The repeat is slower with **less** observed disk I/O, not faster.
+
+### Speculative/target phase wall shifts (prompt batches only)
+
+| Inclusive or leaf interval (MTP ON) | First trace | Repeat | Repeat − first |
+| --- | ---: | ---: | ---: |
+| Total server target + speculative wall | 181.271 s | 186.186 s | +4.915 s |
+| Target queue/yield/`llama_process` wall | 94.147 s | 97.250 s | +3.103 s |
+| Speculative/draft process wall | 87.121 s | 88.933 s | +1.812 s |
+| ↳ NextN hidden getter, **including queued target GPU completion** | 78.439 s | 81.119 s | +2.680 s |
+| ↳ Draft `llama_process(ctx_dft)` CPU-call wall | 6.756 s | 6.584 s | −0.172 s |
+| ↳ Verified hidden row access/copy/resize | 1.923 s | 1.227 s | −0.696 s |
+| OFF server target prompt wall | 171.105 s | 171.714 s | +0.609 s |
+
+The **+4.9s ON slowdown** is **not** explained by draft `llama_process` call time; that interval became a little shorter. Most observed shift is in target wrapper and deferred target-GPU waiting exposed inside `get_embeddings_nextn`. Changes in hidden-row copy are also non-negligible, demonstrating run-to-run scheduling/noise despite identical generated output. **Never sum target wall and hidden getter as two independent GPU operators**; the getter may wait for prior queued work.
+
+| Prompt end-position bin | OFF first / repeat | ON first / repeat | ON−OFF first / repeat |
+| --- | ---: | ---: | ---: |
+| KV≤32768 (16×2048) | 80.395 / 79.433 s | 88.623 / 88.631 s | **+8.227 / +9.198 s** |
+| 32769–61789 (14×2048 + 349) | 90.710 / 92.281 s | 92.648 / 97.555 s | **+1.938 / +5.274 s** |
+
+The second half has most of the repeat's *absolute ON wall increase*, but the first half still accounts for a meaningful ON−OFF penalty. A two-point repeat does not prove a kernel or synchronization cause.
+
+### Windows resource-monitor I/O result: earlier sustained reads did NOT reproduce
+
+The following compares identical per-process wall-time windows, **50–190 seconds from process start** (approximately 69–70 resource samples; first ~50 s model loading mostly excluded). Disk/page rates are **system-wide counters**, not per-process I/O attribution.
+
+| Median for elapsed 50–190s | First OFF | First ON | Repeat OFF | Repeat ON |
+| --- | ---: | ---: | ---: | ---: |
+| `DiskRead_MiBps` | 0.03 | **14.84** | **0.00** | **0.00** |
+| `PageReads_PerSec` | 1 | **525** | **0** | **0** |
+| `PagesInput_PerSec` | 7 | **3764** | **0** | **0** |
+| `Committed_GiB` | 91.42 | 97.75 | 91.15 | 97.30 |
+| `TargetGPULocal_GiB` | 80.52 | 85.36 | 80.52 | 85.36 |
+| `TargetGPUShared_GiB` | 0.69 | 1.57 | 0.69 | 1.57 |
+
+Repeat ON maxima: GPU Local **85.572 GiB** (same as first ON at shown precision), system committed **97.64 GiB** vs first ON **98.04 GiB**. During the repeat ON 50–190s window, disk-read **max 0.23 MiB/s** and page-read **max 8.9/s**, versus first ON substantially larger sustained I/O. The near-disappearance of reads while PP ON slowdown **grew** is evidence **against** earlier system-wide hard page reads being a sufficient/direct explanation of the PP penalty. It does **not** establish that physical UMA residency, GPU scheduling or process-private page faults are irrelevant at all contexts; memory/counter sampling alone does not resolve those mechanisms.
+
+**Interpretation:** The user's lack of manual background work and the I/O disappearance are consistent with a transient earlier workload or cache/residency effect, but the logs cannot identify a specific cause, process, Defender task or Windows Update. Do **not** spend an immediate extra experiment attempting to optimize pagefile/Windows settings on this evidence.
+
+### Next step / closed gate
+
+- **Repeatability gate CLOSED for 64k at this stage**: same input, b11569 runtime, outputs and MTP acceptance, 31 prompt-phase records, complete bins/detail and near-identical GPU footprint. The PP penalty varies from **+10.19 to +14.48 seconds** across two *single traced* pairs, with the original b11560 normal ABBA **+14.08s** as the better speed reference.
+- **Next: 128k Vulkan OFF/ON trace on the SAME b11569 binary**, context131072, original 126,253-token d15 input, same flags and resource monitor; examine the full prompt and KV-binned stage timelines against 64k. Verify dedicated/system commit headroom first. No reason to redo 64k just to reproduce incidental disk I/O.
+- In parallel or after that, verify **draft f16 dense-FA selected backend** and actual GPU op time; do not attribute `draft_us` or `hidden_get_us` to pure GPU FA or PCIe memcpy. Keep r2 MTP-QSA no-port, DENSE/NOOP isolation and stable r5 inference source unchanged.
