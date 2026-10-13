@@ -1249,6 +1249,10 @@ struct ggml_backend_vk_context {
     bool qsa_union_active_logged = false;
     bool qsa_union_fallback_logged = false;
 
+    // Diagnostic only; refreshed for each graph-compute call, never used for dispatch decisions.
+    // Graph naming heuristics may return unknown for partial/split graphs.
+    const char * mtp_rgp_graph_role = "unknown";
+
     // Optional VULKAN-002 diagnostics. Records are copied on the GPU and read only at backend sync.
     vk_buffer qsa_union_stats_buffer;
     uint32_t qsa_union_stats_records {};
@@ -1428,6 +1432,9 @@ struct ggml_vk_debug_label {
     // one region per graph node
     // fused nodes are joined with '+', e.g. "RMS_NORM+MUL+ROPE Qcur-19"
     ggml_vk_debug_label(vk_context & ctx, const ggml_cgraph * cgraph, int node_idx, int n_fused);
+
+    // Investigation-only explicit RGP region names (FA/QSA/selected MoE ops).
+    ggml_vk_debug_label(vk_context & ctx, const std::string & region_name);
 
 
     // one region per graph evaluation, opened on the queue instead of a command buffer
