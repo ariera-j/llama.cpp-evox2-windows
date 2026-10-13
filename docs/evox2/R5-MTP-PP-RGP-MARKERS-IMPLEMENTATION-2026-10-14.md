@@ -107,3 +107,22 @@ EVOX2_MTP_GRAPH role=draft
 2. If the first RGP shows only shared target compute or labels are missing, **do not ask for another blind 64k timer RGP**. Inspect stdout/stderr and debug region support; use a different deterministic dispatch range after calibration.
 3. Only when identifying draft dense FA versus target QSA/MoE kernels compare GPU event times (same KV), then decide whether KV-only draft prefill, output graph rewiring, or host handoff merits a correctness-gated experiment.
 4. Do not merge this diagnostic source into stable r5. Stable docs should point to this file and display the **UNBUILT/UNVERIFIED** status until Evo-X2 results arrive.
+
+
+## Native Evo-X2 validation: Python PASS, b11577 Windows Vulkan build PASS, short ON PASS — 2026-10-14 01:23 JST
+
+The user reports both `test_mtp_rgp_markers.py` and prior `test_mtp_pp_trace.py` PASS and a successful dedicated Clang/Vulkan build. Native **short ON** archive `20261014-012312-361-cli-vulkan-b11577-ctx32768-b44bb4d65d5d.zip` SHA256 `6271d4ef1498f90937c752dc183700f2befb30aea4ed0d8e3c31424669025c72` was inspected independently (9 ZIP members; `conditions.json`, `result.json`, `stderr.log`, `output.log`, resource/summary artifacts).
+
+| Gate | Native evidence |
+| --- | --- |
+| Dedicated code/build | **b11577**, compiled Git commit **`34ebb693308e651fe60cd8242209264c5d4cf57d`**, clean build and clean checkout, Clang 20.1.8, Vulkan, 96GB UMA label |
+| Runtime artifacts | **Verified**, executable SHA256 `6d141c6b2e627e89c380922573f1b62a08ea48fbdb362f9e0ce31860a73ebe34`, overall runtime digest `be63fa5cc09edb444e437598541faa276aa34afc3e08214b43dc7bf655fb9933`. **Different** from b11569 validated prior PP binary |
+| Enabled parameters | `GGML_VK_MTP_PP_RGP_MARKERS=1`; `GGML_VK_QSA_UNION=1` / threshold `32768`; `LLAMA_MTP_PP_TRACE=detail`; other inherited performance logger / unrelated profiling flags absent |
+| Vulkan extension evidence | Real `stderr.log` includes `ggml_vulkan: MTP PP RGP markers enabled (VK_EXT_debug_utils, EVOX2_MTP_*)`. This verifies initialization/extension activation, **NOT YET RGP capture visibility or role-hint accuracy** |
+| Inference | `Status=OK`, `ExitCode=0`; short 163 input / 32 generated, context 32768, batch2048/ub1024; MTP accepted 17/27 (**62.963%**), consistent with earlier b11569 short condition |
+| Phase trace | Four `mtp_pp_trace_v1` bins (target/draft × prompt/generation), each has complete detail rows (1 + 14 per role). Each role-phase bin's row/token counts and **all timing fields** matched exactly. Both target and draft prompt have 163 tokens |
+| Performance caution | PP1654.78ms (98.50 tok/s), TG1992.10ms (15.56 tok/s) are **short, new-build, debug-region-enabled** measurements; do not compare to prior b11569/ABBA rates or infer regression |
+
+**Result:** Source-test/build/native-short gate **PASS**; we may proceed to 64k RGP **visibility and KV calibration only**. Do **not** claim that RGP has yet shown `EVOX2_MTP_GRAPH role=draft` or that all MTP-added GPU operator time is measured.
+
+**Next native RGP gate:** run existing `qwen38-r5-mtp-pp-rgp-64k.psd1` **`vulkan-64k / on-detail`**, using the same b11577 executable, original Q8_0 draft and 61,789-token input; in RDP choose Vulkan / Auto capture → **Dispatch range**, first **start dispatch=512, count=256** as an early marker-visibility check, SQTT High, instruction tracing/counters OFF. In RGP → Events → **Event timing**, search `EVOX2_MTP_`, inspect graph role (including `unknown`) and true `KV=`. First capture need not target KV~50k; it **calibrates** deterministic dispatch positioning for this new binary (historical r5 llama-bench offsets cannot be copied blindly). Only after a first labelled capture choose a later range for draft-specific work. Capture-overhead changes PP rates; keep b11569 unprofiled comparisons separate.
