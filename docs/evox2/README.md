@@ -134,6 +134,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
 - [R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md): MTP ON prompt-wall slowdown breakdown plan and historical r2 QSA re-evaluation
 - [R5-MTP-PP-TRACE-VULKAN-64K-2026-10-13.md](R5-MTP-PP-TRACE-VULKAN-64K-2026-10-13.md): verified b11569 Windows short/64k MTP PP phase diagnostic, draft depth trend and resource I/O caveat
+- [R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md](R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md): same-binary b11569 128k Vulkan OFF/ON trace, stage/NextN wait depth trends and GPU-attribution boundary
 - [R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md): build/load results and ROCm test discrepancy
 
 ## Historical investigation documents imported from r4 (2026-10-10)
