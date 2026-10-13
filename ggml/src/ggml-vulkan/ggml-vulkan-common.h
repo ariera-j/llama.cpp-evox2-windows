@@ -1,6 +1,26 @@
 #pragma once
 #include "ggml-vulkan-push-constants.h"
 
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
+
+// Opt-in CPU-side count of actual vkCmdDispatch calls for RGP range calibration.
+// Shared by all Vulkan backend contexts and all translation units in this DLL.
+// This is a diagnostic *ordinal*, not a GPU timing measurement.
+inline bool ggml_vk_mtp_rgp_dispatch_trace_enabled() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("GGML_VK_MTP_PP_RGP_DISPATCH_TRACE");
+        return env && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+inline std::atomic<uint64_t> & ggml_vk_mtp_rgp_dispatch_counter() {
+    static std::atomic<uint64_t> ordinal {0};
+    return ordinal;
+}
+
 // shared globals
 extern ggml_backend_buffer_type_i ggml_backend_vk_buffer_type_interface;
 extern bool vk_memory_logger_enabled;
@@ -315,6 +335,9 @@ inline void ggml_vk_dispatch_pipeline(ggml_backend_vk_context* ctx, vk_context& 
                                 {});
     {
         ggml_vk_debug_label dbg(subctx, pipeline->name, wg0, wg1, wg2);
+        if (ggml_vk_mtp_rgp_dispatch_trace_enabled()) {
+            ggml_vk_mtp_rgp_dispatch_counter().fetch_add(1, std::memory_order_relaxed);
+        }
         subctx->s->buffer->buf.dispatch(wg0, wg1, wg2);
     }
 }
