@@ -2,7 +2,8 @@
     SchemaVersion = 1
     Name = 'qwen38-r5-mtp-pp-rgp-dispatch-64k'
 
-    # DIAGNOSTIC ONLY. Count vkCmdDispatch ordinals per Target/Draft graph.\n    # Point R5MtpRgpDispatchVulkan at a NEWLY BUILT binary from
+    # DIAGNOSTIC ONLY. Count vkCmdDispatch ordinals per Target/Draft graph.
+    # Point R5MtpRgpDispatchVulkan at a NEWLY BUILT binary from
     # investigation/r5-mtp-pp-trace-20261013 (not the prior b11569).
     # GPU marker overhead alters timings; never use this plan for PP A/B.
     Settings = @{
