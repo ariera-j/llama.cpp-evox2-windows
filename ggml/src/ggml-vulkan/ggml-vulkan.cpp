@@ -1,7 +1,19 @@
 #include "ggml-vulkan-common.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
+
+// Extends the proven r5 llama-bench FA RGP debug-region approach to MTP PP.
+// Markers are read-only and are strictly disabled unless the literal value is "1".
+static bool ggml_vk_mtp_pp_rgp_markers_enabled() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("GGML_VK_MTP_PP_RGP_MARKERS");
+        return env && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
 
 namespace {
 inline std::ostream & operator<<(std::ostream & os, vk::Buffer buffer) {
@@ -5376,7 +5388,12 @@ void ggml_vk_instance_init() {
 #ifdef __APPLE__
     const bool portability_enumeration_ext = ggml_vk_instance_portability_enumeration_ext_available(instance_extensions);
 #endif
-    const bool debug_utils_ext = ggml_vk_instance_debug_utils_ext_available(instance_extensions) && getenv("GGML_VK_DEBUG_MARKERS") != nullptr;
+    const bool mtp_rgp_markers = ggml_vk_mtp_pp_rgp_markers_enabled();
+    const bool debug_utils_available = ggml_vk_instance_debug_utils_ext_available(instance_extensions);
+    const bool debug_utils_ext = debug_utils_available && (getenv("GGML_VK_DEBUG_MARKERS") != nullptr || mtp_rgp_markers);
+    if (mtp_rgp_markers && !debug_utils_available) {
+        std::cerr << "ggml_vulkan: MTP PP RGP markers requested but VK_EXT_debug_utils is unavailable\\n";
+    }
     std::vector<const char*> layers;
 
     if (layer_settings) {
@@ -5423,6 +5440,9 @@ void ggml_vk_instance_init() {
         vk_instance.pfn_vkCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdBeginDebugUtilsLabelEXT");
         vk_instance.pfn_vkCmdEndDebugUtilsLabelEXT =   (PFN_vkCmdEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdEndDebugUtilsLabelEXT");
         vk_instance.pfn_vkCmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdInsertDebugUtilsLabelEXT");
+        if (mtp_rgp_markers) {
+            std::cerr << "ggml_vulkan: MTP PP RGP markers enabled (VK_EXT_debug_utils, EVOX2_MTP_*)\\n";
+        }
     }
 
     vk_perf_logger_enabled = getenv("GGML_VK_PERF_LOGGER") != nullptr;
@@ -8203,6 +8223,29 @@ bool ggml_vk_flash_attn_coopmat_shmem_support(const vk_device& device, const vk_
     return supported;
 }
 
+// Single opt-in wrapper for QSA union and dense FA dispatches. Captures the
+// exact shader, KV depth, query shape and graph-role *hint* in the RGP event tree.
+// Never changes the compute arguments or adds a GPU synchronization point.
+template <typename PushConstants>
+static void ggml_vk_mtp_pp_rgp_dispatch(
+        ggml_backend_vk_context * ctx, vk_context & subctx, vk_pipeline & pipeline,
+        std::initializer_list<vk::DescriptorBufferInfo> buffers, const PushConstants & pc,
+        std::array<uint32_t, 3> groups, const char * stage, const ggml_tensor * query,
+        uint32_t kv, uint32_t n, uint32_t br, uint32_t bc, int32_t n_kv_max) {
+    if (ggml_vk_mtp_pp_rgp_markers_enabled() && vk_instance.debug_utils_support) {
+        const std::string label =
+            std::string("EVOX2_MTP_") + stage + " role=" + ctx->mtp_rgp_graph_role +
+            " shader=" + pipeline->name + " KV=" + std::to_string(kv) +
+            " N=" + std::to_string(n) + " Br=" + std::to_string(br) +
+            " Bc=" + std::to_string(bc) + " n_kv_max=" + std::to_string(n_kv_max) +
+            " q=" + (query ? query->name : "none");
+        ggml_vk_debug_label region(subctx, label);
+        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
+    } else {
+        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
+    }
+}
+
 static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx,
         const ggml_tensor * q, const ggml_tensor * k, const ggml_tensor * v,
         const ggml_tensor * mask, const ggml_tensor * sinks, ggml_tensor * dst) {
@@ -8296,7 +8339,8 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
         const vk_subbuffer cb {ctx->prealloc_y, count_offset + g * alignment, 4 * sizeof(uint32_t)};
         const vk_qsa_union_push_constants upc {nkv, (uint32_t) top->ne[0], rows, (uint32_t) (top->nb[1] / 4), off};
         // Each group has its own list and count. Its scan may overlap the previous FA.
-        ggml_vk_dispatch_pipeline(ctx, subctx, ctx->device->pipeline_qsa_union, {tb, ub, cb}, upc, {1, 1, 1});
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, ctx->device->pipeline_qsa_union,
+            {tb, ub, cb}, upc, {1, 1, 1}, "QSA_UNION", q, nkv, rows, 0, 0, 0);
         ggml_vk_sync_buffers(ctx, subctx);
 
         if (ggml_vk_qsa_union_stats_enabled()) {
@@ -8321,8 +8365,9 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
             (uint32_t) (k->nb[1] / 4), (uint32_t) (v->nb[1] / 4),
             (uint32_t) (k->nb[2] / 4), (uint32_t) (v->nb[2] / 4),
             (uint32_t) (mask->nb[1] / 2), rows, off};
-        ggml_vk_dispatch_pipeline(ctx, subctx, ctx->device->pipeline_qsa_gather,
-            {kb, vb, ub, mb, kc, vc, mc, cb}, gpc, {std::min(capacity, 4096u), CEIL_DIV(capacity, 4096u), nkh});
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, ctx->device->pipeline_qsa_gather,
+            {kb, vb, ub, mb, kc, vc, mc, cb}, gpc, {std::min(capacity, 4096u), CEIL_DIV(capacity, 4096u), nkh},
+            "QSA_GATHER", q, nkv, rows, 0, 0, 0);
         ggml_vk_sync_buffers(ctx, subctx);
 
         const auto tuning = get_fa_tuning_params(ctx->device, hsk, hsv, rows, capacity, GGML_TYPE_F16, GGML_TYPE_F16, f32acc);
@@ -8354,7 +8399,9 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
             hsk, capacity * hsk * 2, capacity * hsk * nkh * 2,
             hsv, capacity * hsv * 2, capacity * hsv * nkh * 2,
             scale, 0.0f, 0.0f, 1u, 1.0f, 1.0f, 1u, capacity, 1u};
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, {qg, kc, vc, mc, qg, og, qg, cb}, fpc, {rows, nh, 1});
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, pipeline,
+            {qg, kc, vc, mc, qg, og, qg, cb}, fpc, {rows, nh, 1},
+            "QSA_MAIN", q, nkv, rows, state.Br, state.Bc, 0);
         if (!ctx->qsa_union_active_logged && g == 0) {
             ctx->qsa_union_active_logged = true;
             std::cerr << "ggml_vulkan: qsa-union active (r5), group=64, bitmap=16KiB, path=" << tuning.path
@@ -8770,9 +8817,10 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
             mask_opt_num_dwords * CEIL_DIV(nem1, Br) * nem2,
         };
 
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline_fa_mask_opt,
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, pipeline_fa_mask_opt,
                                   { mask_buf, mask_opt_buf }, opt_pc,
-                                  { mask_opt_num_dwords, CEIL_DIV(nem1, Br), nem2 * nem3 });
+                                  { mask_opt_num_dwords, CEIL_DIV(nem1, Br), nem2 * nem3 },
+                                  "MASK_OPT", q, KV, N, Br, Bc, n_kv_max);
         ggml_vk_sync_buffers(ctx, subctx);
     }
 
@@ -8788,9 +8836,10 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
             (uint32_t)n_kv_max,
         };
 
-        ggml_vk_dispatch_pipeline(ctx, subctx, sparse_compact_pipeline,
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, sparse_compact_pipeline,
                                   { mask_buf, sparse_buf }, sc_pc,
-                                  { nem1, nem2, nem3 });
+                                  { nem1, nem2, nem3 },
+                                  "SPARSE", q, KV, N, Br, Bc, n_kv_max);
         ggml_vk_sync_buffers(ctx, subctx);
     }
 
@@ -8886,24 +8935,27 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
         }
 
         vk_subbuffer split_k_buf = ggml_vk_subbuffer(ctx, ctx->prealloc_split_k, 0);
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline,
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, pipeline,
                                     {q_buf, k_buf, v_buf, mask_buf, sinks_buf, split_k_buf, mask_opt_buf, sparse_buf},
-                                    pc, { dispatch_x, workgroups_y, workgroups_z });
+                                    pc, { dispatch_x, workgroups_y, workgroups_z },
+                                    "MAIN_SPLIT", q, KV, N, Br, Bc, n_kv_max);
 
         ggml_vk_sync_buffers(ctx, subctx);
         const vk_op_flash_attn_split_k_reduce_push_constants pc2 = { HSV, (uint32_t)ne1, (uint32_t)ne2, (uint32_t)ne3, split_k, (sinks != nullptr) };
-        ggml_vk_dispatch_pipeline(ctx, subctx, ctx->device->pipeline_flash_attn_split_k_reduce,
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, ctx->device->pipeline_flash_attn_split_k_reduce,
                                     {split_k_buf, sinks_buf, dst_buf},
-                                    pc2, { (uint32_t)ne1, HSV, (uint32_t)(ne2 * ne3) });
+                                    pc2, { (uint32_t)ne1, HSV, (uint32_t)(ne2 * ne3) },
+                                    "SPLIT_REDUCE", q, KV, N, Br, Bc, n_kv_max);
         ctx->prealloc_split_k_need_sync = true;
     } else {
         if (gqa_ratio > 1) {
             // When using gqa, we want one actual workgroup per batch, so cancel out wg_denoms
             workgroups_x *= pipeline->wg_denoms[0];
         }
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline,
+        ggml_vk_mtp_pp_rgp_dispatch(ctx, subctx, pipeline,
                                     {q_buf, k_buf, v_buf, mask_buf, sinks_buf, dst_buf, mask_opt_buf, sparse_buf},
-                                    pc, { workgroups_x, workgroups_y, workgroups_z });
+                                    pc, { workgroups_x, workgroups_y, workgroups_z },
+                                    "MAIN", q, KV, N, Br, Bc, n_kv_max);
     }
 
     if (use_dequant_kv) {
@@ -12664,6 +12716,13 @@ bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph, in
 
     // closed explicitly below, and by the destructor on the early returns
     ggml_vk_debug_label dbg(compute_ctx, cgraph, node_idx, ctx->num_additional_fused_ops);
+    std::unique_ptr<ggml_vk_debug_label> mtp_op_dbg;
+    if (ggml_vk_mtp_pp_rgp_markers_enabled() && vk_instance.debug_utils_support &&
+        (node->op == GGML_OP_MUL_MAT_ID || node->op == GGML_OP_MUL_MAT)) {
+        const std::string name = std::string("EVOX2_MTP_MATMUL role=") + ctx->mtp_rgp_graph_role +
+            " op=" + ggml_op_name(node->op) + " tensor=" + node->name;
+        mtp_op_dbg.reset(new ggml_vk_debug_label(compute_ctx, name));
+    }
 
     switch (node->op) {
     case GGML_OP_REPEAT:
@@ -13074,7 +13133,10 @@ bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph, in
         return false;
     }
 
-    // the submit path below can end the command buffer, so close the region first
+    // The submit path can end the command buffer; close nested diagnostics first.
+    if (mtp_op_dbg) {
+        mtp_op_dbg->close();
+    }
     dbg.close();
 
     ctx->tensor_ctxs[node_idx] = compute_ctx;
@@ -14541,9 +14603,25 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
         ctx->device->debug_cmdbuf_idx = 0;
     }
 
-    // queue scope, so it encloses every submit this evaluation makes.
-    // closed when the function returns
-    ggml_vk_debug_label queue_dbg(ctx->device->compute_queue->handle.get(), "ggml_backend_vk_graph_compute");
+    // A graph-specific read-only role hint distinguishes main-model and MTP-sidecar
+    // graphs without modifying scheduler op ordering. Partial split graphs can be unknown.
+    ctx->mtp_rgp_graph_role = "unknown";
+    std::string mtp_queue_label;
+    if (ggml_vk_mtp_pp_rgp_markers_enabled() && vk_instance.debug_utils_support) {
+        bool is_draft = false;
+        bool is_target = false;
+        for (int i = 0; i < cgraph->n_nodes; ++i) {
+            const char * name = cgraph->nodes[i]->name;
+            is_draft |= std::strstr(name, "mtp_eh_proj") != nullptr ||
+                        std::strstr(name, "mtp_hnorm") != nullptr;
+            is_target |= std::strstr(name, "hc_init") != nullptr;
+        }
+        ctx->mtp_rgp_graph_role = is_draft ? "draft" : (is_target ? "target" : "unknown");
+        mtp_queue_label = std::string("EVOX2_MTP_GRAPH role=") + ctx->mtp_rgp_graph_role;
+    }
+    // Queue scope encloses every submit the graph evaluation makes.
+    ggml_vk_debug_label queue_dbg(ctx->device->compute_queue->handle.get(),
+        mtp_queue_label.empty() ? "ggml_backend_vk_graph_compute" : mtp_queue_label.c_str());
 
     ctx->prealloc_size_add_rms_partials_offset = 0;
     ctx->do_add_rms_partials = false;
@@ -16874,6 +16952,13 @@ ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const std::string & p
         return;
     }
     begin(ctx, pipeline_name + " (" + std::to_string(wg0) + "," + std::to_string(wg1) + "," + std::to_string(wg2) + ")");
+}
+
+ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const std::string & region_name) {
+    if (!vk_instance.debug_utils_support || ctx->s == nullptr) {
+        return;
+    }
+    begin(ctx, region_name);
 }
 
 ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const ggml_cgraph * cgraph, int node_idx, int n_fused) {
