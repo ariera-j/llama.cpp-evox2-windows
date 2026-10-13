@@ -14619,6 +14619,13 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
         ctx->mtp_rgp_graph_role = is_draft ? "draft" : (is_target ? "target" : "unknown");
         mtp_queue_label = std::string("EVOX2_MTP_GRAPH role=") + ctx->mtp_rgp_graph_role;
     }
+    // The global, 0-based vkCmdDispatch ordinal allows a subsequent RDP
+    // Dispatch-range capture to target a *known* draft graph (rather than guessing).
+    // No vkQueueWaitIdle, GPU query or readback is introduced by this instrumentation.
+    const bool mtp_dispatch_trace = ggml_vk_mtp_rgp_dispatch_trace_enabled();
+    const uint64_t mtp_dispatch_first = mtp_dispatch_trace ?
+        ggml_vk_mtp_rgp_dispatch_counter().load(std::memory_order_relaxed) : 0;
+
     // Queue scope encloses every submit the graph evaluation makes.
     ggml_vk_debug_label queue_dbg(ctx->device->compute_queue->handle.get(),
         mtp_queue_label.empty() ? "ggml_backend_vk_graph_compute" : mtp_queue_label.c_str());
@@ -15104,6 +15111,18 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
 
     if (!ctx->device->support_async) {
         ggml_vk_synchronize(ctx);
+    }
+
+    if (mtp_dispatch_trace) {
+        const uint64_t last = ggml_vk_mtp_rgp_dispatch_counter().load(std::memory_order_relaxed);
+        std::cerr << "evox2_mtp_vk_graph_v1 role=" << ctx->mtp_rgp_graph_role
+                  << " dispatch_begin=" << mtp_dispatch_first
+                  << " dispatch_end=" << last
+                  << " dispatch_count=" << (last - mtp_dispatch_first)
+                  << " n_nodes=" << cgraph->n_nodes
+                  << " first_node=" << (cgraph->n_nodes ? cgraph->nodes[0]->name : "none")
+                  << " last_node=" << (cgraph->n_nodes ? cgraph->nodes[cgraph->n_nodes - 1]->name : "none")
+                  << "\n";
     }
 
     return GGML_STATUS_SUCCESS;
