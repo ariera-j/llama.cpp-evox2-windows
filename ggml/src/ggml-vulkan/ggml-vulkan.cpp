@@ -5392,7 +5392,7 @@ void ggml_vk_instance_init() {
     const bool debug_utils_available = ggml_vk_instance_debug_utils_ext_available(instance_extensions);
     const bool debug_utils_ext = debug_utils_available && (getenv("GGML_VK_DEBUG_MARKERS") != nullptr || mtp_rgp_markers);
     if (mtp_rgp_markers && !debug_utils_available) {
-        std::cerr << "ggml_vulkan: MTP PP RGP markers requested but VK_EXT_debug_utils is unavailable\\n";
+        std::cerr << "ggml_vulkan: MTP PP RGP markers requested but VK_EXT_debug_utils is unavailable\n";
     }
     std::vector<const char*> layers;
 
@@ -5441,7 +5441,7 @@ void ggml_vk_instance_init() {
         vk_instance.pfn_vkCmdEndDebugUtilsLabelEXT =   (PFN_vkCmdEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdEndDebugUtilsLabelEXT");
         vk_instance.pfn_vkCmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkCmdInsertDebugUtilsLabelEXT");
         if (mtp_rgp_markers) {
-            std::cerr << "ggml_vulkan: MTP PP RGP markers enabled (VK_EXT_debug_utils, EVOX2_MTP_*)\\n";
+            std::cerr << "ggml_vulkan: MTP PP RGP markers enabled (VK_EXT_debug_utils, EVOX2_MTP_*)\n";
         }
     }
 
