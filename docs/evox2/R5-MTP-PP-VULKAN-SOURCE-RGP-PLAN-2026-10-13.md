@@ -58,3 +58,22 @@ AMD RGP officially supports Windows 11 Vulkan **pure-compute** traces, using Rad
 | RGP cannot distinguish target/draft | Profiling identification incomplete | Add minimal Vulkan debug marker / per-context GPU event labels or bounded kernel counters; do not guess |
 
 **Change policy:** documentation only in canonical r5. Keep validated b11569 trace binary, DENSE/NOOP branches, r5 stable source and untraced b11560 ABBA untouched.
+
+## First native 64k MTP ON RGP capture received — 2026-10-13 23:48 JST
+
+**Capture collected successfully; operator attribution NOT YET ESTABLISHED.** User supplied native `llama-cli-20261013-234818732.rgp` (external archive, do not commit binary; 220,774,889 bytes, SHA256 `77c82bf946819961ad574db981147336b480cdcb407032cffc7fef3d46eaef0b`) and two RGP GUI screenshots (Overview → Pipelines; Events → Wavefront occupancy). The file begins with `AMD_RDF` and contains SQTT CodeObject records. Parsed RDF JSON declares controller `renderop`, `renderOpMode=dispatch`, `captureRenderOpCount=512`, source API `Vulkan`, instruction-token tracing OFF, and identifies AMD Radeon 8060S / Adrenalin 26.8.1 / Windows 11. **This is a short dispatch interval, not a full 64k PP timeline.** The capture trigger's exact prompt-KV depth is not encoded as a model position; do not claim it was in the intended 40–55k range without paired host timestamps.
+
+**What RGP's uploaded Overview screenshot shows (pipeline identifiers remain anonymous):**
+
+| API PSO hash | Cumulative GPU event duration | Portion shown by RGP | Dispatch events | Mean event duration | A typical event grid if visible |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `0x486A564CD99BC3A9` | 96,306.494 µs | 26.25% | 16 | 6,019.156 µs | `vkCmdDispatch(4,24,1)` |
+| `0x91D300D08410103C` | 38,359.924 µs | 10.45% | 6 | 6,393.320 µs | not shown |
+| `0xE31874274449F8A` | 28,158.798 µs | 7.67% | 20 | 1,435.145 µs | not shown |
+| `0x035AE81CBB19009` | 25,879.004 µs | 7.05% | 23 | 1,125.174 µs | not shown |
+
+RGP lists **63 pipeline configurations**, shows wavefront occupancy from **both shader engines**, and a viewport of **approximately 0.37 seconds**; the first two PSO hashes account for **36.70%** of the screenshot's cumulative event-time denominator. The two long-duration events have individually significant GPU costs. The visible RGP labels are Vulkan API **hashes and dispatch grids**, not function names; therefore none of those top rows can honestly be called **draft FA, target QSA, MoE, GEMM or DMA** without further mapping, matched OFF control or phase marker instrumentation. A 0.37s snapshot likewise cannot be used as a percentage decomposition of the full 180s or 420s prompt.
+
+**Next evidence collection (no rebuild):** In existing RGP, select the first and second Overview/Pipelines hashes and click `View in pipeline state` to capture Compute Shader information and workgroup/shader details, plus optionally Overview→Most expensive events or event-side timeline. **Then** acquire one MTP OFF Vulkan 64k RGP slice in comparable steady prompt depth if on-GPU stage attribution remains ambiguous. Keep `GGML_VK_PERF_LOGGER` unset. If same kernel hashes occur both ON and OFF but their event counts/time differ, compare within identical capture settings; **ON-only hash alone does not prove draft** because the target's final-layer graph also differs with NextN ON.
+
+**Weight provenance:** User measured old self-contained Q8_0 MTP file SHA256 `cd87e5d1a4dadaeed63e35929f3b2f28d13e081b4cd32e00f2835095ec09351e` (matches the pre-October-5 Hugging Face revision fingerprint from previous public check). Preserve old model untouched for current PP attribution. A later **one-pair old/new MTP comparison** is a separate, optional model-revision experiment after RGP (record new checksum; same executable/input/flags); do not mix changed weights into existing optimized-source claims.
