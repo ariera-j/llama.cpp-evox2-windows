@@ -19,6 +19,7 @@ class StageAKvCropSourceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.qwen = QWEN_PATH.read_text(encoding="utf-8")
         cls.graph = GRAPH_PATH.read_text(encoding="utf-8")
+        cls.context = (ROOT / "src/llama-context.cpp").read_text(encoding="utf-8")
         cls.mtp = cls.qwen.split(
             "llama_model_qwen4exp::graph_mtp::graph_mtp", 1
         )[1].split("llama_model_qwen4exp::graph::build_qkvz", 1)[0]
@@ -82,6 +83,48 @@ class StageAKvCropSourceTests(unittest.TestCase):
             r"if \(inp_attn->self_kq_mask && inp_attn->self_kq_mask->buffer\)"
             r"\s*\{\s*mctx->get_attn\(\)->set_input_kq_mask",
         )
+
+
+    def test_active_catchup_diagnostic_is_scoped_and_opt_in(self):
+        ctx = self.context
+        self.assertIn('std::getenv("LLAMA_MTP_KV_CROP_DIAG")', ctx)
+        self.assertIn('std::strcmp(env, "1") == 0', ctx)
+        self.assertIn('gtype == LLM_GRAPH_TYPE_DECODER_MTP', ctx)
+        self.assertIn('model.arch == LLM_ARCH_QWEN4EXP && n_outputs == 0', ctx)
+        self.assertIn('sample < 8', ctx)
+        # The instrumented site is the actual compute graph, not sched_reserve().
+        proc = ctx.split("llm_graph_result * llama_context::process_ubatch", 1)[1]
+        self.assertLess(proc.index("ggml_backend_sched_alloc_graph"), proc.index("mtp_kv_crop_graph_v1"))
+        self.assertLess(proc.index("mtp_kv_crop_graph_v1"), proc.index("res->set_inputs(&ubatch)"))
+        self.assertIn("ggml_graph_n_nodes(gf)", proc)
+        self.assertIn("ggml_graph_node(gf, i)", proc)
+
+    def test_active_catchup_counts_cache_writes_and_fa(self):
+        ctx = self.context
+        for fragment in (
+            "GGML_OP_FLASH_ATTN_EXT",
+            "GGML_OP_MUL_MAT_ID",
+            "GGML_OP_SET_ROWS",
+            '"attn_inp_k_idxs"',
+            '"attn_inp_v_idxs"',
+            'n_k_writes',
+            'n_v_writes',
+            'n_fa',
+            'kv_slots',
+            'crop_requested',
+            'crop_applied',
+            '!res->get_logits() && !res->get_h_nextn()',
+            'std::atomic<unsigned> logged{0}',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, ctx)
+
+    def test_diagnostic_does_not_change_crop_guard_or_normal_path(self):
+        ctx = self.context
+        self.assertIn('const bool draft_prefill_kv_crop =', self.mtp)
+        self.assertIn('if (draft_prefill_kv_crop) {\\n        return;', self.mtp)
+        self.assertIn('const bool crop_applied = !res->get_logits() && !res->get_h_nextn();', ctx)
+        self.assertIn('const auto status = graph_compute(res->get_gf()', ctx)
 
 
 if __name__ == "__main__":
