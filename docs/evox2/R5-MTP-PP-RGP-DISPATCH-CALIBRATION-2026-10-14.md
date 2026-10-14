@@ -98,3 +98,46 @@ Source archive: `20261014-092950-687-cli-vulkan-b11587-ctx32768-8c8b4d29d258.zip
 - **Critical outcome: the role heuristic DID positively identify the real draft graph.** No source changes are needed before 64k. The previous target-only RGP screenshots represent limited dispatch-range samples; there is no evidence from them that the draft does not execute on GPU.
 
 **Next measured gate:** Using the **same compiled b11587 binary** and dedicated `R5MtpRgpDispatchVulkan` build-key plan, run one `vulkan-64k / on-detail` **with Radeon Developer Panel Auto capture disabled**. In the resulting stderr find consecutive `role=target` and `role=draft` records during **PP** near ~40–55k KV and report their actual `[dispatch_begin,dispatch_end)` ordinal ranges. Then choose a **single targeted 256-dispatch RGP capture** starting just before one such draft interval (since a single draft may contribute fewer than 256 dispatches), and calibrate the offset between our recording-order ordinal and RDP absolute dispatch index; do not treat their numbering as guaranteed identical. No new binary is necessary for the 64k counter-only run.
+
+
+## 64k ON native dispatch-ordinal calibration PASS — 2026-10-14 09:47–09:51 JST
+
+**Evidence:** ZIP \`20261014-094739-371-cli-vulkan-b11587-ctx65536-dee8a8f1085d.zip\` SHA256 **\`53e20c2590433b6fcc3d6c4de3a57ba31fb779aa1e98bbc7e8743b40af3aeb62\`** (10 entries including parent dir). \`result.json\`: **Status OK**, **ExitCode=0**; verified binary **b11587 / compiled commit \`1453c9063\`**, executable SHA256 \`90f2540f0e2af5d15ad58364a58a582a079bc27afc3084c0326595819b569318\`, Verified runtime digest \`e9356ae6ef7fb0853cdf0e09bb6df4cc26a04c9c3e0b2e7b5da5913b9dbe8619\`; prompt 61,789 tokens; PP **186.48492s / 331.34 tok/s**; generated512, TG18.40475s / 27.76 tok/s; MTP draft acceptance **295/430 = 68.605%**, original pre-Oct-5 MTP Q8_0. \`GGML_VK_MTP_PP_RGP_DISPATCH_TRACE=1\`, GPU user-event markers, detail PP trace, Vulkan QSA union ON minKV32768.
+
+**Important file-format detail:** In this run, **\`stderr.log\` is 0 bytes**; \`output.log\` (297,809 bytes) contains the composite console output and the **entire \`evox2_mtp_vk_graph_v1\` stream** (986 records). The empty raw stderr does **not** invalidate the trace; do not parse the wrong member. \`stdout.log\` contains only unrelated monitor output.
+
+**Validation: all 986 records contiguous and arithmetically consistent.** Every \`dispatch_end − dispatch_begin = dispatch_count\`; every record begins at the previous record's \`dispatch_end\`; 0 initial, **1,153,078** final exclusive ordinal. Role counts: **278 target**, **708 draft**, no \`unknown\`. The first target/draft pair is initialization/reservation (**[0,3767)** Target and **[3767,3846)** Draft). Exactly **122 prompt-graph records** then **862 generation-graph records**:
+
+| Region | Target graphs / vkCmdDispatch | Draft graphs / vkCmdDispatch | Full exclusive range |
+| --- | ---: | ---: | --- |
+| Setup/preflight | 1 / 3,767 | 1 / 79 | [0, 3,846) |
+| **Prompt prefill 61,789 tokens** | **61 / 260,330** | **61 / 4,028** | **[3,846, 268,204)** |
+| Generation of 512 tokens | 216 / 842,899 | 646 / 41,975 | [268,204, 1,153,078) |
+| **All** | **278 / 1,106,996** | **708 / 46,082** | [0, 1,153,078) |
+
+Prompt graph structure: first **30 × 2048-token caller batches** each have two Target + two Draft Vulkan backend graphs (ubatch1024); final **349-token** batch has one Target + one Draft. Every depth bin of \`mtp_pp_trace_v1\` cross-checks its row count, prompt tokens and timer sums; **31 prompt Target / 31 prompt Draft batch-level trace rows**. **Draft only 4,028 / 264,358 = 1.524% of prompt dispatch *count***, not 1.524% of GPU time; long FA kernels can be expensive individually. The extreme sampling asymmetry explains why several unrelated 256-dispatch RGP slices landed in common Target paths.
+
+### Source-derived target / draft VK dispatch windows near late prompt
+
+These are directly aligned to the \`slot ... cached n_tokens\` and \`prompt processing\` markers in \`output.log\`; **half-open** \`[begin,end)\` intervals with global host-recorded Vulkan dispatch ordinals.
+
+| Prompt tokens processed | Target interval | **Draft interval** | Notes |
+| ---: | --- | --- | --- |
+| 40,960 | [161,999,171,123) | **[171,123,171,255)** | 2 ×66 Draft |
+| 43,008 | [171,255,180,379) | **[180,379,180,511)** | 2 ×66 Draft |
+| 49,152 | [199,023,208,147) | **[208,147,208,279)** | 2 ×66 Draft |
+| **51,200** | **[208,279,217,403)** | **[217,403,217,535)** | **best first targeted RGP gate** |
+| 53,248 | [217,535,226,659) | **[226,659,226,791)** | 2 ×66 Draft |
+| 55,296 | [226,791,235,915) | **[235,915,236,047)** | 2 ×66 Draft |
+| 61,440 | [254,559,263,683) | **[263,683,263,815)** | 2 ×66 Draft |
+| 61,789 (last partial) | [263,815,268,136) | **[268,136,268,204)** | 1×68 Draft; not a regular full batch |
+
+**Cross-check with the prior b11577 RGP captures:** RDP range start **50,000** samples source ordinal inside the **10,241–12,288-token Target** graph; prior RGP at start50k was captured around 12–14k KV. Range start **180,000** samples **Target** in the **40,961–43,008-token** batch and **does not reach** its Draft until ordinal180,379, outside the 256 count; prior RGP showed Target indexer \`-43\` and \`role=draft\` search was empty. This is direct, mutually consistent ordinal positioning across b11577 RGP and b11587 CPU logs, **strong evidence** that RDP and backend ordinals are nearly aligned for these workloads, but **does not prove zero offset in the next capture**.
+
+### Recommended next GPU capture — no rebuild
+
+**b11587 already compiled and verified.** Use existing \`qwen38-r5-mtp-pp-rgp-dispatch-64k.psd1\` \`vulkan-64k / on-detail\` unchanged and keep **both** diagnostic flags enabled to retain role/ordinal ground truth. RDP: API Vulkan, Auto capture → **Dispatch range**, **start=217,300**, **count=512** (slightly larger than previous 256 as an offset safety margin), SQTT buffer High, instruction tracing OFF, hardware counters OFF, \`GGML_VK_PERF_LOGGER\` unset. The requested capture range **[217,300,217,812)** should straddle ~**103 Target dispatch**, **132 Draft dispatch [217,403,217,535)**, and ~277 following Target dispatch **IF** RDP absolute renderop indices align with logger's ordinal in the new native run. Count512 will increase native RGP size vs 256 but reduces the risk of missing the short two-Draft interval. If 512 exceeds device capture budget, use **start=217,350 / count=256** (predicted 53 Target +132 Draft +71 Target) but this has much less tolerance for index drift.
+
+Within RGP **Events → Event timing**, \`Group by user events\`, filter \`role=draft\` and expand \`EVOX2_MTP_MAIN role=draft\` to read **shader name / KV= / N= / Br / Bc** and GPU event durations; retain corresponding \`role=target\` in same slice. If role and FA markers fail despite \`[217403,217535)\` positioning, analyze whether RDP's ordinal differs from CPU recording order or whether GPU queue labels and graph-dispatch markers are mismatched. Do not claim successful draft GPU attribution until seen in actual RGP.
+
+**Reproducible off-Git CSV artifacts:** \`r5_mtp_pp_64k_b11587_dispatch_graphs.csv\` (986 graph records) and \`r5_mtp_pp_64k_b11587_prompt_draft_ranges.csv\` (31 prompt batches) generated from original \`output.log\` and made available in the conversation; not committed to this repository. No source changes made based on these measurements.
