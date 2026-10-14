@@ -486,3 +486,33 @@ Reopened source `tools/evox2/benchmark/Evox2.Benchmark.psm1::Get-Evox2RelevantEn
 Source-binary and accompanying runtime bundle SHA are identical across dates, so changed **compile flags** cannot explain differences in this prebuilt b11560 executable. Runtime `PATH`/Vulkan loader/ICD/layer resolution and OpenMP state are plausible but unproven; VS toolchain variables by themselves should not modify the inference algorithm. The striking 32k threshold remains consistent with a GPU dispatch path difference, but also potentially with runtime device state as longer KV increases load.
 
 **Minimal controlled next test (before changing more variables such as reboot):** Launch a truly independent Windows PowerShell session from Start, not a PowerShell child of VS Developer Prompt. With the same archived b11560 executable and same 128k MTP-OFF command, test whether PP returns toward the 10/11 **335.455** tok/s from today's VS-origin **305.18** tok/s. A faster 64k probe can be used first but will expose a smaller portion of the >32k interval. Record selective environment snapshots in both shell types BEFORE setting benchmark-specific QSA variables, including `PATH`, `VK_*`, `GGML_*`, `VULKAN_*`, `OMP_*`, `KMP_*`, `VSCMD_*`, `VS*`, `CL`, `INCLUDE`, `LIB`. Compare carefully; do not post full environment blindly because unfiltered env dumps may include credentials. If normal shell also slow, inheritance becomes less likely and attention returns to Windows/Vulkan runtime or power state. Keep reboot/Defender update changes separate from shell A/B if possible. No code changes to runtime.
+
+## Normal PowerShell b11560 128k control — 2026-10-14 22:37 JST
+
+**Finding: VS2022 Native Tools parent-shell NOT THE PRIMARY CAUSE of cross-date PP slowdown.** User archive `20261014-223706-813-cli-vulkan-b11560-ctx131072-84b9ed15488a.zip`, SHA256 `d905e5c5c8f7b6362044748e74a39706644021858181918541d42cdf2e223b27`, started 22:37:06 JST. Launched directly from normal Windows PowerShell; Windows Update downloads completed but machine **not rebooted**. Same exact archived b11560 `llama-cli.exe` SHA256 `611b1004e6596415f126695ab32adf11d9422686fb352bcaf152d19a14f7c949`, identical runtime digest `be772e9a83324cfb77db3849f6b66eb4200b0209c8289a04b6ac7318431fe9a2` as 10/11 and 10/14 developer-shell tests. Native exit 0, MTP completely OFF (`--spec-type none`), 126253 input and 512 output, current `Environment` and entire `EffectiveCondition` dictionary **identical** to both old-binary VS-shell run and 2026-10-11 old-binary OFF A1/A2. Input SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`. No Draft model, QSA union=1/minKV32768, `ggml_vulkan` logs same qsa-union activation `path=1 Br=16 Bc=64 capacity=32768`; binary/driver/model command unchanged. Generated stdout byte-for-byte identical after stripping final CLI timing footer compared with both 10/11 b11560 OFF runs and 10/14 developer-shell run. No runtime errors.
+
+| 128k MTP OFF (b11560 except row shown) | PP tok/s | TG tok/s | PP seconds | TG seconds |
+| --- | ---: | ---: | ---: | ---: |
+| 2026-10-11 b11560 A1/A2 mean | **335.455** | **24.140** | **376.363** | 21.171 |
+| 2026-10-14 b11560 developer-shell | 305.18 | 23.68 | 413.701 | 21.579 |
+| 2026-10-14 b11560 normal PowerShell | **305.90** | **23.66** | **412.733** | 21.599 |
+| 2026-10-14 b11618 developer-shell | 305.98 | 23.74 | 412.617 | 21.529 |
+
+Normal versus developer-shell old-binary PP **+0.236%** (0.72 tok/s), while 10/11 mean versus normal old-binary PP **−8.81%**. Minor same-day drift is far too small to explain cross-date regression. The normal-shell native run did load QSA env vars from benchmarking invocation despite the earlier shell snapshot `env-normal.csv` lacking them *before the benchmark*: use captured `conditions.json` rather than presuming the initial CSV reflects inference time.
+
+**KV progression, actual b11560 `slot print_timing` time in seconds**:
+
+| Prompt tokens | 10/11 A1/A2 mean | 10/14 developer shell | 10/14 normal shell |
+| --- | ---: | ---: | ---: |
+| 32768 | 79.335 | 78.82 | **78.86** |
+| 34816 | 85.195 | 85.25 | **85.35** |
+| 49152 | 127.165 | 132.61 | **132.41** |
+| 65536 | 177.06 | 188.88 | **188.28** |
+| 98304 | 281.135 | 306.22 | **305.33** |
+| 124928 | 368.475 | 404.69 | **403.89** |
+
+Once the 32768-KV union threshold is crossed, each subsequent 2k/16k step is roughly 10–13% slower on 10/14 regardless of parent shell. It is not an 80s-on-clock universal warming issue from independent evidence; that competing thermal/power explanation remains open because the same absolute time coincides with crossing 32k. A direct QSA threshold counterfactual or frequency sensor would discriminate.
+
+**Normal-shell resource CSV** ~235 sampled rows; at 65–330sec after monitor start: process GPU Local median 83.088GiB, GPU Shared 0.843GiB, RAM used 8.834GiB, commit 94.070GiB, aggregate CPU median 3.75%, disk read median 0 MiB/s, hard PageReads median 0/s; developer-shell old run Local 83.088GiB, RAM 8.797GiB, CPU 3.7%; 10/11 old A1/A2 Local 83.119GiB, RAM ~6.66–6.68GiB, CPU ~2.4%. No evidence of sustained swapping or process-local GPU memory shift. This monitor still does NOT report actual GPU core clock, VRAM clock, package power, junction/hotspot or throttling flags; aggregate GPU Engine samples unreliable for inference scheduling.
+
+**Next checkpoint:** Since Windows Update finished without reboot and new shell still 305.90 PP, perform ONE controlled reboot, allow Windows/Defender to settle and retest the exact archived b11560 with same 128k MTP OFF. Save pre-reboot `conditions.json`, note power plan and any Windows KB changes; continue to avoid source changes. If PP returns to ~335, transient Windows/GPU execution state is implicated (not proof Defender caused it). If 305 persists, prioritize externally monitored clocks/power/hotspot on >32k and a paired QSA union-threshold A/B or RGP ~34–60k on same binary. Because minKV threshold is the changepoint, changing it will also change compute path and thus cannot by itself prove a Windows OS regression. The next step is runtime/environment A/B, not Stage B source optimization.
