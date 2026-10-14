@@ -419,3 +419,60 @@ Most prompt intervals have no sustained disk reads or hard page reads; the inten
 **Unresolved hypotheses (not findings):** lower GPU effective clocks or power envelope, a changed Windows power plan/Windows/driver state, concurrent GPU load, or a differing benchmark/OS environment on 10/11. Do not blame Stage B, Vulkan RGP wrappers, paging or thermal throttling as a demonstrated cause without comparing the original run.
 
 **Precise 2026-10-11 raw data to retrieve next:** Document `R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md` identifies ZIP **`r5-mtp-vulkan-64k128k-abba-20261011-171132.zip`**. Target its 128k **A1 MTP OFF started 17:28:06 JST** and **A2 MTP OFF started 17:51:47 JST** (two runs). Need both `conditions.json`, `result.json`, `stderr.log`, `resources.csv` at minimum; ideally full archive for consistent metadata. Compare same-binary SHA, driver/OS build, RDP state, model/input SHA, env, per-KV prompt timing, commit/VRAM/paging and concurrent-resource counters. Existing historical summary supplies only peak Local, not per-time samples. If clock/temperature not present in original CSV, compare resource profiles first and capture new dedicated AMD sensors (GPU clocks, temperature, power and throttling) before other optimization work. Stable r5 source untouched; analysis is documentation only.
+
+## Forensic 10/11-vs-10/14 Windows Update + 128k resources — 2026-10-14 22:00 JST
+
+**Finding: SAME EXECUTABLE, IDENTICAL PARAMETERS/OUTPUT, ~9% PP cross-date loss isolated to KV above 32k. Windows/Defender changes are observed but root cause NOT established.** Primary user evidence: uploaded recovered `r5-mtp-vulkan-64k128k-abba-20261011-171132(1).zip` (74 members) and `WU-Defender-20261011-14.csv` (90 selected events); compared with independently archived 2026-10-14 b11560 and b11618 MTP-OFF ZIPs. Historical 10/11 128k A1 17:28:06 and A2 17:51:47, versus 10/14 archived b11560 21:45 and b11618 21:00, each ctx131072, 126,253 input, 512 generated, temperature0, QSA union=1/minKV32768, `-b2048 -ub1024 -t4 -tb4`, f16 KV, and all other CLI arguments identical. Input SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`; main GGUF path, size 81961816672, and mtime identical (model SHA absent). Archived `llama-cli.exe` sha256 `611b1004e6596415f126695ab32adf11d9422686fb352bcaf152d19a14f7c949` and FULL 20-artifact runtime digest `be772e9a83324cfb77db3849f6b66eb4200b0209c8289a04b6ac7318431fe9a2` match 10/11 and 10/14; executable and DLL blobs were not overwritten. All three b11560 output `stdout.log` byte-identical except final native timing footer. OS reporting `10.0.26300` and Radeon driver `32.0.31041.1004` unchanged, RDP active all runs.
+
+**Material Windows-side version delta:** `SystemIdentity.PowerShellVersion` and Microsoft Remote Display Adapter `DriverVersion` both **`5.1.26100.9549` / `10.0.26100.9549` on 10/11**, and **`5.1.26100.9711` / `10.0.26100.9711` on 10/14**; the RDP adapter session ID also changes `0001`→`0002`. Same reported OS major build does not mean identical updated Windows components. Do NOT conclude RDP causes QSA slowdown without an independent test or detailed installed KB record.
+
+### PP changepoint at 32k (b11560 archived exe only)
+
+The `stderr.log` `slot print_timing: ... prompt processing ... n_tokens ... t=...` records give cumulative prompt-time since prompt evaluation started (not startup/model-load time):
+
+| Checkpoint | 10/11 b11560 A1/A2 mean | 10/14 b11560 | Time gap |
+| --- | ---: | ---: | ---: |
+| 4,096 | 5.790s | 5.830s | +0.040s |
+| 16,384 | 31.960s | 31.810s | −0.150s |
+| **32,768** | **79.335s** | **78.820s** | **−0.515s** |
+| 49,152 | 127.165s | 132.610s | +5.445s |
+| 65,536 | 177.060s | 188.880s | +11.820s |
+| 98,304 | 281.135s | 306.220s | +25.085s |
+| 124,928 | 368.475s | 404.690s | **+36.215s** |
+
+| PP interval | 10/11 A1/A2 mean s | 10/14 b11560 s | Extra time relative to old |
+| --- | ---: | ---: | ---: |
+| 16–32k | 47.375 | 47.010 | **−0.77%** |
+| 32–49k | 47.830 | 53.790 | **+12.46%** |
+| 49–65k | 49.895 | 56.270 | **+12.78%** |
+| 65–82k | 51.695 | 58.210 | **+12.60%** |
+| 82–98k | 52.380 | 59.130 | **+12.89%** |
+| 98–115k | 53.495 | 60.310 | **+12.74%** |
+| 115–125k | 33.845 | 38.160 | **+12.75%** |
+
+This abrupt speed breakpoint coincides with configured **`GGML_VK_QSA_UNION_MIN_KV=32768`**. Identical b11560 QSA startup lines on both dates: grouped union ON, fallback before threshold, then `qsa-union active (r5)`, `path=1 Br=16 Bc=64 f32acc=1 groups=16 capacity=32768 min_kv=32768 scratch=73400576`. This is strong evidence to localize the slowdown to workload conditions introduced above 32k, in particular the Vulkan QSA-union path or its GPU scheduling/power circumstances. **Temporal correlation is NOT proof that QSA shader or the Windows update is defective**: longer KV also increases generic GPU demand, and 32k coincides with ≈80 seconds of continuous inference which might cross a temperature/power threshold. More controlled profiling is needed. The same-date b11618 progress tracks b11560 throughout, reinforcing this is not the Stage-B source change.
+
+### Native resource CSV comparison (PP middle, ~65–330 seconds after first sample)
+
+| Monitor median | 10/11 b11560 A1 / A2 | 10/14 b11560 |
+| --- | ---: | ---: |
+| Target process GPU Local | 83.119 / 83.119 GiB | 83.088 GiB |
+| GPU Shared | 0.843 / 0.843 GiB | 0.843 GiB |
+| System RAM in use | 6.662 / 6.677 GiB | **8.797 GiB** |
+| System Committed | 94.901 / 94.927 GiB | 93.827 GiB |
+| System CPU % (sampled) | 2.4 / 2.35% | 3.7% |
+| Disk read median | 0 / 0 MiB/s | 0 MiB/s |
+| Hard PageReads median | 0 / 0/s | 0/s |
+| Monitor counter collection median | 1066.5 / 1067 ms | 1050 ms |
+
+System RAM +~2.1GiB used on 10/14 and system CPU sampling slightly elevated (may reflect other background processes), but no sustained disk or hard-page readings; GPU Local and KV allocation/logged Vulkan0 memory breakdown are essentially unchanged. Aggregate `TargetGPUEngineSum_Percent` telemetry is sparse and inconsistent (10/11 maximum ~17% vs sporadic 10/14 readings ~90%), so **do not treat it as calibrated clock, true GPU utilization or evidence of GPU contention**. No GPU sensor frequency/power/hotspot/throttle fields in any monitor CSV. Counter-monitor collection time itself was not higher on 10/14.
+
+### Windows Update and Defender event CSV timeline
+
+- 10/11 17:28–17:59: fast b11560 measurements. First subsequent logged quick-scan request is 19:51, skipped; Defender signatures updated at 23:59.
+- 10/13 21:02–21:26: multiple WindowsUpdateClient event 26 detections and event 41 downloads; 21:26:50–21:28:26 Defender quick scan completed. These logs are not a full installation/reboot ledger; event 41 descriptions are generic and do not identify specific KBs.
+- **10/14 11:52:22**: Defender event **2002** engine version `1.1.26080.3` → `1.1.26090.9`; event 2000 security intelligence `1.459.691.0` → `1.461.17.0` (full update), before the slow 21:00 and 21:45 runs.
+- 10/14 19:41:53–19:42:55: Defender quick scan completed, well before the slow 21:00 run.
+- **10/14 21:37:50–21:40:19**: Windows Update detections/downloads **between** slow b11618 21:00 and slow b11560 21:45; this particular logged download series cannot by itself explain the 21:00 slowdown. Later 22:04–22:05 signature update to `1.461.20.0` and other update download; screenshot showed platform KB4052623 downloading, but event CSV cannot identify its start time or complete installation history.
+
+**Assessment:** Windows-side component versions changed and Defender updates took place between dates, but evidence **does not attribute** ~9% PP change to Windows Update or Defender; do not disable security or assume thermal throttling. Distinctive 32k changepoint raises priority of Vulkan QSA union/high-KV dispatch timing. Next low-risk action: after pending Windows Update completes and a controlled reboot, run same archived b11560 with 128k/64k OFF to check if the 32k+ loss persists, and collect GPU actual frequency/power/hotspot concurrently. If persistent, use a small controlled 64k QSA union min-KV threshold toggle (32768 vs >=65536) and/or RGP on 40–60k range on same binary to separate union-path-specific latency from generic long-KV clocks; the alternate-flag run cannot by itself be compared causally against an older same-flag run. If investigating Windows packages, collect `Get-HotFix`/full WindowsUpdate installed history and versioned RDP components, keeping update changes as a hypothesis. No source modifications/merge warranted.
