@@ -1428,6 +1428,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
     // in order to correctly reuse a graph, it's full topology has to be uniquely determined by these parameters
     const auto gparams = graph_params(res, ubatch, mctx, gtype);
 
+    bool graph_reused = false;
     if (!graph_reuse_disable && gf_res_prev_active == res && res->can_reuse(gparams)) {
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
@@ -1439,6 +1440,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         }
 
         n_reused++;
+        graph_reused = true;
     } else {
         gf_res_prev_active = nullptr;
         res->reset();
@@ -1535,11 +1537,11 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
                 const int32_t last_pos = ubatch.pos ? ubatch.pos[ubatch.n_tokens - 1] : -1;
 
                 LLAMA_LOG_INFO("mtp_kv_crop_graph_v1 sample=%u crop_requested=%d crop_applied=%d "
-                        "n_tokens=%u n_outputs=%d n_seqs=%u kv_slots=%" PRId64 " last_pos=%d "
+                        "n_tokens=%u n_outputs=%d n_seqs=%u graph_reused=%d kv_slots=%" PRId64 " last_pos=%d "
                         "graph_nodes=%d fa=%d moe_matmul_id=%d ffn_weight_mm=%d matmul=%d "
                         "set_rows=%d k_writes=%d v_writes=%d logits=%d nextn=%d\n",
                         sample + 1, (int) crop_requested, (int) crop_applied,
-                        ubatch.n_tokens, n_outputs, ubatch.n_seqs_unq, kv_slots, last_pos,
+                        ubatch.n_tokens, n_outputs, ubatch.n_seqs_unq, (int) graph_reused, kv_slots, last_pos,
                         ggml_graph_n_nodes(gf), n_fa, n_moe_matmul, n_ffn_weight_mm, n_matmul,
                         n_set_rows, n_k_writes, n_v_writes,
                         (int) (res->get_logits() != nullptr), (int) (res->get_h_nextn() != nullptr));
