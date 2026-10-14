@@ -137,7 +137,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md](R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md): same-binary b11569 128k Vulkan OFF/ON trace, stage/NextN wait depth trends and GPU-attribution boundary
 - [R5-MTP-PP-VULKAN-SOURCE-RGP-PLAN-2026-10-13.md](R5-MTP-PP-VULKAN-SOURCE-RGP-PLAN-2026-10-13.md): pinned r5 target NextN final-layer crop, draft dense FA, Vulkan pinned-host readback/fallback, and bounded RGP evidence gate
 - [MTP PP Vulkan RGP labels — experimental implementation](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-MARKERS-IMPLEMENTATION-2026-10-14.md): b11577 built/validated, target FA and MoE labels captured; draft event not yet observed.
-- [Vulkan MTP RGP dispatch-index calibration (2026-10-14)](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md): new opt-in graph dispatch range logger and unique benchmark plan (**source committed, Windows build pending**).
+- [Vulkan MTP RGP dispatch-index calibration (2026-10-14)](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md): new opt-in graph dispatch range logger and unique benchmark plan (**b11587 built; native short target/draft intervals verified; 64k calibration pending**).
 - [R4-BUILD-LOAD-VALIDATION-2026-10-03.md](R4-BUILD-LOAD-VALIDATION-2026-10-03.md): build/load results and ROCm test discrepancy
 
 ## Historical investigation documents imported from r4 (2026-10-10)
