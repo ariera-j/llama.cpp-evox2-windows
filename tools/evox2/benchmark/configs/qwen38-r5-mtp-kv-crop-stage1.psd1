@@ -154,5 +154,42 @@
                 @{ Name = 'A2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
             )
         }
+        @{
+            Name = 'stage1-kv-only-128k'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpKvOnlyVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Stage-B 128k reference: MTP remains ON in both variants.
+            # Keep these conditions aligned with the MTP-OFF job below.
+            Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
+            Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
+            Variants = @(
+                @{ Name = 'A'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0' } }
+                @{ Name = 'B'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1' } }
+            )
+        }
+        @{
+            Name = 'stage1-kv-only-128k-mtp-off'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpKvOnlyVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Same b11618, main model, input, context and QSA settings as the
+            # Stage-B 128k A/B. Fully disable MTP: Mtp=$false alone is not
+            # enough because inherited DraftModelKey triggers a harness error.
+            Parameters = @{
+                Mtp           = $false
+                DraftModelKey = ''
+            }
+            Environment = @{
+                GGML_VK_QSA_UNION               = '1'
+                GGML_VK_QSA_UNION_MIN_KV        = '32768'
+                LLAMA_MTP_DRAFT_PREFILL_KV_CROP = $null
+                LLAMA_MTP_KV_CROP_DIAG          = $null
+            }
+            Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
+            Variants = @(
+                @{ Name = 'MTP-off'; Parameters = @{}; Environment = @{} }
+            )
+        }
     )
 }
