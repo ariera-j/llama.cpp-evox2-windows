@@ -259,3 +259,26 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r5-mtp-kv-crop-stage1.psd1'
 .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-64k
 ~~~
 Measure PP, TG and total because Stage B also affects generation-time zero-output Draft catch-up. Full Draft KV numerical parity and RGP confirmation of actual GPU FA dispatch absence remain future validation. Stable r5 inference source is unchanged; only this experiment branch contains the new C++ code.
+
+## Vulkan b11618 Stage-B KV-only short result — 2026-10-14 19:26 JST
+
+**Status: SHORT ACTIVE-GRAPH AND OUTPUT PARITY PASS; 64K PERFORMANCE UNMEASURED.** User ZIP `20261014-192602-059-qwen38-r5-mtp-kv-crop-stage1.zip`, SHA256 `22a2140ed0cad167dfb9bce7efc71182f68dd480631e49575b575457dc06744e`. Clean source commit `5ea504315450aeb3ef9e0160bfeea2c0da965960`, Vulkan b11618, Clang 20.1.8, identical validated executable SHA256 `7f0edf27aa9505702aeb4c5092ebe588883e76ba7c979e1fba2cf73643c01ba2` in both A/B. Target/Draft GGUF paths and metadata match; their SHA256 are null in `conditions.json` and have not been verified cryptographically. Exact same CLI args, 163 input/32 generated tokens, ctx32768; both with `LLAMA_MTP_KV_CROP_DIAG=1`, only crop env = 0/1.
+
+| Active Draft zero-output graph | A OFF | B ON |
+| --- | ---: | ---: |
+| crop_requested / crop_applied | 0 / 0 | **1 / 1** |
+| graph_nodes | 133 | **31** |
+| GGML_OP_FLASH_ATTN_EXT nodes | 1 | **0** |
+| moe_matmul_id / ffn_weight_mm | 3 / 11 | **0 / 0** |
+| matmul | 22 | 5 |
+| GGML_OP_SET_ROWS | 2 | **2** |
+| classified k_writes / v_writes | **0 / 0 (unrecognized)** | **1 / 1** |
+| logits / nextn | 1 / 1 | 0 / 0 |
+| Process status | OK, exit 0 | OK, exit 0 |
+| Draft accepted / generated | 17 / 27 | **17 / 27** |
+
+All eight active graph samples agree (163-token prefill and subsequent 3-token generation catch-ups): Stage B prunes FA, retains two named K/V cache writes and avoids output tensors. A's two SET_ROWS graph nodes remain, but index-name classification still fails even with src[1]; do not interpret the A k/v=0 labels as missing caches. Stage B graph reduction is 133→31 (~77%). GPU dispatch elimination and bytewise K/V equality have NOT been separately measured.
+
+Generated `stdout.log` is byte-identical after removing only the trailing performance footer. Both runs exit 0 without runtime errors. A: PP 97.89 tok/s (1665.14 ms), TG 15.59 tok/s (1988.58 ms). B: PP 275.56 tok/s (591.52 ms), TG 35.05 tok/s (884.33 ms). These ratios are **NOT causal speed estimates**: only A→B one run each, short prompt, diagnostic overhead and possible driver/kernel warmup. Earlier Stage A (still with FA=1) showed similarly large short A→B timing changes. 64k diagnostics-OFF ABBA is needed.
+
+**Next gate:** With the same b11618 executable and existing `R5MtpKvOnlyVulkan` BuildKey, run `stage1-kv-only-64k` A1/B1/B2/A2 after `-PlanOnly`; do not rebuild or turn on graph diagnostics. Require exit0, output and MTP acceptance equality; compare PP and TG under counterbalanced order. Stop before 128k on any mismatch/crash. Full K/V numerical parity and RGP GPU-dispatch verification remain future checks. This update changes documentation only.
