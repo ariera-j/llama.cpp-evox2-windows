@@ -1,6 +1,6 @@
 # r5 MTP-ON PP Stage A: optional Draft catch-up graph root crop (2026-10-14)
 
-**Status: STAGE-B KV-ONLY SOURCE IMPLEMENTED (UNBUILT); STAGE-A FA STILL ROOTED; SPEED & KV-PARITY UNVERIFIED.**
+**Status: STAGE-B VULKAN 64K ABBA PASS (PP +3.63%, TG +2.38% observed); GPU DISPATCH/KV NUMERICAL PARITY UNVERIFIED.**
 This is a scoped experimental change only on
 [`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
@@ -282,3 +282,34 @@ All eight active graph samples agree (163-token prefill and subsequent 3-token g
 Generated `stdout.log` is byte-identical after removing only the trailing performance footer. Both runs exit 0 without runtime errors. A: PP 97.89 tok/s (1665.14 ms), TG 15.59 tok/s (1988.58 ms). B: PP 275.56 tok/s (591.52 ms), TG 35.05 tok/s (884.33 ms). These ratios are **NOT causal speed estimates**: only A→B one run each, short prompt, diagnostic overhead and possible driver/kernel warmup. Earlier Stage A (still with FA=1) showed similarly large short A→B timing changes. 64k diagnostics-OFF ABBA is needed.
 
 **Next gate:** With the same b11618 executable and existing `R5MtpKvOnlyVulkan` BuildKey, run `stage1-kv-only-64k` A1/B1/B2/A2 after `-PlanOnly`; do not rebuild or turn on graph diagnostics. Require exit0, output and MTP acceptance equality; compare PP and TG under counterbalanced order. Stop before 128k on any mismatch/crash. Full K/V numerical parity and RGP GPU-dispatch verification remain future checks. This update changes documentation only.
+
+## Stage B native Vulkan 64k ABBA — 2026-10-14 19:37–19:55 JST
+
+**Status: STAGE-B 64K FUNCTIONAL + PERFORMANCE A/B PASS (2 runs/arm); PP improvement strongly supported within this session; TG improvement smaller/noisier; KV buffer parity and actual GPU dispatch still unverified.** ZIP `20261014-193747-315-qwen38-r5-mtp-kv-crop-stage1.zip`, SHA256 `a83c1eef972acf74da174aac424ddef1a2c5874c89ec0ff4b641fe466021520c`. Four consecutive complete OK/exit0 runs in 17.5 minutes (A1,B1,B2,A2). Native Vulkan b11618, compiler Clang20.1.8, source `5ea504315450aeb3ef9e0160bfeea2c0da965960` clean, same `R5MtpKvOnlyVulkan` CLI sha256 `7f0edf27aa9505702aeb4c5092ebe588883e76ba7c979e1fba2cf73643c01ba2`, verified artifact digest `c719ec9e0801852fcc29bc5aebe3ebcc6c1e7811bdfd42acd011071f6c81f30a`. Same target PLE16 and standalone MTP Q8_0 paths/filesizes/timestamps, identical input sha256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`, target/Draft GGUF hashes null/unverified; ctx65536, 61,789 input tokens, 512 output, 2048/1024 batch, f16 KV, QSA union=1/minKV32768, temperature0, UMA label96GB. `LLAMA_MTP_KV_CROP_DIAG` explicitly **unset**, RGP/profiler markers unset. `conditions.json` A1 vs B1 differ only in crop flag and routine run IDs/times/label.
+
+| Sequence | Flag | PP tok/s | PP time (s) | TG tok/s | TG time (s) | Total (s) | Draft accepted/generated |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A1 | OFF | 314.41 | 196.526 | 27.80 | 18.381 | 214.907 | 295/430 |
+| B1 | ON | **325.50** | 189.828 | 28.74 | 17.778 | 207.606 | 295/430 |
+| B2 | ON | **325.57** | 189.785 | 29.02 | 17.609 | 207.394 | 295/430 |
+| A2 | OFF | 313.86 | 196.865 | 28.62 | 17.854 | 214.719 | 295/430 |
+| **A mean** | OFF | **314.135** | **196.696** | **28.210** | **18.117** | **214.813** | same |
+| **B mean** | ON | **325.535** | **189.807** | **28.880** | **17.693** | **207.500** | same |
+
+Mean B–A PP throughput **+11.400 tok/s / +3.629%**, PP duration **−6.889s / −3.502%**. Mean TG throughput **+0.670 tok/s / +2.375%**, TG duration **−0.424s / −2.339%**. Total inference duration **−7.313s / −3.404%**. Throughput and duration percentages differ because denominators differ; do not swap them. PP A1/A2 314.41/313.86 (spread 0.55), B1/B2 325.50/325.57 (spread 0.07), so the PP difference is substantial relative to observed within-arm variation and survives the reversed A2 check. TG A1/A2 27.80/28.62 (spread 0.82), B1/B2 28.74/29.02 (spread 0.28); TG is positive on average but there is substantial run-order drift, so weaker causal claim. Only two repetitions/arm: not a formal confidence interval.
+
+**Functional correctness:** All four `stdout.log` files are byte-identical up to the single trailing `[ Prompt: ... | Generation: ... ]` line. `stdout.log` contains a pre-existing invalid UTF-8 byte sequence, so bytewise equality was assessed on raw bytes after stripping the performance footer rather than via strict UTF-8 decoding. All runs exit0 with no differing generated text; each reports 512 generated tokens, Draft 295 accepted / 430 generated, acceptance ratio 0.68605, graphs reused 210. No model/source/binary changes between runs. GPU resource CSV monitor medians for process-local memory ~85.36–85.47GiB across arms, similar peak 85.57GiB, and RAM ~9.85–9.96GiB; no obvious memory pressure distinction. Those counters are not calibrated GPU utilization measurements.
+
+**Where PP gain develops:** Using `slot print_timing` progress lines at 2k intervals, paired means and approximate block clock times:
+
+| Prompt segment | Mean A segment time | Mean B segment time | B savings / A |
+| --- | ---: | ---: | ---: |
+| 4–8k | 8.670s | 8.520s | **1.73%** |
+| 8–16k | 19.745s | 19.475s | **1.37%** |
+| 16–32k | 51.250s | 49.975s | **2.49%** |
+| 32–49k | 58.485s | 56.210s | **3.89%** |
+| 49–61k | 46.355s | 44.235s | **4.57%** |
+
+Cumulative A–B time gap from 4,096 to 61,440 tokens grows from 0.345s to **6.435s**. Later KV ranges show stronger improvements, **consistent with removal of increasingly costly Draft flash-attention work**. This is a better causal fingerprint than Stage A's 64k +0.53% mean PP with no convincing KV-depth gradient. Stage A and B use different compiled binaries and times, so the direct within-Stage-B ABBA is the primary comparison. Stage B has already shown `fa=0` on the real zero-output Draft graph in the earlier short diagnostic (b11618); actual Vulkan dispatch reduction remains a targeted RGP verification.
+
+**Assessment / next:** Pass the 64k functional and practical performance gate for single-session experimentation. PP gain is reproducible across the paired OFF/ON runs here, TG gain plausible but less robust. Preserve b11618 binary, commit and raw ZIP; do **not** merge experimental source into stable r5 yet. Next optional steps by value: (1) independently verify GPU Draft FA dispatch absence using RGP when useful, (2) check a longer 128k workload with same-build OFF/ON (start with a shorter A/B functional run; ABBA if resource/time allow), (3) if preparing source for merge, validate numerical Draft K/V cache parity instead of relying only on output/acceptance coincidence, then ROCm/upstream+Vision compatibility. Neither 128k nor ROCm has been measured for Stage B. Stable r5 changes here are documentation only.
