@@ -1,6 +1,6 @@
 # r5 MTP-ON PP Stage A: optional Draft catch-up graph root crop (2026-10-14)
 
-**Status: STAGE-B VULKAN 64K ABBA PASS (PP +3.63%, TG +2.38% observed); GPU DISPATCH/KV NUMERICAL PARITY UNVERIFIED.**
+**Status: STAGE-B VULKAN 64K ABBA + 128K A/B FUNCTIONAL PASS; PP +3.63% / +6.68% (ON vs same-binary crop OFF); TG 128K INCONCLUSIVE; HISTORICAL MTP-OFF PP NOT YET REACHED; GPU DISPATCH/KV PARITY UNVERIFIED.**
 This is a scoped experimental change only on
 [`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
@@ -313,3 +313,39 @@ Mean B–A PP throughput **+11.400 tok/s / +3.629%**, PP duration **−6.889s / 
 Cumulative A–B time gap from 4,096 to 61,440 tokens grows from 0.345s to **6.435s**. Later KV ranges show stronger improvements, **consistent with removal of increasingly costly Draft flash-attention work**. This is a better causal fingerprint than Stage A's 64k +0.53% mean PP with no convincing KV-depth gradient. Stage A and B use different compiled binaries and times, so the direct within-Stage-B ABBA is the primary comparison. Stage B has already shown `fa=0` on the real zero-output Draft graph in the earlier short diagnostic (b11618); actual Vulkan dispatch reduction remains a targeted RGP verification.
 
 **Assessment / next:** Pass the 64k functional and practical performance gate for single-session experimentation. PP gain is reproducible across the paired OFF/ON runs here, TG gain plausible but less robust. Preserve b11618 binary, commit and raw ZIP; do **not** merge experimental source into stable r5 yet. Next optional steps by value: (1) independently verify GPU Draft FA dispatch absence using RGP when useful, (2) check a longer 128k workload with same-build OFF/ON (start with a shorter A/B functional run; ABBA if resource/time allow), (3) if preparing source for merge, validate numerical Draft K/V cache parity instead of relying only on output/acceptance coincidence, then ROCm/upstream+Vision compatibility. Neither 128k nor ROCm has been measured for Stage B. Stable r5 changes here are documentation only.
+
+## Stage B Vulkan 128k A/B and historical MTP-OFF comparison — 2026-10-14
+
+**Status: STAGE-B 128K SINGLE A/B FUNCTIONAL PASS; PP +6.68% WITH LONG-KV GRADIENT, TG +1.36% SINGLE-PAIR INCONCLUSIVE; HISTORICAL MTP OFF NOT REACHED (CROSS-BUILD).** User ZIP `20261014-201218-810-qwen38-r5-mtp-kv-crop-stage1.zip` actual SHA256 `26426595ac0a342dce22ab87bb52e930351149dbc80afe2aa5541e7e625c63d1`. 2/2 OK exit0; start 20:12–20:29 JST. Both Vulkan b11618 from embedded executable commit `5ea504315`, executable SHA256 `7f0edf27aa9505702aeb4c5092ebe588883e76ba7c979e1fba2cf73643c01ba2`, runtime bundle Verified `c719ec9e0801852fcc29bc5aebe3ebcc6c1e7811bdfd42acd011071f6c81f30a`. `GitIdentity.Dirty=True` in both local checkouts, identical fingerprint; the **compiled executable** is verified against the Stage-B build identity. Same PLE16 main GGUF and Unsloth self-contained Draft Q8_0 paths, lengths, mtimes; their SHA256 is null and not independently confirmed. Input `nlp-survey-ch3-d15-b1.txt`, SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`, 126,253 tokens, ctx=131072; 512 generated. 96GB UMA label, f16 KV, threads4, batch2048/ubatch1024, temperature0, QSA union ON/minKV32768, diagnostic OFF, source/binary identical within pair.
+
+| b11618 128k | A: MTP ON, KV-crop OFF | B: MTP ON, KV-only ON | Relative B to A |
+| --- | ---: | ---: | ---: |
+| PP tok/s | 278.06 | **296.63** | **+6.678%** |
+| TG tok/s | 23.47 | **23.79** | +1.363% (single-pair uncertainty) |
+| PP seconds | 454.056 | **425.627** | **−28.429 s / −6.26%** |
+| TG seconds | 21.772 | 21.477 | −0.295 s |
+| Native PP+TG seconds | 475.828 | **447.104** | **−28.724 s / −6.04%** |
+| Draft accepted/generated | 295 / 429 | 295 / 429 | identical 68.765% |
+| Graph reuse | 210 | 210 | equal |
+
+Both `stdout.log` files are byte-identical *except* for the trailing `[ Prompt: ... | Generation: ... ]` footer; raw bytes used because this CLI output contains invalid UTF-8. Both have 512 output tokens and exit0. GPU process-local monitor maxima ≈88.7GiB in both, median ≈88.5/88.4GiB; no obvious memory pressure divergence. The result is one A→B sequence with no counterbalanced replicate. Hence the **PP increase is large but not yet independently replicated at 128k**; the modest TG +1.36% is potentially normal run variation.
+
+PP interval timings extracted from 2,048-token progress checkpoints show depth dependence:
+
+| Prompt segment | A seconds | B seconds | B segment reduction |
+| --- | ---: | ---: | ---: |
+| 16–32k | 50.08 | 49.14 | 1.88% |
+| 32–49k | 57.42 | 54.97 | 4.27% |
+| 49–65k | 60.99 | 57.76 | 5.30% |
+| 65–82k | 63.57 | 58.62 | 7.79% |
+| 82–98k | 65.77 | 60.74 | 7.65% |
+| 98–115k | 68.13 | 62.03 | 8.95% |
+| 115–125k | 43.54 | 39.49 | **9.30%** |
+
+This trend is consistent with skipping the Draft's KV-length-dependent FA in zero-output catch-up; it does not independently measure Vulkan GPU dispatch and cannot identify all remaining MTP-ON target/Draft costs.
+
+### Historical MTP OFF reference — not a source-identical comparison
+
+From `R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md`: Vulkan r5 **b11560**, source `f8d24494f`, same input file/126253, context, QSA union=1/minKV32768, main/draft model names, temp0, 512 output, four-run ABBA. 128k **MTP OFF** (A1/A2 mean) PP **335.455 tok/s**, TG **24.140 tok/s**, PP 376.363s, TG 21.171s, PP+TG 397.535s. That old same-binary MTP ON (B1/B2 mean) PP **303.965**, TG **23.475**, total 437.121s. Against the old **OFF** numbers the new b11618 Stage B ON is PP **−11.57%**, TG **−1.45%**, and **+49.57s (+12.47%)** total. However old b11560 MTP ON PP **303.965** is itself **faster than today's b11618 ON PP 296.63**, despite Stage B improving its own b11618 OFF-crop counterpart (278.06→296.63). The cross-build absolute differences are NOT a controlled Stage B or MTP penalty and may reflect source/kernel/scheduler differences, measurement drift and other conditions. Historical b11560 MTP OFF vs ON generated text differed, so full output equality across ON/OFF is not guaranteed.
+
+**Recommended next:** If the immediate question is whether Stage B has overcome the **MTP OFF** baseline, measure **MTP OFF on the same b11618 executable** at 128k (one run minimum, A/B counterbalanced if making a speedup claim), same input, --seed, temp, batch, union and f16 cache; disable Draft MTP completely, not just `LLAMA_MTP_DRAFT_PREFILL_KV_CROP`. This clean reference isolates the current-binary MTP penalty and avoids comparing b11560 to b11618. Alternatively run B→A repeat for robust 128k Stage B PP effect/TG uncertainty. No further source merge or ROCm conclusion is warranted yet. Stable r5 has documentation only.
