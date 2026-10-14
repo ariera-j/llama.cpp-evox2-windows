@@ -1,6 +1,6 @@
 # r5 MTP-ON PP Stage A: optional Draft catch-up graph root crop (2026-10-14)
 
-**Status: BUILT / VULKAN SHORT SMOKE PASS / 64K + KV-PARITY UNVALIDATED / NO PERFORMANCE CLAIM.**
+**Status: VULKAN SHORT + 64K FUNCTIONAL PASS / NO VERIFIED PP SPEEDUP / KV-PARITY & GRAPH-CROP UNVALIDATED.**
 This is a scoped experimental change only on
 [`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
@@ -110,6 +110,28 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r5-mtp-kv-crop-stage1.psd1'
 **Causal interpretation:** This is **NOT** evidence of 2.78× PP or 2.23× TG gain. A was run first, B second; a single 163-token prompt is vulnerable to driver pipeline warmup/shader compilation, OS caching or other run-order effects. Stage A is designed to affect only all-false-output Draft catch-up, *not generation*, so the simultaneous >2× TG difference is a strong negative control against attributing all observed short-run gains to the patch. The resource monitor also mainly covers large model initialization; aggregate disk/page-read medians are not prompt-only counters. No per-dispatch GPU trace/complete Draft K/V dump has been collected.
 
 **Decision:** Short functionality gate is passed; **next run the existing 64k A1/B1/B2/A2 same-binary plan** (`stage1-64k`) to control run order and amortize short prompt effects. Reuse **this exact b11597 binary**; do not rebuild merely because this documentation is updated. Stop if crash, output/acceptance mismatch, failed KV updates, or unverifiable run identity; qualify output and draft acceptance as observed rather than K/V bitwise parity. Optionally repeat the short test in reversed order after the 64k gate, but do not infer speedup from short timings. Native Draft FA dispatch absence and exact K/V equivalence remain open; they require targeted graph/RGP validation before calling this optimization verified.
+
+
+## Native Vulkan 64k ABBA — 2026-10-14 15:09–15:27 JST
+
+**Gate: 64K FUNCTIONAL/PARITY PASS; SPEED EFFECT NOT CONFIRMED; FA/FFN PRUNING NOT YET VERIFIED.** Raw archive `20261014-150945-740-qwen38-r5-mtp-kv-crop-stage1.zip` SHA256 `47b7d7a665a9e25d3d94c92a34500a5c9508c1c0a20a573dfeddab6ed9825f41`. All four runs from **same Vulkan b11597** `301564c2a19d567cca8891f6eb439ab69bb69aea`, executable SHA256 `9d8e68f99cb0b02fe177882cf0316a5bc92b86f1f2ef0b3beaba06be0e6324c6`; verified runtime, `ctx=65536`, same 61,789 input tokens, f16 KV, batch2048/ubatch1024, identical original PLE16 target and Q8_0 sidecar path/metadata, -temp0, 512 generated, Vulkan QSA union enabled, diagnostics unset, same 1-sequence context. Only experimental flag and per-run provenance vary.
+
+| Order | Variant | Flag | PP tok/s | PP seconds | TG tok/s | Exit | Draft accepted/generated |
+| --- | --- | --- | ---: | ---: | ---: | --- | --- |
+| 1 | A1 | 0 | 313.66 | 196.99572 | 27.80 | OK/0 | 295 / 430 |
+| 2 | B1 | 1 | 315.68 | 195.73278 | 28.76 | OK/0 | 295 / 430 |
+| 3 | B2 | 1 | 315.41 | 195.89783 | 28.63 | OK/0 | 295 / 430 |
+| 4 | A2 | 0 | 314.10 | 196.71836 | 28.61 | OK/0 | 295 / 430 |
+| **Mean** | **A (OFF)** | 0 | **313.880** | **196.85704** | **28.205** | 2/2 OK | same |
+| **Mean** | **B (ON)** | 1 | **315.545** | **195.81531** | **28.695** | 2/2 OK | same |
+
+Observed mean PP **+0.5305% / 1.042s shorter**; A replicate range 313.66–314.10 tok/s (+0.44), B range 315.41–315.68 (+0.27); B > A2 in both repetitions, but **two replicates/arm are inadequate to distinguish a tiny real effect from clock/warmup/order drift**. Same-generated `stdout.log` binary-identical across all four after removing only the timing footer; `draft acceptance=0.68605`, 295/430 for all. No evidence of correctness divergence at output level; **KV contents have not been compared**.
+
+**Progress-bin observation** (approx. cumulated server progress times; 2k-token progress): A/B mean difference already ~0.33s at 4,096 tokens and ~1.02s at 61,440; interval savings ~0.405s in first 16k, ~0.330s at 16–32k, ~0.110s at 32–49k, ~0.180s at 49–61k. **No clear growth with KV depth**, unlike a simple proportional-to-KV Draft FA cost model. TG mean B +1.74% is confounded by unusually slow A1 TG=27.80 compared with A2=28.61, B1=28.76, B2=28.63; the patch is not intended to improve generation.
+
+**Critical interpretive limit:** The identical startup `sched_reserve: graph: nodes=127/133` lines are *not evidence the runtime crop was bypassed*, because `llama_context::sched_reserve` deliberately reserves the graph with `n_outputs>=1`; Stage A requires `n_outputs==0`, so a **real prompt catch-up graph** must be inspected. `common_speculative_impl_draft_mtp` sets `ctx_dft` NextN=true/masked=true and constructs all-false-output catch-up batches, but no per-catch-up activation counter/active graph node tally is present in this release. Explicit activation, actual omission of FA/FFN GPU dispatches, retained K/V and sync effects **remain unknown**. Do not interpret the observed ~0.5% as proven optimized execution or as proof that pruning is pointless.
+
+**Decision (priority):** Hold 128k and ROCm comparisons. First add an **opt-in low-overhead one-shot diagnostic** to confirm (a) `draft_prefill_kv_crop` guard evaluated true for representative 1024-token prompt catch-up ubatches and (b) active `ggml_cgraph` really lacks `GGML_OP_FLASH_ATTN_EXT` / FFN nodes while retaining K/V `GGML_OP_SET_ROWS` / cache copy roots, and compare to the default graph. Existing RGP Draft role markers may be used separately with diagnostics kept OFF in speed tests. Only after proving activation/graph difference, re-run 64k A/B for causal PP and consider 128k. This is a recommendation, **not implemented in this update**. Do not change any inference source, runtime flag semantics, GGUF, DENSE/NOOP branch or stable r5 runtime during this documentation-only update.
 
 ## Known concerns / blockers
 
