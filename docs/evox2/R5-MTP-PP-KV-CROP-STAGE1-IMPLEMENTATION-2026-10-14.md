@@ -349,3 +349,21 @@ This trend is consistent with skipping the Draft's KV-length-dependent FA in zer
 From `R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md`: Vulkan r5 **b11560**, source `f8d24494f`, same input file/126253, context, QSA union=1/minKV32768, main/draft model names, temp0, 512 output, four-run ABBA. 128k **MTP OFF** (A1/A2 mean) PP **335.455 tok/s**, TG **24.140 tok/s**, PP 376.363s, TG 21.171s, PP+TG 397.535s. That old same-binary MTP ON (B1/B2 mean) PP **303.965**, TG **23.475**, total 437.121s. Against the old **OFF** numbers the new b11618 Stage B ON is PP **−11.57%**, TG **−1.45%**, and **+49.57s (+12.47%)** total. However old b11560 MTP ON PP **303.965** is itself **faster than today's b11618 ON PP 296.63**, despite Stage B improving its own b11618 OFF-crop counterpart (278.06→296.63). The cross-build absolute differences are NOT a controlled Stage B or MTP penalty and may reflect source/kernel/scheduler differences, measurement drift and other conditions. Historical b11560 MTP OFF vs ON generated text differed, so full output equality across ON/OFF is not guaranteed.
 
 **Recommended next:** If the immediate question is whether Stage B has overcome the **MTP OFF** baseline, measure **MTP OFF on the same b11618 executable** at 128k (one run minimum, A/B counterbalanced if making a speedup claim), same input, --seed, temp, batch, union and f16 cache; disable Draft MTP completely, not just `LLAMA_MTP_DRAFT_PREFILL_KV_CROP`. This clean reference isolates the current-binary MTP penalty and avoids comparing b11560 to b11618. Alternatively run B→A repeat for robust 128k Stage B PP effect/TG uncertainty. No further source merge or ROCm conclusion is warranted yet. Stable r5 has documentation only.
+
+## Same-binary MTP-OFF 128k benchmark plan — 2026-10-14
+
+**Status: PLAN ONLY; MTP-OFF RUN NOT YET EXECUTED.** Added a dedicated `stage1-kv-only-128k-mtp-off` CLI job to `tools/evox2/benchmark/configs/qwen38-r5-mtp-kv-crop-stage1.psd1` on the Stage-B investigation branch, and committed the earlier manually supplied `stage1-kv-only-128k` A/B job into the tracked plan for repeatability.
+
+**Comparability:** Both use the exact `R5MtpKvOnlyVulkan` BuildKey (preserve the already measured Vulkan b11618 binary; **do not rebuild**), `UnslothPle16` main model, `Context=131072`, `InputKey='128k'`, the existing 512-output/default sampling/batch/f16 settings, `GGML_VK_QSA_UNION=1` and `GGML_VK_QSA_UNION_MIN_KV=32768`. The new job's effective parameters override inherited plan defaults with `Mtp=$false` **and** `DraftModelKey=''`: `Measure-LlamaCli.ps1` otherwise throws when a Draft model key is present but MTP is false. With the blank key, it emits `--spec-type none` and no `-md`/Draft args. `LLAMA_MTP_DRAFT_PREFILL_KV_CROP` and `LLAMA_MTP_KV_CROP_DIAG` are explicitly unset. It has one variant `MTP-off` (not an ABBA run).
+
+**Commands:**
+
+~~~powershell
+$plan = '.\tools\evox2\benchmark\configs\qwen38-r5-mtp-kv-crop-stage1.psd1'
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-128k-mtp-off -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-128k-mtp-off
+~~~
+
+**Local-modified plan caveat:** The 128k A/B job was previously added manually from chat instructions, so a tracked local plan edit may block `git pull --ff-only`. Save a copy outside the worktree first; restore only that tracked plan file, then pull. The repository's plan now includes both the original A/B and the new MTP-OFF job. Do not stash-pop the old manual A/B job on top of the canonical plan without reviewing duplicates. Keep `local.psd1` / BuildKey and 128k input mapping unchanged.
+
+**Validation:** New `test_128k_mtp_off_baseline_has_no_draft_and_reuses_stage_b_binary` static regression checks job defaults/overrides and `Measure-LlamaCli.ps1` OFF behavior. Suite now has **13 tests**. Source review and structural checks passed; Windows PowerShell `-PlanOnly` / actual benchmark not run by the remote assistant. Check the plan row reports `nomtp`, has no Draft model argument, and uses the preserved b11618 artifact. After measurement compare PP/TG/PP+TG to b11618 Stage B ON; historical b11560 OFF comparison remains only secondary cross-build context.
