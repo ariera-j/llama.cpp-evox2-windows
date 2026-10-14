@@ -115,5 +115,44 @@
                 @{ Name = 'B-diag'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1' } }
             )
         }
+        @{
+            Name = 'stage1-kv-only-diag-short'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpKvOnlyVulkan')
+            ModelKeys = @('UnslothPle16')
+            # v2 active-graph instrumentation: functionality only, NOT timings.
+            Environment = @{
+                LLAMA_MTP_KV_CROP_DIAG = '1'
+                GGML_VK_QSA_UNION = '1'
+                GGML_VK_QSA_UNION_MIN_KV = '32768'
+            }
+            Cases = @(@{
+                Name = 'smoke'
+                Parameters = @{
+                    Context = 32768
+                    InputFile = 'tools\evox2\benchmark\inputs\mtp-short.txt'
+                    GenerationTokens = 32
+                }
+            })
+            Variants = @(
+                @{ Name = 'A-diag'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0' } }
+                @{ Name = 'B-diag'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1' } }
+            )
+        }
+        @{
+            Name = 'stage1-kv-only-64k'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpKvOnlyVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Stage-B speed cohort: diagnostics unset in Defaults.Environment.
+            Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
+            Cases = @(@{ Name = '64k'; Parameters = @{ Context = 65536; InputKey = '64k' } })
+            Variants = @(
+                @{ Name = 'A1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A1' } }
+                @{ Name = 'B1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B1' } }
+                @{ Name = 'B2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B2' } }
+                @{ Name = 'A2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
+            )
+        }
     )
 }
