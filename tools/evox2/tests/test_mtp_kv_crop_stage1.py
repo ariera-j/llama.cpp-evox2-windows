@@ -136,7 +136,7 @@ class StageAKvCropSourceTests(unittest.TestCase):
     def test_diagnostic_does_not_change_crop_guard_or_normal_path(self):
         ctx = self.context
         self.assertIn('const bool draft_prefill_kv_crop =', self.mtp)
-        self.assertIn('if (draft_prefill_kv_crop) {\\n        return;', self.mtp)
+        self.assertRegex(self.mtp, r"if \(draft_prefill_kv_crop\) \{\s*return;")
         self.assertIn('const bool crop_applied = !res->get_logits() && !res->get_h_nextn();', ctx)
         self.assertIn('const auto status = graph_compute(res->get_gf()', ctx)
 
