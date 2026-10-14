@@ -1,6 +1,6 @@
 # r5 MTP-ON PP Stage A: optional Draft catch-up graph root crop (2026-10-14)
 
-**Status: VULKAN SHORT + 64K FUNCTIONAL PASS / NO VERIFIED PP SPEEDUP / KV-PARITY & GRAPH-CROP UNVALIDATED.**
+**Status: VULKAN SHORT + 64K FUNCTIONAL PASS / CROP ACTIVE, DRAFT FA STILL PRESENT / SPEED & KV-PARITY UNVERIFIED.**
 This is a scoped experimental change only on
 [`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
@@ -10,7 +10,7 @@ Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copi
 - Donor: `investigation/r5-mtp-pp-trace-20261013` at `61c9c5ee8db1aa4f0609458234d9bddaa0151239`; tested diagnostic Vulkan b11587 was **built** from `1453c9063` on that lineage, not this prototype.
 - Stable r5 base pinned upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Current upstream `091b6a7fc561` (2026-10-14) contains `#30257` token/image vs MTP hidden-state separation, `#30397` Qwen MTP embedding acceptance, and LM-head allocation changes, but **no** equivalent no-output Draft KV-only execution.
 - Unsloth published b11541-mix-2500203 (2026-10-11) supports Windows Vulkan and gfx1151 ROCm; its 2026-10-13 dev-branch CM1 2-subgroup fix (`#270`) targets Gemma4 HSK 512/576 scalar fallback, not the already-CM1 Qwen3.8 Draft observed in RGP. Full source audit and upstream issue `#29811` for ratio-zero dense MTP k-pool guard: [research report on r5](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/r5/upstream-refresh-20261009/docs/evox2/R5-MTP-PP-VULKAN-OPTIMIZATION-SOURCE-REVIEW-2026-10-14.md).
-- Keep Unsloth pre-update *self-contained* Q8_0 sidecar SHA256 `cd87e5d1a4dadaeed63e35929f3b2f28d13e081b4cd32e00f2835095ec09351e` and original fixed input hashes. Do not switch to a newer GGUF or shared-head revision during this A/B.
+- Keep the same Unsloth pre-update *self-contained* Q8_0 sidecar and original fixed input hashes. Target/Draft GGUF SHA256 is unavailable (null) in the supplied log ZIPs; verify it locally rather than asserting an unconfirmed hash. Do not switch to a newer GGUF or shared-head revision during this A/B.
 
 ## Modified files / mechanism
 
@@ -190,3 +190,31 @@ Expected *criteria*, **not measurements** (do not invent node counts):
 - If `mtp_kv_crop_graph_v1` lines are absent in **both**, check actual runtime hash, BuildKey, env propagation and `LLAMA_CONTEXT_TYPE_MTP` before assuming the code is not reached.
 
 Do **not** compare PP/TG in this diagnostic cohort: graph scanning and logging perturb timing. Normal ABBA remains separate with diagnostics disabled. Do not enable RGP markers at the same time. New compiled executable SHA256/commit and diagnostic log ZIP must be captured before declaring graph-crop confirmed. No Windows build or new runtime result has been obtained while making this commit; previous b11597 functionality results remain valid only for the old binary.
+
+## Native Vulkan active-graph diagnostic result — 2026-10-14 16:52 JST
+
+**Result: STAGE-A BRANCH CONFIRMED ACTIVE, BUT DRAFT FLASH ATTENTION STILL ROOTED; KV WRITE NODE IDENTIFICATION NEEDS A FIX.** Raw ZIP `20261014-165223-584-qwen38-r5-mtp-kv-crop-stage1.zip`, SHA256 `ff4fadcb3a41f208fab36aed094399cff8203dc566f31fc827c9be3d8631a186`. Tests reported by the Windows operator as 10/10 passing after the literal-backslash-n assertion fix. Actual Vulkan executable `b11608`, compiled **clean** from `bdb3bb87f6967426a66cb9ddba86b17fcf85799e` via Clang 20.1.8; same executable SHA256 `64db0eb57423ce818540013599e6b02327d605e882d05d426350f4b8b2cada70` in A and B; verified runtime artifact. 163 prompt tokens, 32 generated, ctx32768, KV f16, same target/Draft paths and fixed runtime conditions; `LLAMA_MTP_KV_CROP_DIAG=1` in both runs, experimental crop flag changed from `0` to `1`.
+
+| Active Draft zero-output graph (sample 1; 163 input tokens) | A-diag: OFF | B-diag: ON |
+| --- | ---: | ---: |
+| `crop_requested / crop_applied` | 0 / 0 | **1 / 1** |
+| `graph_nodes` | **133** | **44** |
+| `fa` (GGML Flash Attention EXT graph nodes) | **1** | **1 (still present)** |
+| `moe_matmul_id` | 3 | **0** |
+| `ffn_weight_mm` (heuristic) | 11 | **0** |
+| `matmul` | 22 | **6** |
+| `set_rows` | 2 | 2 |
+| `k_writes / v_writes` (name-based detector) | **0 / 0** | **0 / 0** |
+| `logits / nextn` tensors | 1 / 1 | 0 / 0 |
+| `graph_reused` | 0 | 0 |
+
+All diagnostic samples (#1–8) have exactly the same per-condition graph-node counts and crop status; after the initial `n_tokens=163, n_outputs=0, last_pos=162`, samples #2–8 each have **`n_tokens=3, n_outputs=0` and `last_pos>=165`**, meaning **the Stage-A crop also activates during token generation, not only prompt prefill**. This corrects the previous interpretation of large TG changes as purely a warmup/control effect; zero-output MTP catch-up in generation *is* affected, so an actual TG impact is plausible. The two timing results (`PP 97.93/275.89 tok/s`, `TG 15.52/34.86 tok/s`, OFF/ON) are not reliable rate estimates because only one A→B order was run and logging is enabled; the observed TG gap repeats the earlier short smoke qualitatively, but is not a controlled ABBA estimate. Both exit0, generated stdout byte-identical apart from performance footer, Draft accepted/generated **17/27** each.
+
+**Root cause of remaining FA is identified in pinned source**: `src/models/qwen4exp.cpp::graph::build_layer_attn()` calls `llm_graph_context::build_attn()` even in the Stage-A cache-only branch. In turn `src/llama-graph.cpp::llm_graph_context::build_attn_mha()` contains an unconditional **`ggml_build_forward_expand(gf, cur)` at the end** (near line 2885), explicitly rooting the Flash Attention output in the active graph. Returning early from the Qwen4Exp constructor suppresses the downstream HC/FFN/logits but **cannot undo the pre-rooted FA**. Stage-A graph still contains one FA node; real GPU dispatch absence was not claimed or proven. This explains why source-level Stage A has not achieved its intended FA pruning and is a plausible reason the previous 64k PP benefit was only +0.53%.
+
+**K/V detection limitation:** Both graph variants have exactly **two `GGML_OP_SET_ROWS` nodes**, consistent with `llama_kv_cache::cpy_k()` and `cpy_v()`. However the diagnostic's hard-coded test of `node->src[2]->name == attn_inp_k_idxs / attn_inp_v_idxs` matches **neither**: `k_writes=v_writes=0` even for the full OFF graph. Treat this as a **broken/overstrict classifier**, *not evidence of missing KV writes*. Print actual operand names/ops or directly tag cache-write tensors in a follow-up instrumented patch; verify K/V roots and numerical equivalence before declaring Stage-B implementation complete.
+
+**Recommended next step, not implemented here:** Implement a **separately guarded Qwen4Exp Draft cache-only K/V projection and cache-writing path** (keep original Target/full Draft path intact and opt-in). In Stage-A early exit, avoid constructing the unused Q projection/gate and avoid calling shared `build_attn_mha()` altogether; explicitly retain K and V projections, normalization, rope, model-specific rotations, K/V cache copy roots, and required recurrent-copy roots. Then repair the K/V diagnostic classification, re-run the 163-token OFF/ON graph test, require **B `fa=0`, K/V writes present, exit0, same output/acceptance**, and only then use a diagnostics-OFF 64k ABBA followed by 128k and GPU RGP to validate dispatch elimination/performance. Design by `n_outputs` / context semantics rather than `ubatch.token` to ease a future upstream `embd_state` and MTP+Vision integration. Do not accidentally share a KV-only mode with Target or output-producing Draft graphs.
+
+**Note on provenance:** `conditions.json` in this and prior ZIPs reports **null** for target/Draft GGUF SHA256. Model content hashes cannot be asserted from these logs; the earlier documentation's purported Draft-sidecar SHA was not derived from the attached logs and must not be treated as verified. Current test reports are based on same model paths, file sizes and write timestamps, not cryptographic content hashes.
+
