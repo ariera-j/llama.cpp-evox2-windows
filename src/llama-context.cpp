@@ -1520,14 +1520,19 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
                     }
                     if (node->op == GGML_OP_SET_ROWS) {
                         ++n_set_rows;
-                        // llama_kv_cache::cpy_k/v use set_rows(cache, value, idxs).
-                        // Distinguish the two cache copies by their index inputs.
-                        if (node->src[2]) {
-                            if (std::strcmp(node->src[2]->name, "attn_inp_k_idxs") == 0) {
-                                ++n_k_writes;
-                            } else if (std::strcmp(node->src[2]->name, "attn_inp_v_idxs") == 0) {
-                                ++n_v_writes;
-                            }
+                        // ggml_set_rows(cache, value, idxs) stores src[0]=value,
+                        // src[1]=indices and src[2]=cache (ggml.c legacy order).
+                        // Previous diagnostics incorrectly checked src[2], thus
+                        // reported k/v=0 despite two live cache write nodes.
+                        const ggml_tensor * idxs = node->src[1];
+                        // Explicit labels cover the KV-only Draft path; named
+                        // indices cover the unmodified full-attention path.
+                        if (std::strcmp(node->name, "mtp_draft_cache_write_k") == 0 ||
+                            (idxs && std::strcmp(idxs->name, "attn_inp_k_idxs") == 0)) {
+                            ++n_k_writes;
+                        } else if (std::strcmp(node->name, "mtp_draft_cache_write_v") == 0 ||
+                                   (idxs && std::strcmp(idxs->name, "attn_inp_v_idxs") == 0)) {
+                            ++n_v_writes;
                         }
                     }
                 }
@@ -1536,7 +1541,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
                 const int64_t kv_slots = mem_hyb->get_attn()->get_n_kv();
                 const int32_t last_pos = ubatch.pos ? ubatch.pos[ubatch.n_tokens - 1] : -1;
 
-                LLAMA_LOG_INFO("mtp_kv_crop_graph_v1 sample=%u crop_requested=%d crop_applied=%d "
+                LLAMA_LOG_INFO("mtp_kv_crop_graph_v2 sample=%u crop_requested=%d crop_applied=%d "
                         "n_tokens=%u n_outputs=%d n_seqs=%u graph_reused=%d kv_slots=%" PRId64 " last_pos=%d "
                         "graph_nodes=%d fa=%d moe_matmul_id=%d ffn_weight_mm=%d matmul=%d "
                         "set_rows=%d k_writes=%d v_writes=%d logits=%d nextn=%d\n",
