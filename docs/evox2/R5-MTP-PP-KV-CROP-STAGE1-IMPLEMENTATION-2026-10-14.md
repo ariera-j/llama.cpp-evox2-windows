@@ -140,3 +140,53 @@ Observed mean PP **+0.5305% / 1.042s shorter**; A replicate range 313.66–314.1
 - If this graph is fully allocated with K/V roots but unexpectedly still dispatches FA, revise after reading the active graph nodes rather than assuming GGML dead-code pruning succeeded.
 - No synthetic CPU-only cache-state test has been implemented. Static source tests are *not* sufficient for merged or validated status.
 - No upstream/r5 stable inference code, DENSE or NOOP branch, GGUF, prebuilt binary, build key from another experiment or release artifact has been changed.
+
+
+## Stage A active catch-up graph diagnostic — 2026-10-14
+
+**Status: SOURCE ADDED / STATIC SOURCE CHECKED / NOT YET BUILT OR MEASURED ON WINDOWS.** After the 64k ABBA showed only +0.53% PP and no clear depth-dependent gain, add an isolated read-only graph inspection before spending time on 128k.
+
+- Changed `src/llama-context.cpp::process_ubatch`, *after* actual `model.build_graph` and scheduler graph allocation/reuse but *before* `res->set_inputs` and compute. This is **not** the `sched_reserve()` graph (`n_outputs>0`). Scope is only `LLM_GRAPH_TYPE_DECODER_MTP`, `LLM_ARCH_QWEN4EXP`, and a real `n_outputs==0` microbatch. No token/embedding input-type predicate, to simplify a future upstream `embd_state` and MTP+vision port.
+- Opt in with `LLAMA_MTP_KV_CROP_DIAG=1`. Separate from `LLAMA_MTP_DRAFT_PREFILL_KV_CROP` (the actual Stage A optimization flag). Disabled unless exactly `1`; when enabled it logs **at most the first 8 real catch-up ubatches per process**, with an atomic counter. The log scans the *active* `ggml_cgraph`, including when reused. No debug output from reserve graphs or other models; the diagnostic does not select or alter any computation.
+- The `crop_applied` bit is **observed from actual graph result outputs**, not re-evaluated model eligibility: Qwen4Exp Stage A is the unique early return leaving both `res->t_logits` and `res->t_h_nextn` null; original Qwen4Exp full path provides both. The existing optimization guard is untouched.
+- Log label `mtp_kv_crop_graph_v1`. Fields: `sample`, `crop_requested`, `crop_applied`, `n_tokens`, `n_outputs`, `n_seqs`, `graph_reused`, `kv_slots`, `last_pos`, `graph_nodes`, `fa`, `moe_matmul_id`, `ffn_weight_mm`, `matmul`, `set_rows`, `k_writes`, `v_writes`, `logits`, `nextn`.
+  - `fa`: `GGML_OP_FLASH_ATTN_EXT` **graph nodes**, not measured Vulkan GPU dispatches.
+  - `k_writes/v_writes`: `GGML_OP_SET_ROWS` with `src[2]->name` equal to `attn_inp_k_idxs` / `attn_inp_v_idxs`, matching the pinned `llama_kv_cache::cpy_k/v` implementation. `set_rows` is the total of all such nodes.
+  - `moe_matmul_id`: `GGML_OP_MUL_MAT_ID`; `ffn_weight_mm`: a **heuristic**, MM operators with a source-weight name containing `ffn_`. Neither proves the absence of *every* FFN operator, especially under fusion/renaming. Direct FA/KV-node comparisons and total graph node counts are primary; use RGP separately to verify actual GPU dispatch removal.
+  - `kv_slots`: attention cache's `get_n_kv()`, **not** necessarily the exact sequence length; use `last_pos` to locate the last input position.
+  - `graph_reused=1` means reusing the already-constructed active result; `crop_applied` still reflects the actual reused graph result.
+- The same-binary A/B diagnostic is a new `stage1-diag-short` job within `tools/evox2/benchmark/configs/qwen38-r5-mtp-kv-crop-stage1.psd1`, using a **new dedicated BuildKey `R5MtpKvCropDiagVulkan`**. The old normal `stage1-short` and `stage1-64k` jobs keep the old build key and explicitly unset the diag environment variable. The static regression suite now includes tests for this isolation.
+
+### Windows Evo-X2 test gate
+
+**Rebuild required**: previous b11597 executable did not include the new diagnostic code. Reuse the experimental branch name but a separate build directory so that the previously tested b11597 binary remains identifiable.
+
+```powershell
+git fetch origin
+git switch investigation/r5-mtp-pp-kv-crop-stage1-20261014
+git pull --ff-only
+
+python .\tools\evox2\tests\test_mtp_kv_crop_stage1.py
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-mtp-kv-crop-diag `
+  -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+  -LlvmBin 'C:\Program Files\LLVM\bin' `
+  -Parallel 4
+```
+
+In your locally ignored `tools/evox2/benchmark/configs/local.psd1`, add `R5MtpKvCropDiagVulkan` by copying the *shape* of `R5MtpKvCropVulkan` but pointing at the **new** `build-vulkan-mtp-kv-crop-diag/bin/llama-cli.exe`; do not repoint or overwrite the old ABBA BuildKey.
+
+```powershell
+$plan = '.\tools\evox2\benchmark\configs\qwen38-r5-mtp-kv-crop-stage1.psd1'
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-diag-short -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-diag-short
+```
+
+Expected *criteria*, **not measurements** (do not invent node counts):
+- A-diag `crop_requested=0 crop_applied=0`, `logits=1 nextn=1`; dense attention `fa>0`, `k_writes>=1 v_writes>=1`.
+- B-diag `crop_requested=1 crop_applied=1`, `logits=0 nextn=0`; **`fa=0`**, `k_writes>=1 v_writes>=1`, normally fewer `graph_nodes` and MoE/MM operators.
+- Both exit0, generated text and MTP Draft acceptance must match. If `B crop_applied=0`, investigate the Stage A eligibility guard first. If `B crop_applied=1` but `fa>0`, inspect hidden graph roots. If K or V write count is zero, **do not** run 64k/128k; audit cache graph roots.
+- If `mtp_kv_crop_graph_v1` lines are absent in **both**, check actual runtime hash, BuildKey, env propagation and `LLAMA_CONTEXT_TYPE_MTP` before assuming the code is not reached.
+
+Do **not** compare PP/TG in this diagnostic cohort: graph scanning and logging perturb timing. Normal ABBA remains separate with diagnostics disabled. Do not enable RGP markers at the same time. New compiled executable SHA256/commit and diagnostic log ZIP must be captured before declaring graph-crop confirmed. No Windows build or new runtime result has been obtained while making this commit; previous b11597 functionality results remain valid only for the old binary.
