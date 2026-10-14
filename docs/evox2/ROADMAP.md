@@ -1,5 +1,8 @@
 # Evo-X2 optimization roadmap
 
+> **2026-10-14 MTP PP continuation:** Existing RGP evidence is already preserved (CM1 Draft FA 139.918/139.159ms at KV 50176/51200, two 1024-query slices). Follow-on source audit confirms `batch.add(...false)` means zero requested Draft catch-up outputs, **but full `graph_mtp` still expands all-row hidden/FA/FFN**. Next research gate is to design an isolated `K/V writes only` graph without breaking cache write/scheduler inputs, output selection, rollback or full generation; first require correctness and then actual *unprofiled* PP A/B. Details: [Vulkan MTP PP optimization source review](R5-MTP-PP-VULKAN-OPTIMIZATION-SOURCE-REVIEW-2026-10-14.md#continuation-checkpoint--2026-10-14-outputfalse-is-not-a-kv-only-execution-mode). No prototype or stable source change has been made.
+
+
 **Research documentation source of truth (2026-10-13):** this copy on pinned r5 stable records completed experiment results; neither DENSE-001 nor NOOP-001 code is integrated into stable source. See [PATCHES.md](PATCHES.md) for branch-specific status and [README](README.md) for synchronization rules.
 
 ## Current execution order — 2026-10-13 (supersedes earlier NEXT sections)
