@@ -93,6 +93,9 @@ class StageAKvCropSourceTests(unittest.TestCase):
         self.assertNotIn("ggml_flash_attn_ext(", helper)
         self.assertNotIn("model.layers[il].wq", helper)
         self.assertNotIn("build_layer_ffn(", helper)
+        self.assertNotIn("ggml_build_forward_expand(gf, q_cur)", helper)
+        # Branch is deliberately dense-only, so no QSA indexer is required.
+        self.assertIn('hparams.dsv4_compress_ratios[il] == 0', helper)
 
     def test_full_attention_path_still_available(self):
         full = self.qwen.split(
@@ -143,6 +146,7 @@ class StageAKvCropSourceTests(unittest.TestCase):
             "GGML_OP_MUL_MAT_ID",
             "GGML_OP_SET_ROWS",
             'const ggml_tensor * idxs = node->src[1]',
+            'src[2]=cache',
             '"mtp_draft_cache_write_k"',
             '"mtp_draft_cache_write_v"',
             '"attn_inp_k_idxs"',
@@ -172,6 +176,14 @@ class StageAKvCropSourceTests(unittest.TestCase):
         self.assertIn("Name = 'B-diag'", diag)
         self.assertNotIn("LLAMA_MTP_KV_CROP_DIAG = '1'",
                          plan.split("Name = 'stage1-diag-short'", 1)[0])
+        self.assertIn("Name = 'stage1-kv-only-diag-short'", plan)
+        self.assertIn("Name = 'stage1-kv-only-64k'", plan)
+        kv_only = plan.split("Name = 'stage1-kv-only-diag-short'", 1)[1]
+        self.assertIn("BuildKeys = @('R5MtpKvOnlyVulkan')", kv_only)
+        self.assertIn("LLAMA_MTP_KV_CROP_DIAG = '1'", kv_only)
+        kv_speed = plan.split("Name = 'stage1-kv-only-64k'", 1)[1]
+        self.assertIn("BuildKeys = @('R5MtpKvOnlyVulkan')", kv_speed)
+        self.assertNotIn("LLAMA_MTP_KV_CROP_DIAG = '1'", kv_speed)
 
     def test_diagnostic_does_not_change_crop_guard_or_normal_path(self):
         ctx = self.context
