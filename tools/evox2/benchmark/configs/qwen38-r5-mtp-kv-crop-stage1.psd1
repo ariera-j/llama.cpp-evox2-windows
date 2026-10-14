@@ -93,7 +93,7 @@
         @{
             Name = 'stage1-diag-short'
             Tool = 'cli'
-            BuildKeys = @('R5MtpKvCropVulkan')
+            BuildKeys = @('R5MtpKvCropDiagVulkan')
             ModelKeys = @('UnslothPle16')
             # Instrumentation is opt-in for this job only: never use this
             # diagnostic job for timings or interpret its PP/TG as a speed test.
