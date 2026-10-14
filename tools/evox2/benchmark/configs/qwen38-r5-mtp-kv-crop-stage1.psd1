@@ -71,8 +71,8 @@
                 }
             })
             Variants = @(
-                @{ Name = 'A-short'; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0' } }
-                @{ Name = 'B-short'; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1' } }
+                @{ Name = 'A-short'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0' } }
+                @{ Name = 'B-short'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1' } }
             )
         }
         @{
@@ -83,10 +83,10 @@
             Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
             Cases = @(@{ Name = '64k'; Parameters = @{ Context = 65536; InputKey = '64k' } })
             Variants = @(
-                @{ Name = 'A1'; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A1' } }
-                @{ Name = 'B1'; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B1' } }
-                @{ Name = 'B2'; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B2' } }
-                @{ Name = 'A2'; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
+                @{ Name = 'A1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A1' } }
+                @{ Name = 'B1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B1' } }
+                @{ Name = 'B2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B2' } }
+                @{ Name = 'A2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
             )
         }
     )
