@@ -710,3 +710,36 @@ Native `mtp_pp_trace_v1` **prompt** 0–32768 target envelope 89.156→104.488s 
 
 Resource logging 2s: Target GPU Local median **85.361→85.363 GiB**, peak **85.572→85.810GiB**, near-identical steady local allocation. System Used RAM median9.961→10.571GiB; committed median97.55→97.995GiB, GPU clock, memory frequency, power and hotspot temperature **not recorded**; do not assign causation to small system-memory differences. Both are **debug/trace-marker/dispatch-counter-enabled** runs, not normal native unprofiled benchmarks; do NOT compare their absolute PP with regular b11560 ABBA as if instrumentation were equal. The RGP 10:56 externally triggered 512-dispatch capture may affect the second, but since most PP gap accrued **before 32k**, ahead of ~51k selected capture interval, the GPU capture event itself cannot straightforwardly explain the early accumulated difference; an armed capture/profiler state or independently varying runtime state remain possible, unproven. For reliable future test, log RDP connected/armed settings and GPU clocks/power, and compare same compiled *unprofiled* b11560 with no diagnostics.
 
+
+## 2026-10-15 01:22 regular b11560 64k OFF/ON post-reboot matched check
+
+**Raw file independently inspected:** `r5-64k-mtpoff-mtpon-qsaon-20261015-012248.zip`, SHA256 `001f6f72c64bec7de7cf03d4b2408a9e4fe72edca0a6a7fe6d9d68cff2570730`; two `llama-cli` child runs, both OK/exit0. Original 2026-10-11 ABBA comparator raw ZIP `r5-mtp-vulkan-64k128k-abba-20261011-171132(1).zip` re-read. 10/15 new OFF started 01:22:50, ended 01:26:49; ON 01:27:01–01:31:19 JST, ten second cooldown. Same archived **b11560 executable SHA256 `611b1004e6596415f126695ab32adf11d9422686fb352bcaf152d19a14f7c949` and runtime digest `be772e9a83324cfb77db3849f6b66eb4200b0209c8289a04b6ac7318431fe9a2`**. Identical full CLI `Command` and `ConditionId` within each MTP arm across dates: OFF `54673c8db655`, ON `192f9a42fc95`; same input SHA `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`, 61789 prompt tokens, 512 output, 65536 ctx, Vulkan QSA union ON/minKV32768, batch2048 ubatch1024 f16 KV, `--temp 0 --seed 1234 --ignore-eos`. Diagnostic/RGP flags **unset**, no DENSE/NOOP. Per-arm `conditions.json` difference to Oct11 limited to Git *checkout* commit/branch, timestamp, RDP indirect-display session identifier, Windows Remote Display driver/PowerShell patch 5.1.26100.9549→.9711. Actual compiled binary/runtime and AMD GPU driver identical. Causal effects of OS/RDP state **not established**.
+
+| Arm/metric | Oct11 A1 | Oct11 A2 or B2 | Oct11 mean | Oct15 single | Oct15 vs mean |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| MTP OFF PP (tok/s) | 360.57 | 362.47 | **361.520** | **340.37** | **−5.85%** |
+| MTP ON PP (tok/s) | 333.91 | 334.08 | **333.995** | **314.79** | **−5.75%** |
+| MTP OFF TG (tok/s) | 26.01 | 26.26 | 26.135 | **25.93** | −0.78% |
+| MTP ON TG (tok/s) | 28.60 | 29.17 | 28.885 | **28.56** | −1.13% |
+| MTP effect ON vs OFF PP | | | **−7.61%** | **−7.52%** | difference just **0.09 percentage points** |
+
+10/15 OFF native PP time **181.53415s**, TG **19.70368s**, output512. ON PP **196.28453s**, TG **17.89189s**, acceptance **295/430 = 68.605%**; same as original Oct11 ON B1/B2. Within each arm, full generated stdout is byte-identical after replacing only the speed footer. MTP ON-OFF PP penalty is **14.75038s on Oct15** versus **14.084s mean on Oct11**.
+
+**Cumulative per-prompt checkpoint times (seconds, Oct11 mean of 2 vs Oct15 one):**
+
+| Prompt tokens | Oct11 OFF | Oct15 OFF | Oct11 ON | Oct15 ON |
+| ---: | ---: | ---: | ---: | ---: |
+| 16384 | 32.77 | 32.31 | 34.86 | 34.83 |
+| 32768 | **80.53** | **79.88** | **85.98** | **85.90** |
+| 40960 | 104.40 | 106.57 | 111.82 | 114.43 |
+| 49152 | **128.90** | **134.04** | **138.52** | **144.21** |
+| 57344 | 153.80 | 162.23 | 165.94 | 175.01 |
+| 61440 | 166.59 | 176.74 | 180.02 | 190.77 |
+
+The first **16k→32k** segment time essentially matches across dates (OFF47.76→47.57s, ON51.13→51.07s). The **32k→49k** segment slows in 10/15 by **+11.97% OFF** (48.37→54.16s) and **+10.99% ON** (52.53→58.31s), followed by **49k→61k** slowdown **+13.28% OFF**, **+12.19% ON**. Both logs explicitly report QSA union active, path=1, Br16/Bc64 after minKV32768. Same stage boundary was previously confirmed in 128k b11560 OFF OCT11 vs Oct14/15. This is **strong evidence for reproducible date-dependent difference in the long-KV compute regime common to MTP OFF/ON**; not proof that QSA shader/kernel or memory layout is the sole cause. CPU/GPU throttling or scheduling could also scale more with long KV. Oct9 b11530 64k PLE16 MTP-OFF union-ON mean339.48, also matches Oct15 b11560 OFF340.37 (+0.26%) cross-build. Independent 10/13–14 64k b11569 OFF in high band ~361–364 (RGP diagnostics) recorded elsewhere.
+
+**Resources/quality:** 10/15 steady process GPU Local OFF median80.519 GiB peak80.614; ON median85.361 peak85.572, both same peak as Oct11 and no sustained hard page input in resource CSV. Oct15 system committed median OFF90.855/ON97.045 GiB vs Oct11 OFF~92.1–92.2/ON~98.3, direction opposite to 10/15 lower PP (so system commit alone no explanation). No real GPU clock, hotspot, power telemetry. 10/15 generation output matches Oct11 for same MTP condition (after variable footer), supporting correct repeated workload.
+
+**RGP caution:** Two b11587 10/14 64k diagnostic runs were command/environment identical but differed in *externally armed* dispatch-range Radeon Developer Panel capture mode. Their 331.34→303.23 PP gap accrued mainly **before 32k**, unlike b11560 *unprofiled* session gap that begins only **after32k**. Dispatch-range capture may impose preparation/tracking overhead before capture, but cause has NOT been directly isolated. The latest no-RGP b11560 run still shows date-dependent ~6% lower PP and a clean 32k boundary; therefore **do not use the diagnostic b11587 pair as decisive proof about b11560 performance-state mechanism**. To test RGP influence specifically, do controlled same-b11587 instrumented runs with/without Radeon Developer Panel capture armed (not merely trigger changed), and monitor clocks; only if necessary.
+
+**Decision:** both 64k and 128k post-reboot regular controls now collected. Stop gratuitous repeats. Preserve high/normal two-regime evidence with 32k changepoint and separate RGP-induced early-Prefill variability; next test only after designing GPU clock/power/thermal sampling or targeted matched-kernel attribution. No inference source changes.
