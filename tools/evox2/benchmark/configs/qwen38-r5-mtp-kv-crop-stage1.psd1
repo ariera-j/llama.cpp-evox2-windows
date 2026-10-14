@@ -36,6 +36,7 @@
         }
         Environment = @{
             LLAMA_MTP_DRAFT_PREFILL_KV_CROP    = $null
+            LLAMA_MTP_KV_CROP_DIAG             = $null
             LLAMA_MTP_PP_TRACE                 = $null
             LLAMA_MTP_DIAG                     = $null
             LLAMA_MTP_SKIP_DENSE_INDEXER       = $null
@@ -87,6 +88,31 @@
                 @{ Name = 'B1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B1' } }
                 @{ Name = 'B2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B2' } }
                 @{ Name = 'A2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
+            )
+        }
+        @{
+            Name = 'stage1-diag-short'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpKvCropVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Instrumentation is opt-in for this job only: never use this
+            # diagnostic job for timings or interpret its PP/TG as a speed test.
+            Environment = @{
+                LLAMA_MTP_KV_CROP_DIAG = '1'
+                GGML_VK_QSA_UNION = '1'
+                GGML_VK_QSA_UNION_MIN_KV = '32768'
+            }
+            Cases = @(@{
+                Name = 'smoke'
+                Parameters = @{
+                    Context = 32768
+                    InputFile = 'tools\evox2\benchmark\inputs\mtp-short.txt'
+                    GenerationTokens = 32
+                }
+            })
+            Variants = @(
+                @{ Name = 'A-diag'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0' } }
+                @{ Name = 'B-diag'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1' } }
             )
         }
     )
