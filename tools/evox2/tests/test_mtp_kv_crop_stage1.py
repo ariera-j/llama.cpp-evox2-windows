@@ -51,21 +51,58 @@ class StageAKvCropSourceTests(unittest.TestCase):
             self.mtp,
         )
 
-    def test_cache_writes_expand_before_root_crop(self):
-        attn = self.mtp.index("cur    = build_layer_attn(")
-        early_return = self.mtp.index("if (draft_prefill_kv_crop) {\n        return;")
+    def test_cache_only_branch_precedes_full_attention(self):
+        early = self.mtp.index("if (draft_prefill_kv_crop) {\n")
+        kv_call = self.mtp.index("build_layer_attn_kv_only(")
+        returns = self.mtp.index("        return;", early)
+        full_attn = self.mtp.index("cur    = build_layer_attn(")
         ffn = self.mtp.index("cur    = build_layer_ffn(")
         full_hidden = self.mtp.index("ggml_build_forward_expand(gf, res->t_h_nextn)")
-        self.assertLess(attn, early_return)
-        self.assertLess(early_return, ffn)
-        self.assertLess(early_return, full_hidden)
-        build_attn = self.graph.split(
-            "ggml_tensor * llm_graph_context::build_attn(\n"
-            "        llm_graph_input_attn_kv * inp", 1
-        )[1].split("static std::unique_ptr<llm_graph_input_attn_k>", 1)[0]
-        self.assertIn("mctx_cur->cpy_k(ctx0, k_cur, k_idxs, il)", build_attn)
-        self.assertIn("mctx_cur->cpy_v(ctx0, v_cur, v_idxs, il)", build_attn)
-        self.assertIn("ggml_build_forward_expand(gf, q_cur)", build_attn)
+        self.assertLess(early, kv_call)
+        self.assertLess(kv_call, returns)
+        self.assertLess(returns, full_attn)
+        self.assertLess(full_attn, ffn)
+        self.assertLess(ffn, full_hidden)
+        self.assertIn("GGML_ASSERT(inp_kpool == nullptr", self.mtp)
+
+    def test_kv_only_helper_preserves_dense_kv_math(self):
+        helper = self.qwen.split(
+            "void llama_model_qwen4exp::graph::build_layer_attn_kv_only(", 1
+        )[1].split("ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(", 1)[0]
+        required = (
+            "build_lora_mm(model.layers[il].wk, cur, model.layers[il].wk_s)",
+            "build_lora_mm(model.layers[il].wv, cur, model.layers[il].wv_s)",
+            "build_norm(k_cur, model.layers[il].attn_k_norm",
+            "ggml_rope_multi(",
+            "n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale",
+            "llama_mul_mat_hadamard(ctx0, k_cur, inp->self_k_rot)",
+            "llama_mul_mat_hadamard(ctx0, v_cur, inp->self_v_rot)",
+            "ggml_build_forward_expand(gf, v_cur)",
+            "ggml_build_forward_expand(gf, k_cur)",
+            "mctx_cur->cpy_k(ctx0, k_cur, inp->get_k_idxs(), il)",
+            "mctx_cur->cpy_v(ctx0, v_cur, inp->get_v_idxs(), il)",
+            'ggml_set_name(cache_write_k, "mtp_draft_cache_write_k")',
+            'ggml_set_name(cache_write_v, "mtp_draft_cache_write_v")',
+            "ggml_build_forward_expand(gf, cache_write_k)",
+            "ggml_build_forward_expand(gf, cache_write_v)",
+        )
+        for fragment in required:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, helper)
+        self.assertNotIn("build_attn_mha(", helper)
+        self.assertNotIn("ggml_flash_attn_ext(", helper)
+        self.assertNotIn("model.layers[il].wq", helper)
+        self.assertNotIn("build_layer_ffn(", helper)
+
+    def test_full_attention_path_still_available(self):
+        full = self.qwen.split(
+            "ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(", 1
+        )[1].split("ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn_linear(", 1)[0]
+        self.assertIn("model.layers[il].wq", full)
+        self.assertIn("model.layers[il].wk", full)
+        self.assertIn("model.layers[il].wv", full)
+        self.assertIn("cur = build_attn(inp,", full)
+        self.assertIn('cb(cur, "attn_output", il)', full)
 
     def test_required_draft_memory_and_full_generation_remain(self):
         self.assertIn("ggml_build_forward_expand(gf, inp_hyb->get_recr()->s_copy)", self.mtp)
@@ -94,8 +131,8 @@ class StageAKvCropSourceTests(unittest.TestCase):
         self.assertIn('sample < 8', ctx)
         # The instrumented site is the actual compute graph, not sched_reserve().
         proc = ctx.split("llm_graph_result * llama_context::process_ubatch", 1)[1]
-        self.assertLess(proc.index("ggml_backend_sched_alloc_graph"), proc.index("mtp_kv_crop_graph_v1"))
-        self.assertLess(proc.index("mtp_kv_crop_graph_v1"), proc.index("res->set_inputs(&ubatch)"))
+        self.assertLess(proc.index("ggml_backend_sched_alloc_graph"), proc.index("mtp_kv_crop_graph_v2"))
+        self.assertLess(proc.index("mtp_kv_crop_graph_v2"), proc.index("res->set_inputs(&ubatch)"))
         self.assertIn("ggml_graph_n_nodes(gf)", proc)
         self.assertIn("ggml_graph_node(gf, i)", proc)
 
@@ -105,6 +142,9 @@ class StageAKvCropSourceTests(unittest.TestCase):
             "GGML_OP_FLASH_ATTN_EXT",
             "GGML_OP_MUL_MAT_ID",
             "GGML_OP_SET_ROWS",
+            'const ggml_tensor * idxs = node->src[1]',
+            '"mtp_draft_cache_write_k"',
+            '"mtp_draft_cache_write_v"',
             '"attn_inp_k_idxs"',
             '"attn_inp_v_idxs"',
             'n_k_writes',
