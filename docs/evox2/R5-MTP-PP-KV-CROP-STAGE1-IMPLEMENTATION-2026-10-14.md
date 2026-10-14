@@ -1,6 +1,6 @@
 # r5 MTP-ON PP Stage A: optional Draft catch-up graph root crop (2026-10-14)
 
-**Status: STAGE-B VULKAN 64K ABBA + 128K A/B PASS; B11618 128K MTP-OFF CONTROL COMPLETE (STAGE-B ON PP −3.06% VS SAME BUILD OFF); CROSS-BUILD OFF PP −8.79% STILL UNEXPLAINED; KV PARITY / GPU DISPATCH UNVERIFIED.**
+**Status: STAGE-B VULKAN PP IMPROVEMENT VALIDATED WITHIN BUILD; SAME-DAY ARCHIVED b11560 MTP-OFF RECHECK MATCHES b11618 (~305 tok/s), WHILE 2026-10-11 b11560 WAS ~335 tok/s. CROSS-DATE SLOWDOWN CAUSE UNKNOWN; GPU DISPATCH/KV PARITY UNVERIFIED.**
 This is a scoped experimental change only on
 [`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
@@ -387,3 +387,35 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r5-mtp-kv-crop-stage1.psd1'
 **Source-diff audit**: GitHub compare pinned b11560 source `f8d24494fcacee01f8c9858595c3e778a1698d11` against b11618 source `5ea504315450aeb3ef9e0160bfeea2c0da965960`: 58 descendant commits, 26 changed files. Changes are predominantly MTP phase tracing and RGP diagnostics, plus experimental opt-in Draft KV-only helper and mask allocation guard. In particular `ggml/src/ggml-vulkan/ggml-vulkan.cpp` now funnels several QSA/FA dispatch sites through an **opt-in marker wrapper** even when the marker environment is unset; `ggml-vulkan-common.h` adds a disabled-by-default dispatch ordinal check, and `ggml_vk_build_graph` an inactive per-node marker guard. The original Vulkan dispatch parameters appear preserved on uninstrumented paths, and no wholesale Target QSA algorithm replacement is apparent. Nevertheless wrapper overhead, codegen/layout effects or state-related behavior are **hypotheses only**, not measured causes. The recorded current build uses Ninja Multi-Config, Clang20.1.8, LLVM Windows toolchain; historical b11560 full toolchain manifest is not in the current ZIP, so do not assert perfect build-flag parity.
 
 **Priority next experiment**: Re-run the archived **b11560 executable** (SHA256 `611b1004e6596415f126695ab32adf11d9422686fb352bcaf152d19a14f7c949`) with exactly the same 128k MTP OFF input/settings **on the present machine now**. Do not rebuild either executable. If old b11560 restores ~335 tok/s while b11618 still gives ~306 on immediate recheck, focus on source/compiled-runtime differences and split out disabled diagnostic Vulkan wrapper versus generic inference differences. If b11560 also drops to ~306, focus on environment (clocks, temperature, background load, Windows power/RDP/process competition, memory pressure, shader cache), not Stage B. A cheap alternative is same-day 64k OFF old/new before repeating full 128k. For reliable significance use counterbalanced old/new/new/old with adequate cooldown, but begin with one recheck to conserve time. Capture executable/runtime hashes, driver, GPU clocks/temps by external instrumentation (current resource CSV has no thermal metrics), PP per-KV checkpoints and memory. Do NOT merge any experimental source into stable r5 on this evidence. Updated docs only.
+
+## b11560 same-day rerun and resource CSV triage — 2026-10-14 21:45 JST
+
+**Status: CROSS-DATE PP SLOWDOWN REPRODUCED ON ARCHIVED EXECUTABLE; CAUSE NOT YET IDENTIFIED.** User ZIP `20261014-214519-917-cli-vulkan-b11560-ctx131072-84b9ed15488a.zip`, SHA256 `50a807c73fae39610c4133932080056b9b2c806e51a1a2f684edc9f070db5cdc`. Actual archived executable SHA256 **`611b1004e6596415f126695ab32adf11d9422686fb352bcaf152d19a14f7c949`** and runtime digest **`be772e9a83324cfb77db3849f6b66eb4200b0209c8289a04b6ac7318431fe9a2`**, matching documented 2026-10-11 b11560 ABBA artifacts. b11560 2026-10-14 21:45:19–21:53:13 JST, Clang20.1.8, 128k ctx, 126253 input/512 output, `Mtp=false`, `--spec-type none`, exact input SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`, identical main model path/size/mtime to contemporary b11618. All effective conditions besides executable/build-runtime identity match: -b2048, -ub1024, f16 KV, 4/4 threads, -ncmoe0, temp0, seed1234, --ignore-eos, QSA union=1/minKV32768, diagnostic environments unset. Both contemporary runs exit0; 10/14 machine Win11 build26300 / Radeon driver32.0.31041.1004, RDP display adapter present. No GPU clocks or temperatures captured.
+
+| 128k MTP OFF | Archived b11560 2026-10-11 mean (two ABBA OFF) | Same archived b11560 re-run 2026-10-14 | b11618 control 2026-10-14 |
+| --- | ---: | ---: | ---: |
+| PP tok/s | **335.455** | **305.18** | 305.98 |
+| TG tok/s | 24.140 | **23.68** | 23.74 |
+| PP seconds | 376.363 | **413.70089** | 412.61658 |
+| TG seconds | 21.171 | **21.57938** | 21.52917 |
+| Native total seconds | 397.535 | **435.28027** | 434.14575 |
+
+Old executable's **cross-date PP rate −9.03%**, while contemporary b11560/b11618 rate difference is only ~**0.26%** (b11560 lower); thus a code-only explanation for the ~9% change is strongly disfavored. The 10/14 b11560 vs b11618 real prompt-progress checkpoints are nearly identical throughout: at 32768 tokens 78.82/78.81 s, 65536 188.88/188.47 s, 98304 306.22/305.52 s, and 124928 404.69/403.78 s (old/new). They do not show a unique code-path stall. The two were run ~45min apart rather than counterbalanced, so no formal equivalence claim.
+
+**10/14 resource triage:** 234 samples b11618 and 235 samples b11560 at ~2s cadence. Exclude load ramp by using ~46–448s after first sample for PP-only descriptive medians:
+
+| Counter | b11618 21:00 | b11560 21:45 |
+| --- | ---: | ---: |
+| Target GPU Local median | 83.15 GiB | 83.15 GiB |
+| Target GPU Shared median | 0.843 GiB | 0.843 GiB |
+| System RAM used median | 8.73 GiB | 8.75 GiB |
+| System Commit median | 93.85 GiB | 93.84 GiB |
+| Commit limit | 127.65 GiB | 127.65 GiB |
+| Disk read median | 0 MiB/s | 0 MiB/s |
+| Page reads median | 0/s | 0/s |
+
+Most prompt intervals have no sustained disk reads or hard page reads; the intense spikes are primarily during GGUF startup. Model/VRAM/commit counters remain remarkably similar across b11560 and b11618. The prior 10/11 b11560 128k MTP-OFF ABBA also documented peak Target GPU Local ~83.370 GiB, equal to present peak ~83.37 GiB. Soft `PageFaults_PerSec` is not a valid disk-paging measure. `TargetGPUEngineSum_Percent` is sampled inconsistently (median zero, sporadic bursts) and does **not** establish GPU idle/busy or frequency. Neither 10/14 monitor has GPU core/memory clocks, junction/hotspot temperature, board/package power or throttling flags. Ambient outdoor/room temperature alone cannot exclude changes in thermal or power management.
+
+**Unresolved hypotheses (not findings):** lower GPU effective clocks or power envelope, a changed Windows power plan/Windows/driver state, concurrent GPU load, or a differing benchmark/OS environment on 10/11. Do not blame Stage B, Vulkan RGP wrappers, paging or thermal throttling as a demonstrated cause without comparing the original run.
+
+**Precise 2026-10-11 raw data to retrieve next:** Document `R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md` identifies ZIP **`r5-mtp-vulkan-64k128k-abba-20261011-171132.zip`**. Target its 128k **A1 MTP OFF started 17:28:06 JST** and **A2 MTP OFF started 17:51:47 JST** (two runs). Need both `conditions.json`, `result.json`, `stderr.log`, `resources.csv` at minimum; ideally full archive for consistent metadata. Compare same-binary SHA, driver/OS build, RDP state, model/input SHA, env, per-KV prompt timing, commit/VRAM/paging and concurrent-resource counters. Existing historical summary supplies only peak Local, not per-time samples. If clock/temperature not present in original CSV, compare resource profiles first and capture new dedicated AMD sensors (GPU clocks, temperature, power and throttling) before other optimization work. Stable r5 source untouched; analysis is documentation only.
