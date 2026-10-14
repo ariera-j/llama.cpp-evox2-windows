@@ -159,3 +159,35 @@ Within RGP **Events → Event timing**, \`Group by user events\`, filter \`role=
 **Immediate next action (no further blind 64k rerun):** In **this existing RGP**, expand `EVOX2_MTP_MAIN role=draft`, capture the **complete label including `KV=` and `N=`** and the nested `flash_attn_f32_f16_aligned_cm1` dispatch **Duration** for both consecutive Draft intervals. If visible, also inspect the Draft `MUL_MAT_ID`/FFN and NextN-related events. Then parse/compare the new native ZIP and .rgp programmatically or manually before calculating per-stage proportion. Do **not** yet claim all ~13–38sec PP penalties originate in Draft FA, or attempt a correctness-impacting KV-only change.
 
 **No source change** from the successful b11587 diagnostic is needed now. After the stage durations are recovered, decide whether an RGP OFF comparison at the same KV is warranted.
+
+
+## Draft FA GPU timing positively verified at exact KV=50,176 and 51,200 — 2026-10-14
+
+**EVIDENCE GATE PASSED:** The user supplied a third Events → Event timing screenshot from **the same existing b11587, 64k MTP-ON, Dispatch range 217300/count512 RGP**. The screenshot shows the expanded native Vulkan pipeline and duration, including the complete `EVOX2_MTP_MAIN` marker. No additional benchmark or source modification was needed.
+
+The screenshot's RGP event tree is **filtered to `FLASH_ATTN_EXT node_42`**, so the topmost displayed, filtered parent duration is **not the entire Draft compute graph**.
+
+| Native RGP field | Draft microbatch at KV=50,176 | Draft microbatch at KV=51,200 |
+| --- | ---: | ---: |
+| GPU user-event role | `EVOX2_MTP_GRAPH role=draft` | `EVOX2_MTP_GRAPH role=draft` |
+| `N` queries | **1,024** | **1,024** |
+| `Br` / `Bc` | 16 / 64 | 16 / 64 |
+| `n_kv_max` | 0 | 0 |
+| Query tensor | `Qcur-48 (view) (permuted)` | same |
+| Mask prepass shader | `fa_mask_opt` | `fa_mask_opt` |
+| Mask prepass vkCmdDispatch grid | `(49,64,1)` | `(50,64,1)` |
+| Mask prepass GPU duration | **1,094.154 µs** | **1,159.200 µs** |
+| FA main shader | **`flash_attn_f32_f16_aligned_cm1`** | **same** |
+| FA main vkCmdDispatch grid | `(64,24,1)` | `(64,24,1)` |
+| **FA main GPU dispatch time** | **139,917.873 µs (139.918 ms)** | **139,159.326 µs (139.159 ms)** |
+| Filtered enclosing FLASH_ATTN_EXT region | **141,012.698 µs** | **140,319.252 µs** |
+
+The **two 1,024-token Draft FA microbatches** have summed FA-main GPU event durations **279.077199 ms**, summed mask preprocessing **2.253354 ms**, and summed enclosing **FA-filtered** region durations **281.331950 ms**. FA main is ~**99.2% of these FA-filtered intervals**, not of the complete Draft graph. This directly measures **GPU dispatch duration**, unlike prior CPU `draft_us` intervals. Both measured KV lengths are read from the actual RGP label rather than inferred from timestamps.
+
+These are **two local observations at ~50–51k KV**, not an extrapolation to the entire 64k or 128k prompt; the small decrease in duration as KV increases by 1,024 is within potential GPU variance and does not imply a negative scaling slope.
+
+An earlier **unfiltered** screenshot of *this same RGP capture* showed an inclusive **232.580 ms** Draft graph interval with nested `mtp_eh_proj-48` **57.138 ms** (underlying `matmul_q8_0_q8_1` dispatch **56.497 ms**). If the first FA-filtered event matches that same graph, the rough within-graph shares are **FA ~60.6%**, **projection ~24.6%**, **other ~14.8%**. **Treat these as preliminary, not a rigorously additive operator decomposition**, since the two screenshots are differently filtered and marker nesting/queue bubbles and exact event matching have not been exhaustively verified. Never add the inclusive Draft total to its nested FA or projection time.
+
+**Research interpretation:** Draft dense FA is now **positively demonstrated** to be a costly GPU kernel during 64k prefill (~140ms per 1,024-token Draft microbatch at ~51k KV), alongside substantial Draft projection Q8_0 GEMM. This supports studying Draft prefill query/KV dependencies and potential correctness-gated KV-only design, **but not implementing KV-only yet**. Earlier 128k CPU trace also exposed about **+15.975s** Target+NextN wait-envelope difference vs OFF, separate from the ~20.023s Draft `llama_process` call envelope. The entire 64k/128k PP slowdown cannot be assigned exclusively to Draft FA from this one RGP slice.
+
+**Next diagnostic step:** No further RGP calibration needed to prove draft FA. Optionally show **one unfiltered expanded Draft graph** with all operators and durations in the same event tree if reliable stage percentages are required. Otherwise prioritize source-only correctness/dependency review of draft prefill, then a targeted isolated optimization plan with explicit output/acceptance verification. Keep DENSE/NOOP TG patches and stable b11569 inference code untouched.
