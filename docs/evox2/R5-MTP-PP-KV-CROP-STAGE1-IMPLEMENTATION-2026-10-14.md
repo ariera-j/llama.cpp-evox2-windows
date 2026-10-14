@@ -1,6 +1,6 @@
 # r5 MTP-ON PP Stage A: optional Draft catch-up graph root crop (2026-10-14)
 
-**Status: VULKAN SHORT + 64K FUNCTIONAL PASS / CROP ACTIVE, DRAFT FA STILL PRESENT / SPEED & KV-PARITY UNVERIFIED.**
+**Status: STAGE-B KV-ONLY SOURCE IMPLEMENTED (UNBUILT); STAGE-A FA STILL ROOTED; SPEED & KV-PARITY UNVERIFIED.**
 This is a scoped experimental change only on
 [`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
@@ -218,3 +218,44 @@ All diagnostic samples (#1–8) have exactly the same per-condition graph-node c
 
 **Note on provenance:** `conditions.json` in this and prior ZIPs reports **null** for target/Draft GGUF SHA256. Model content hashes cannot be asserted from these logs; the earlier documentation's purported Draft-sidecar SHA was not derived from the attached logs and must not be treated as verified. Current test reports are based on same model paths, file sizes and write timestamps, not cryptographic content hashes.
 
+
+
+## Stage B implementation: dense Draft K/V only, no FA graph root — 2026-10-14
+
+**Status: SOURCE COMMITTED, STATIC SOURCE CHECKS REVIEWED, NOT YET BUILT OR TESTED ON WINDOWS.** The prior b11608 diagnostic proved Stage A's outputless Draft graph still had one GGML_OP_FLASH_ATTN_EXT: the common build_attn_mha() explicitly calls ggml_build_forward_expand(gf, cur). Returning early from graph_mtp after normal attention creation could not remove that root. Stage B replaces the cache-only route, not the normal full graph.
+
+### Source changes and compatibility
+
+- New Qwen4Exp-only graph::build_layer_attn_kv_only() declared in src/models/models.h and implemented in src/models/qwen4exp.cpp. The existing llm_graph_context::build_attn(), build_attn_mha(), Target path and output-producing Draft path remain unchanged.
+- Retain the existing strict Stage-A guard: exact environment switch LLAMA_MTP_DRAFT_PREFILL_KV_CROP=1, n_outputs==0, masked NextN, no training, non-unified KV, one sequence, dense (MTP compress ratio 0), one MTP layer. This includes Draft zero-output catch-up during TG. Do not change graph selection based on token vs image embeddings: an eventual upstream hidden-state/vision ABI can be ported without changing semantics. NOTE: the current pinned graph_mtp constructor still requires ubatch.token, so Vision compatibility is not implemented yet.
+- Stage B calls the new helper, then returns *before* full build_layer_attn() (whose output invokes FA). The helper computes K and V LoRA projections, K RMS norm, K IMRoPE, optional K and V Hadamard rotations, then roots both K and V cache writes via mctx_cur->cpy_k / cpy_v and ggml_build_forward_expand. Its output nodes are tagged mtp_draft_cache_write_k and mtp_draft_cache_write_v for diagnostics. No query projection, FA, output gate, WO, FFN, NextN or logits are constructed in this branch. The draft recurrent-copy root is retained.
+- Exact transform order and rope arguments were copied from existing build_layer_attn() and build_attn(llm_graph_input_attn_kv). Duplication is intentional to keep other inference source stable; re-audit if upstream changes Qwen4Exp K/V logic.
+- Correct the diagnostic's SET_ROWS operand semantics: source ggml/src/ggml.c::ggml_set_rows sets src[0]=values, src[1]=indices, src[2]=cache. Earlier b11608 diagnostics wrongly inspected src[2], thus printed zero K/V writes despite two SET_ROWS operations. New source examines src[1] and also accepts specifically named Stage-B output nodes. Diagnostic prefix is now mtp_kv_crop_graph_v2.
+- Static regression suite tools/evox2/tests/test_mtp_kv_crop_stage1.py now has 12 tests for isolated early return, K/V projections/rotation/cache roots, unchanged full path, diagnostic operand correction and isolated test jobs. These are source assertions, NOT proof of compilation or correctness.
+
+### New Windows build / first validation
+
+Preserve previously measured executable identities: DO NOT repoint the older R5MtpKvCropVulkan (b11597) or R5MtpKvCropDiagVulkan (b11608) BuildKeys. Define a new R5MtpKvOnlyVulkan in ignored tools/evox2/benchmark/configs/local.psd1, copying the existing mapping format but pointing to the new build-vulkan-mtp-kv-only/bin/llama-cli.exe.
+
+~~~powershell
+git fetch origin
+git switch investigation/r5-mtp-pp-kv-crop-stage1-20261014
+git pull --ff-only
+
+python .\tools\evox2\tests\test_mtp_kv_crop_stage1.py
+
+.\tools\evox2\build\Build-Vulkan.ps1 -BuildDir .\build-vulkan-mtp-kv-only -VulkanSdk C:\VulkanSDK\1.4.357.0 -LlvmBin 'C:\Program Files\LLVM\bin' -Parallel 4
+
+$plan = '.\tools\evox2\benchmark\configs\qwen38-r5-mtp-kv-crop-stage1.psd1'
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-diag-short -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-diag-short
+~~~
+
+**Short gate:** Verify 12 static tests pass and actual build source hash/CLI binary hash match this branch; run A-diag and B-diag with identical inputs/models and binary, only the crop flag different. Expected OFF: requested=0, applied=0, FA>=1, logits/nextn present, 1+ K write and 1+ V write. Expected ON: requested=1, applied=1, **FA=0**, logits/nextn absent, **1+ K write and 1+ V write**. Compare measured graph_nodes, full output text (strip performance footer) and Draft generated/accepted counts; both exit 0 and no backend errors. If ON has FA>0, or K/V writes are not demonstrably present, STOP; inspect graph and cache buffers. No numbers for Stage B have been measured yet.
+
+**Performance only after short gate:** Use separate, diagnostics-OFF same-binary ABBA:
+~~~powershell
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-64k -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyJob stage1-kv-only-64k
+~~~
+Measure PP, TG and total because Stage B also affects generation-time zero-output Draft catch-up. Full Draft KV numerical parity and RGP confirmation of actual GPU FA dispatch absence remain future validation. Stable r5 inference source is unchanged; only this experiment branch contains the new C++ code.
