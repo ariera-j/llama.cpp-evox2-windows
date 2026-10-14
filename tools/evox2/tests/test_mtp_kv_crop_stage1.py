@@ -111,6 +111,7 @@ class StageAKvCropSourceTests(unittest.TestCase):
             'n_v_writes',
             'n_fa',
             'kv_slots',
+            'graph_reused',
             'crop_requested',
             'crop_applied',
             '!res->get_logits() && !res->get_h_nextn()',
@@ -118,6 +119,19 @@ class StageAKvCropSourceTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, ctx)
+
+    def test_diagnostic_plan_isolated_from_performance_jobs(self):
+        plan = (ROOT / "tools/evox2/benchmark/configs/"
+                "qwen38-r5-mtp-kv-crop-stage1.psd1").read_text(encoding="utf-8")
+        self.assertIn("LLAMA_MTP_KV_CROP_DIAG             = $null", plan)
+        self.assertIn("Name = 'stage1-diag-short'", plan)
+        self.assertIn("BuildKeys = @('R5MtpKvCropDiagVulkan')", plan)
+        diag = plan.split("Name = 'stage1-diag-short'", 1)[1]
+        self.assertIn("LLAMA_MTP_KV_CROP_DIAG = '1'", diag)
+        self.assertIn("Name = 'A-diag'", diag)
+        self.assertIn("Name = 'B-diag'", diag)
+        self.assertNotIn("LLAMA_MTP_KV_CROP_DIAG = '1'",
+                         plan.split("Name = 'stage1-diag-short'", 1)[0])
 
     def test_diagnostic_does_not_change_crop_guard_or_normal_path(self):
         ctx = self.context
