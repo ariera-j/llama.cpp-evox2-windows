@@ -235,7 +235,7 @@ All diagnostic samples (#1–8) have exactly the same per-condition graph-node c
 
 ### New Windows build / first validation
 
-Preserve previously measured executable identities: DO NOT repoint the older R5MtpKvCropVulkan (b11597) or R5MtpKvCropDiagVulkan (b11608) BuildKeys. Define a new R5MtpKvOnlyVulkan in ignored tools/evox2/benchmark/configs/local.psd1, copying the existing mapping format but pointing to the new build-vulkan-mtp-kv-only/bin/llama-cli.exe.
+Preserve previously measured executable identities: DO NOT repoint the older R5MtpKvCropVulkan (b11597) or R5MtpKvCropDiagVulkan (b11608) BuildKeys. Define a new R5MtpKvOnlyVulkan in ignored tools/evox2/benchmark/configs/local.psd1, copying the existing mapping format but pointing to the new build-vulkan-mtp-kv-only/bin/Release directory (the BuildKey uses BinDir, not a filename; follow the actual Build-Vulkan.ps1 output).
 
 ~~~powershell
 git fetch origin
