@@ -7,6 +7,7 @@
 #include "llama-batch.h"
 #include "llama-io.h"
 #include "llama-memory.h"
+#include "llama-memory-hybrid-idx.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
 #include "llama-moe-cache.h"
@@ -14,7 +15,9 @@
 #include "llama-sampler.h"
 #include "llama.h"
 
+#include <atomic>
 #include <cinttypes>
+#include <cstdlib>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -1462,6 +1465,86 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         }
 
         gf_res_prev_active = res;
+    }
+
+    // Experimental, read-only inspection of the *active* Qwen4Exp MTP Draft
+    // catch-up graph (not sched_reserve(), which always uses n_outputs > 0).
+    // The environment switch is process-scoped and intentionally separate
+    // from LLAMA_MTP_DRAFT_PREFILL_KV_CROP. No diagnostic work when unset.
+    if (gtype == LLM_GRAPH_TYPE_DECODER_MTP &&
+        model.arch == LLM_ARCH_QWEN4EXP && n_outputs == 0) {
+        static const bool kv_crop_diag_enabled = [] {
+            const char * env = std::getenv("LLAMA_MTP_KV_CROP_DIAG");
+            return env && std::strcmp(env, "1") == 0;
+        }();
+
+        if (kv_crop_diag_enabled) {
+            static std::atomic<unsigned> logged{0};
+            const unsigned sample = logged.fetch_add(1, std::memory_order_relaxed);
+
+            // Bound both logging and node traversal; only real compute ubatches
+            // get here, and graph reuse is represented by the active res/gf.
+            if (sample < 8) {
+                const char * crop_env = std::getenv("LLAMA_MTP_DRAFT_PREFILL_KV_CROP");
+                const bool crop_requested = crop_env && std::strcmp(crop_env, "1") == 0;
+                // In this Qwen4Exp constructor the only return before filling
+                // either output is the Stage-A cache-only branch. This observes
+                // the *built/reused* graph, not a duplicated eligibility formula.
+                const bool crop_applied = !res->get_logits() && !res->get_h_nextn();
+
+                int n_fa             = 0;
+                int n_moe_matmul     = 0;
+                int n_ffn_weight_mm  = 0;
+                int n_matmul         = 0;
+                int n_set_rows       = 0;
+                int n_k_writes       = 0;
+                int n_v_writes       = 0;
+
+                for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
+                    const ggml_tensor * node = ggml_graph_node(gf, i);
+                    if (node->op == GGML_OP_FLASH_ATTN_EXT) {
+                        ++n_fa;
+                    }
+                    if (node->op == GGML_OP_MUL_MAT_ID) {
+                        ++n_moe_matmul;
+                    }
+                    if (node->op == GGML_OP_MUL_MAT || node->op == GGML_OP_MUL_MAT_ID) {
+                        ++n_matmul;
+                        // Heuristic: generic MM may use unnamed views/casts,
+                        // so this is only a named-weight FFN indicator.
+                        if (node->src[0] && std::strstr(node->src[0]->name, "ffn_")) {
+                            ++n_ffn_weight_mm;
+                        }
+                    }
+                    if (node->op == GGML_OP_SET_ROWS) {
+                        ++n_set_rows;
+                        // llama_kv_cache::cpy_k/v use set_rows(cache, value, idxs).
+                        // Distinguish the two cache copies by their index inputs.
+                        if (node->src[2]) {
+                            if (std::strcmp(node->src[2]->name, "attn_inp_k_idxs") == 0) {
+                                ++n_k_writes;
+                            } else if (std::strcmp(node->src[2]->name, "attn_inp_v_idxs") == 0) {
+                                ++n_v_writes;
+                            }
+                        }
+                    }
+                }
+
+                const auto * mem_hyb = static_cast<const llama_memory_hybrid_idx_context *>(mctx);
+                const int64_t kv_slots = mem_hyb->get_attn()->get_n_kv();
+                const int32_t last_pos = ubatch.pos ? ubatch.pos[ubatch.n_tokens - 1] : -1;
+
+                LLAMA_LOG_INFO("mtp_kv_crop_graph_v1 sample=%u crop_requested=%d crop_applied=%d "
+                        "n_tokens=%u n_outputs=%d n_seqs=%u kv_slots=%" PRId64 " last_pos=%d "
+                        "graph_nodes=%d fa=%d moe_matmul_id=%d ffn_weight_mm=%d matmul=%d "
+                        "set_rows=%d k_writes=%d v_writes=%d logits=%d nextn=%d\\n",
+                        sample + 1, (int) crop_requested, (int) crop_applied,
+                        ubatch.n_tokens, n_outputs, ubatch.n_seqs_unq, kv_slots, last_pos,
+                        ggml_graph_n_nodes(gf), n_fa, n_moe_matmul, n_ffn_weight_mm, n_matmul,
+                        n_set_rows, n_k_writes, n_v_writes,
+                        (int) (res->get_logits() != nullptr), (int) (res->get_h_nextn() != nullptr));
+            }
+        }
     }
 
     // set the input data for the input tensors
