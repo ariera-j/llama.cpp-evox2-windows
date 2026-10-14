@@ -34,7 +34,7 @@
 
 - The `llm_graph_input_attn_kv` overload executes `ggml_build_forward_expand(gf, mctx_cur->cpy_k(...))` and `cpy_v(...)` before constructing `build_attn_mha()`, so K/V cache writes are explicit graph operations, **not** an invisible side-effect of a Flash Attention shader. This creates a concrete possibility of building a distinct graph with pre-attention input/normalization/K/V projection/RoPE and K/V write nodes only.
 - **Critical limitation:** The existing `build_attn()` initially expands Q and K/V paths together, and the current `graph_mtp` then forces attention/FFN/logits via `ggml_build_forward_expand`. **A true KV-only graph requires a new, explicit path.** Simply changing `ubatch.output`, `embeddings_nextn_masked`, FA enable or the output flags is not sufficient.
-- Such a path needs to preserve **all positional handling, per-token target-hidden-to-Draft pairing, K and V quantization/format, cache cell mappings, partial-batch tail, multi-ubatch segmentation, scheduler graph inputs and memory update semantics**. `ggml_graph_res::set_inputs()` expects only graph-allocated inputs, so any removed inputs require corresponding registration/setter changes.
+- Such a path needs to preserve **all positional handling, per-token target-hidden-to-Draft pairing, K and V quantization/format, cache cell mappings, partial-batch tail, multi-ubatch segmentation, scheduler graph inputs and memory update semantics**. `llm_graph_result::set_inputs()` expects only graph-allocated inputs, so any removed inputs require corresponding registration/setter changes.
 
 ### 4. Graph API can distinguish an MTP-only prefill mode, but this is not implemented
 
