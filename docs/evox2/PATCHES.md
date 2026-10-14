@@ -1,5 +1,8 @@
 # Evo-X2 downstream patch registry
 
+> **2026-10-14 follow-up: Draft KV-only candidate is SOURCE REVIEW ONLY, no patch implemented.** All-false Draft catch-up output flags actually propagate to `n_outputs=0` in the batch allocator, but the Qwen4Exp MTP graph still computes full-row attention/HC/FFN; RGP confirms dense CM1 FA ~139ms per 1024-query late-KV ubatch. A distinct cache-writing K/V-only graph is a plausible correctness-gated optimization; output/logit masking alone is not sufficient. See [extended Vulkan MTP PP source review](R5-MTP-PP-VULKAN-OPTIMIZATION-SOURCE-REVIEW-2026-10-14.md#continuation-checkpoint--2026-10-14-outputfalse-is-not-a-kv-only-execution-mode) and [RGP native timing](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md). **No change** to DIAG-003 implementation status, r5 inference source, DENSE/NOOP branches or b11587 diagnostic binary.
+
+
 ## Current cross-branch patch and candidate register — 2026-10-13
 
 **Research policy:** [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md). **Integrated snapshots:** [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md) — **none created yet; first checkpoint planned**. The research objective is understanding and testing performance mechanisms, not continuously shipping the newest upstream. r5 remains pinned at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Neither this registry nor the new policy changes a runtime binary, source pin or experimental code.
