@@ -185,6 +185,40 @@ class StageAKvCropSourceTests(unittest.TestCase):
         self.assertIn("BuildKeys = @('R5MtpKvOnlyVulkan')", kv_speed)
         self.assertNotIn("LLAMA_MTP_KV_CROP_DIAG = '1'", kv_speed)
 
+    def test_128k_mtp_off_baseline_has_no_draft_and_reuses_stage_b_binary(self):
+        plan = (ROOT / "tools/evox2/benchmark/configs/"
+                "qwen38-r5-mtp-kv-crop-stage1.psd1").read_text(encoding="utf-8")
+        stage_b = plan.split("Name = 'stage1-kv-only-128k'", 1)[1].split(
+            "Name = 'stage1-kv-only-128k-mtp-off'", 1
+        )[0]
+        mtp_off = plan.split("Name = 'stage1-kv-only-128k-mtp-off'", 1)[1]
+        for fragment in (
+            "BuildKeys = @('R5MtpKvOnlyVulkan')",
+            "ModelKeys = @('UnslothPle16')",
+            "Context = 131072; InputKey = '128k'",
+            "GGML_VK_QSA_UNION = '1'",
+            "GGML_VK_QSA_UNION_MIN_KV = '32768'",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, stage_b)
+        for fragment in (
+            "BuildKeys = @('R5MtpKvOnlyVulkan')",
+            "ModelKeys = @('UnslothPle16')",
+            "Context = 131072; InputKey = '128k'",
+            "Mtp           = $false",
+            "DraftModelKey = ''",
+            "LLAMA_MTP_DRAFT_PREFILL_KV_CROP = $null",
+            "LLAMA_MTP_KV_CROP_DIAG          = $null",
+            "Name = 'MTP-off'",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, mtp_off)
+        self.assertNotIn("Mtp           = $false", stage_b)
+        cli = (ROOT / "tools/evox2/benchmark/Measure-LlamaCli.ps1"
+               ).read_text(encoding="utf-8")
+        self.assertIn("Draft model was supplied but -Mtp was not specified.", cli)
+        self.assertIn("$LlamaArguments += @('--spec-type', 'none')", cli)
+
     def test_diagnostic_does_not_change_crop_guard_or_normal_path(self):
         ctx = self.context
         self.assertIn('const bool draft_prefill_kv_crop =', self.mtp)
