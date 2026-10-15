@@ -547,6 +547,7 @@ $process = $null
 $processHandle = [IntPtr]::Zero
 $monitorProcess = $null
 $adlxMonitorProcess = $null
+$adlxMonitorHandle = [IntPtr]::Zero
 $adlxMonitorStarted = $false
 $adlxMonitorStartError = $null
 $adlxMonitorExitCode = $null
@@ -586,6 +587,7 @@ try {
                     -IntervalMs $AdlxIntervalMs `
                     -GpuIndex $AdlxGpuIndex
 
+                $adlxMonitorHandle = $adlxMonitorProcess.Handle
                 $adlxMonitorStarted = $true
                 Write-Host "ADLX GPU monitor PID: $($adlxMonitorProcess.Id)"
             } catch {
@@ -692,7 +694,23 @@ try {
             }
             $adlxMonitorProcess.Refresh()
             if ($adlxMonitorProcess.HasExited) {
-                try { $adlxMonitorExitCode = $adlxMonitorProcess.ExitCode } catch {}
+                try {
+                    $managedAdlxExitCode = $adlxMonitorProcess.ExitCode
+                    if ($null -ne $managedAdlxExitCode -and "$managedAdlxExitCode" -ne '') {
+                        $adlxMonitorExitCode = [uint32]$managedAdlxExitCode
+                    }
+                } catch {}
+
+                if ($null -eq $adlxMonitorExitCode -and $adlxMonitorHandle -ne [IntPtr]::Zero) {
+                    [uint32]$nativeAdlxExitCode = 0
+                    $nativeAdlxOk = [Evox2NativeProcess]::GetExitCodeProcess(
+                        $adlxMonitorHandle,
+                        [ref]$nativeAdlxExitCode
+                    )
+                    if ($nativeAdlxOk) {
+                        $adlxMonitorExitCode = $nativeAdlxExitCode
+                    }
+                }
             }
         } catch {}
     }
@@ -709,6 +727,11 @@ try {
 }
 
 $Finished = Get-Date
+
+$DisplayEnvironmentAtFinish = $null
+try {
+    $DisplayEnvironmentAtFinish = (Get-Evox2SystemMetadata).DisplayEnvironment
+} catch {}
 
 $HeaderLines = @(
     'Evo-X2 llama-bench measurement',
@@ -955,6 +978,7 @@ $Result = [ordered]@{
     AdlxMonitorExitCode    = $adlxMonitorExitCode
     AdlxMonitorError       = $adlxMonitorStartError
     AdlxSampleCount        = $adlxSampleCount
+    DisplayEnvironmentAtFinish = $DisplayEnvironmentAtFinish
 
     Files = [ordered]@{
         Conditions = $ConditionsPath
