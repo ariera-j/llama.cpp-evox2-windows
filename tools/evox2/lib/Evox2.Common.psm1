@@ -434,9 +434,11 @@ function Get-Evox2DisplayMetadata {
 
     $monitorIds = @()
     $connections = @()
+    $presentPnpMonitors = @()
     $probeErrors = New-Object 'System.Collections.Generic.List[string]'
     $idProbeSucceeded = $false
     $connectionProbeSucceeded = $false
+    $pnpProbeSucceeded = $false
 
     try {
         $monitorIds = @(
@@ -454,6 +456,41 @@ function Get-Evox2DisplayMetadata {
         $connectionProbeSucceeded = $true
     } catch {
         [void]$probeErrors.Add("WmiMonitorConnectionParams: $($_.Exception.Message)")
+    }
+
+    try {
+        $presentPnpMonitors = @(
+            Get-PnpDevice -Class Monitor -PresentOnly -ErrorAction Stop |
+            ForEach-Object {
+                $parentInstanceId = $null
+                try {
+                    $parentProperty = Get-PnpDeviceProperty `
+                        -InstanceId $_.InstanceId `
+                        -KeyName 'DEVPKEY_Device_Parent' `
+                        -ErrorAction Stop |
+                        Select-Object -First 1
+                    if ($null -ne $parentProperty) {
+                        $parentInstanceId = [string]$parentProperty.Data
+                    }
+                } catch {}
+
+                $classificationText = "$($_.FriendlyName) $($_.InstanceId) $parentInstanceId"
+                $remoteLike = $classificationText -match '(?i)(RDP|REMOTE|REMOTEDISPLAY|INDIRECTDISPLAY|IDD)'
+
+                [PSCustomObject]@{
+                    Status           = [string]$_.Status
+                    Class            = [string]$_.Class
+                    FriendlyName     = [string]$_.FriendlyName
+                    InstanceId       = [string]$_.InstanceId
+                    ParentInstanceId = $parentInstanceId
+                    RemoteLike       = $remoteLike
+                    PhysicalCandidate = (-not $remoteLike)
+                }
+            }
+        )
+        $pnpProbeSucceeded = $true
+    } catch {
+        [void]$probeErrors.Add("Get-PnpDevice Monitor -PresentOnly: $($_.Exception.Message)")
     }
 
     $connectionByInstance = @{}
@@ -497,18 +534,28 @@ function Get-Evox2DisplayMetadata {
     )
 
     $activeMonitors = @($monitors | Where-Object { $_.Active })
+    $physicalCandidates = @($presentPnpMonitors | Where-Object { $_.PhysicalCandidate })
+    $remoteLikeMonitors = @($presentPnpMonitors | Where-Object { $_.RemoteLike })
 
     [PSCustomObject]@{
-        SessionName               = $env:SESSIONNAME
-        EdidProbeSucceeded        = $idProbeSucceeded
-        ConnectionProbeSucceeded  = $connectionProbeSucceeded
-        EdidMonitorDetected       = ($monitors.Count -gt 0)
-        ActiveEdidMonitorDetected = ($activeMonitors.Count -gt 0)
-        EdidMonitorCount          = $monitors.Count
-        ActiveEdidMonitorCount    = $activeMonitors.Count
-        Monitors                  = $monitors
-        ProbeErrors               = $probeErrors.ToArray()
-        CapturedAt                = (Get-Date).ToString('o')
+        SessionName                     = $env:SESSIONNAME
+
+        PnpProbeSucceeded               = $pnpProbeSucceeded
+        PresentMonitorCount             = if ($pnpProbeSucceeded) { $presentPnpMonitors.Count } else { $null }
+        PresentPhysicalCandidateCount   = if ($pnpProbeSucceeded) { $physicalCandidates.Count } else { $null }
+        PresentRemoteLikeMonitorCount   = if ($pnpProbeSucceeded) { $remoteLikeMonitors.Count } else { $null }
+        PresentMonitors                 = $presentPnpMonitors
+
+        EdidProbeSucceeded              = $idProbeSucceeded
+        ConnectionProbeSucceeded        = $connectionProbeSucceeded
+        EdidMonitorDetected             = if ($idProbeSucceeded) { $monitors.Count -gt 0 } else { $null }
+        ActiveEdidMonitorDetected       = if ($idProbeSucceeded) { $activeMonitors.Count -gt 0 } else { $null }
+        EdidMonitorCount                = if ($idProbeSucceeded) { $monitors.Count } else { $null }
+        ActiveEdidMonitorCount          = if ($idProbeSucceeded) { $activeMonitors.Count } else { $null }
+        EdidMonitors                    = $monitors
+
+        ProbeErrors                     = $probeErrors.ToArray()
+        CapturedAt                      = (Get-Date).ToString('o')
     }
 }
 
@@ -555,14 +602,19 @@ function Get-Evox2SystemMetadata {
     } catch {
         $display = [PSCustomObject]@{
             SessionName               = $env:SESSIONNAME
-            EdidProbeSucceeded        = $false
-            ConnectionProbeSucceeded  = $false
-            EdidMonitorDetected       = $false
-            ActiveEdidMonitorDetected = $false
-            EdidMonitorCount          = 0
-            ActiveEdidMonitorCount    = 0
-            Monitors                  = @()
-            ProbeErrors               = @($_.Exception.Message)
+            PnpProbeSucceeded               = $false
+            PresentMonitorCount             = $null
+            PresentPhysicalCandidateCount   = $null
+            PresentRemoteLikeMonitorCount   = $null
+            PresentMonitors                 = @()
+            EdidProbeSucceeded              = $false
+            ConnectionProbeSucceeded        = $false
+            EdidMonitorDetected             = $null
+            ActiveEdidMonitorDetected       = $null
+            EdidMonitorCount                = $null
+            ActiveEdidMonitorCount          = $null
+            EdidMonitors                    = @()
+            ProbeErrors                     = @($_.Exception.Message)
             CapturedAt                = (Get-Date).ToString('o')
         }
     }
