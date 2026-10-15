@@ -353,6 +353,7 @@ function ConvertTo-Evox2MatrixResultRow {
         RepetitionSamples = $ChildRow.RepetitionSamples
 
         ResourceSamples   = $ChildRow.ResourceSamples
+        AdlxSamples       = $ChildRow.AdlxSamples
         ChildRunDirectory = $ChildRow.RunDirectory
     }
 }

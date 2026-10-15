@@ -834,6 +834,13 @@ if (Test-Path -LiteralPath $GpuMetricsPath -PathType Leaf) {
     } catch {}
 }
 
+if ($adlxMonitorStarted -and
+    $null -ne $adlxMonitorExitCode -and
+    $adlxMonitorExitCode -ne 0 -and
+    [string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
+    $adlxMonitorStartError = "ADLX GPU monitor exited with code $adlxMonitorExitCode."
+}
+
 $Result = [ordered]@{
     SchemaVersion = 1
     RunId          = $RunId
@@ -995,6 +1002,13 @@ if (Test-Path -LiteralPath $StdOutPath -PathType Leaf) {
         [Console]::WriteLine($stdoutText)
         Write-Host '================================================'
     }
+}
+
+if ($AdlxMonitorRequested -and $adlxSampleCount -eq 0) {
+    Write-Warning 'ADLX monitoring was requested, but gpu-metrics.csv contains no samples.'
+}
+if (-not [string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
+    Write-Warning "ADLX telemetry: $adlxMonitorStartError"
 }
 
 if (-not $AllocationOnly -and -not $EnoughInput) {
