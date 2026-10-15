@@ -4,7 +4,7 @@ This directory contains downstream documentation for the Windows Evo-X2 work in 
 
 ## Completed research documentation and sync rule — 2026-10-12
 
-**`r5/upstream-refresh-20261009` is the canonical home for completed r5 research documents**, but is **not an integrated optimized runtime**. The fact that `docs/evox2/` contains an experimental validation report does *not* mean the experimental source, tests, flags, build configuration, or measurement scripts are in this stable branch. [PATCHES.md](PATCHES.md) explicitly separates pinned stable source from experiment-branch source and the scope of validation.
+**`r5/upstream-refresh-20261009` is the canonical home for completed r5 research documents**, but is **not an integrated optimized runtime**. A report in `docs/evox2/` does *not* by itself imply that its experimental inference source, tests, flags, or build configuration are in stable; explicitly integrated measurement tooling (for example ADLX/P-MODE) is called out separately. [PATCHES.md](PATCHES.md) explicitly separates pinned stable source from experiment-branch source and the scope of validation.
 
 Find research results here:
 
@@ -91,7 +91,7 @@ Upstream instruction files are retained unchanged. The pinned upstream AGENTS.md
 
 ## Tooling layout
 
-The build and benchmark tooling is carried from the pinned r4 checkpoint:
+The build/benchmark tooling began from the pinned r4 checkpoint and now also includes r5 measurement additions validated through 2026-10-15:
 
 ```text
 tools/evox2/
