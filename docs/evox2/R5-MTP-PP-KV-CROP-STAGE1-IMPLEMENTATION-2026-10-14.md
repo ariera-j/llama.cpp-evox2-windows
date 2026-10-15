@@ -769,3 +769,36 @@ The first **16k→32k** segment time essentially matches across dates (OFF47.76�
 **Interpretation / causal limits:** This is a **strong temporal alignment** of Windows security servicing, **two confirmed restarts** and in-box remote-display driver refresh **between** high (64k ON ~331–334) and subsequent baseline (64k ON ~314–315). The `conditions.json` OS build field is coarse (`26300`) and unchanged, but the *PowerShell and RDP driver component versions visibly changed* and Windows Setup/System events explicitly show `26300.9711`. One cannot distinguish OS patch effects, process restart/GPU cold-init, RDP connection state, dynamic clocks/power, GPU scheduler/prefill QSA or other background changes without a clean matched pre/post control. Crucially, 10:56 debug/RGP-run PP303.23 **occurred BEFORE reboots** with old component versions, so some measured drops predate update completion but this 10:56 run is **externally RGP-instrumented** and has anomalous pre-32k overhead rather than the typical post-32k drop. Thus it does *not* disprove the update hypothesis and does *not* prove the update was responsible.
 
 **Recommended safe next**: preserve this as a significant observation, **do not uninstall patches or switch GPU drivers based on correlation**. If high PP recurs on build `.9711`, the simple theory 'OS patch necessarily prevents the fast regime' is falsified. Add actual GPU clock/power/hotspot and RDP active/armed state to normal b11560 64k/128k run metadata, and distinguish external RGP dispatch-range capture from native unprofiled ABBA. Driver-binary digests pre/post, if future proof needed, require independent snapshots; current Windows update ZIP contains only present driver versions.
+
+## 2026-10-15 02:08 RDP disconnect 64k OFF/ON: adapter transitioned between run starts
+
+User RDP-disconnect overnight experiment native ZIP independently parsed: `r5-64k-mtpoff-mtpon-qsaon-20261015-020854.zip`, SHA256 `e6b1cf793508a4925c70f46d6e92fac98f7450389c7d17ab92bc7c484cbed79e`, two runs 2026-10-15 02:08:56 OFF and 02:13:08 ON JST, both status OK/exit0. Original comparison 2026-10-15 01:22 OFF and 01:27 ON `r5-64k-mtpoff-mtpon-qsaon-20261015-012248.zip`, SHA256 `001f6f72c64bec7de7cf03d4b2408a9e4fe72edca0a6a7fe6d9d68cff2570730` re-read. **Same exact old unmodified b11560 exe SHA256 `611b1004e6596415f126695ab32adf11d9422686fb352bcaf152d19a14f7c949`, same runtime digest, per-arm ConditionId (OFF `54673c8db655`, ON `192f9a42fc95`), command, input hash, model, QSA ON/minKV32768, 61789 input tokens, n512, seed/temp0, f16 KV, no diagnostics.** All four ON native output texts identical after replacing CLI speed banner, draft acceptance295/430. Both OFF texts likewise identical. No program settings changed.
+
+| b11560 64k QSA ON | Oct11 high mean (2 each) | Oct15 01:22–01:31 RDP-present | Oct15 02:08–02:17 disconnect experiment | Relative to 01:22 |
+|---|---:|---:|---:|---:|
+| MTP OFF native PP tok/s | **361.520** | 340.37 | **339.20** | −0.34% |
+| MTP ON native PP tok/s | **333.995** | 314.79 | **322.08** | +2.32% |
+| MTP OFF TG tok/s | 26.135 | 25.93 | 25.98 | +0.19% |
+| MTP ON TG tok/s | 28.885 | 28.56 | 28.13 | −1.51% |
+| ON vs OFF PP penalty rate | −7.61% | −7.52% | **−5.05%** | −2.47 points |
+
+**Critical qualification on RDP controls:** `conditions.json SystemIdentity.VideoControllers` for **01:22 OFF** and **01:27 ON** each lists Microsoft Remote Display Adapter **10.0.26100.9711** plus Radeon **32.0.31041.1004**. In 02:08 **OFF** it **STILL lists both adapters**, while 02:13 **ON** lists **Radeon only** (Remote Display Adapter no longer enumerated). Thus the display device disappeared **between the two start snapshots**, consistent with user disconnecting RDP after starting the script. No session disconnect event timestamp was included, and adapter enumeration is a snapshot, not incontrovertible real-time 'RDP connected' state. **Do NOT label both 02:08 and 02:13 runs 'fully RDP OFF'.** The OFF measurement may have run through a connection-state transition; only the ON second run started with no remote display enumerated. The abrupt artifact difference is a better explanation for the unequal conditions, but is NOT proof RDP causes ON PP uplift.
+
+**Native cumulative PP segment evidence, using stderr progress checkpoints:**
+
+| KV processed | Oct15 01:27 ON (RDP adapter present) | Oct15 02:13 ON (adapter absent) | Connected minus absent (s) |
+|---:|---:|---:|---:|
+| 16,384 |34.83|34.85|−0.02|
+| 32,768 |85.90|85.76|+0.14|
+| 40,960 |114.43|114.43|0.00|
+| **45,056** | **129.15** | **128.38** | **+0.77** |
+| 49,152 |144.21|141.41|+2.80|
+| **53,248** |**159.56**|**154.78**|**+4.78**|
+| 57,344 |175.01|170.35|+4.66|
+| 61,440 |190.77|186.31|+4.46|
+
+Segment 40,960→53,248 on RDP-present ON **45.13s** vs adapter-absent ON **40.35s** (−10.6% time), with five consecutive 2048-row chunks ending **45,056–53,248** experiencing ~0.8–1.1 sec each acceleration; up to 40,960 and after 55,296, per-2048 batch time is approximately unchanged. This **localized temporary PP acceleration** produces most of whole-run gain4.4405s native PP (196.28453→191.84403s), not a sustained fast-state return across all KV>32k. Same-date OFF both 01:22 and 02:08 show essentially unchanged KV profile (PP181.534→182.159s, OFF 32k→49k 54.16→54.54s); 02:08 OFF still enumerated the RDP adapter at job start.
+
+**Resource correlation, not root cause:** the 02:13 ON during prompt at elapsed181–191s records whole-system disk reads spikes **~59–384MiB/s** and whole-system page reads up to **3789/s**, absent in the comparator 01:27 ON in the corresponding time window. Around this time 02:13 ON processes approximately 45–53k prompt tokens depending on elapsed startup; disk reads can be from unrelated processes, not proven process-private. Faster PP occurs *despite*, not necessarily because of, elevated counters. Local GPU memory peak roughly **85.572GiB** both ON conditions; median process GPU Local **85.361GiB**, consistent process GPU residency at this coarse sample level. AMD driver unchanged. No GPU clock/temperature/power telemetry in either ZIP.
+
+**Inference and next control:** disconnecting RDP did **NOT** bring both MTP conditions back to Oct11 high range; OFF ~339 vs high361.5, ON ~322 vs high334. The strict claim 'RDP disconnect improves MTP ON by +2.32%' is premature: one run per arm and the adapter only absent in the *second* snapshot, with a ~10k-token isolated speed burst and varying system I/O. For repeatable A/B first ensure Remote Display Adapter absence in BOTH 64k run-start conditions: e.g. issue `Start-Sleep -Seconds 120` **before** the same OFF→ON script, then disconnect promptly; check new snapshots. For a direct ON RDP connected/disconnected A/B do replicated short/single-arm runs and avoid connecting RDP during capture. Do NOT conclude that RDP/OS patch, QSA state or power-management root cause was established. No source changes.
