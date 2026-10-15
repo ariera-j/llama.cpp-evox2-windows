@@ -397,6 +397,121 @@ function Get-Evox2DeviceMetadata {
     }
 }
 
+
+function ConvertFrom-Evox2MonitorIdString {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    try {
+        $chars = New-Object 'System.Collections.Generic.List[char]'
+        foreach ($code in @($Value)) {
+            $valueInt = [int]$code
+            if ($valueInt -ne 0) {
+                [void]$chars.Add([char]$valueInt)
+            }
+        }
+
+        if ($chars.Count -eq 0) {
+            return $null
+        }
+
+        return (-join $chars.ToArray()).Trim()
+    } catch {
+        return $null
+    }
+}
+
+function Get-Evox2DisplayMetadata {
+    [CmdletBinding()]
+    param()
+
+    $monitorIds = @()
+    $connections = @()
+    $probeErrors = New-Object 'System.Collections.Generic.List[string]'
+    $idProbeSucceeded = $false
+    $connectionProbeSucceeded = $false
+
+    try {
+        $monitorIds = @(
+            Get-CimInstance -Namespace 'root\wmi' -ClassName WmiMonitorID -ErrorAction Stop
+        )
+        $idProbeSucceeded = $true
+    } catch {
+        [void]$probeErrors.Add("WmiMonitorID: $($_.Exception.Message)")
+    }
+
+    try {
+        $connections = @(
+            Get-CimInstance -Namespace 'root\wmi' -ClassName WmiMonitorConnectionParams -ErrorAction Stop
+        )
+        $connectionProbeSucceeded = $true
+    } catch {
+        [void]$probeErrors.Add("WmiMonitorConnectionParams: $($_.Exception.Message)")
+    }
+
+    $connectionByInstance = @{}
+    foreach ($connection in $connections) {
+        $instanceName = [string]$connection.InstanceName
+        if (-not [string]::IsNullOrWhiteSpace($instanceName)) {
+            $connectionByInstance[$instanceName] = $connection
+        }
+    }
+
+    $monitors = @(
+        foreach ($monitor in $monitorIds) {
+            $instanceName = [string]$monitor.InstanceName
+            $connection = $null
+            if (-not [string]::IsNullOrWhiteSpace($instanceName) -and
+                $connectionByInstance.ContainsKey($instanceName)) {
+                $connection = $connectionByInstance[$instanceName]
+            }
+
+            [PSCustomObject]@{
+                InstanceName          = $instanceName
+                Active                = [bool]$monitor.Active
+                Manufacturer          = ConvertFrom-Evox2MonitorIdString -Value $monitor.ManufacturerName
+                ProductCode           = ConvertFrom-Evox2MonitorIdString -Value $monitor.ProductCodeID
+                SerialNumber          = ConvertFrom-Evox2MonitorIdString -Value $monitor.SerialNumberID
+                UserFriendlyName      = ConvertFrom-Evox2MonitorIdString -Value $monitor.UserFriendlyName
+                WeekOfManufacture     = $monitor.WeekOfManufacture
+                YearOfManufacture     = $monitor.YearOfManufacture
+                VideoOutputTechnology = if ($null -ne $connection) {
+                    [uint32]$connection.VideoOutputTechnology
+                } else {
+                    $null
+                }
+                ConnectionActive      = if ($null -ne $connection) {
+                    [bool]$connection.Active
+                } else {
+                    $null
+                }
+            }
+        }
+    )
+
+    $activeMonitors = @($monitors | Where-Object { $_.Active })
+
+    [PSCustomObject]@{
+        SessionName               = $env:SESSIONNAME
+        EdidProbeSucceeded        = $idProbeSucceeded
+        ConnectionProbeSucceeded  = $connectionProbeSucceeded
+        EdidMonitorDetected       = ($monitors.Count -gt 0)
+        ActiveEdidMonitorDetected = ($activeMonitors.Count -gt 0)
+        EdidMonitorCount          = $monitors.Count
+        ActiveEdidMonitorCount    = $activeMonitors.Count
+        Monitors                  = $monitors
+        ProbeErrors               = $probeErrors.ToArray()
+        CapturedAt                = (Get-Date).ToString('o')
+    }
+}
+
 function Get-Evox2SystemMetadata {
     [CmdletBinding()]
     param()
@@ -405,6 +520,7 @@ function Get-Evox2SystemMetadata {
     $computer = $null
     $cpu = $null
     $video = @()
+    $display = $null
 
     try {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
@@ -434,6 +550,23 @@ function Get-Evox2SystemMetadata {
         )
     } catch {}
 
+    try {
+        $display = Get-Evox2DisplayMetadata
+    } catch {
+        $display = [PSCustomObject]@{
+            SessionName               = $env:SESSIONNAME
+            EdidProbeSucceeded        = $false
+            ConnectionProbeSucceeded  = $false
+            EdidMonitorDetected       = $false
+            ActiveEdidMonitorDetected = $false
+            EdidMonitorCount          = 0
+            ActiveEdidMonitorCount    = 0
+            Monitors                  = @()
+            ProbeErrors               = @($_.Exception.Message)
+            CapturedAt                = (Get-Date).ToString('o')
+        }
+    }
+
     [PSCustomObject]@{
         ComputerName       = $env:COMPUTERNAME
         UserName           = $env:USERNAME
@@ -444,6 +577,7 @@ function Get-Evox2SystemMetadata {
         CpuName            = if ($cpu) { $cpu.Name } else { $null }
         CpuLogicalCount    = if ($cpu) { $cpu.NumberOfLogicalProcessors } else { $null }
         VideoControllers   = $video
+        DisplayEnvironment  = $display
         PowerShellVersion  = $PSVersionTable.PSVersion.ToString()
         CapturedAt         = (Get-Date).ToString('o')
     }
