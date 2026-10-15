@@ -559,6 +559,310 @@ function Get-Evox2DisplayMetadata {
     }
 }
 
+
+function Initialize-Evox2PModeNative {
+    [CmdletBinding()]
+    param()
+
+    if ('Evox2PModeNative' -as [type]) {
+        return
+    }
+
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class Evox2PModeNative {
+    [DllImport("advapi32.dll", EntryPoint="WmiOpenBlock")]
+    public static extern uint WmiOpenBlock(
+        ref Guid guid,
+        uint access,
+        out IntPtr handle);
+
+    [DllImport("advapi32.dll", CharSet=CharSet.Unicode, EntryPoint="WmiExecuteMethodW")]
+    public static extern uint WmiExecuteMethodW(
+        IntPtr handle,
+        string instanceName,
+        uint methodId,
+        uint inputSize,
+        IntPtr inputBuffer,
+        ref uint outputSize,
+        IntPtr outputBuffer);
+
+    [DllImport("advapi32.dll", EntryPoint="WmiCloseBlock")]
+    public static extern uint WmiCloseBlock(IntPtr handle);
+}
+'@
+}
+
+function Test-Evox2IsAdministrator {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
+function ConvertFrom-Evox2PModeRawValue {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$RawValue
+    )
+
+    if ($null -eq $RawValue) {
+        return 'Unknown'
+    }
+
+    switch ([uint32]$RawValue) {
+        0 { return 'Balanced' }
+        1 { return 'Performance' }
+        2 { return 'Quiet' }
+        default { return 'Unknown' }
+    }
+}
+
+function Get-Evox2PModeDirectMetadata {
+    [CmdletBinding()]
+    param()
+
+    $capturedAt = Get-Date
+    $guid = [Guid]'99D89064-8D50-42BB-BEA9-155B2E5D0FCD'
+    $instanceName = 'ACPI\PNP0C14\IP3POWERSWITCH_0'
+    $openResult = $null
+    $executeResult = $null
+    $closeResult = $null
+    $outputSize = $null
+    $rawValue = $null
+    $mode = 'Unknown'
+    $errorText = $null
+    $handle = [IntPtr]::Zero
+    $buffer = [IntPtr]::Zero
+
+    try {
+        Initialize-Evox2PModeNative
+
+        [IntPtr]$openedHandle = [IntPtr]::Zero
+        $openResult = [uint32][Evox2PModeNative]::WmiOpenBlock(
+            [ref]$guid,
+            [uint32]0x10,
+            [ref]$openedHandle
+        )
+        $handle = $openedHandle
+
+        if ($openResult -ne 0) {
+            $errorText = "WmiOpenBlock failed with Win32 error $openResult."
+        } else {
+            [uint32]$bufferSize = 64
+            $buffer = [Runtime.InteropServices.Marshal]::AllocHGlobal([int]$bufferSize)
+            $zero = New-Object byte[] ([int]$bufferSize)
+            [Runtime.InteropServices.Marshal]::Copy($zero, 0, $buffer, [int]$bufferSize)
+
+            [uint32]$returnedSize = $bufferSize
+            $executeResult = [uint32][Evox2PModeNative]::WmiExecuteMethodW(
+                $handle,
+                $instanceName,
+                [uint32]2,
+                [uint32]0,
+                [IntPtr]::Zero,
+                [ref]$returnedSize,
+                $buffer
+            )
+            $outputSize = $returnedSize
+
+            if ($executeResult -ne 0) {
+                $errorText = "WmiExecuteMethodW(method 2) failed with Win32 error $executeResult."
+            } elseif ($returnedSize -lt 4) {
+                $errorText = "WmiExecuteMethodW(method 2) returned only $returnedSize byte(s)."
+            } else {
+                $rawValue = [uint32][Runtime.InteropServices.Marshal]::ReadInt32($buffer)
+                $mode = ConvertFrom-Evox2PModeRawValue -RawValue $rawValue
+                if ($mode -eq 'Unknown') {
+                    $errorText = "Unknown P-MODE raw value: $rawValue."
+                }
+            }
+        }
+    } catch {
+        $errorText = $_.Exception.Message
+    } finally {
+        if ($buffer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::FreeHGlobal($buffer)
+        }
+        if ($handle -ne [IntPtr]::Zero) {
+            try {
+                $closeResult = [uint32][Evox2PModeNative]::WmiCloseBlock($handle)
+            } catch {}
+        }
+    }
+
+    $probeSucceeded = (
+        $openResult -eq 0 -and
+        $executeResult -eq 0 -and
+        $null -ne $rawValue -and
+        $mode -ne 'Unknown'
+    )
+
+    [PSCustomObject]@{
+        ProbeSucceeded = $probeSucceeded
+        Mode           = $mode
+        RawValue       = $rawValue
+        Source         = 'IP3-WMI-method2'
+        Transport      = 'Direct'
+        InstanceName   = $instanceName
+        MethodId       = 2
+        OpenResult     = $openResult
+        ExecuteResult  = $executeResult
+        CloseResult    = $closeResult
+        OutputSize     = $outputSize
+        Elevated       = Test-Evox2IsAdministrator
+        Error          = $errorText
+        CapturedAt     = $capturedAt.ToString('o')
+    }
+}
+
+function Get-Evox2PModeStatePath {
+    [CmdletBinding()]
+    param()
+
+    $programData = [Environment]::GetFolderPath('CommonApplicationData')
+    if ([string]::IsNullOrWhiteSpace($programData)) {
+        $programData = $env:ProgramData
+    }
+    return Join-Path $programData 'Evox2\PMode\state.json'
+}
+
+function Get-Evox2PModeMetadata {
+    [CmdletBinding()]
+    param(
+        [switch]$DirectOnly,
+
+        [switch]$Disabled,
+
+        [string]$TaskName = 'PModeProbe',
+
+        [string]$TaskPath = '\Evox2\',
+
+        [string]$StatePath = '',
+
+        [ValidateRange(500, 30000)]
+        [int]$TaskTimeoutMs = 5000
+    )
+
+    if ($Disabled) {
+        return [PSCustomObject]@{
+            ProbeSucceeded = $false
+            Mode           = 'Unknown'
+            RawValue       = $null
+            Source         = 'Disabled'
+            Transport      = 'Disabled'
+            InstanceName   = 'ACPI\PNP0C14\IP3POWERSWITCH_0'
+            MethodId       = 2
+            OpenResult     = $null
+            ExecuteResult  = $null
+            CloseResult    = $null
+            OutputSize     = $null
+            Elevated       = Test-Evox2IsAdministrator
+            Error          = 'P-MODE probing was disabled by the caller.'
+            CapturedAt     = (Get-Date).ToString('o')
+        }
+    }
+
+    $direct = Get-Evox2PModeDirectMetadata
+    if ($direct.ProbeSucceeded -or $DirectOnly) {
+        return $direct
+    }
+
+    if ([string]::IsNullOrWhiteSpace($StatePath)) {
+        $StatePath = Get-Evox2PModeStatePath
+    }
+    $StatePath = [IO.Path]::GetFullPath($StatePath)
+
+    $previousWriteUtc = $null
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+        try {
+            $previousWriteUtc = (Get-Item -LiteralPath $StatePath).LastWriteTimeUtc
+        } catch {}
+    }
+
+    try {
+        $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
+        if ($null -eq $task) {
+            throw "Scheduled task $TaskPath$TaskName was not found."
+        }
+
+        Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
+
+        $deadline = (Get-Date).AddMilliseconds($TaskTimeoutMs)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+
+            if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
+                continue
+            }
+
+            $item = Get-Item -LiteralPath $StatePath -ErrorAction SilentlyContinue
+            if ($null -eq $item) {
+                continue
+            }
+
+            if ($null -ne $previousWriteUtc -and $item.LastWriteTimeUtc -le $previousWriteUtc) {
+                continue
+            }
+
+            try {
+                $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($null -eq $state) {
+                    continue
+                }
+
+                return [PSCustomObject]@{
+                    ProbeSucceeded = [bool]$state.ProbeSucceeded
+                    Mode           = [string]$state.Mode
+                    RawValue       = $state.RawValue
+                    Source         = [string]$state.Source
+                    Transport      = 'ScheduledTask'
+                    InstanceName   = [string]$state.InstanceName
+                    MethodId       = $state.MethodId
+                    OpenResult     = $state.OpenResult
+                    ExecuteResult  = $state.ExecuteResult
+                    CloseResult    = $state.CloseResult
+                    OutputSize     = $state.OutputSize
+                    Elevated       = $state.Elevated
+                    Error          = $state.Error
+                    CapturedAt     = [string]$state.CapturedAt
+                }
+            } catch {
+                # The elevated writer replaces the file atomically, but tolerate
+                # a transient parse/read race and keep polling until timeout.
+            }
+        }
+
+        throw "Timed out after $TaskTimeoutMs ms waiting for a fresh P-MODE state file: $StatePath"
+    } catch {
+        return [PSCustomObject]@{
+            ProbeSucceeded = $false
+            Mode           = 'Unknown'
+            RawValue       = $null
+            Source         = 'IP3-WMI-method2'
+            Transport      = 'ScheduledTaskFallbackFailed'
+            InstanceName   = 'ACPI\PNP0C14\IP3POWERSWITCH_0'
+            MethodId       = 2
+            OpenResult     = $direct.OpenResult
+            ExecuteResult  = $direct.ExecuteResult
+            CloseResult    = $direct.CloseResult
+            OutputSize     = $direct.OutputSize
+            Elevated       = $direct.Elevated
+            Error          = "Direct probe failed: $($direct.Error) Scheduled-task fallback failed: $($_.Exception.Message)"
+            CapturedAt     = (Get-Date).ToString('o')
+        }
+    }
+}
+
 function Get-Evox2SystemMetadata {
     [CmdletBinding()]
     param()
@@ -851,6 +1155,9 @@ Export-ModuleMember -Function @(
     'Get-Evox2FileIdentity',
     'Get-Evox2ExecutableMetadata',
     'Get-Evox2DeviceMetadata',
+    'Get-Evox2PModeDirectMetadata',
+    'Get-Evox2PModeMetadata',
+    'Get-Evox2PModeStatePath',
     'Get-Evox2SystemMetadata',
     'Read-Evox2BuildManifest',
     'Write-Evox2Json',
