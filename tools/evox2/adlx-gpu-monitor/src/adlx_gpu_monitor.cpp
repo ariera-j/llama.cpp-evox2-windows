@@ -50,13 +50,21 @@ struct Options {
 
 struct MetricSupport {
     bool usage = false;
+    ADLX_RESULT usage_result = ADLX_FAIL;
     bool clock = false;
+    ADLX_RESULT clock_result = ADLX_FAIL;
     bool vram_clock = false;
+    ADLX_RESULT vram_clock_result = ADLX_FAIL;
     bool temperature = false;
+    ADLX_RESULT temperature_result = ADLX_FAIL;
     bool hotspot = false;
+    ADLX_RESULT hotspot_result = ADLX_FAIL;
     bool power = false;
+    ADLX_RESULT power_result = ADLX_FAIL;
     bool vram = false;
+    ADLX_RESULT vram_result = ADLX_FAIL;
     bool total_board_power = false;
+    ADLX_RESULT total_board_power_result = ADLX_FAIL;
 };
 
 struct Sample {
@@ -204,36 +212,59 @@ MetricSupport query_support(const IADLXGPUMetricsSupportPtr & support) {
     adlx_bool value = false;
 
     value = false;
-    s.usage = supported_result(support->IsSupportedGPUUsage(&value), value);
+    s.usage_result = support->IsSupportedGPUUsage(&value);
+    s.usage = supported_result(s.usage_result, value);
+
     value = false;
-    s.clock = supported_result(support->IsSupportedGPUClockSpeed(&value), value);
+    s.clock_result = support->IsSupportedGPUClockSpeed(&value);
+    s.clock = supported_result(s.clock_result, value);
+
     value = false;
-    s.vram_clock = supported_result(support->IsSupportedGPUVRAMClockSpeed(&value), value);
+    s.vram_clock_result = support->IsSupportedGPUVRAMClockSpeed(&value);
+    s.vram_clock = supported_result(s.vram_clock_result, value);
+
     value = false;
-    s.temperature = supported_result(support->IsSupportedGPUTemperature(&value), value);
+    s.temperature_result = support->IsSupportedGPUTemperature(&value);
+    s.temperature = supported_result(s.temperature_result, value);
+
     value = false;
-    s.hotspot = supported_result(support->IsSupportedGPUHotspotTemperature(&value), value);
+    s.hotspot_result = support->IsSupportedGPUHotspotTemperature(&value);
+    s.hotspot = supported_result(s.hotspot_result, value);
+
     value = false;
-    s.power = supported_result(support->IsSupportedGPUPower(&value), value);
+    s.power_result = support->IsSupportedGPUPower(&value);
+    s.power = supported_result(s.power_result, value);
+
     value = false;
-    s.vram = supported_result(support->IsSupportedGPUVRAM(&value), value);
+    s.vram_result = support->IsSupportedGPUVRAM(&value);
+    s.vram = supported_result(s.vram_result, value);
+
     value = false;
-    s.total_board_power = supported_result(support->IsSupportedGPUTotalBoardPower(&value), value);
+    s.total_board_power_result = support->IsSupportedGPUTotalBoardPower(&value);
+    s.total_board_power = supported_result(s.total_board_power_result, value);
+
     return s;
 }
 
 void print_support(const MetricSupport & s) {
     std::cout
-        << "Supported metrics:"
-        << " usage=" << s.usage
-        << " clock=" << s.clock
-        << " vram_clock=" << s.vram_clock
-        << " temp=" << s.temperature
-        << " hotspot=" << s.hotspot
-        << " power=" << s.power
-        << " vram=" << s.vram
-        << " total_board_power=" << s.total_board_power
-        << "\n";
+        << "Supported metrics:\n"
+        << "  usage=" << s.usage
+        << " result=" << static_cast<int>(s.usage_result) << "\n"
+        << "  clock=" << s.clock
+        << " result=" << static_cast<int>(s.clock_result) << "\n"
+        << "  vram_clock=" << s.vram_clock
+        << " result=" << static_cast<int>(s.vram_clock_result) << "\n"
+        << "  temp=" << s.temperature
+        << " result=" << static_cast<int>(s.temperature_result) << "\n"
+        << "  hotspot=" << s.hotspot
+        << " result=" << static_cast<int>(s.hotspot_result) << "\n"
+        << "  power=" << s.power
+        << " result=" << static_cast<int>(s.power_result) << "\n"
+        << "  vram=" << s.vram
+        << " result=" << static_cast<int>(s.vram_result) << "\n"
+        << "  total_board_power=" << s.total_board_power
+        << " result=" << static_cast<int>(s.total_board_power_result) << "\n";
 }
 
 Sample read_sample(
