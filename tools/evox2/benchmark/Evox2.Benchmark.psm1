@@ -324,6 +324,11 @@ function Get-Evox2AdlxPModeConsistency {
         CsvPath                = $CsvPath
         GpuUsageThresholdPct   = $GpuUsageThreshold
         MinimumHighLoadSamples = $MinimumHighLoadSamples
+        ClassifierVersion      = 1
+        QuietMaxW              = 65.0
+        BalancedMinW           = 75.0
+        BalancedMaxW           = 95.0
+        PerformanceMinW        = 105.0
         HighLoadSampleCount    = 0
         AverageGpuPowerW       = $null
         PowerClass             = 'Unavailable'
