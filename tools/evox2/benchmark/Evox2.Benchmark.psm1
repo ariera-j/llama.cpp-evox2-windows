@@ -299,6 +299,219 @@ function Start-Evox2AdlxGpuMonitor {
         -PassThru
 }
 
+
+function Get-Evox2AdlxPModeConsistency {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CsvPath,
+
+        [AllowNull()]
+        [object]$PModeAtStart,
+
+        [AllowNull()]
+        [object]$PModeAtFinish,
+
+        [ValidateRange(1, 100)]
+        [double]$GpuUsageThreshold = 95,
+
+        [ValidateRange(1, 1000)]
+        [int]$MinimumHighLoadSamples = 5
+    )
+
+    $result = [ordered]@{
+        Evaluated              = $false
+        CsvPath                = $CsvPath
+        GpuUsageThresholdPct   = $GpuUsageThreshold
+        MinimumHighLoadSamples = $MinimumHighLoadSamples
+        HighLoadSampleCount    = 0
+        AverageGpuPowerW       = $null
+        PowerClass             = 'Unavailable'
+        AuthoritativeMode      = $null
+        PModeChanged           = $null
+        Consistent             = $null
+        Warning                = $false
+        WarningCode            = $null
+        Reason                 = $null
+    }
+
+    $startOk = (
+        $null -ne $PModeAtStart -and
+        $PModeAtStart.PSObject.Properties['ProbeSucceeded'] -and
+        [bool]$PModeAtStart.ProbeSucceeded
+    )
+    $finishOk = (
+        $null -ne $PModeAtFinish -and
+        $PModeAtFinish.PSObject.Properties['ProbeSucceeded'] -and
+        [bool]$PModeAtFinish.ProbeSucceeded
+    )
+
+    if ($startOk -and $finishOk) {
+        $result.PModeChanged = ([string]$PModeAtStart.Mode -ne [string]$PModeAtFinish.Mode)
+        if (-not $result.PModeChanged) {
+            $result.AuthoritativeMode = [string]$PModeAtStart.Mode
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $CsvPath -PathType Leaf)) {
+        $result.Reason = 'ADLX CSV is not available.'
+        return [PSCustomObject]$result
+    }
+
+    $powers = New-Object System.Collections.Generic.List[double]
+    try {
+        foreach ($row in @(Import-Csv -LiteralPath $CsvPath)) {
+            if ($null -eq $row) {
+                continue
+            }
+
+            $adlxResult = $null
+            $usage = $null
+            $power = $null
+
+            try { $adlxResult = [int]$row.adlx_result } catch { continue }
+            if ($adlxResult -ne 0) {
+                continue
+            }
+
+            try {
+                $usage = ConvertFrom-Evox2InvariantDouble -Value ([string]$row.gpu_usage_pct)
+                $power = ConvertFrom-Evox2InvariantDouble -Value ([string]$row.gpu_power_w)
+            } catch {
+                continue
+            }
+
+            if ($null -eq $usage -or $null -eq $power) {
+                continue
+            }
+            if ($usage -lt $GpuUsageThreshold) {
+                continue
+            }
+
+            [void]$powers.Add([double]$power)
+        }
+    } catch {
+        $result.Reason = "Failed to read ADLX CSV: $($_.Exception.Message)"
+        return [PSCustomObject]$result
+    }
+
+    $result.HighLoadSampleCount = $powers.Count
+    if ($powers.Count -lt $MinimumHighLoadSamples) {
+        $result.PowerClass = 'InsufficientSamples'
+        $result.Reason = "Only $($powers.Count) high-load power sample(s) were available."
+        return [PSCustomObject]$result
+    }
+
+    $average = ($powers.ToArray() | Measure-Object -Average).Average
+    $result.AverageGpuPowerW = [math]::Round([double]$average, 3)
+    $result.Evaluated = $true
+
+    if ($average -le 65.0) {
+        $result.PowerClass = 'Quiet-like'
+    } elseif ($average -ge 75.0 -and $average -le 95.0) {
+        $result.PowerClass = 'Balanced-like'
+    } elseif ($average -ge 105.0) {
+        $result.PowerClass = 'Performance-like'
+    } else {
+        $result.PowerClass = 'Ambiguous'
+    }
+
+    if ($result.PModeChanged) {
+        $result.Reason = 'P-MODE changed between start and finish; power consistency was not classified against a single authoritative mode.'
+        return [PSCustomObject]$result
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$result.AuthoritativeMode)) {
+        $result.Reason = 'No stable authoritative start/finish P-MODE was available.'
+        return [PSCustomObject]$result
+    }
+
+    if ($result.PowerClass -eq 'Ambiguous') {
+        $result.Reason = 'Average high-load GPU power fell in an intentionally ambiguous band.'
+        return [PSCustomObject]$result
+    }
+
+    $expectedClass = switch ($result.AuthoritativeMode) {
+        'Quiet'       { 'Quiet-like'; break }
+        'Balanced'    { 'Balanced-like'; break }
+        'Performance' { 'Performance-like'; break }
+        default       { $null }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$expectedClass)) {
+        $result.Reason = "Unsupported authoritative P-MODE: $($result.AuthoritativeMode)"
+        return [PSCustomObject]$result
+    }
+
+    $result.Consistent = ($result.PowerClass -eq $expectedClass)
+    if (-not $result.Consistent) {
+        $result.Warning = $true
+        $result.WarningCode = 'PMODE_ADLX_POWER_MISMATCH'
+        $result.Reason = (
+            'Authoritative P-MODE is {0}, but high-load ADLX power is {1} ({2:N1} W average across {3} sample(s)).' -f
+            $result.AuthoritativeMode,
+            $result.PowerClass,
+            $average,
+            $powers.Count
+        )
+    } else {
+        $result.Reason = (
+            'Authoritative P-MODE and high-load ADLX power classification agree ({0}, {1:N1} W).' -f
+            $result.PowerClass,
+            $average
+        )
+    }
+
+    return [PSCustomObject]$result
+}
+
+function Get-Evox2PModeWarnings {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$PModeAtStart,
+
+        [AllowNull()]
+        [object]$PModeAtFinish,
+
+        [AllowNull()]
+        [object]$AdlxConsistency,
+
+        [ValidateSet('Quiet', 'Balanced', 'Performance')]
+        [string]$ExpectedMode = 'Performance'
+    )
+
+    $warnings = New-Object System.Collections.Generic.List[string]
+
+    if ($null -eq $PModeAtStart -or -not [bool]$PModeAtStart.ProbeSucceeded) {
+        $detail = if ($null -ne $PModeAtStart) { [string]$PModeAtStart.Error } else { 'no start probe object' }
+        [void]$warnings.Add("P-MODE start probe failed; state is Unknown. $detail")
+    } elseif ([string]$PModeAtStart.Mode -ne $ExpectedMode) {
+        [void]$warnings.Add("P-MODE at start is $($PModeAtStart.Mode); expected $ExpectedMode for performance comparisons.")
+    }
+
+    if ($null -eq $PModeAtFinish -or -not [bool]$PModeAtFinish.ProbeSucceeded) {
+        $detail = if ($null -ne $PModeAtFinish) { [string]$PModeAtFinish.Error } else { 'no finish probe object' }
+        [void]$warnings.Add("P-MODE finish probe failed; state is Unknown. $detail")
+    } elseif ([string]$PModeAtFinish.Mode -ne $ExpectedMode) {
+        [void]$warnings.Add("P-MODE at finish is $($PModeAtFinish.Mode); expected $ExpectedMode for performance comparisons.")
+    }
+
+    if ($null -ne $PModeAtStart -and $null -ne $PModeAtFinish -and
+        [bool]$PModeAtStart.ProbeSucceeded -and [bool]$PModeAtFinish.ProbeSucceeded -and
+        [string]$PModeAtStart.Mode -ne [string]$PModeAtFinish.Mode) {
+        [void]$warnings.Add("P-MODE changed during the run: $($PModeAtStart.Mode) -> $($PModeAtFinish.Mode).")
+    }
+
+    if ($null -ne $AdlxConsistency -and
+        $AdlxConsistency.PSObject.Properties['Warning'] -and
+        [bool]$AdlxConsistency.Warning) {
+        [void]$warnings.Add([string]$AdlxConsistency.Reason)
+    }
+
+    return $warnings.ToArray()
+}
+
 function Get-Evox2LastRegexMatch {
     [CmdletBinding()]
     param(
@@ -621,6 +834,8 @@ Export-ModuleMember -Function @(
     'New-Evox2RunDirectory',
     'Write-Evox2CombinedLog',
     'Start-Evox2AdlxGpuMonitor',
+    'Get-Evox2AdlxPModeConsistency',
+    'Get-Evox2PModeWarnings',
     'Get-Evox2MtpDenseIndexerEvidence',
     'Get-Evox2QsaNoopInvalidationEvidence',
     'ConvertFrom-Evox2LlamaCliResult',
