@@ -483,6 +483,12 @@ function Get-Evox2PModeWarnings {
 
     $warnings = New-Object System.Collections.Generic.List[string]
 
+    if ($null -ne $PModeAtStart -and $null -ne $PModeAtFinish -and
+        [string]$PModeAtStart.Source -eq 'Disabled' -and
+        [string]$PModeAtFinish.Source -eq 'Disabled') {
+        return $warnings.ToArray()
+    }
+
     if ($null -eq $PModeAtStart -or -not [bool]$PModeAtStart.ProbeSucceeded) {
         $detail = if ($null -ne $PModeAtStart) { [string]$PModeAtStart.Error } else { 'no start probe object' }
         [void]$warnings.Add("P-MODE start probe failed; state is Unknown. $detail")
