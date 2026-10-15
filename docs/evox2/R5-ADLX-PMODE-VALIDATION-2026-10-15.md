@@ -328,11 +328,11 @@ The widget also provides useful robustness patterns:
 
 The widget's direct-EC/PawnIO path is useful independent corroboration and a possible fallback backend. For this benchmark project, however, adding PawnIO is currently unnecessary because IP3 WMI method 2 already returns the same authoritative current-state value on this machine. Avoiding an extra kernel/driver dependency is preferable unless WMI proves unreliable.
 
-## Planned benchmark P-MODE policy
+## Implemented benchmark P-MODE policy
 
 The practical accidental-change risk is physical interaction with the Evo-X2 while connecting or disconnecting the physical display. During unattended benchmark execution the hardware P-MODE button is not expected to be touched.
 
-Therefore continuous `IP3_WMIEvent` monitoring is **not required** for the normal benchmark path. The preferred design is deliberately simpler:
+Therefore continuous `IP3_WMIEvent` monitoring is **not required** for the normal benchmark path. The implemented design is deliberately simpler:
 
 1. read authoritative current P-MODE immediately before the benchmark;
 2. read it again immediately after the benchmark;
@@ -343,7 +343,7 @@ Therefore continuous `IP3_WMIEvent` monitoring is **not required** for the norma
 
 The normal-user `IP3_WMIEvent` mapping remains documented as a diagnostic tool but is not currently planned as an always-running watcher.
 
-A future result record should keep start and finish separately, for example:
+The wrappers now keep start and finish separately, for example:
 
 ```json
 "PModeAtStart": {
@@ -373,15 +373,15 @@ The 64k llama-bench calibration on 2026-10-15 produced widely separated high-loa
 
 \* GPU usage >= 95%.
 
-A conservative future warning rule should:
+The implemented conservative warning rule:
 
-- evaluate only sustained high-load ADLX samples, initially using `gpu_usage_pct >= 95`;
-- require enough high-load samples to avoid classifying startup/tail noise;
-- classify only clearly separated power bands and leave boundary regions `Ambiguous`;
-- emit a warning only when a confident power-band classification contradicts the direct P-MODE read;
-- never rewrite the authoritative P-MODE value based on ADLX power.
+- evaluates only sustained high-load ADLX samples using `gpu_usage_pct >= 95`;
+- requires at least five usable high-load power samples;
+- classifies only clearly separated power bands and leaves boundary regions `Ambiguous`;
+- emits a warning only when a confident power-band classification contradicts the direct P-MODE read;
+- never rewrites the authoritative P-MODE value based on ADLX power.
 
-Provisional, deliberately wide bands for implementation testing are:
+The provisional, deliberately wide warning bands are:
 
 ```text
 <= 65 W       -> Quiet-like
@@ -396,9 +396,23 @@ These thresholds are derived only from the current 64k llama-bench calibration a
 For example, a run with direct `Performance` at both start and finish but a sustained `Balanced-like` ~85 W ADLX signature should be flagged for review. Conversely, a short run with too few >=95% utilization samples should not generate a P-MODE consistency warning.
 
 
+### Implementation commits and normal-user transport
+
+Implementation on `investigation/r5-adlx-gpu-monitor-20261015` adds:
+
+- a read-only IP3 WMI method-2 probe in `Evox2.Common.psm1`;
+- `tools/evox2/pmode/Read-Evox2PMode.ps1`;
+- one-time elevated task setup/removal helpers under `tools/evox2/pmode/`;
+- normal-user start/finish P-MODE capture in both llama-cli and llama-bench wrappers;
+- P-MODE, ADLX power classification and warning columns in child and matrix summary CSVs.
+
+The scheduled task is used only as a privilege transport. It invokes the same read-only method-2 probe, writes a fresh state file under `%ProgramData%\Evox2\PMode\state.json`, and has no periodic trigger. Method ID 1 is never called.
+
+If the task is absent or the probe fails, benchmark execution remains fail-open and records `Unknown` plus the probe error. The run is not aborted solely because P-MODE metadata is unavailable.
+
 ## Measurement policy after this investigation
 
-Until automatic P-MODE state logging is added:
+With automatic start/finish P-MODE state logging added on the investigation branch:
 
 1. keep P-MODE fixed at **Performance** for performance comparisons;
 2. do not change P-MODE during a benchmark matrix;
