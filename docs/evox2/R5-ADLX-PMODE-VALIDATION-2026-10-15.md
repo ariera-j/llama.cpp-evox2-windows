@@ -294,6 +294,108 @@ Also note that stopping only the service may leave an already-running `OsdShowV2
 
 For benchmark reproducibility, keeping ImagesShow running is currently safer than disabling it: the OSD provides immediate visible feedback if the hardware P-MODE button is pressed accidentally, while the button itself is not expected to be disabled by stopping the service.
 
+
+## Independent EC-register corroboration: evox2-pmode-widget
+
+A separate Windows implementation, `James22bot/evox2-pmode-widget`, was reviewed at main commit `572f9ef9bf2560cc1313b6bdd932868753bcfd7d`.
+
+Its Windows backend does not use the IP3 ACPI-WMI method above. Instead it uses official signed PawnIO to perform bounded ACPI EC port I/O and reads persistent EC register `0x31` directly. The implementation defines:
+
+```text
+EC command/status port = 0x66
+EC data port           = 0x62
+ACPI EC READ command   = 0x80
+ACPI EC WRITE command  = 0x81
+P-MODE EC register     = 0x31
+```
+
+Its independently reverse-engineered mode mapping is:
+
+| EC 0x31 | mode |
+|---:|---|
+| `0x00` | Balanced |
+| `0x01` | Performance |
+| `0x02` | Quiet |
+
+This exactly matches the raw values observed on this Evo-X2 through IP3 WMI method 2.
+
+The widget also provides useful robustness patterns:
+
+- serialize direct EC access with `Global\\Access_EC`;
+- read P-MODE twice and reject a sample if the value changes during the read;
+- treat unknown raw values as errors rather than guessing;
+- fail closed when authoritative hardware state cannot be established.
+
+The widget's direct-EC/PawnIO path is useful independent corroboration and a possible fallback backend. For this benchmark project, however, adding PawnIO is currently unnecessary because IP3 WMI method 2 already returns the same authoritative current-state value on this machine. Avoiding an extra kernel/driver dependency is preferable unless WMI proves unreliable.
+
+## Planned benchmark P-MODE policy
+
+The practical accidental-change risk is physical interaction with the Evo-X2 while connecting or disconnecting the physical display. During unattended benchmark execution the hardware P-MODE button is not expected to be touched.
+
+Therefore continuous `IP3_WMIEvent` monitoring is **not required** for the normal benchmark path. The preferred design is deliberately simpler:
+
+1. read authoritative current P-MODE immediately before the benchmark;
+2. read it again immediately after the benchmark;
+3. expect **Performance** for performance-comparison runs;
+4. warn if start and finish differ;
+5. warn if either authoritative read is a valid non-Performance state;
+6. if a P-MODE probe fails, record `Unknown` and the probe error rather than inferring a state from performance.
+
+The normal-user `IP3_WMIEvent` mapping remains documented as a diagnostic tool but is not currently planned as an always-running watcher.
+
+A future result record should keep start and finish separately, for example:
+
+```json
+"PModeAtStart": {
+  "Mode": "Performance",
+  "RawValue": 1,
+  "Source": "IP3-WMI-method2"
+},
+"PModeAtFinish": {
+  "Mode": "Performance",
+  "RawValue": 1,
+  "Source": "IP3-WMI-method2"
+}
+```
+
+### ADLX power/P-MODE consistency warning
+
+The direct P-MODE read is authoritative. ADLX GPU power is a secondary consistency check intended to catch obvious condition mistakes, not to replace the hardware state read.
+
+The 64k llama-bench calibration on 2026-10-15 produced widely separated high-load GPU-power averages:
+
+| P-MODE | high-load GPU power* |
+|---|---:|
+| Quiet | 53.5 W |
+| Balanced | 84.8 W |
+| Performance #1 | 114.0 W |
+| Performance #2 | 115.3 W |
+
+\* GPU usage >= 95%.
+
+A conservative future warning rule should:
+
+- evaluate only sustained high-load ADLX samples, initially using `gpu_usage_pct >= 95`;
+- require enough high-load samples to avoid classifying startup/tail noise;
+- classify only clearly separated power bands and leave boundary regions `Ambiguous`;
+- emit a warning only when a confident power-band classification contradicts the direct P-MODE read;
+- never rewrite the authoritative P-MODE value based on ADLX power.
+
+Provisional, deliberately wide bands for implementation testing are:
+
+```text
+<= 65 W       -> Quiet-like
+75 .. 95 W    -> Balanced-like
+>= 105 W      -> Performance-like
+65 .. 75 W    -> Ambiguous
+95 .. 105 W   -> Ambiguous
+```
+
+These thresholds are derived only from the current 64k llama-bench calibration and are **not yet validation gates**. They should initially produce warnings only. Before making them durable cross-workload thresholds, collect additional Performance-mode data across MTP ON/OFF, contexts and benchmark shapes.
+
+For example, a run with direct `Performance` at both start and finish but a sustained `Balanced-like` ~85 W ADLX signature should be flagged for review. Conversely, a short run with too few >=95% utilization samples should not generate a P-MODE consistency warning.
+
+
 ## Measurement policy after this investigation
 
 Until automatic P-MODE state logging is added:
