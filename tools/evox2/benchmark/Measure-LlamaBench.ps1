@@ -76,6 +76,8 @@ param(
 
     [string]$AdlxMonitorExe = '',
 
+    [switch]$NoPModeProbe,
+
     [ValidateRange(5, 300)]
     [int]$ProgressIntervalSeconds = 15,
 
@@ -418,6 +420,7 @@ $Preview = [PSCustomObject]@{
     ResourceMonitor   = [bool]$ResourceMonitor
     AdlxMonitor       = $AdlxMonitorRequested
     AdlxAvailable     = $AdlxMonitorAvailable
+    PModeProbe        = -not [bool]$NoPModeProbe
     ConditionId       = $ConditionId
     GitCommit         = $Identity.Git.Commit
     GitDirty          = $Identity.Git.Dirty
@@ -457,6 +460,15 @@ $MonitorStdErrPath = Join-Path $RunDirectory 'resource-monitor.stderr.log'
 $GpuMetricsPath = Join-Path $RunDirectory 'gpu-metrics.csv'
 $AdlxStdOutPath = Join-Path $RunDirectory 'adlx-monitor.stdout.log'
 $AdlxStdErrPath = Join-Path $RunDirectory 'adlx-monitor.stderr.log'
+
+$PModeAtStart = Get-Evox2PModeMetadata -Disabled:$NoPModeProbe
+if (-not $NoPModeProbe) {
+    if (-not $PModeAtStart.ProbeSucceeded) {
+        Write-Warning "P-MODE start probe failed; state is Unknown. $($PModeAtStart.Error)"
+    } elseif ([string]$PModeAtStart.Mode -ne 'Performance') {
+        Write-Warning "P-MODE at start is $($PModeAtStart.Mode); expected Performance for performance comparisons."
+    }
+}
 
 # Keep optional QSA union diagnostics with the other benchmark artifacts.
 # The child inherits this environment; the caller's environment is restored in finally.
@@ -500,6 +512,15 @@ $Conditions = [ordered]@{
     ResourceMonitor = [ordered]@{
         Enabled         = [bool]$ResourceMonitor
         IntervalSeconds = if ($ResourceMonitor) { $ResourceIntervalSeconds } else { $null }
+    }
+
+    PModeAtStart = $PModeAtStart
+
+    PModePolicy = [ordered]@{
+        ProbeEnabled = -not [bool]$NoPModeProbe
+        ExpectedMode = 'Performance'
+        ProbeSource  = 'IP3-WMI-method2'
+        FailOpen     = $true
     }
 
     AdlxGpuMonitor = [ordered]@{
@@ -728,6 +749,8 @@ try {
 
 $Finished = Get-Date
 
+$PModeAtFinish = Get-Evox2PModeMetadata -Disabled:$NoPModeProbe
+
 $DisplayEnvironmentAtFinish = $null
 try {
     $DisplayEnvironmentAtFinish = (Get-Evox2SystemMetadata).DisplayEnvironment
@@ -807,6 +830,23 @@ if (Test-Path -LiteralPath $GpuMetricsPath -PathType Leaf) {
     } catch {}
 }
 
+$AdlxPModeConsistency = Get-Evox2AdlxPModeConsistency `
+    -CsvPath $GpuMetricsPath `
+    -PModeAtStart $PModeAtStart `
+    -PModeAtFinish $PModeAtFinish
+$PModeWarnings = @(
+    Get-Evox2PModeWarnings `
+        -PModeAtStart $PModeAtStart `
+        -PModeAtFinish $PModeAtFinish `
+        -AdlxConsistency $AdlxPModeConsistency `
+        -ExpectedMode 'Performance'
+)
+$PModeChanged = (
+    $PModeAtStart.ProbeSucceeded -and
+    $PModeAtFinish.ProbeSucceeded -and
+    [string]$PModeAtStart.Mode -ne [string]$PModeAtFinish.Mode
+)
+
 if ($adlxMonitorStarted -and
     $null -ne $adlxMonitorExitCode -and
     $adlxMonitorExitCode -ne 0 -and
@@ -871,6 +911,12 @@ foreach ($row in $NativeRows) {
 
         ResourceSamples   = $resourceSampleCount
         AdlxSamples       = $adlxSampleCount
+        PModeStart        = $PModeAtStart.Mode
+        PModeFinish       = $PModeAtFinish.Mode
+        PModeChanged      = $PModeChanged
+        AdlxHighLoadPowerW = $AdlxPModeConsistency.AverageGpuPowerW
+        AdlxPowerClass    = $AdlxPModeConsistency.PowerClass
+        PModeWarningCount = $PModeWarnings.Count
         RunDirectory      = $RunDirectory
     }
 }
@@ -920,6 +966,12 @@ if ($SummaryRows.Count -eq 0) {
             RepetitionSamples = 0
             ResourceSamples   = $resourceSampleCount
             AdlxSamples       = $adlxSampleCount
+            PModeStart        = $PModeAtStart.Mode
+            PModeFinish       = $PModeAtFinish.Mode
+            PModeChanged      = $PModeChanged
+            AdlxHighLoadPowerW = $AdlxPModeConsistency.AverageGpuPowerW
+            AdlxPowerClass    = $AdlxPModeConsistency.PowerClass
+            PModeWarningCount = $PModeWarnings.Count
             RunDirectory      = $RunDirectory
         }
     )
@@ -978,6 +1030,11 @@ $Result = [ordered]@{
     AdlxMonitorExitCode    = $adlxMonitorExitCode
     AdlxMonitorError       = $adlxMonitorStartError
     AdlxSampleCount        = $adlxSampleCount
+    PModeAtStart           = $PModeAtStart
+    PModeAtFinish          = $PModeAtFinish
+    PModeChanged           = $PModeChanged
+    PModeWarnings          = @($PModeWarnings)
+    AdlxPModeConsistency   = $AdlxPModeConsistency
     DisplayEnvironmentAtFinish = $DisplayEnvironmentAtFinish
 
     Files = [ordered]@{
@@ -1009,6 +1066,13 @@ Write-Host "ExitCode        : $ExitCode"
 Write-Host "ExitCodeSource  : $ExitCodeSource"
 Write-Host "ResourceSamples : $resourceSampleCount"
 Write-Host "ADLXSamples     : $adlxSampleCount"
+Write-Host "PModeStart      : $($PModeAtStart.Mode) [$($PModeAtStart.Transport)]"
+Write-Host "PModeFinish     : $($PModeAtFinish.Mode) [$($PModeAtFinish.Transport)]"
+if ($null -ne $AdlxPModeConsistency.AverageGpuPowerW) {
+    Write-Host "ADLXPowerClass  : $($AdlxPModeConsistency.PowerClass) ($($AdlxPModeConsistency.AverageGpuPowerW) W)"
+} else {
+    Write-Host "ADLXPowerClass  : $($AdlxPModeConsistency.PowerClass)"
+}
 Write-Host "RunDirectory    : $RunDirectory"
 Write-Host "conditions.json : $ConditionsPath"
 Write-Host "result.json     : $ResultPath"
@@ -1035,6 +1099,9 @@ if ($AdlxMonitorRequested -and $adlxSampleCount -eq 0) {
 }
 if (-not [string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
     Write-Warning "ADLX telemetry: $adlxMonitorStartError"
+}
+foreach ($warning in $PModeWarnings) {
+    Write-Warning "P-MODE consistency: $warning"
 }
 
 if ($Status -ne 'OK') {
