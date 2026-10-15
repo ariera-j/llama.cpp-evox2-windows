@@ -18,8 +18,14 @@
     ".github/workflows"
   ],
   "inference_source_policy": "unchanged from pinned upstream; re-evaluate downstream patches separately",
-  "validation_status": "r5 clean Vulkan/ROCm 64k/128k/256k baseline verified; COMMON-001 PLE16 gates passed; VULKAN-002 opt-in Vulkan tests and PP validations passed; see dated reports",
+  "validation_status": "r5 clean Vulkan/ROCm 64k/128k/256k baseline verified; COMMON-001 PLE16 gates passed; VULKAN-002 opt-in Vulkan tests and PP validations passed; ADLX 2s logging overhead negligible in ABBA and P-MODE start/finish + power-consistency path validated end-to-end; see dated reports",
   "integration_snapshot_status": "not_created",
   "first_integration_checkpoint": "planned_at_convenient_research_break",
-  "research_refresh_policy": "keep pinned upstream until current research requires change; COMMON-001 always required for PLE16 comparison"
+  "research_refresh_policy": "keep pinned upstream until current research requires change; COMMON-001 always required for PLE16 comparison",
+  "measurement_tooling_status": "ADLX GPU telemetry and read-only Evo-X2 P-MODE start/finish logging integrated and end-to-end validated on 2026-10-15; inference optimization source remains unchanged",
+  "measurement_tooling": [
+    "tools/evox2/adlx-gpu-monitor",
+    "tools/evox2/pmode",
+    "tools/evox2/benchmark start/finish P-MODE metadata and ADLX power consistency warnings"
+  ]
 }
