@@ -78,6 +78,8 @@ Every benchmark result should identify:
 - manual UMA/VRAM test-condition label
 - start and finish timestamps
 - exit status
+- P-MODE at benchmark start and finish when available
+- ADLX high-load GPU power classification when available
 - log path
 
 Do not encode facts in filenames that were not actually detected or supplied. For example, a run must not be named `Vulkan` or `PLE16` merely because an older script had those words hard-coded.
@@ -183,3 +185,37 @@ See [R3-BASELINE.md](R3-BASELINE.md) for the historical context. The r4 plan use
 the original joined model, not the PLE16-converted model; record this layout
 condition when comparing against r3 COMMON-004/005. All r4 results remain
 pending in [BASELINE.md](BASELINE.md).
+
+
+## P-MODE state and ADLX consistency
+
+On the target Evo-X2, P-MODE materially changes long-context PP performance. Performance comparisons therefore expect **Performance** mode.
+
+The wrappers `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1` record an authoritative P-MODE read immediately before and after the measured child process. The read uses ACPI-WMI method ID 2; normal user processes cannot execute that method directly on the target machine, so install the read-only helper once from an elevated Windows PowerShell:
+
+```powershell
+.\tools\evox2\pmode\Install-Evox2PModeProbeTask.ps1
+```
+
+Normal benchmark runs remain non-elevated. The registered task has no periodic trigger and runs only for an explicit fresh-state request.
+
+The wrappers warn, but do not fail the benchmark, when:
+
+- the start or finish P-MODE cannot be read;
+- either authoritative state is not Performance;
+- start and finish differ;
+- sustained high-load ADLX power confidently resembles another P-MODE band.
+
+The ADLX consistency check currently uses samples with `gpu_usage_pct >= 95`, requires at least five usable power samples, and classifies the average power conservatively:
+
+```text
+<= 65 W       Quiet-like
+75..95 W      Balanced-like
+>= 105 W      Performance-like
+65..75 W      Ambiguous
+95..105 W     Ambiguous
+```
+
+These bands are provisional warnings derived from the 2026-10-15 64k llama-bench calibration. They are not pass/fail gates and must not override the authoritative WMI P-MODE value. See [R5-ADLX-PMODE-VALIDATION-2026-10-15.md](R5-ADLX-PMODE-VALIDATION-2026-10-15.md).
+
+Use `-NoPModeProbe` only for an explicit control run or while the helper is not installed.
