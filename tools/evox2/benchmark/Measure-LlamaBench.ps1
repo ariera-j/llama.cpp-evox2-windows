@@ -66,6 +66,16 @@ param(
     [ValidateRange(1, 60)]
     [int]$ResourceIntervalSeconds = 2,
 
+    [switch]$NoAdlxMonitor,
+
+    [ValidateRange(100, 60000)]
+    [int]$AdlxIntervalMs = 2000,
+
+    [ValidateRange(0, 64)]
+    [int]$AdlxGpuIndex = 0,
+
+    [string]$AdlxMonitorExe = '',
+
     [ValidateRange(5, 300)]
     [int]$ProgressIntervalSeconds = 15,
 
@@ -107,6 +117,23 @@ Import-Module $benchmarkModule -Force
 Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
+
+$AdlxMonitorRequested = -not [bool]$NoAdlxMonitor
+if ([string]::IsNullOrWhiteSpace($AdlxMonitorExe)) {
+    $AdlxMonitorExe = Join-Path $toolsRoot 'adlx-gpu-monitor\build\bin\evox2-adlx-gpu-monitor.exe'
+}
+$AdlxMonitorExe = [IO.Path]::GetFullPath($AdlxMonitorExe)
+$AdlxMonitorAvailable = Test-Path -LiteralPath $AdlxMonitorExe -PathType Leaf
+$AdlxMonitorIdentity = $null
+$AdlxMonitorIdentityError = $null
+if ($AdlxMonitorAvailable) {
+    try {
+        $AdlxMonitorExe = (Resolve-Path -LiteralPath $AdlxMonitorExe).Path
+        $AdlxMonitorIdentity = Get-Evox2FileIdentity -Path $AdlxMonitorExe -Sha256
+    } catch {
+        $AdlxMonitorIdentityError = $_.Exception.Message
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($LocalConfig)) {
     $LocalConfig = Join-Path $benchmarkDir 'configs\local.psd1'
@@ -389,6 +416,8 @@ $Preview = [PSCustomObject]@{
     MTP               = $false
     UmaLabel          = $UmaLabel
     ResourceMonitor   = [bool]$ResourceMonitor
+    AdlxMonitor       = $AdlxMonitorRequested
+    AdlxAvailable     = $AdlxMonitorAvailable
     ConditionId       = $ConditionId
     GitCommit         = $Identity.Git.Commit
     GitDirty          = $Identity.Git.Dirty
@@ -425,6 +454,9 @@ $OutputPath = Join-Path $RunDirectory 'output.log'
 $ResourcePath = Join-Path $RunDirectory 'resources.csv'
 $MonitorStdOutPath = Join-Path $RunDirectory 'resource-monitor.stdout.log'
 $MonitorStdErrPath = Join-Path $RunDirectory 'resource-monitor.stderr.log'
+$GpuMetricsPath = Join-Path $RunDirectory 'gpu-metrics.csv'
+$AdlxStdOutPath = Join-Path $RunDirectory 'adlx-monitor.stdout.log'
+$AdlxStdErrPath = Join-Path $RunDirectory 'adlx-monitor.stderr.log'
 
 # Keep optional QSA union diagnostics with the other benchmark artifacts.
 # The child inherits this environment; the caller's environment is restored in finally.
@@ -470,6 +502,18 @@ $Conditions = [ordered]@{
         IntervalSeconds = if ($ResourceMonitor) { $ResourceIntervalSeconds } else { $null }
     }
 
+    AdlxGpuMonitor = [ordered]@{
+        Requested       = $AdlxMonitorRequested
+        Available       = $AdlxMonitorAvailable
+        IntervalMs      = $AdlxIntervalMs
+        GpuIndex        = $AdlxGpuIndex
+        ExecutablePath  = $AdlxMonitorExe
+        Executable      = $AdlxMonitorIdentity
+        IdentityError   = $AdlxMonitorIdentityError
+        OutputFile      = $GpuMetricsPath
+        FailOpen        = $true
+    }
+
     ExecutableIdentity = $Identity.Executable
     DeviceIdentity     = $Identity.Device
     BuildManifest      = $Identity.BuildManifest
@@ -502,6 +546,10 @@ $argumentLine = (
 $process = $null
 $processHandle = [IntPtr]::Zero
 $monitorProcess = $null
+$adlxMonitorProcess = $null
+$adlxMonitorStarted = $false
+$adlxMonitorStartError = $null
+$adlxMonitorExitCode = $null
 $ExitCode = $null
 $ExitCodeSource = 'unavailable'
 $runException = $null
@@ -522,6 +570,30 @@ try {
     Write-Host "llama-bench PID: $($process.Id)"
 
     $processHandle = $process.Handle
+
+    if ($AdlxMonitorRequested) {
+        if (-not $AdlxMonitorAvailable) {
+            $adlxMonitorStartError = "ADLX GPU monitor executable not found: $AdlxMonitorExe"
+            Write-Warning "$adlxMonitorStartError; continuing without ADLX telemetry."
+        } else {
+            try {
+                $adlxMonitorProcess = Start-Evox2AdlxGpuMonitor `
+                    -Executable $AdlxMonitorExe `
+                    -OutputPath $GpuMetricsPath `
+                    -StdOutPath $AdlxStdOutPath `
+                    -StdErrPath $AdlxStdErrPath `
+                    -TargetProcessId $process.Id `
+                    -IntervalMs $AdlxIntervalMs `
+                    -GpuIndex $AdlxGpuIndex
+
+                $adlxMonitorStarted = $true
+                Write-Host "ADLX GPU monitor PID: $($adlxMonitorProcess.Id)"
+            } catch {
+                $adlxMonitorStartError = $_.Exception.Message
+                Write-Warning "ADLX GPU monitor could not be started: $adlxMonitorStartError"
+            }
+        }
+    }
 
     if ($ResourceMonitor) {
         $monitorScript = Join-Path $benchmarkDir 'Monitor-LlamaProcess.ps1'
@@ -605,6 +677,26 @@ try {
     if ($AutoQsaStatsFile) {
         Remove-Item Env:GGML_VK_QSA_UNION_STATS_FILE -ErrorAction SilentlyContinue
     }
+
+    if ($null -ne $adlxMonitorProcess) {
+        try {
+            $adlxWaitMilliseconds = [math]::Max(5000, $AdlxIntervalMs + 3000)
+            if (-not $adlxMonitorProcess.HasExited) {
+                if (-not $adlxMonitorProcess.WaitForExit($adlxWaitMilliseconds)) {
+                    if ([string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
+                        $adlxMonitorStartError = 'ADLX monitor did not stop after the target process exited; forced termination was used.'
+                    }
+                    Stop-Process -Id $adlxMonitorProcess.Id -Force -ErrorAction SilentlyContinue
+                    [void]$adlxMonitorProcess.WaitForExit(2000)
+                }
+            }
+            $adlxMonitorProcess.Refresh()
+            if ($adlxMonitorProcess.HasExited) {
+                try { $adlxMonitorExitCode = $adlxMonitorProcess.ExitCode } catch {}
+            }
+        } catch {}
+    }
+
     if ($null -ne $monitorProcess) {
         try {
             if (-not $monitorProcess.HasExited) {
@@ -679,9 +771,16 @@ $Status = if ($null -ne $runException) {
 }
 
 $resourceSampleCount = 0
+$adlxSampleCount = 0
 if (Test-Path -LiteralPath $ResourcePath -PathType Leaf) {
     try {
         $resourceSampleCount = @(Import-Csv -LiteralPath $ResourcePath).Count
+    } catch {}
+}
+
+if (Test-Path -LiteralPath $GpuMetricsPath -PathType Leaf) {
+    try {
+        $adlxSampleCount = @(Import-Csv -LiteralPath $GpuMetricsPath).Count
     } catch {}
 }
 
@@ -741,6 +840,7 @@ foreach ($row in $NativeRows) {
         RepetitionSamples = $sampleCount
 
         ResourceSamples   = $resourceSampleCount
+        AdlxSamples       = $adlxSampleCount
         RunDirectory      = $RunDirectory
     }
 }
@@ -789,6 +889,7 @@ if ($SummaryRows.Count -eq 0) {
             StdDevNanoseconds = $null
             RepetitionSamples = 0
             ResourceSamples   = $resourceSampleCount
+            AdlxSamples       = $adlxSampleCount
             RunDirectory      = $RunDirectory
         }
     )
@@ -842,6 +943,11 @@ $Result = [ordered]@{
 
     ResourceMonitorEnabled = [bool]$ResourceMonitor
     ResourceSampleCount    = $resourceSampleCount
+    AdlxMonitorRequested   = $AdlxMonitorRequested
+    AdlxMonitorStarted     = $adlxMonitorStarted
+    AdlxMonitorExitCode    = $adlxMonitorExitCode
+    AdlxMonitorError       = $adlxMonitorStartError
+    AdlxSampleCount        = $adlxSampleCount
 
     Files = [ordered]@{
         Conditions = $ConditionsPath
@@ -851,6 +957,9 @@ $Result = [ordered]@{
         Output     = $OutputPath
         StdErr     = $StdErrPath
         Resources  = if (Test-Path -LiteralPath $ResourcePath) { $ResourcePath } else { $null }
+        GpuMetrics = if (Test-Path -LiteralPath $GpuMetricsPath) { $GpuMetricsPath } else { $null }
+        AdlxStdOut = if (Test-Path -LiteralPath $AdlxStdOutPath) { $AdlxStdOutPath } else { $null }
+        AdlxStdErr = if (Test-Path -LiteralPath $AdlxStdErrPath) { $AdlxStdErrPath } else { $null }
         QsaUnionStats = if ($QsaStatsFile -and (Test-Path -LiteralPath $QsaStatsFile)) { $QsaStatsFile } else { $null }
     }
 }
@@ -868,6 +977,7 @@ Write-Host "Status          : $Status"
 Write-Host "ExitCode        : $ExitCode"
 Write-Host "ExitCodeSource  : $ExitCodeSource"
 Write-Host "ResourceSamples : $resourceSampleCount"
+Write-Host "ADLXSamples     : $adlxSampleCount"
 Write-Host "RunDirectory    : $RunDirectory"
 Write-Host "conditions.json : $ConditionsPath"
 Write-Host "result.json     : $ResultPath"
@@ -880,11 +990,17 @@ if ($QsaStatsFile) {
 if ($ResourceMonitor) {
     Write-Host "resources.csv   : $ResourcePath"
 }
+if ($adlxSampleCount -gt 0) {
+    Write-Host "gpu-metrics.csv : $GpuMetricsPath"
+}
 Write-Host '===================================================='
 Write-Host ''
 
 if ($ResourceMonitor -and $resourceSampleCount -eq 0) {
     Write-Warning 'Resource monitoring was requested, but resources.csv contains no samples.'
+}
+if ($AdlxMonitorRequested -and $adlxSampleCount -eq 0) {
+    Write-Warning 'ADLX monitoring was requested, but gpu-metrics.csv contains no samples.'
 }
 
 if ($Status -ne 'OK') {

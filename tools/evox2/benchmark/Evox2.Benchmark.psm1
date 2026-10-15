@@ -239,6 +239,66 @@ function Write-Evox2CombinedLog {
     [IO.File]::WriteAllText([IO.Path]::GetFullPath($Path), $builder.ToString(), $utf8NoBom)
 }
 
+function Start-Evox2AdlxGpuMonitor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Executable,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StdOutPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StdErrPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateRange(1, 2147483647)]
+        [int]$TargetProcessId,
+
+        [ValidateRange(100, 60000)]
+        [int]$IntervalMs = 2000,
+
+        [ValidateRange(0, 64)]
+        [int]$GpuIndex = 0
+    )
+
+    $fullExecutable = [IO.Path]::GetFullPath($Executable)
+    if (-not (Test-Path -LiteralPath $fullExecutable -PathType Leaf)) {
+        throw "ADLX GPU monitor executable not found: $fullExecutable"
+    }
+
+    $fullOutputPath = [IO.Path]::GetFullPath($OutputPath)
+    $outputDir = Split-Path -Parent $fullOutputPath
+    if ($outputDir) {
+        New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    }
+
+    $arguments = @(
+        '--duration', '0',
+        '--interval-ms', "$IntervalMs",
+        '--gpu-index', "$GpuIndex",
+        '--target-pid', "$TargetProcessId",
+        '--output', $fullOutputPath
+    )
+
+    $argumentLine = (
+        $arguments |
+        ForEach-Object { ConvertTo-Evox2WindowsArgument -Value ([string]$_) }
+    ) -join ' '
+
+    return Start-Process `
+        -FilePath $fullExecutable `
+        -ArgumentList $argumentLine `
+        -WorkingDirectory (Split-Path -Parent $fullExecutable) `
+        -RedirectStandardOutput $StdOutPath `
+        -RedirectStandardError $StdErrPath `
+        -NoNewWindow `
+        -PassThru
+}
+
 function Get-Evox2LastRegexMatch {
     [CmdletBinding()]
     param(
@@ -560,6 +620,7 @@ Export-ModuleMember -Function @(
     'Get-Evox2BuildLabel',
     'New-Evox2RunDirectory',
     'Write-Evox2CombinedLog',
+    'Start-Evox2AdlxGpuMonitor',
     'Get-Evox2MtpDenseIndexerEvidence',
     'Get-Evox2QsaNoopInvalidationEvidence',
     'ConvertFrom-Evox2LlamaCliResult',
