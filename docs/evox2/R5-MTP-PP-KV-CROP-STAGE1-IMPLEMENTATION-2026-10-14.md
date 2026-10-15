@@ -802,3 +802,41 @@ Segment 40,960→53,248 on RDP-present ON **45.13s** vs adapter-absent ON **40.3
 **Resource correlation, not root cause:** the 02:13 ON during prompt at elapsed181–191s records whole-system disk reads spikes **~59–384MiB/s** and whole-system page reads up to **3789/s**, absent in the comparator 01:27 ON in the corresponding time window. Around this time 02:13 ON processes approximately 45–53k prompt tokens depending on elapsed startup; disk reads can be from unrelated processes, not proven process-private. Faster PP occurs *despite*, not necessarily because of, elevated counters. Local GPU memory peak roughly **85.572GiB** both ON conditions; median process GPU Local **85.361GiB**, consistent process GPU residency at this coarse sample level. AMD driver unchanged. No GPU clock/temperature/power telemetry in either ZIP.
 
 **Inference and next control:** disconnecting RDP did **NOT** bring both MTP conditions back to Oct11 high range; OFF ~339 vs high361.5, ON ~322 vs high334. The strict claim 'RDP disconnect improves MTP ON by +2.32%' is premature: one run per arm and the adapter only absent in the *second* snapshot, with a ~10k-token isolated speed burst and varying system I/O. For repeatable A/B first ensure Remote Display Adapter absence in BOTH 64k run-start conditions: e.g. issue `Start-Sleep -Seconds 120` **before** the same OFF→ON script, then disconnect promptly; check new snapshots. For a direct ON RDP connected/disconnected A/B do replicated short/single-arm runs and avoid connecting RDP during capture. Do NOT conclude that RDP/OS patch, QSA state or power-management root cause was established. No source changes.
+
+
+## Stage B Vulkan 64k P-MODE + ADLX controlled ABBA recheck — 2026-10-15
+
+**Status: 64K FUNCTIONAL + PP PERFORMANCE REPRODUCED WITH AUTHORITATIVE PERFORMANCE P-MODE IN ALL FOUR RUNS.** Raw user archive: \`20261015-193942-281-qwen38-r5-mtp-kv-crop-stage1.zip\`, SHA256 \`b316923f18a8849cd591e513d6b54c72df18d368525b2badd7644a8b1cd0bfdd\`. Matrix: \`stage1-kv-only-64k\`, started 19:39:42 and completed 19:57:09 JST, **4/4 OK, exit 0**. This rerun addresses the missing *direct* P-MODE metadata in the October 14 experiment; it does **not** establish the October 14 mode retrospectively.
+
+### Test identity and controls
+
+- Exact retained **Vulkan b11618 / Clang 20.1.8** executable: SHA256 \`7f0edf27aa9505702aeb4c5092ebe588883e76ba7c979e1fba2cf73643c01ba2\`; compiled source \`5ea504315450aeb3ef9e0160bfeea2c0da965960\`; runtime artifacts \`Verified\` with bundle digest \`c719ec9e0801852fcc29bc5aebe3ebcc6c1e7811bdfd42acd011071f6c81f30a\`. All four have matching executable and runtime identities; **no rebuild**.
+- Git working tree at measurement: branch \`investigation/r5-mtp-pp-kv-crop-stage1-20261014\`, HEAD \`4b08acd12d47324286d556e5fafaac5850a0441f\`, \`Dirty=true\` because the r5-mainline ADLX/P-MODE-enabled benchmark wrappers and supporting tools were copied into the worktree. The running Stage-B binary was independently verified and is unaffected by this reporting-tool difference.
+- Fixed PLE16 main GGUF + self-contained Unsloth Q8_0 Draft GGUF, 61,789 prompt tokens, input SHA256 \`2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751\`, 512 generated tokens; ctx65536, f16 K/V, batch2048, ubatch1024, threads4, GPU layers999, CPU MoE0, FA auto, temp0, seed1234, QSA union ON/minKV32768, UMA label 96GB, MTP ON in **both** arms. Model/Draft GGUF paths, sizes and mtimes match previous reports; full GGUF SHA256 values are **not** present in the archive.
+- Independent processes in ABBA order; \`LLAMA_MTP_DRAFT_PREFILL_KV_CROP=0\` (A) vs \`=1\` (B). Graph/marker diagnostics OFF. Shared 2-second ADLX telemetry and resource monitoring enabled.
+
+| Run | Stage B | PP tok/s | PP s | TG tok/s | TG s | Native PP+TG s | ADLX samples | High-load GPU power W | P-MODE start/finish |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| A1 | OFF | 334.18 | 184.898 | 29.51 | 17.316 | 202.213 | 122 | 115.967 | Performance / Performance |
+| B1 | ON | **346.11** | **178.526** | 29.80 | 17.148 | 195.675 | 125 | 116.282 | Performance / Performance |
+| B2 | ON | **344.81** | **179.198** | 29.86 | 17.113 | 196.311 | 118 | 116.057 | Performance / Performance |
+| A2 | OFF | 332.81 | 185.660 | 29.45 | 17.354 | 203.014 | 122 | 116.989 | Performance / Performance |
+| **A mean** | OFF | **333.495** | **185.279** | **29.480** | **17.335** | **202.614** | — | — | same |
+| **B mean** | ON | **345.460** | **178.862** | **29.830** | **17.131** | **195.993** | — | — | same |
+
+**Effect within the October 15 ABBA:** B vs A PP **+11.965 tok/s / +3.5878% throughput**; prompt duration **-6.41666 seconds / -3.4632%**; TG **+0.350 tok/s / +1.1873%**, TG duration **-0.20405s / -1.1771%**; native prompt+generation **-6.62071s / -3.2677%**. A range 332.81–334.18, B range 344.81–346.11 tok/s: no overlap. Two runs per arm support a repeatable practical PP difference in this session, not a formal confidence interval. TG is weaker because its change is small.
+
+**Authoritative P-MODE gate passed:** All eight start/finish WMI method-2 checks succeeded; each reports \`Mode=Performance\`, \`RawValue=1\`, \`Source=IP3-WMI-method2\`, \`Transport=ScheduledTask\`. No mode change and **zero** P-MODE warnings per run. ADLX completed with exit 0, 118–125 samples/run, 85–91 high-usage (>=95%) power samples/run; mean high-load GPU power 115.967–116.989 W, class \`Performance-like\`, consistency true. High-load GPU clocks average about 2844.5–2859.8 MHz; similar across arms. These power bands are *provisional secondary checks*, not a replacement for the direct WMI read. ADLX samples report \`remote_session=1\` for all four runs; no RDP connection-state transition is inferred. GPU temperature rises across the sequence (~73.7 to ~79.0 C high-load mean), so retain workload/run order when assessing environmental drift.
+
+**Functional gate:** All runs generated 512 tokens; Draft accepted/generated **295/430**, acceptance 0.68605, graphs reused 210. All four \`stdout.log\` payloads are **byte-identical after stripping the trailing CLI performance footer** (compare raw bytes because previous CLI output contains invalid UTF-8). No crash/backend error; **this is output-level correctness, not bytewise Draft K/V parity**. Actual GPU FA-dispatch absence still requires targeted GPU profiling.
+
+### Compare against October 14 (P-MODE unknown)
+
+| Date | A PP mean | B PP mean | B/A PP throughput gain |
+| --- | ---: | ---: | ---: |
+| Oct 14 b11618, direct P-MODE not logged | 314.135 | 325.535 | **+3.629%** |
+| **Oct 15 b11618, direct Performance confirmed** | **333.495** | **345.460** | **+3.588%** |
+
+October 15 absolute PP rises vs October 14 by **+6.16% A**, **+6.12% B**, but the relative Stage-B gain is nearly identical. This supports a genuine same-binary Stage-B speedup across two sessions rather than a *within-ABBA* P-MODE difference. **Do not back-label October 14 Balanced mode**: it had no authoritative mode metadata. Source-level explanation from active-graph diagnostics remains Stage-B pruning of Draft Q/FA/FFN while retaining K/V writes; causal GPU-dispatch attribution and numerical cache parity are open.
+
+**Next measurement:** Perform a new **128k ABBA** using this retained b11618 \`R5MtpKvOnlyVulkan\` binary and the same ADLX/P-MODE-enabled wrappers, with a job isolating only crop=0/1 across A1/B1/B2/A2. Demand Performance on all eight mode probes and comparable ADLX high-load power. October 14 128k A/B showed PP 278.06→296.63 tok/s (+6.68%) under unknown P-MODE, and is a historical reference only. Consider a new same-day b11618 128k MTP-OFF control after the Stage-B ABBA; do not attribute historical cross-date baseline drift to source.
