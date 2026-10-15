@@ -4,7 +4,7 @@
 // Investigation tool for validating AMD ADLX performance metrics over Windows RDP.
 
 #include "SDK/ADLXHelper/Windows/Cpp/ADLXHelper.h"
-#include "SDK/Include/IPerformanceMonitoring3.h"
+#include "SDK/Include/IPerformanceMonitoring.h"
 
 #include <windows.h>
 
@@ -17,7 +17,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -62,15 +61,24 @@ struct MetricSupport {
 
 struct Sample {
     ADLX_RESULT result = ADLX_FAIL;
-    std::optional<adlx_int64> adlx_timestamp_ms;
-    std::optional<adlx_double> usage_pct;
-    std::optional<adlx_int> clock_mhz;
-    std::optional<adlx_int> vram_clock_mhz;
-    std::optional<adlx_double> temperature_c;
-    std::optional<adlx_double> hotspot_c;
-    std::optional<adlx_double> power_w;
-    std::optional<adlx_int> vram_mb;
-    std::optional<adlx_double> total_board_power_w;
+    bool has_adlx_timestamp = false;
+    adlx_int64 adlx_timestamp_ms = 0;
+    bool has_usage = false;
+    adlx_double usage_pct = 0;
+    bool has_clock = false;
+    adlx_int clock_mhz = 0;
+    bool has_vram_clock = false;
+    adlx_int vram_clock_mhz = 0;
+    bool has_temperature = false;
+    adlx_double temperature_c = 0;
+    bool has_hotspot = false;
+    adlx_double hotspot_c = 0;
+    bool has_power = false;
+    adlx_double power_w = 0;
+    bool has_vram = false;
+    adlx_int vram_mb = 0;
+    bool has_total_board_power = false;
+    adlx_double total_board_power_w = 0;
 };
 
 [[noreturn]] void usage_error(const std::string & message) {
@@ -107,10 +115,8 @@ int parse_int(const std::string & value, const char * option_name) {
 
 Options parse_options(int argc, char ** argv) {
     Options options;
-
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-
         auto require_value = [&](const char * option_name) -> std::string {
             if (i + 1 >= argc) {
                 usage_error(std::string(option_name) + " requires a value");
@@ -145,26 +151,18 @@ Options parse_options(int argc, char ** argv) {
     if (options.gpu_index < 0) {
         usage_error("--gpu-index must be >= 0");
     }
-
     return options;
 }
 
 std::string local_timestamp() {
     SYSTEMTIME st{};
     GetLocalTime(&st);
-
     char buffer[64]{};
     std::snprintf(
         buffer,
         sizeof(buffer),
         "%04u-%02u-%02uT%02u:%02u:%02u.%03u",
-        st.wYear,
-        st.wMonth,
-        st.wDay,
-        st.wHour,
-        st.wMinute,
-        st.wSecond,
-        st.wMilliseconds);
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
     return buffer;
 }
 
@@ -172,10 +170,7 @@ std::string csv_escape(const std::string & value) {
     if (value.find_first_of(",\"\r\n") == std::string::npos) {
         return value;
     }
-
-    std::string escaped;
-    escaped.reserve(value.size() + 2);
-    escaped.push_back('"');
+    std::string escaped = "\"";
     for (const char c : value) {
         if (c == '"') {
             escaped.push_back('"');
@@ -186,66 +181,59 @@ std::string csv_escape(const std::string & value) {
     return escaped;
 }
 
-template <typename T>
-std::string optional_integer(const std::optional<T> & value) {
-    return value ? std::to_string(*value) : std::string();
-}
-
-std::string optional_decimal(const std::optional<adlx_double> & value) {
-    if (!value) {
+std::string decimal_or_blank(bool has_value, adlx_double value) {
+    if (!has_value) {
         return {};
     }
-
     std::ostringstream out;
-    out << std::fixed << std::setprecision(3) << *value;
+    out << std::fixed << std::setprecision(3) << value;
     return out.str();
 }
 
+template <typename T>
+std::string integer_or_blank(bool has_value, T value) {
+    return has_value ? std::to_string(value) : std::string();
+}
+
+bool supported_result(ADLX_RESULT result, adlx_bool supported) {
+    return ADLX_SUCCEEDED(result) && supported;
+}
+
 MetricSupport query_support(const IADLXGPUMetricsSupportPtr & support) {
-    MetricSupport result;
-    adlx_bool supported = false;
+    MetricSupport s;
+    adlx_bool value = false;
 
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUUsage(&supported))) {
-        result.usage = supported;
-    }
+    value = false;
+    s.usage = supported_result(support->IsSupportedGPUUsage(&value), value);
+    value = false;
+    s.clock = supported_result(support->IsSupportedGPUClockSpeed(&value), value);
+    value = false;
+    s.vram_clock = supported_result(support->IsSupportedGPUVRAMClockSpeed(&value), value);
+    value = false;
+    s.temperature = supported_result(support->IsSupportedGPUTemperature(&value), value);
+    value = false;
+    s.hotspot = supported_result(support->IsSupportedGPUHotspotTemperature(&value), value);
+    value = false;
+    s.power = supported_result(support->IsSupportedGPUPower(&value), value);
+    value = false;
+    s.vram = supported_result(support->IsSupportedGPUVRAM(&value), value);
+    value = false;
+    s.total_board_power = supported_result(support->IsSupportedGPUTotalBoardPower(&value), value);
+    return s;
+}
 
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUClockSpeed(&supported))) {
-        result.clock = supported;
-    }
-
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUVRAMClockSpeed(&supported))) {
-        result.vram_clock = supported;
-    }
-
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUTemperature(&supported))) {
-        result.temperature = supported;
-    }
-
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUHotspotTemperature(&supported))) {
-        result.hotspot = supported;
-    }
-
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUPower(&supported))) {
-        result.power = supported;
-    }
-
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUVRAM(&supported))) {
-        result.vram = supported;
-    }
-
-    supported = false;
-    if (ADLX_SUCCEEDED(support->IsSupportedGPUTotalBoardPower(&supported))) {
-        result.total_board_power = supported;
-    }
-
-    return result;
+void print_support(const MetricSupport & s) {
+    std::cout
+        << "Supported metrics:"
+        << " usage=" << s.usage
+        << " clock=" << s.clock
+        << " vram_clock=" << s.vram_clock
+        << " temp=" << s.temperature
+        << " hotspot=" << s.hotspot
+        << " power=" << s.power
+        << " vram=" << s.vram
+        << " total_board_power=" << s.total_board_power
+        << "\n";
 }
 
 Sample read_sample(
@@ -255,169 +243,223 @@ Sample read_sample(
 
     Sample sample;
     IADLXGPUMetricsPtr metrics;
-
     sample.result = perf->GetCurrentGPUMetrics(gpu, &metrics);
     if (ADLX_FAILED(sample.result) || !metrics) {
         return sample;
     }
 
-    {
-        adlx_int64 value = 0;
-        if (ADLX_SUCCEEDED(metrics->TimeStamp(&value))) {
-            sample.adlx_timestamp_ms = value;
-        }
-    }
-
+    sample.has_adlx_timestamp = ADLX_SUCCEEDED(metrics->TimeStamp(&sample.adlx_timestamp_ms));
     if (support.usage) {
-        adlx_double value = 0;
-        if (ADLX_SUCCEEDED(metrics->GPUUsage(&value))) {
-            sample.usage_pct = value;
-        }
+        sample.has_usage = ADLX_SUCCEEDED(metrics->GPUUsage(&sample.usage_pct));
     }
-
     if (support.clock) {
-        adlx_int value = 0;
-        if (ADLX_SUCCEEDED(metrics->GPUClockSpeed(&value)) {
-            sample.clock_mhz = value;
+        sample.has_clock = ADLX_SUCCEEDED(metrics->GPUClockSpeed(&sample.clock_mhz));
+    }
+    if (support.vram_clock) {
+        sample.has_vram_clock = ADLX_SUCCEEDED(metrics->GPUVRAMClockSpeed(&sample.vram_clock_mhz));
+    }
+    if (support.temperature) {
+        sample.has_temperature = ADLX_SUCCEEDED(metrics->GPUTemperature(&sample.temperature_c));
+    }
+    if (support.hotspot) {
+        sample.has_hotspot = ADLX_SUCCEEDED(metrics->GPUHotspotTemperature(&sample.hotspot_c));
+    }
+    if (support.power) {
+        sample.has_power = ADLX_SUCCEEDED(metrics->GPUPower(&sample.power_w));
+    }
+    if (support.vram) {
+        sample.has_vram = ADLX_SUCCEEDED(metrics->GPUVRAM(&sample.vram_mb));
+    }
+    if (support.total_board_power) {
+        sample.has_total_board_power =
+            ADLX_SUCCEEDED(metrics->GPUTotalBoardPower(&sample.total_board_power_w));
+    }
+    return sample;
+}
+
+int run_with_adlx(ADLXHelper & helper, const Options & options) {
+    IADLXGPUListPtr gpus;
+    ADLX_RESULT result = helper.GetSystemServices()->GetGPUs(&gpus);
+    if (ADLX_FAILED(result) || !gpus || gpus->Empty()) {
+        std::cerr << "ADLX GetGPUs failed or returned no GPUs. result="
+                  << static_cast<int>(result) << "\n";
+        return 3;
+    }
+
+    std::cout << "GPUs visible to ADLX: " << gpus->Size() << "\n";
+    adlx_uint ordinal = 0;
+    for (adlx_uint pos = gpus->Begin(); pos != gpus->End(); ++pos, ++ordinal) {
+        IADLXGPUPtr current_gpu;
+        const ADLX_RESULT gpu_result = gpus->At(pos, &current_gpu);
+        if (ADLX_FAILED(gpu_result) || !current_gpu) {
+            std::cout << "  [" << ordinal << "] <query failed> result="
+                      << static_cast<int>(gpu_result) << "\n";
+            continue;
+        }
+        const char * name = nullptr;
+        const ADLX_RESULT name_result = current_gpu->Name(&name);
+        std::cout << "  [" << ordinal << "] "
+                  << ((ADLX_SUCCEEDED(name_result) && name) ? name : "<unknown>")
+                  << "\n";
+    }
+
+    if (options.list_gpus) {
+        return 0;
+    }
+    if (static_cast<adlx_uint>(options.gpu_index) >= gpus->Size()) {
+        std::cerr << "Requested GPU index " << options.gpu_index
+                  << " but ADLX reports " << gpus->Size() << " GPU(s).\n";
+        return 4;
+    }
+
+    IADLXGPUPtr gpu;
+    const adlx_uint gpu_pos = gpus->Begin() + static_cast<adlx_uint>(options.gpu_index);
+    result = gpus->At(gpu_pos, &gpu);
+    if (ADLX_FAILED(result) || !gpu) {
+        std::cerr << "Failed to get GPU index " << options.gpu_index
+                  << ". result=" << static_cast<int>(result) << "\n";
+        return 5;
+    }
+
+    const char * raw_name = nullptr;
+    const ADLX_RESULT name_result = gpu->Name(&raw_name);
+    const std::string gpu_name =
+        (ADLX_SUCCEEDED(name_result) && raw_name) ? raw_name : "<unknown>";
+
+    IADLXPerformanceMonitoringServicesPtr perf;
+    result = helper.GetSystemServices()->GetPerformanceMonitoringServices(&perf);
+    if (ADLX_FAILED(result) || !perf) {
+        std::cerr << "GetPerformanceMonitoringServices failed. result="
+                  << static_cast<int>(result) << "\n";
+        return 6;
+    }
+
+    IADLXGPUMetricsSupportPtr support_interface;
+    result = perf->GetSupportedGPUMetrics(gpu, &support_interface);
+    if (ADLX_FAILED(result) || !support_interface) {
+        std::cerr << "GetSupportedGPUMetrics failed. result="
+                  << static_cast<int>(result) << "\n";
+        return 7;
+    }
+
+    const MetricSupport support = query_support(support_interface);
+    print_support(support);
+
+    DWORD session_id = 0;
+    const BOOL got_session = ProcessIdToSessionId(GetCurrentProcessId(), &session_id);
+    const bool remote_session = GetSystemMetrics(SM_REMOTESESSION) != 0;
+
+    std::cout << "Selected GPU: [" << options.gpu_index << "] " << gpu_name << "\n";
+    std::cout << "Windows session: id="
+              << (got_session ? std::to_string(session_id) : std::string("unknown"))
+              << " remote=" << (remote_session ? "yes" : "no") << "\n";
+    std::cout << "Sampling: interval=" << options.interval_ms
+              << " ms duration=" << options.duration_seconds
+              << " s output=" << options.output.string() << "\n";
+
+    const auto parent = options.output.parent_path();
+    if (!parent.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            std::cerr << "Failed to create output directory: "
+                      << parent.string() << " error=" << ec.message() << "\n";
+            return 8;
         }
     }
 
-    if (support.vram_clock) {
-        adlx_int value = 0;
-        if (ADLX_SUCCEEDED(metrics->GPUU”SPÛØÚÔÜYY
-	˜[YJJJHÂˆØ[\Kœ˜[WØÛØÚ×ÛZˆH˜[YNÂˆBˆB‚ˆYˆ
-İ\Ü[\\˜]\™JHÂˆYÙİX›H˜[YHHÂˆYˆ
-QÔÕPĞÑQQQ
-Y]šXÜËO‘ÔU[\\˜]\™J	˜[YJJJHÂˆØ[\K[\\˜]\™WØÈH˜[YNÂˆBˆB‚ˆYˆ
-İ\ÜšİÜİ
-HÂˆYÙİX›H˜[YHHÂˆYˆ
-QÔÕPĞÑQQQ
-Y]šXÜËO‘ÔRİÜİ[\\˜]\™J	˜[YJJJHÂˆØ[\KšİÜİØÈH˜[YNÂˆBˆB‚ˆYˆ
-İ\ÜœİÙ\ŠHÂˆYÙİX›H˜[YHHÂˆYˆ
-QÔÕPĞÑQQQ
-Y]šXÜËO‘ÔTİÙ\Š	˜[YJJJHÂˆØ[\KœİÙ\—İÈH˜[YNÂˆBˆB‚ˆYˆ
-İ\Üœ˜[JHÂˆYÚ[˜[YHHÂˆYˆ
-QÔÕPĞÑQQQ
-Y]šXÜËO‘ÔU”SJ	˜[YJJJHÂˆØ[\Kœ˜[WÛXˆH˜[YNÂˆBˆB‚ˆYˆ
-İ\Üİ[Ø›Ø\™ÜİÙ\ŠHÂˆYÙİX›H˜[YHHÂˆYˆ
-QÔÕPĞÑQQQ
-Y]šXÜËO‘ÔUİ[›Ø\™İÙ\Š	˜[YJJHÂˆØ[\Kİ[Ø›Ø\™ÜİÙ\—İÈH˜[YNÂˆBˆB‚ˆ™]\›ˆØ[\NÂŸB‚›ÚYš[Üİ\Ü
-ÛÛœİY]šXÔİ\Ü	ˆÊHÂˆİ˜Ûİ]ˆ”İ\ÜYY]šXÜÎˆ‚ˆˆ\ØYÙOHˆË\ØYÙBˆˆÛØÚÏHˆË˜ÛØÚÂˆˆœ˜[WØÛØÚÏHˆËœ˜[WØÛØÚÂˆˆ[\HˆË[\\˜]\™BˆˆİÜİHˆËšİÜİˆˆİÙ\HˆËœİÙ\‚ˆˆœ˜[OHˆËœ˜[Bˆˆİ[Ø›Ø\™ÜİÙ\HˆËİ[Ø›Ø\™ÜİÙ\‚ˆ—ˆÂŸB‚š[[—İÚ]ØY
-Q[\ˆ	ˆ[\‹ÛÛœİÜ[ÛœÈ	ˆÜ[ÛœÊHÂˆPQÔS\İˆÜ\ÎÂˆQÔ‘TÕS™\ÈH[\‹‘Ù]Ş\İ[TÙ\šXÙ\Ê
-KO‘Ù]Ô\Ê	™Ü\ÊNÂˆYˆ
-QÑRSQ
-™\ÊHYÜ\ÈÜ\ËO‘[\J
-JHÂˆİ˜Ù\œˆQÙ]Ô\È˜Z[YÜˆ™]\›™Y›ÈÔ\Ëˆ™\İ[Hˆİ]X×ØØ\İ[Š™\ÊH—ˆÂˆ™]\›ˆÎÂˆB‚ˆİ˜Ûİ]‘Ô\Èš\ÚX›HÈQˆˆÜ\ËO”Ú^™J
-H—ˆÂˆ›Üˆ
-YİZ[ØØ][ÛˆHÜ\ËO™YÚ[Š
-KÜ™[˜[HÈØØ][ÛˆOHÜ\ËO‘[™
+    std::ofstream csv(options.output, std::ios::out | std::ios::trunc);
+    if (!csv) {
+        std::cerr << "Failed to open output CSV: " << options.output.string() << "\n";
+        return 9;
+    }
 
-NÈ
-ÊÛØØ][Û‹
-ÊÛÜ™[˜[
-HÂˆPQÔTˆÜNÂˆÛÛœİQÔ‘TÕSÜWÜ™\ÈHÜ\ËO]
-ØØ][Û‹	™ÜJNÂˆYˆ
-QÑRSQ
-ÜWÜ™\ÊHYÜJHÂˆİ˜Ûİ]ˆÈˆÜ™[˜[—H˜Z[YÈ]Y\Oˆ™\İ[H‚ˆİ]X×ØØ\İ[ŠÜWÜ™\ÊH—ˆÂˆÛÛ[YNÂˆB‚ˆÛÛœİÚ\ˆ
-ˆ˜[YHH[ÂˆÛÛœİQÔ‘TÕS˜[YWÜ™\ÈHÜKO“˜[YJ	›˜[YJNÂˆİ˜Ûİ]ˆÈˆÜ™[˜[—H‚ˆ
+    csv << "timestamp_local,elapsed_ms,adlx_timestamp_ms,windows_session_id,"
+           "remote_session,gpu_index,gpu_name,gpu_usage_pct,gpu_clock_mhz,"
+           "gpu_vram_clock_mhz,gpu_temp_c,gpu_hotspot_c,gpu_power_w,"
+           "gpu_vram_mb,total_board_power_w,adlx_result\n";
+    csv.flush();
 
-QÔÕPĞÑQQQ
-˜[YWÜ™\ÊH	‰ˆ˜[YJHÈ˜[YHˆ[šÛ›İÛˆŠBˆ—ˆÂˆB‚ˆYˆ
-Ü[ÛœË›\İÙÜ\ÊHÂˆ™]\›ˆÂˆB‚ˆYˆ
-İ]X×ØØ\İYİZ[ŠÜ[ÛœË™ÜWÚ[™^
-HHÜ\ËO”Ú^™J
-JHÂˆİ˜Ù\œˆ”™\]Y\İYÔH[™^ˆÜ[ÛœË™ÜWÚ[™^ˆˆ]Q™\ÜÈˆÜ\ËO”Ú^™J
-HˆÔJÊK—ˆÂˆ™]\›ˆÂˆB‚ˆÛÛœİYİZ[ØØ][ÛˆHÜ\ËO™YÚ[Š
-H
-Èİ]X×ØØ\İYİZ[ŠÜ[ÛœË™ÜWÚ[™^
-NÂˆPQÔTˆÜNÂˆ™\ÈHÜ\ËO]
-ØØ][Û‹	™ÜJNÂˆYˆ
-QÑRSQ
-™\ÊHYÜJHÂˆİ˜Ù\œˆ‘˜Z[YÈÙ]ÔH[™^ˆÜ[ÛœË™ÜWÚ[™^ˆ‹ˆ™\İ[Hˆİ]X×ØØ\İ[Š™\ÊH—ˆÂˆ™]\›ˆNÂˆB‚ˆÛÛœİÚ\ˆ
-ˆÜWÛ˜[YWÜ˜]ÈH[ÂˆÛÛœİQÔ‘TÕS˜[YWÜ™\ÈHÜKO“˜[YJ	™ÜWÛ˜[YWÜ˜]ÊNÂˆÛÛœİİœİš[™ÈÜWÛ˜[YHBˆ
-QÔÕPĞÑQQQ
-˜[YWÜ™\ÊH	‰ˆÜWÛ˜[YWÜ˜]ÊHÈÜWÛ˜[YWÜ˜]Èˆ[šÛ›İÛˆÂ‚ˆPQ\™›Ü›X[˜ÙS[Ûš]Üš[™ÔÙ\šXÙ\Ôˆ\™Âˆ™\ÈH[\‹‘Ù]Ş\İ[TÙ\šXÙ\Ê
-KO‘Ù]\™›Ü›X[˜ÙS[Ûš]Üš[™ÔÙ\šXÙ\Ê	œ\™ŠNÂˆYˆ
-QÑRSQ
-™\ÊH\\™ŠHÂˆİ˜Ù\œˆ‘Ù]\™›Ü›X[˜ÙS[Ûš]Üš[™ÔÙ\šXÙ\È˜Z[Yˆ™\İ[H‚ˆİ]X×ØØ\İ[Š™\ÊH—ˆÂˆ™]\›ˆÂˆB‚ˆPQÔSY]šXÜÔİ\Üˆİ\ÜÚ[\™˜XÙNÂˆ™\ÈH\™‹O‘Ù]İ\ÜYÔSY]šXÜÊÜK	œİ\ÜÚ[\™˜XÙJNÂˆYˆ
-QÑRSQ
-™\ÊH\İ\ÜÚ[\™˜XÙJHÂˆİ˜Ù\œˆ‘Ù]İ\ÜYÔSY]šXÜÈ˜Z[Yˆ™\İ[Hˆİ]X×ØØ\İ[Š™\ÊH—ˆÂˆ™]\›ˆÎÂˆB‚ˆÛÛœİY]šXÔİ\Üİ\ÜH]Y\WÜİ\Ü
-İ\ÜÚ[\™˜XÙJNÂˆš[Üİ\Ü
-İ\Ü
-NÂ‚ˆÓÔ‘Ù\ÜÚ[Û—ÚYHÂˆÛÛœİ“ÓÓÛİÜÙ\ÜÚ[ÛˆH›ØÙ\ÜÒYÔÙ\ÜÚ[Û’Y
-Ù]İ\œ™[›ØÙ\ÜÒY
+    const auto start = std::chrono::steady_clock::now();
+    const long long duration_ms =
+        static_cast<long long>(options.duration_seconds) * 1000LL;
+    std::uint64_t sample_index = 0;
 
-K	œÙ\ÜÚ[Û—ÚY
-NÂˆÛÛœİ›ÛÛ™[[İWÜÙ\ÜÚ[ÛˆHÙ]Ş\İ[SY]šXÜÊÓWÔ‘SSÕTÑTÔÒSÓŠHOHÂ‚ˆİ˜Ûİ]”Ù[XİYÔNˆÈˆÜ[ÛœË™ÜWÚ[™^—HˆÜWÛ˜[YH—ˆÂˆİ˜Ûİ]•Ú[™İÜÈÙ\ÜÚ[ÛˆYH‚ˆ
-ÛİÜÙ\ÜÚ[ÛˆÈİ×Üİš[™ÊÙ\ÜÚ[Û—ÚY
-Hˆİœİš[™Ê[šÛ›İÛˆŠJBˆˆ™[[İOHˆ
-™[[İWÜÙ\ÜÚ[ÛˆÈY\Èˆˆ››ÈŠH—ˆÂˆİ˜Ûİ]”Ø[\[™Îˆ[\˜[HˆÜ[ÛœËš[\˜[Û\Âˆˆ\È\˜][ÛHˆÜ[ÛœË™\˜][Û—ÜÙXÛÛ™ÂˆˆÈİ]]HˆÜ[ÛœË›İ]]œİš[™Ê
-H—ˆÂ‚ˆYˆ
-ÛÛœİ]]È\™[HÜ[ÛœË›İ]]œ\™[Ü]
+    while (!g_stop_requested.load()) {
+        const auto now = std::chrono::steady_clock::now();
+        const long long elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
 
-NÈ\\™[™[\J
-JHÂˆİ™\œ›Ü—ØÛÙHXÎÂˆİ™š[\Ş\İ[N˜Ü™X]WÙ\™XİÜšY\Ê\™[XÊNÂˆYˆ
-XÊHÂˆİ˜Ù\œˆ‘˜Z[YÈÜ™X]Hİ]]\™XİÜNˆˆ\™[œİš[™Ê
-Bˆˆ\œ›ÜHˆXË›Y\ÜØYÙJ
-H—ˆÂˆ™]\›ˆÂˆBˆB‚ˆİ›Ùœİ™X[HÜİŠÜ[ÛœË›İ]]İš[ÜÎ›İ]İš[ÜÎ[˜ÊNÂˆYˆ
-XÜİŠHÂˆİ˜Ù\œˆ‘˜Z[YÈÜ[ˆİ]]ÔÕˆˆÜ[ÛœË›İ]]œİš[™Ê
-H—ˆÂˆ™]\›ˆNÂˆB‚ˆÜİˆ[Y\İ[\ÛØØ[[\ÙYÛ\ËYİ[Y\İ[\Û\ËÚ[™İÜ×ÜÙ\ÜÚ[Û—ÚY™[[İWÜÙ\ÜÚ[Û‹‚ˆ™ÜWÚ[™^ÜWÛ˜[YKÜWİ\ØYÙWÜİÜWØÛØÚ×ÛZ‹ÜWİœ˜[WØÛØÚ×ÛZ‹‚ˆ™ÜWİ[\ØËÜWÚİÜİØËÜWÜİÙ\—İËÜWİœ˜[WÛX‹İ[Ø›Ø\™ÜİÙ\—İËYÜ™\İ[ˆÂˆÜİ‹™›\Ú
+        const Sample sample = read_sample(perf, gpu, support);
 
-NÂ‚ˆÛÛœİ]]Èİ\Hİ˜Ú›Û›ÎœİXYWØÛØÚÎ››İÊ
-NÂˆÛÛœİ]]È\˜][Û—Û\ÈHİ]X×ØØ\İÛ™ÈÛ™ÏŠÜ[ÛœË™\˜][Û—ÜÙXÛÛ™ÊH
-ˆLÂˆİZ[İØ[\WÚ[™^HÂ‚ˆÚ[H
-Y×ÜİÜÜ™\]Y\İY›ØY
+        csv << csv_escape(local_timestamp()) << ','
+            << elapsed_ms << ','
+            << integer_or_blank(sample.has_adlx_timestamp, sample.adlx_timestamp_ms) << ','
+            << (got_session ? std::to_string(session_id) : std::string()) << ','
+            << (remote_session ? 1 : 0) << ','
+            << options.gpu_index << ','
+            << csv_escape(gpu_name) << ','
+            << decimal_or_blank(sample.has_usage, sample.usage_pct) << ','
+            << integer_or_blank(sample.has_clock, sample.clock_mhz) << ','
+            << integer_or_blank(sample.has_vram_clock, sample.vram_clock_mhz) << ','
+            << decimal_or_blank(sample.has_temperature, sample.temperature_c) << ','
+            << decimal_or_blank(sample.has_hotspot, sample.hotspot_c) << ','
+            << decimal_or_blank(sample.has_power, sample.power_w) << ','
+            << integer_or_blank(sample.has_vram, sample.vram_mb) << ','
+            << decimal_or_blank(sample.has_total_board_power, sample.total_board_power_w) << ','
+            << static_cast<int>(sample.result)
+            << '\n';
+        csv.flush();
 
-JHÂˆÛÛœİ]]È›İÈHİ˜Ú›Û›ÎœİXYWØÛØÚÎ››İÊ
-NÂˆÛÛœİ]]È[\ÙYÛ\ÈBˆİ˜Ú›Û›Î™\˜][Û—ØØ\İİ˜Ú›Û›Î›Z[\ÙXÛÛ™ÏŠ›İÈHİ\
-K˜Ûİ[
+        if (ADLX_FAILED(sample.result)) {
+            std::cerr << "Sample " << sample_index
+                      << " failed. ADLX result=" << static_cast<int>(sample.result) << "\n";
+        }
+        if (options.duration_seconds > 0 && elapsed_ms >= duration_ms) {
+            break;
+        }
 
-NÂ‚ˆYˆ
-Ü[ÛœË™\˜][Û—ÜÙXÛÛ™Èˆ	‰ˆ[\ÙYÛ\Èˆ\˜][Û—Û\È	‰ˆØ[\WÚ[™^ˆ
-HÂˆœ™XZÎÂˆB‚ˆÛÛœİİœİš[™È[Y\İ[\HØØ[İ[Y\İ[\
+        ++sample_index;
+        const auto next_sample =
+            start + std::chrono::milliseconds(
+                        static_cast<long long>(sample_index) * options.interval_ms);
+        std::this_thread::sleep_until(next_sample);
+    }
 
-NÂˆÛÛœİØ[\HØ[\HH™XYÜØ[\J\™‹ÜKİ\Ü
-NÂ‚ˆÜİ‚ˆÜİ—Ù\ØØ\J[Y\İ[\
-H	Ë	Âˆ[\ÙYÛ\È	Ë	ÂˆÜ[Û˜[Ú[YÙ\ŠØ[\K˜Yİ[Y\İ[\Û\ÊH	Ë	Âˆ
-ÛİÜÙ\ÜÚ[ÛˆÈİ×Üİš[™ÊÙ\ÜÚ[Û—ÚY
-Hˆİœİš[™Ê
-JH	Ë	Âˆ
-™[[İWÜÙ\ÜÚ[ÛˆÈHˆ
-H	Ë	ÂˆÜ[ÛœË™ÜWÚ[™^	Ë	ÂˆÜİ—Ù\ØØ\JÜWÛ˜[YJH	Ë	ÂˆÜ[Û˜[ÙXÚ[X[
-Ø[\K\ØYÙWÜİ
-H	Ë	ÂˆÜ[Û˜[Ú[YÙ\ŠØ[\K˜ÛØÚ×ÛZŠH	Ë	ÂˆÜ[Û˜[Ú[YÙ\ŠØ[\Kœ˜[WØÛØÚ×ÛZŠH	Ë	ÂˆÜ[Û˜[ÙXÚ[X[
-Ø[\K[\\˜]\™WØÊH	Ë	ÂˆÜ[Û˜[ÙXÚ[X[
-Ø[\KšİÜİØÊH	Ë	ÂˆÜ[Û˜[ÙXÚ[X[
-Ø[\KœİÙ\—İÊH	Ë	ÂˆÜ[Û˜[Ú[YÙ\ŠØ[\Kœ˜[WÛXŠH	Ë	ÂˆÜ[Û˜[ÙXÚ[X[
-Ø[\Kİ[Ø›Ø\™ÜİÙ\—İÊH	Ë	Âˆİ]X×ØØ\İ[ŠØ[\Kœ™\İ[
-Bˆ	×‰ÎÂˆÜİ‹™›\Ú
+    std::cout << "Finished. CSV: " << options.output.string() << "\n";
+    return 0;
+}
 
-NÂ‚ˆYˆ
-QÑRSQ
-Ø[\Kœ™\İ[
-JHÂˆİ˜Ù\œˆ”Ø[\HˆØ[\WÚ[™^ˆˆ˜Z[YˆQ™\İ[Hˆİ]X×ØØ\İ[ŠØ[\Kœ™\İ[
-H—ˆÂˆB‚ˆYˆ
-Ü[ÛœË™\˜][Û—ÜÙXÛÛ™Èˆ	‰ˆ[\ÙYÛ\ÈH\˜][Û—Û\ÊHÂˆœ™XZÎÂˆB‚ˆ
-ÊÜØ[\WÚ[™^ÂˆÛÛœİ]]È™^Bˆİ\
-Èİ˜Ú›Û›Î›Z[\ÙXÛÛ™Êİ]X×ØØ\İÛ™ÈÛ™ÏŠØ[\WÚ[™^
-H
-ˆÜ[ÛœËš[\˜[Û\ÊNÂˆİ\×İ™XYœÛY\İ[[
-™^
-NÂˆB‚ˆİ˜Ûİ]‘š[š\ÚYˆÔÕˆˆÜ[ÛœË›İ]]œİš[™Ê
-H—ˆÂˆ™]\›ˆÂŸB‚ŸHËÈ˜[Y\ÜXÙB‚š[XZ[Š[\™ØËÚ\ˆ
-Šˆ\™İŠHÂˆHÂˆÛÛœİÜ[ÛœÈÜ[ÛœÈH\œÙWÛÜ[ÛœÊ\™ØË\™İŠNÂ‚ˆÙ]ÛÛœÛÛPİ›[™\ŠÛÛœÛÛWÚ[™\‹•QJNÂ‚ˆQ[\ˆ[\ÂˆÛÛœİQÔ‘TÕS[š]Ü™\ÈH[\‹’[š]X[^™J
-NÂˆYˆ
-QÑRSQ
-[š]Ü™\ÊJHÂˆİ˜Ù\œˆQ[š]X[^˜][Ûˆ˜Z[Yˆ™\İ[Hˆİ]X×ØØ\İ[Š[š]Ü™\ÊH—ˆÂˆ™]\›ˆÂˆB‚ˆÛÛœİÚ\ˆ
-ˆYİ™\œÚ[ÛˆH[\‹”]Y\U™\œÚ[ÛŠ
-NÂˆİ˜Ûİ]Q[[YH™\œÚ[Ûˆ‚ˆ
-Yİ™\œÚ[ÛˆÈYİ™\œÚ[Ûˆˆ[šÛ›İÛˆŠH—ˆÂ‚ˆËÈ[QÛX\Ú[\œÈ\™HØÛÜY[œÚYH[—İÚ]ØY[™\™H™[X\ÙYˆËÈ™Y›Ü™H\›Z[˜]J
-H[›ØYÈHQ[[YK‚ˆÛÛœİ[[—Ü™\İ[H[—İÚ]ØY
-[\‹Ü[ÛœÊNÂ‚ˆÛÛœİQÔ‘TÕS\›WÜ™\ÈH[\‹•\›Z[˜]J
-NÂˆYˆ
-QÑRSQ
-\›WÜ™\ÊJHÂˆİ˜Ù\œˆQ\›Z[˜][Ûˆ˜Z[Yˆ™\İ[Hˆİ]X×ØØ\İ[Š\›WÜ™\ÊH—ˆÂˆ™]\›ˆ[—Ü™\İ[OHÈLˆ[—Ü™\İ[ÂˆB‚ˆ™]\›ˆ[—Ü™\İ[ÂˆHØ]Ú
-ÛÛœİİ™^Ù\[Ûˆ	ˆ^
-HÂˆİ˜Ù\œˆ™\œ›Üˆˆ^Ú]
+} // namespace
 
-H—ˆÂˆ™]\›ˆNÂˆBŸB
+int main(int argc, char ** argv) {
+    try {
+        const Options options = parse_options(argc, argv);
+        SetConsoleCtrlHandler(console_handler, TRUE);
+
+        ADLXHelper helper;
+        const ADLX_RESULT init_result = helper.Initialize();
+        if (ADLX_FAILED(init_result)) {
+            std::cerr << "ADLX initialization failed. result="
+                      << static_cast<int>(init_result) << "\n";
+            return 2;
+        }
+
+        const char * version = helper.QueryVersion();
+        std::cout << "ADLX runtime version: "
+                  << (version ? version : "<unknown>") << "\n";
+
+        const int run_result = run_with_adlx(helper, options);
+
+        const ADLX_RESULT terminate_result = helper.Terminate();
+        if (ADLX_FAILED(terminate_result)) {
+            std::cerr << "ADLX termination failed. result="
+                      << static_cast<int>(terminate_result) << "\n";
+            return run_result == 0 ? 10 : run_result;
+        }
+        return run_result;
+    } catch (const std::exception & ex) {
+        std::cerr << "error: " << ex.what() << "\n";
+        return 1;
+    }
+}

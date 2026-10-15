@@ -14,7 +14,7 @@ get_filename_component(ADLX_ROOT "${ADLX_ROOT}" ABSOLUTE)
 
 set(ADLX_HELPER_CPP "${ADLX_ROOT}/SDK/ADLXHelper/Windows/Cpp/ADLXHelper.cpp")
 set(ADLX_WIN_APIS_CPP "${ADLX_ROOT}/SDK/platform/Windows/WinAPIs.cpp")
-set(ADLX_PERF_HEADER "${ADLX_ROOT}/SDK/Include/IPerformanceMonitoring3.h")
+set(ADLX_PERF_HEADER "${ADLX_ROOT}/SDK/Include/IPerformanceMonitoring.h")
 
 foreach(required_file IN ITEMS "${ADLX_HELPER_CPP}" "${ADLX_WIN_APIS_CPP}" "${ADLX_PERF_HEADER}")
     if(NOT EXISTS "${required_file}")
@@ -32,7 +32,7 @@ target_include_directories(evox2-adlx-gpu-monitor PRIVATE "${ADLX_ROOT}")
 target_compile_features(evox2-adlx-gpu-monitor PRIVATE cxx_std_17)
 
 if(MSVC)
-    target_compile_options(evox2-adlx-gpu-monitor PRIVATE /W4 /EHsc /utf-8)
+    target_compile_options(evox2-adlx-gpu-monitor PRIVATE /W4 /EHsc)
 endif()
 
 set_target_properties(evox2-adlx-gpu-monitor PROPERTIES

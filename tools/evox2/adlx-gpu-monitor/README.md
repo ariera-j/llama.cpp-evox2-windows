@@ -48,7 +48,13 @@ Build requirements:
 - Visual Studio 2022 Build Tools with C++ desktop tools
 - AMD display driver / Adrenalin installation
 
-The build script uses the `Visual Studio 17 2022` CMake generator, so it can be launched from an ordinary PowerShell window; an x64 Native Tools prompt should not be required.
+The build script uses the `Visual Studio 17 2022` CMake generator. It first looks for `cmake.exe` in PATH and then checks the standalone CMake location and Visual Studio Build Tools' bundled CMake via `vswhere.exe`. Therefore an x64 Native Tools prompt should not normally be required.
+
+If CMake is installed in another location, pass it explicitly:
+
+```powershell
+.\Build-AdlxGpuMonitor.ps1 -CMakePath 'C:\path\to\cmake.exe'
+```
 
 ## 1. Switch to the investigation branch
 
