@@ -396,6 +396,28 @@ These thresholds are derived only from the current 64k llama-bench calibration a
 For example, a run with direct `Performance` at both start and finish but a sustained `Balanced-like` ~85 W ADLX signature should be flagged for review. Conversely, a short run with too few >=95% utilization samples should not generate a P-MODE consistency warning.
 
 
+### Scheduled-task transport validation on target Evo-X2
+
+The normal-user privilege-transport path was validated on 2026-10-15 after installing the read-only scheduled task. From a normal PowerShell session, `Get-Evox2PModeMetadata` returned:
+
+```text
+ProbeSucceeded : True
+Mode           : Performance
+RawValue       : 1
+Source         : IP3-WMI-method2
+Transport      : ScheduledTask
+InstanceName   : ACPI\PNP0C14\IP3POWERSWITCH_0
+MethodId       : 2
+OpenResult     : 0
+ExecuteResult  : 0
+CloseResult    : 0
+OutputSize     : 4
+Elevated       : True
+Error          :
+```
+
+This validates the intended privilege separation: the benchmark shell remains non-elevated, while the one-shot scheduled task executes the authoritative read-only WMI method and returns a fresh state through the ProgramData state file.
+
 ### Implementation commits and normal-user transport
 
 Implementation on `investigation/r5-adlx-gpu-monitor-20261015` adds:
