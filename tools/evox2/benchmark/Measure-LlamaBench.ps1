@@ -841,11 +841,11 @@ $PModeWarnings = @(
         -AdlxConsistency $AdlxPModeConsistency `
         -ExpectedMode 'Performance'
 )
-$PModeChanged = (
-    $PModeAtStart.ProbeSucceeded -and
-    $PModeAtFinish.ProbeSucceeded -and
+$PModeChanged = if ($PModeAtStart.ProbeSucceeded -and $PModeAtFinish.ProbeSucceeded) {
     [string]$PModeAtStart.Mode -ne [string]$PModeAtFinish.Mode
-)
+} else {
+    $null
+}
 
 if ($adlxMonitorStarted -and
     $null -ne $adlxMonitorExitCode -and
