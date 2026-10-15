@@ -263,3 +263,21 @@ Validated on GMKtec Evo-X2 / Radeon 8060S under a normal, non-elevated Windows R
 - GPU hotspot temperature and total board power are reported unsupported on this system
 - Administrator elevation was not required for this validation
 - The initial probe had an evaluation-order bug in expressions like `supported_result(IsSupported...(&value), value)`. The probe now performs the ADLX call first, stores the result, and evaluates the support flag afterward.
+
+
+### Display-environment validation
+
+The benchmark system metadata probe was also validated under an active RDP session.
+
+- With the physical monitor disconnected, or with the display switch pointed to another host, `Get-PnpDevice -Class Monitor -PresentOnly` reports only the RDP indirect display:
+  - `PresentMonitorCount = 1`
+  - `PresentPhysicalCandidateCount = 0`
+  - `PresentRemoteLikeMonitorCount = 1`
+- With the physical monitor path switched to the Evo-X2 while RDP remains connected, both displays are visible:
+  - `PresentMonitorCount = 2`
+  - `PresentPhysicalCandidateCount = 1`
+  - `PresentRemoteLikeMonitorCount = 1`
+  - the physical monitor was observed as `Generic Monitor (27M2N3500N)`
+  - its parent device is the Radeon PCI device rather than `SWD\\RemoteDisplayEnum`
+
+This confirms that the PnP-based snapshot distinguishes the physical display path from the RDP virtual display even when the benchmark is controlled entirely through RDP. The `root\\wmi` EDID probes may still fail with access-denied or unsupported errors under RDP and remain supplemental only.
