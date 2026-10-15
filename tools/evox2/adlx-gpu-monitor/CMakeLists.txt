@@ -32,7 +32,7 @@ target_include_directories(evox2-adlx-gpu-monitor PRIVATE "${ADLX_ROOT}")
 target_compile_features(evox2-adlx-gpu-monitor PRIVATE cxx_std_17)
 
 if(MSVC)
-    target_compile_options(evox2-adlx-gpu-monitor PRIVATE /W4 /EHsc)
+    target_compile_options(evox2-adlx-gpu-monitor PRIVATE /W4 /EHsc /utf-8)
 endif()
 
 set_target_properties(evox2-adlx-gpu-monitor PROPERTIES
