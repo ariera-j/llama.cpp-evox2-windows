@@ -45,6 +45,7 @@ struct Options {
     int duration_seconds = 30;
     int interval_ms = 2000;
     int gpu_index = 0;
+    DWORD target_pid = 0;
     bool list_gpus = false;
 };
 
@@ -103,6 +104,7 @@ void print_usage(const char * exe) {
         << "  --duration <seconds>  Run duration; 0 means until Ctrl+C (default: 30)\n"
         << "  --interval-ms <ms>    Sampling interval, minimum 100 ms (default: 2000)\n"
         << "  --gpu-index <index>   Zero-based GPU index (default: 0)\n"
+        << "  --target-pid <pid>    Exit cleanly when this Windows process exits\n"
         << "  --list-gpus           List GPUs visible to ADLX and exit\n"
         << "  --help                Show this help\n";
 }
@@ -140,6 +142,12 @@ Options parse_options(int argc, char ** argv) {
             options.interval_ms = parse_int(require_value("--interval-ms"), "--interval-ms");
         } else if (arg == "--gpu-index") {
             options.gpu_index = parse_int(require_value("--gpu-index"), "--gpu-index");
+        } else if (arg == "--target-pid") {
+            const int parsed_pid = parse_int(require_value("--target-pid"), "--target-pid");
+            if (parsed_pid <= 0) {
+                usage_error("--target-pid must be > 0");
+            }
+            options.target_pid = static_cast<DWORD>(parsed_pid);
         } else if (arg == "--list-gpus") {
             options.list_gpus = true;
         } else if (arg == "--help" || arg == "-h" || arg == "/?") {
@@ -386,7 +394,11 @@ int run_with_adlx(ADLXHelper & helper, const Options & options) {
               << " remote=" << (remote_session ? "yes" : "no") << "\n";
     std::cout << "Sampling: interval=" << options.interval_ms
               << " ms duration=" << options.duration_seconds
-              << " s output=" << options.output.string() << "\n";
+              << " s output=" << options.output.string();
+    if (options.target_pid != 0) {
+        std::cout << " target_pid=" << options.target_pid;
+    }
+    std::cout << "\n";
 
     const auto parent = options.output.parent_path();
     if (!parent.empty()) {
@@ -411,12 +423,35 @@ int run_with_adlx(ADLXHelper & helper, const Options & options) {
            "gpu_vram_mb,total_board_power_w,adlx_result\n";
     csv.flush();
 
+    HANDLE target_process = nullptr;
+    if (options.target_pid != 0) {
+        target_process = OpenProcess(SYNCHRONIZE, FALSE, options.target_pid);
+        if (!target_process) {
+            std::cerr << "Failed to open target PID " << options.target_pid
+                      << ". Win32 error=" << GetLastError() << "\n";
+            return 10;
+        }
+    }
+
     const auto start = std::chrono::steady_clock::now();
     const long long duration_ms =
         static_cast<long long>(options.duration_seconds) * 1000LL;
     std::uint64_t sample_index = 0;
 
     while (!g_stop_requested.load()) {
+        if (target_process) {
+            const DWORD wait_result = WaitForSingleObject(target_process, 0);
+            if (wait_result == WAIT_OBJECT_0) {
+                std::cout << "Target PID " << options.target_pid
+                          << " exited; stopping monitor.\n";
+                break;
+            }
+            if (wait_result == WAIT_FAILED) {
+                std::cerr << "WaitForSingleObject failed for target PID "
+                          << options.target_pid << ". Win32 error=" << GetLastError() << "\n";
+                break;
+            }
+        }
         const auto now = std::chrono::steady_clock::now();
         const long long elapsed_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
@@ -455,6 +490,10 @@ int run_with_adlx(ADLXHelper & helper, const Options & options) {
             start + std::chrono::milliseconds(
                         static_cast<long long>(sample_index) * options.interval_ms);
         std::this_thread::sleep_until(next_sample);
+    }
+
+    if (target_process) {
+        CloseHandle(target_process);
     }
 
     std::cout << "Finished. CSV: " << options.output.string() << "\n";
