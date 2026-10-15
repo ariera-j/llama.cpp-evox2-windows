@@ -169,6 +169,25 @@
             )
         }
         @{
+            Name = 'stage1-kv-only-128k-abba'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpKvOnlyVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Oct 15 P-MODE/ADLX-controlled Stage-B recheck.
+            # Same retained b11618 binary and 128k workload as the earlier A/B,
+            # extended to counterbalanced A1/B1/B2/A2. MTP stays ON in both arms.
+            # Use the r5-mainline ADLX/P-MODE-aware benchmark wrappers in the
+            # local working tree; do not enable graph/RGP diagnostics for timing.
+            Environment = @{ GGML_VK_QSA_UNION = '1'; GGML_VK_QSA_UNION_MIN_KV = '32768' }
+            Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
+            Variants = @(
+                @{ Name = 'A1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A1' } }
+                @{ Name = 'B1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B1' } }
+                @{ Name = 'B2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B2' } }
+                @{ Name = 'A2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
+            )
+        }
+        @{
             Name = 'stage1-kv-only-128k-mtp-off'
             Tool = 'cli'
             BuildKeys = @('R5MtpKvOnlyVulkan')
