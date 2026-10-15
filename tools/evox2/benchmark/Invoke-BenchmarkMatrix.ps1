@@ -316,6 +316,13 @@ function ConvertTo-Evox2MatrixResultRow {
             RepetitionSamples = $null
 
             ResourceSamples   = $ChildRow.ResourceSamples
+            AdlxSamples       = $ChildRow.AdlxSamples
+            PModeStart        = $ChildRow.PModeStart
+            PModeFinish       = $ChildRow.PModeFinish
+            PModeChanged      = $ChildRow.PModeChanged
+            AdlxHighLoadPowerW = $ChildRow.AdlxHighLoadPowerW
+            AdlxPowerClass    = $ChildRow.AdlxPowerClass
+            PModeWarningCount = $ChildRow.PModeWarningCount
             ChildRunDirectory = $ChildRow.RunDirectory
         }
     }
@@ -354,6 +361,12 @@ function ConvertTo-Evox2MatrixResultRow {
 
         ResourceSamples   = $ChildRow.ResourceSamples
         AdlxSamples       = $ChildRow.AdlxSamples
+        PModeStart        = $ChildRow.PModeStart
+        PModeFinish       = $ChildRow.PModeFinish
+        PModeChanged      = $ChildRow.PModeChanged
+        AdlxHighLoadPowerW = $ChildRow.AdlxHighLoadPowerW
+        AdlxPowerClass    = $ChildRow.AdlxPowerClass
+        PModeWarningCount = $ChildRow.PModeWarningCount
         ChildRunDirectory = $ChildRow.RunDirectory
     }
 }
