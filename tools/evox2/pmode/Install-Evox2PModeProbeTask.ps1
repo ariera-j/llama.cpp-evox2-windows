@@ -38,6 +38,15 @@ $argument = @(
     '-OutputPath', ('"{0}"' -f $StatePath)
 ) -join ' '
 
+$scheduleService = New-Object -ComObject 'Schedule.Service'
+$scheduleService.Connect()
+try {
+    [void]$scheduleService.GetFolder($TaskPath.TrimEnd('\'))
+} catch {
+    $rootFolder = $scheduleService.GetFolder('\')
+    [void]$rootFolder.CreateFolder($TaskPath.Trim('\'))
+}
+
 $action = New-ScheduledTaskAction -Execute $windowsPowerShell -Argument $argument
 $principal = New-ScheduledTaskPrincipal -UserId $currentIdentity -LogonType Interactive -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
