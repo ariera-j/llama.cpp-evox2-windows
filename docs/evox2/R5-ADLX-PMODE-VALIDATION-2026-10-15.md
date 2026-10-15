@@ -396,6 +396,28 @@ These thresholds are derived only from the current 64k llama-bench calibration a
 For example, a run with direct `Performance` at both start and finish but a sustained `Balanced-like` ~85 W ADLX signature should be flagged for review. Conversely, a short run with too few >=95% utilization samples should not generate a P-MODE consistency warning.
 
 
+### End-to-end llama-bench validation
+
+A full 64k llama-bench run using the integrated start/finish P-MODE probe and ADLX consistency check completed successfully:
+
+- run: `20261015-191236-368-bench-vulkan-b11560-ctx65536-05124e04061a`
+- status / exit: `OK` / `0`
+- test: `pp 61777`
+- PP: **360.488234 tok/s**
+- ADLX samples: 105
+- authoritative P-MODE start: Performance / raw 1 / ScheduledTask
+- authoritative P-MODE finish: Performance / raw 1 / ScheduledTask
+- `PModeChanged = false`
+- P-MODE warnings: 0
+- high-load ADLX samples (GPU usage >=95%): 85
+- average high-load GPU power: **115.047 W**
+- power class: `Performance-like`
+- direct-mode/power consistency: `true`
+- ADLX stderr: empty
+- display state at finish: RDP-only, one RemoteDisplay/IDD monitor and no physical candidate
+
+This validates the complete normal-user benchmark path: scheduled authoritative reads at both boundaries, ADLX collection, conservative power classification, JSON/CSV persistence and zero-warning agreement in Performance mode.
+
 ### Scheduled-task transport validation on target Evo-X2
 
 The normal-user privilege-transport path was validated on 2026-10-15 after installing the read-only scheduled task. From a normal PowerShell session, `Get-Evox2PModeMetadata` returned:
