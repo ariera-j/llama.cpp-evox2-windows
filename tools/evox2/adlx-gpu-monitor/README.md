@@ -210,24 +210,47 @@ To run until Ctrl+C:
 .\build\bin\evox2-adlx-gpu-monitor.exe --duration 0 --interval-ms 2000 --output .\logs\manual.csv
 ```
 
+To follow a specific Windows process and stop when it exits:
+
+```powershell
+.\build\bin\evox2-adlx-gpu-monitor.exe --duration 0 --interval-ms 2000 --target-pid 12345 --output .\logs\pid-test.csv
+```
+
 Ctrl+C is handled as a graceful stop request and the CSV is flushed after every sample.
 
-## Implementation note: validation before benchmark integration
+## Benchmark integration
 
-This first implementation intentionally uses `GetCurrentGPUMetrics()` once per requested sample. AMD documents this call as appropriate for individual acquisitions and recommends history/tracking APIs for continuous collection.
+The investigation branch now integrates the ADLX logger with both `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1`.
 
-That is acceptable for the RDP capability probe, but it is **not yet proof that this is the lowest-overhead design for benchmark integration**.
+Default behavior:
 
-Before merging into r5, the next stage should therefore:
+- ADLX monitoring is requested automatically for every measurement;
+- samples are written to `gpu-metrics.csv` beside `resources.csv`;
+- the default interval is 2000 ms and GPU index is 0;
+- the monitor receives the llama process PID through `--target-pid` and exits cleanly after that process ends;
+- ADLX stdout/stderr are saved as `adlx-monitor.stdout.log` and `adlx-monitor.stderr.log`;
+- monitor executable identity, SHA-256, interval, GPU index, and availability are recorded in `conditions.json`;
+- actual start status, exit code, error text, and sample count are recorded in `result.json`;
+- ADLX failures are fail-open and do not abort the llama.cpp benchmark.
 
-1. measure logger overhead with ADLX monitoring ON/OFF;
-2. evaluate ADLX tracking/history APIs for continuous sampling;
-3. launch/stop the monitor automatically from the existing benchmark scripts;
-4. store `gpu-metrics.csv` beside `resources.csv`;
-5. make ADLX monitoring optional and fail-open so a sensor/API problem never aborts a llama.cpp benchmark;
-6. include the ADLX logger version/configuration in benchmark conditions.
+To disable ADLX telemetry for an overhead/control run:
 
-Until those checks are complete, keep this tool on the investigation branch.
+```powershell
+.\Measure-LlamaCli.ps1 ... -NoAdlxMonitor
+.\Measure-LlamaBench.ps1 ... -NoAdlxMonitor
+```
+
+Optional overrides:
+
+```powershell
+-AdlxIntervalMs 2000
+-AdlxGpuIndex 0
+-AdlxMonitorExe 'C:\path\to\evox2-adlx-gpu-monitor.exe'
+```
+
+The C++ monitor must be rebuilt after pulling the integration because benchmark mode uses the new `--target-pid` option.
+
+The remaining validation before moving this integration to the r5 main branch is to confirm one normal llama-cli run and one normal llama-bench run produce valid GPU CSVs, then measure benchmark overhead with ADLX monitoring ON/OFF. The current implementation still uses `GetCurrentGPUMetrics()` per sample; tracking/history APIs remain a possible later optimization if the overhead test shows a measurable effect.
 
 
 ## Validation notes
