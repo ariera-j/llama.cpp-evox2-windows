@@ -228,3 +228,15 @@ Before merging into r5, the next stage should therefore:
 6. include the ADLX logger version/configuration in benchmark conditions.
 
 Until those checks are complete, keep this tool on the investigation branch.
+
+
+## Validation notes
+
+Validated on GMKtec Evo-X2 / Radeon 8060S under a normal, non-elevated Windows RDP session on 2026-10-15.
+
+- ADLX runtime version reported by the installed driver: 1.5
+- GPU enumeration works over RDP
+- GPU usage, core clock, VRAM clock, GPU temperature, GPU power, and GPU VRAM metrics are reported over RDP
+- GPU hotspot temperature and total board power are reported unsupported on this system
+- Administrator elevation was not required for this validation
+- The initial probe had an evaluation-order bug in expressions like `supported_result(IsSupported...(&value), value)`. The probe now performs the ADLX call first, stores the result, and evaluates the support flag afterward.
