@@ -817,3 +817,37 @@ No native Windows build or timing has been run yet. Keep this investigation
 separate from the #30511 Target re-warmup branch and from the retained b11618
 historical binary. First gate is short functionality, then 64k ABBA. Run 128k
 only if the 64k effect clearly exceeds run-to-run drift.
+
+
+---
+
+## 2026-10-16 — `mtp_eh_proj` flatten native validation complete; resume at RGP
+
+Branch `investigation/r5-mtp-eh-proj-flatten-20261016`, Windows Vulkan
+**b11659-c192befce**, executable SHA-256
+`317d76e3d915c766397c076375438602a2c238d60ccefbd0da079e63a28c5009`,
+runtime artifact Verified digest
+`0b8087e7c2a1ac99a6223c576dc5d6f9c19b77d2e61f3ac63bebd298333b56f8`.
+
+Controlled long-context ABBA:
+
+- **64k / 61,789 tokens:** 344.615 -> **349.390 tok/s**,
+  **+1.386%**, saving **2.451 s**.
+- **128k / 126,253 tokens:** 319.605 -> **324.070 tok/s**,
+  **+1.397%**, saving **5.444 s**.
+
+Draft acceptance was identical in each cohort (64k 295/430, 128k 295/429);
+normalized generated output was byte-identical. P-MODE stayed Performance and
+all long runs were ADLX Performance-like. The stable relative gain and
+prompt-length-scaled absolute saving support the repeated `mtp_eh_proj`
+geometry-cost hypothesis.
+
+**Pause point / next action:** resume with
+`qwen38-r5-mtp-eh-proj-flatten-rgp-64k.psd1`, initially
+`B-flat-on` only. Recalibrate dispatch ordinals from the new trace and
+capture a Draft graph around 51–53k. Confirm whether old
+`matmul_q8_0_q8_1_0 (80,1,1024)` (~56.51/58.64 ms) becomes the predicted
+batch=1 large-tile geometry near `(20,32,1)`; measure the new main kernel,
+parent `MUL_MAT mtp_eh_proj`, whole Draft graph, and reconfirm no Draft FA.
+After RGP attribution, proceed to numerical Draft K/V parity before any merge
+decision.
