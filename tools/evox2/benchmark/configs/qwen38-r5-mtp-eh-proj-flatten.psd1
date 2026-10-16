@@ -119,5 +119,31 @@
                 @{ Name = 'A2-flat-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_EH_PROJ_FLATTEN = '0'; EVOX2_ABBA_RUN = 'A2' } }
             )
         }
+        @{
+            Name      = 'eh-proj-128k-mtp-off-control'
+            Tool      = 'cli'
+            BuildKeys = @('R5MtpEhProjFlattenVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Optional only after a positive 128k flatten result. This updates
+            # the residual MTP-ON vs MTP-OFF estimate with the same new binary.
+            Parameters = @{
+                Mtp           = $false
+                DraftModelKey = ''
+            }
+            Environment = @{
+                LLAMA_MTP_DRAFT_PREFILL_KV_CROP = $null
+                LLAMA_MTP_EH_PROJ_FLATTEN       = $null
+            }
+            Cases = @(@{
+                Name = '128k'
+                Parameters = @{
+                    Context  = 131072
+                    InputKey = '128k'
+                }
+            })
+            Variants = @(
+                @{ Name = 'MTP-off'; Parameters = @{}; Environment = @{} }
+            )
+        }
     )
 }
