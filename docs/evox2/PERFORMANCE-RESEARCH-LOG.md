@@ -785,3 +785,35 @@ This dated intake supports, but does not replace, the active [ROADMAP priority c
 6. **WATCH-UPSTREAM** for GDN/CONCAT/large-tile matmul/MTP/recurrent-state candidates; reprioritize only when actual runtime bottleneck, applicability and a same-build A/B gate are established.
 
 **Bounded ROCm next-chat handoff:** stay on validated stable `r5/upstream-refresh-20261009`; do not mix Vulkan investigation source or re-pin upstream. First trace `ggml-hip` → `ggml-cuda/fattn.cu`/FA specialization for the actual qwen4exp model shapes; distinguish `flash_attn_mask_to_KV_max` suffix scans, HIP-disabled CUDA sparse gather, and FA/matmul Stream-K. Second inventory Windows HIP profiling options and select the least invasive logging/timing method. Third, *only if feasible*, collect Japanese literature and code under identical ROCm binary, model, prompt SHA, KV depth and batch parameters. Record call/kernel identity and measured time separately from overall PP. Stop and re-rank if instrumentation is disproportionate to expected optimization benefit. **No source or benchmark changes are authorized by this intake alone.**
+
+
+---
+
+## 2026-10-16 — MTP Draft `mtp_eh_proj` flatten prototype prepared
+
+Created `investigation/r5-mtp-eh-proj-flatten-20261016` from the retained
+Stage-B investigation branch. The prototype is opt-in with
+`LLAMA_MTP_EH_PROJ_FLATTEN=1` and is additionally gated by the existing
+Stage-B zero-output Draft catch-up condition, so ordinary speculative-generation
+graphs remain unchanged.
+
+The graph-only change reshapes the contiguous `eh_proj` input from
+`[2*n_embd,hc,T]` to `[2*n_embd,hc*T]` before `build_lora_mm`, then
+reshapes the output back to `[n_embd,hc,T]`. For the measured Qwen3.8
+T=1024 catch-up this changes Vulkan matmul geometry from
+**M=2560,N=4,K=5120,batch=1024** to **M=2560,N=4096,K=5120,batch=1** without
+changing the intended linear operation.
+
+Prepared same-binary plans:
+
+- `qwen38-r5-mtp-eh-proj-flatten.psd1`: short A/B, 64k ABBA, conditional
+  128k ABBA, optional 128k MTP-OFF residual control.
+- `qwen38-r5-mtp-eh-proj-flatten-rgp-64k.psd1`: profiling-only OFF/ON
+  variants with role markers / dispatch trace.
+- Full procedure:
+  `R5-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-16.md`.
+
+No native Windows build or timing has been run yet. Keep this investigation
+separate from the #30511 Target re-warmup branch and from the retained b11618
+historical binary. First gate is short functionality, then 64k ABBA. Run 128k
+only if the 64k effect clearly exceeds run-to-run drift.
