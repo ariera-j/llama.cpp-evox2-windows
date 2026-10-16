@@ -1482,6 +1482,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         llama_set_embeddings_nextn(ctx_tgt, true, /*masked*/ false);
         llama_set_embeddings_nextn(ctx_dft, true, /*masked*/ true);
 
+        // Experimental minimal port of upstream #30511. Enabling unmasked
+        // Target NextN changes the target graph shape after its normal startup
+        // warmup. Re-run that warmup only when explicitly requested so this
+        // branch can compare OFF/ON with the same binary.
+        const char * target_rewarmup_env = std::getenv("LLAMA_MTP_TARGET_REWARMUP");
+        if (target_rewarmup_env && std::strcmp(target_rewarmup_env, "1") == 0) {
+            SPC_TRC("%s", "MTP target re-warmup after enabling NextN extraction\n");
+            common_warmup(ctx_tgt, llama_n_batch(ctx_tgt));
+        }
+
         is_mem_shared = llama_get_ctx_other(ctx_dft) == ctx_tgt;
         chain_heads   = n_mtp_layers > 1 && !is_mem_shared;
 

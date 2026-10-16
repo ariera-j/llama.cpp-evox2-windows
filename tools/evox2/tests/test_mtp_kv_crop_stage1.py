@@ -20,6 +20,9 @@ class StageAKvCropSourceTests(unittest.TestCase):
         cls.qwen = QWEN_PATH.read_text(encoding="utf-8")
         cls.graph = GRAPH_PATH.read_text(encoding="utf-8")
         cls.context = (ROOT / "src/llama-context.cpp").read_text(encoding="utf-8")
+        cls.common_cpp = (ROOT / "common/common.cpp").read_text(encoding="utf-8")
+        cls.common_h = (ROOT / "common/common.h").read_text(encoding="utf-8")
+        cls.speculative = (ROOT / "common/speculative.cpp").read_text(encoding="utf-8")
         cls.mtp = cls.qwen.split(
             "llama_model_qwen4exp::graph_mtp::graph_mtp", 1
         )[1].split("llama_model_qwen4exp::graph::build_qkvz", 1)[0]
@@ -218,6 +221,56 @@ class StageAKvCropSourceTests(unittest.TestCase):
                ).read_text(encoding="utf-8")
         self.assertIn("Draft model was supplied but -Mtp was not specified.", cli)
         self.assertIn("$LlamaArguments += @('--spec-type', 'none')", cli)
+
+    def test_target_rewarmup_helper_preserves_normal_startup_warmup(self):
+        self.assertIn("void common_warmup(llama_context * lctx, uint32_t n_batch);", self.common_h)
+        self.assertIn("void common_warmup(llama_context * lctx, uint32_t n_batch)", self.common_cpp)
+        helper = self.common_cpp.split(
+            "void common_warmup(llama_context * lctx, uint32_t n_batch)", 1
+        )[1].split("common_init_result_ptr common_init_from_params", 1)[0]
+        for fragment in (
+            "common_batch_get_one(lctx, tmp)",
+            "llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get())",
+            "llama_memory_clear(llama_get_memory(lctx), true)",
+            "llama_synchronize(lctx)",
+            "llama_perf_context_reset(lctx)",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, helper)
+        init = self.common_cpp.split("common_init_result_ptr common_init_from_params", 1)[1]
+        self.assertIn("if (params.warmup) {\n        common_warmup(lctx, params.n_batch);", init)
+        self.assertIn("res->reset_samplers();", init)
+
+    def test_target_rewarmup_is_exact_opt_in_after_nextn_enable(self):
+        mtp_ctor = self.speculative.split(
+            "common_speculative_impl_draft_mtp(const common_params_speculative & params", 1
+        )[1].split("~common_speculative_impl_draft_mtp()", 1)[0]
+        self.assertIn('std::getenv("LLAMA_MTP_TARGET_REWARMUP")', mtp_ctor)
+        self.assertIn('std::strcmp(target_rewarmup_env, "1") == 0', mtp_ctor)
+        self.assertIn("common_warmup(ctx_tgt, llama_n_batch(ctx_tgt));", mtp_ctor)
+        self.assertLess(
+            mtp_ctor.index("llama_set_embeddings_nextn(ctx_tgt, true"),
+            mtp_ctor.index('std::getenv("LLAMA_MTP_TARGET_REWARMUP")'),
+        )
+        self.assertLess(
+            mtp_ctor.index("llama_set_embeddings_nextn(ctx_dft, true"),
+            mtp_ctor.index("common_warmup(ctx_tgt, llama_n_batch(ctx_tgt));"),
+        )
+
+    def test_target_rewarmup_plan_is_same_binary_stage_b_control(self):
+        plan = (ROOT / "tools/evox2/benchmark/configs/"
+                "qwen38-r5-mtp-kv-crop-stage1.psd1").read_text(encoding="utf-8")
+        self.assertIn("LLAMA_MTP_TARGET_REWARMUP            = $null", plan)
+        for job in (
+            "stage1-target-rewarmup-short",
+            "stage1-target-rewarmup-64k-abba",
+            "stage1-target-rewarmup-128k-abba",
+        ):
+            section = plan.split(f"Name = '{job}'", 1)[1]
+            self.assertIn("BuildKeys = @('R5MtpTargetRewarmVulkan')", section)
+            self.assertIn("LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'", section)
+            self.assertIn("LLAMA_MTP_TARGET_REWARMUP = '0'", section)
+            self.assertIn("LLAMA_MTP_TARGET_REWARMUP = '1'", section)
 
     def test_diagnostic_does_not_change_crop_guard_or_normal_path(self):
         ctx = self.context

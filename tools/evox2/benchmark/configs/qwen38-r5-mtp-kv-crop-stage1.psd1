@@ -36,6 +36,7 @@
         }
         Environment = @{
             LLAMA_MTP_DRAFT_PREFILL_KV_CROP    = $null
+            LLAMA_MTP_TARGET_REWARMUP            = $null
             LLAMA_MTP_KV_CROP_DIAG             = $null
             LLAMA_MTP_PP_TRACE                 = $null
             LLAMA_MTP_DIAG                     = $null
@@ -185,6 +186,67 @@
                 @{ Name = 'B1'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B1' } }
                 @{ Name = 'B2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'; EVOX2_ABBA_RUN = 'B2' } }
                 @{ Name = 'A2'; Parameters = @{}; Environment = @{ LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'; EVOX2_ABBA_RUN = 'A2' } }
+            )
+        }
+        @{
+            Name = 'stage1-target-rewarmup-short'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpTargetRewarmVulkan')
+            ModelKeys = @('UnslothPle16')
+            # Same new binary in both arms. Stage-B stays ON; only the target
+            # post-NextN re-warmup switch changes.
+            Environment = @{
+                LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'
+                GGML_VK_QSA_UNION               = '1'
+                GGML_VK_QSA_UNION_MIN_KV        = '32768'
+            }
+            Cases = @(@{
+                Name = 'smoke'
+                Parameters = @{
+                    Context = 32768
+                    InputFile = 'tools\evox2\benchmark\inputs\mtp-short.txt'
+                    GenerationTokens = 32
+                }
+            })
+            Variants = @(
+                @{ Name = 'A-rewarm-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '0' } }
+                @{ Name = 'B-rewarm-on';  Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '1' } }
+            )
+        }
+        @{
+            Name = 'stage1-target-rewarmup-64k-abba'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpTargetRewarmVulkan')
+            ModelKeys = @('UnslothPle16')
+            Environment = @{
+                LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'
+                GGML_VK_QSA_UNION               = '1'
+                GGML_VK_QSA_UNION_MIN_KV        = '32768'
+            }
+            Cases = @(@{ Name = '64k'; Parameters = @{ Context = 65536; InputKey = '64k' } })
+            Variants = @(
+                @{ Name = 'A1-rewarm-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '0'; EVOX2_ABBA_RUN = 'A1' } }
+                @{ Name = 'B1-rewarm-on';  Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '1'; EVOX2_ABBA_RUN = 'B1' } }
+                @{ Name = 'B2-rewarm-on';  Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '1'; EVOX2_ABBA_RUN = 'B2' } }
+                @{ Name = 'A2-rewarm-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '0'; EVOX2_ABBA_RUN = 'A2' } }
+            )
+        }
+        @{
+            Name = 'stage1-target-rewarmup-128k-abba'
+            Tool = 'cli'
+            BuildKeys = @('R5MtpTargetRewarmVulkan')
+            ModelKeys = @('UnslothPle16')
+            Environment = @{
+                LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '1'
+                GGML_VK_QSA_UNION               = '1'
+                GGML_VK_QSA_UNION_MIN_KV        = '32768'
+            }
+            Cases = @(@{ Name = '128k'; Parameters = @{ Context = 131072; InputKey = '128k' } })
+            Variants = @(
+                @{ Name = 'A1-rewarm-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '0'; EVOX2_ABBA_RUN = 'A1' } }
+                @{ Name = 'B1-rewarm-on';  Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '1'; EVOX2_ABBA_RUN = 'B1' } }
+                @{ Name = 'B2-rewarm-on';  Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '1'; EVOX2_ABBA_RUN = 'B2' } }
+                @{ Name = 'A2-rewarm-off'; Parameters = @{}; Environment = @{ LLAMA_MTP_TARGET_REWARMUP = '0'; EVOX2_ABBA_RUN = 'A2' } }
             )
         }
         @{

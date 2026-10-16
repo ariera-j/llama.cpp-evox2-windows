@@ -996,6 +996,10 @@ using common_init_result_ptr = std::unique_ptr<common_init_result>;
 
 common_init_result_ptr common_init_from_params(common_params & params, bool model_only = false);
 
+// Run the same empty decode used by normal startup warmup. This can be called
+// again after a graph-shape change such as enabling MTP NextN extraction.
+void common_warmup(llama_context * lctx, uint32_t n_batch);
+
 struct llama_model_params   common_model_params_to_llama  (      common_params & params);
 struct llama_context_params common_context_params_to_llama(const common_params & params);
 
