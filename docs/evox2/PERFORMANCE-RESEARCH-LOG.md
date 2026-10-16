@@ -814,3 +814,39 @@ the prior ~11.608 s 128k Stage-B-vs-MTP-OFF residual should remain attributed
 to steady-state MTP work until measured otherwise. Next priority:
 Draft `mtp_eh_proj` Vulkan Q8 matmul shape/path analysis, followed by Target
 NextN final-layer HC/FFN and hidden-state synchronization.
+
+
+---
+
+## 2026-10-16 — Draft `mtp_eh_proj` shape/root-cause investigation
+
+The b11618 Stage-B RGP dominant kernel
+`matmul_q8_0_q8_1_0 (80,1,1024)` was traced through qwen4exp and the pinned
+Vulkan backend. With n_embd=2560, hc=4 and a 1024-token Draft catch-up,
+`nextn.eh_proj [5120,2560]` consumes `concat(e_norm,h_norm) [5120,4,1024]`.
+Vulkan therefore receives **M=2560, N=4, K=5120, batch=1024**. Because N<=32,
+the RDNA3/4 coopmat1 integer selector uses its 32x32 small tile, exactly
+explaining the RGP dispatch `(80,1,1024)`.
+
+The highest-value next prototype is a graph-only reshape:
+`[5120,4,T] -> [5120,4*T]` before `build_lora_mm`, followed by
+`[2560,4*T] -> [2560,4,T]` after it. At T=1024 the same mathematics becomes
+**M=2560, N=4096, K=5120, batch=1**, expected to select the 128x128 large-tile
+Q8 coopmat path. Predicted workgroup geometry changes from 81,920 small/batched
+groups to about 640 large-tile groups; actual speedup is unmeasured.
+
+The current source already contains merged upstream #27952 RDNA3/4 int8
+coopmat1 support. Open upstream #30280 large-tile Split-K does not apply to the
+current N=4 geometry and is not expected to be first-order after flattening
+because the flattened M/N tile count is already large. Upstream qwen4exp
+master still uses the unflattened `build_lora_mm(eh_proj, concat(...))`.
+
+A second-stage architecture optimization exists because the converter explicitly
+joins HF `fc_embedding` and `fc_hidden`: the embedding projection is repeated
+for all four HC streams. Keeping the weights separate could theoretically remove
+37.5% of `eh_proj` multiply/add work for hc=4, but requires GGUF/converter/model
+changes. Defer it until the shape-only flatten A/B is measured.
+
+**Decision:** next implementation candidate is same-binary opt-in
+`LLAMA_MTP_EH_PROJ_FLATTEN=1` on a fresh branch derived from Stage-B, with
+short -> 64k ABBA -> 128k if material -> focused RGP -> numerical K/V parity.
