@@ -1,6 +1,6 @@
 # r5 MTP `mtp_eh_proj` shape / Vulkan dispatch investigation — 2026-10-16
 
-**Status: SOURCE/RGP ATTRIBUTION COMPLETE ENOUGH FOR A SHAPE-ONLY A/B PROTOTYPE. NO SOURCE OPTIMIZATION IMPLEMENTED YET.**
+**Status: SHAPE-ONLY PROTOTYPE IMPLEMENTED AND 64K/128K ABBA VALIDATED POSITIVE; NEXT STEP IS FOCUSED RGP OF THE NEW FLATTENED DISPATCH.**
 
 ## Why this operator is next
 
@@ -175,3 +175,26 @@ Sequence:
 Do not start with VGPR/workgroup shader edits. The current dispatch geometry is
 a higher-level and lower-risk explanation of the poor utilization, and it can
 be changed without changing the model's mathematics or Vulkan backend.
+
+
+## 2026-10-16 prototype validation update
+
+Native same-binary b11659 ABBA validates the shape hypothesis:
+
+| Context | Prompt tokens | OFF PP | ON PP | PP gain | Prompt-time saving |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 64k | 61,789 | 344.615 | 349.390 | **+1.386%** | **2.451 s** |
+| 128k | 126,253 | 319.605 | 324.070 | **+1.397%** | **5.444 s** |
+
+Draft acceptance and normalized generated content were unchanged within each
+ABBA cohort. P-MODE remained Performance and all long runs were ADLX
+Performance-like. The nearly identical percentage gain plus roughly
+prompt-length-scaled absolute saving supports a repeated Draft catch-up cost
+reduction.
+
+**Next evidence is GPU-side, not another timing sweep.** Resume with the
+prepared 64k RGP `B-flat-on` plan, recalibrate the new dispatch range, and
+measure the new `mtp_eh_proj` dispatch, parent MUL_MAT and whole Draft graph.
+The reference remains old unflattened
+`matmul_q8_0_q8_1_0 (80,1,1024)` at ~56.51/58.64 ms. The predicted flattened
+geometry near `(20,32,1)` remains a prediction until RGP confirms it.
