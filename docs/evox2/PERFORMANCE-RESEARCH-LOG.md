@@ -851,3 +851,29 @@ batch=1 large-tile geometry near `(20,32,1)`; measure the new main kernel,
 parent `MUL_MAT mtp_eh_proj`, whole Draft graph, and reconfirm no Draft FA.
 After RGP attribution, proceed to numerical Draft K/V parity before any merge
 decision.
+
+
+### Deferred ROCm environment check for the next ROCm build / inference session
+
+Not part of the immediate Vulkan `mtp_eh_proj` RGP continuation, but verify
+the ROCm/HIP version boundary the next time a ROCm binary is built and run.
+
+There is a concern that the **build-time toolchain may report ROCm 10.x while
+the inference-time runtime may actually resolve/load a ROCm/HIP 7.x runtime**.
+Do not assume these are the same version from the build banner alone.
+
+At the next ROCm session, record both sides separately:
+
+- build-time ROCm/HIP/CMake/toolchain version and paths;
+- `llama-cli --version` / build manifest identity;
+- runtime DLLs actually loaded by `llama-cli.exe` and their file
+  version/product version/path;
+- relevant HIP/ROCm environment variables and PATH ordering;
+- backend/device lines from `--list-devices`;
+- if available, `hipconfig` / runtime-reported HIP version from the same
+  shell used for inference.
+
+The goal is to determine whether the current Windows ROCm build is compiled
+against a 10.x toolchain but executes against older 7.x runtime components.
+If a mismatch exists, resolve/prove it before interpreting new ROCm
+performance or correctness measurements.
