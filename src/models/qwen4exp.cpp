@@ -580,6 +580,7 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     // graph may be reused is unsupported. Off unless explicitly enabled.
     const char * eh_proj_flatten_env = std::getenv("LLAMA_MTP_EH_PROJ_FLATTEN");
     const bool mtp_eh_proj_flatten =
+        draft_prefill_kv_crop &&
         eh_proj_flatten_env && std::strcmp(eh_proj_flatten_env, "1") == 0;
 
     GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm && layer.nextn.hc_head_norm &&
