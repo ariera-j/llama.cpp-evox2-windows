@@ -990,3 +990,95 @@ Main `mtp_eh_proj` matmul occupies **~91.65%** and **~91.85%** of the respective
 An earlier CPU `LLAMA_MTP_PP_TRACE=detail` 64k cohort measured Draft `llama_process` ~3.29s aggregate and Target hidden getter ~89s *sync-inclusive*. The latter is **not** 89s of pure memory-copy time; async target kernels often complete during this synchronization. The 128k Performance-mode same-day **11.608s** MTP ON Stage-B vs OFF prompt-time residual likewise **cannot be ascribed wholly to the ~57.6ms Draft kernel** without aggregate GPU accounting and Target-side controls.
 
 **Draft GPU capture: COMPLETE. No more broad or Draft-only RGP reruns needed.** Proceed to **Target last-layer MTP ON/OFF comparison** using the same b11618 and input, but re-calibrate the **MTP OFF target graph's own** dispatch ordinals: removing Draft and all-token NextN changes graph content/dispatch counts and the total process ordinal. Verify the role heuristic under MTP OFF (`role=target` requires an `hc_init` named tensor in the individual Vulkan graph partition, otherwise `unknown`); use target tensor names and the selected KV/u-batch as secondary identity. Focus **last layer `hc_combine`, `hc_ffn_*`, routed MoE/FFN**, not the output head only, and avoid comparisons across different token-depth/ubatch/window. Prefer one trace-only MTP OFF short, then 64k ordinal calibration without RDP; reuse prior MTP ON diagnostic ordinal for a separately framed Target RGP if needed. RGP wall times are local GPU events, not stable PP benchmarks. Keep source unchanged until Target extra workload is quantified.
+
+
+## 2026-10-16 consolidated Vulkan RGP evidence: Draft Stage-B and Target final-layer MTP ON/OFF
+
+**Status: STAGE-B DRAFT GPU PROFILE COMPLETE; TARGET LAST-LAYER ON/OFF EXECUTION-DIFFERENCE OBSERVED.** All observations below use the retained **Vulkan b11618** executable, compiled from **`5ea504315450aeb3ef9e0160bfeea2c0da965960`**, SHA-256 **`7f0edf27aa9505702aeb4c5092ebe588883e76ba7c979e1fba2cf73643c01ba2`**, with the same verified runtime artifact digest **`c719ec9e0801852fcc29bc5aebe3ebcc6c1e7811bdfd42acd011071f6c81f30a`**. No source edits, rebuilds, upstream imports, or numerical Draft K/V parity test were performed in this profiling phase. All referenced CLI runs reported **ExitCode 0**, **P-MODE Performance at both start and finish** (IP3-WMI method2, no mode-change/warnings), ADLX normal completion with high-load power class `Performance-like`. The main 64k input is **61,789 tokens**, SHA-256 **`2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`**, context 65536, batch2048/ubatch1024, QSA union ON/minKV32768, f16 K/V. All RGP timing numbers are **GPU events from a local 64k capture**, not non-profiled PP rates and not an aggregate 128k cost decomposition.
+
+### Provenance and RGP capture ranges
+
+| Purpose | Archived CLI ZIP / SHA256 | Profile / SHA256 | State and scope |
+| --- | --- | --- | --- |
+| **Draft Stage-B ON, complete / untruncated** | `20261016-012202-445-cli-vulkan-b11618-ctx65536-68ebb90ce390.zip` / `827cdb92c8fbdcc8248d3ae5cdeaff5020705ae7e76ccfe942e2ebea92b88f3d` | `llama-cli-20261016-012540230.rgp` / `c4639d4caf281ade657f97dfe420c19c07baa5d322e82f729815393b6dcf6ba7` | MTP ON, Draft Q8_0, Stage-B ON. RDP range **[224320,224448)**, count128, SQTT128MiB, **no truncation warning**. Includes Target tail, two Draft graph microbatches and next Target head. |
+| **Target MTP OFF, earlier pre-final sampling** | `20261016-092805-670-cli-vulkan-b11618-ctx65536-a8d9db2f3847.zip` / `3ad6ef806b66cf21113916bf680f5ad6d2bb35f4242ba7431813edf94e7f9249` | `llama-cli-20261016-093122106.rgp` / `64aeeff817d8d3555517cb7e25ec39d9f6cc3a31cca3558258f05b59e8cf0221` | `--spec-type none`, no Draft model. RDP **[206500,206628)** count128. Target late layers 44–46; not sufficient to characterize last layer 47. |
+| **Target MTP OFF, final-layer sample** | `20261016-095622-630-cli-vulkan-b11618-ctx65536-a8d9db2f3847.zip` / `7d95d8320fdbcdff8e61fcb869153a0679b0f1a4b25b91accdac5b0105cbe2d6` | `llama-cli-20261016-095939839.rgp` / `f8c58aa69673c36a705a29552cd2cca073ef2aebdd0d2ffede69f1678cff5eb3` | `--spec-type none`, no Draft model. RDP **[206620,206748)** count128. Captures layer 47 QSA attention and then the start of **the next graph**. No last-layer FFN-47 event in the user-inspected complete event list. |
+
+The **first Draft 512-dispatch capture** (profile `llama-cli-20261016-004904008.rgp`) showed a **Truncated SQTT data** warning; use only as preliminary corroboration, **not** instead of the 128-dispatch no-warning capture. All the profiles above are locally archived attachments, not stored inside the Git repository. The "untruncated" designation means **no truncation warning reported** for the chosen Draft capture, not a guarantee about every possible queue/event outside the selected RDP window.
+
+For reproducibility, diagnostic Vulkan host graph ranges around approximately **51–53k input depth** were:
+
+| Graph / 1024-token unit | MTP OFF [begin,end) | MTP ON + Stage-B [begin,end) |
+| --- | --- | --- |
+| Earlier Target unit | **[198015,202360)**, 4345 dispatch | **[215235,219797)**, 4562 dispatch |
+| Later Target unit | **[202360,206705)**, 4345 dispatch | **[219797,224359)**, 4562 dispatch |
+| Two subsequent 1024-token Draft units | **not present** | **[224359,224379)** and **[224379,224399)**, 20 dispatch each |
+
+The ON Target unit also had **7,265 nodes** versus **6,971** OFF (**+294 nodes / +217 dispatch**), proving a topology difference **without proving that all 217 dispatch are last-layer FFN**. Removing Draft and changing NextN row requirements changes absolute dispatch ordinals; never apply the ON RDP start to an OFF run.
+
+### Draft Stage-B ON: fully expanded GPU event tree
+
+In each of two consecutive 1024-token zero-output Draft catch-up graphs, the captured RGP `EVOX2_MTP_GRAPH role=draft` comprised **30 graph nodes / 20 vkCmdDispatch**. The user expanded from first normalization through the final explicit `SET_ROWS mtp_draft_cache_write_v`.
+
+| GPU event | Draft #1 | Draft #2 |
+| --- | ---: | ---: |
+| **Draft graph inclusive envelope** | **61.661875 ms** | **63.845977 ms** |
+| `mtp_eh_proj` main `matmul_q8_0_q8_1_0` *kernel* | **56.509501 ms** | **58.642678 ms** |
+| Input normalization / repeat / concat `submit0` | 1.843669 ms | 1.850670 ms |
+| Remaining `submit2` | 1.103093 ms | 1.142080 ms |
+| HC-mix/KV projection/RoPE `submit3` | 1.500965 ms | 1.533398 ms |
+| `hc_gate` matmul (within submit3) | 0.490551 ms | 0.504907 ms |
+| `DSV4_HC_PRE hc_mixed` (within submit3) | 0.623918 ms | 0.629104 ms |
+| Composite K path `ROPE+VIEW+SET_ROWS` | 0.015705 ms | 0.015705 ms |
+| Explicit V `SET_ROWS mtp_draft_cache_write_v` | 0.010668 ms | 0.011131 ms |
+
+The `mtp_eh_proj` main kernel is **91.65% / 91.85%** of the two Draft graph envelopes. The parent `MUL_MAT` label includes quantization/barriers, so **do not sum inclusive/child durations**. A shader pipeline screenshot from the earlier capture shows VGPR256, occupancy3/16; this suggests a profiling target but **does not prove register-pressure causality or a viable fix**. Crucially, **no `FLASH_ATTN_EXT` appears anywhere in the fully expanded captured Draft microbatches**, while the required HC / K / V path executes. This is GPU evidence of Stage-B's intended zero-output prefill FA omission for this path, **not a direct numerical cache-parity proof**.
+
+### Target Qwen4Exp layer 47: MTP OFF vs MTP ON
+
+**MTP ON, same depth, captured preceding the Draft:** the Target layer-47 `ffn_moe_gate-47`, `ffn_moe_up-47`, and `ffn_moe_down-47` kernels are present. User RGP screenshots from the above ON capture show:
+
+| Observed ON Target layer-47 operation | GPU time |
+| --- | ---: |
+| `hc_gate-47` | 0.476579 ms |
+| `ffn_moe_logits-47` | 0.181269 ms |
+| **`ffn_moe_gate-47`** | **4.595211 ms** |
+| **`ffn_moe_up-47`** | **4.721632 ms** |
+| **`ffn_moe_down-47`** | **3.942059 ms** |
+| `ffn_gate-47` | 0.368438 ms |
+| `ffn_up-47` | 0.326293 ms |
+| `hc_inject-47` | 1.328241 ms |
+
+The **three MoE primary inclusive ops sum to 13.258902 ms** for **one captured 1024-token Target microbatch**. They are separate events; **no child GPU events have been double-counted** in that three-operation subtotal. This is *not* the whole last-layer cost or a measurement of accumulated model-wide overhead.
+
+**MTP OFF, corresponding approximately 51–53k / 1024-token Target unit:** the second OFF RGP captures `hc_gate-47`, `indexer_k_raw-47`, `Qcur_full-47`, `FLASH_ATTN_EXT node_6876` with nested **QSA union → gather → `flash_attn_f32_f16_aligned_cm1`**, and `attn_output-47`. The **FA inclusive envelope is ~80.974 ms**, **not** a single FA kernel nor the MTP ON/OFF incremental FA cost. After `attn_output-47`, the captured trace shows buffer copies, then **a new** `EVOX2_MTP_GRAPH role=target` begins, with `GET_ROWS` and layer-0 operations (`hc_gate-0`, `ffn_moe_gate-0`, etc.). The user searched the complete captured OFF event list and **found no** `ffn_moe_gate-47`, `ffn_moe_up-47`, `ffn_moe_down-47`, `ffn_gate-47`, or `ffn_up-47`. This **strongly supports** that the final-layer FFN for this *no-output prefill* Target unit was skipped/cropped in MTP OFF whereas MTP ON executed it for all-token NextN hidden state. It does **not** prove OFF never executes FFN-47 for microbatches that actually require logits, nor does it individually label the `GET_ROWS` in the *following* graph as the layer-47 crop.
+
+The pinned source explains the observed branch:
+- `common/speculative.cpp:1482-1483`: MTP ON sets `llama_set_embeddings_nextn(ctx_tgt, true, /*masked*/ false)`; OFF does not request that all-row unmasked NextN output.
+- `src/llama-graph.h:1060-1068`: with output IDs, `crop_before_nextn` is eligible when NextN disabled or masked, while ON unmasked NextN uses `crop_after_nextn`.
+- `src/models/qwen4exp.cpp:496-529`: after final-layer attention, OFF can discard unnecessary output rows *before* `build_hc_combine`, HC mixer and `build_layer_ffn`; ON retains all rows to construct `h_nextn` before later logits-only output crop.
+
+**Scope of conclusion:** Observed difference is **RGP-present vs RGP-not-observed for the matching local microbatch**, supported by the source crop condition and the visible transition to a new graph. Hardware-event absence within a selected window is not a universal "never executed" claim, and the actual number of dynamic dispatched HC/FFN ops outside the sampled range remains a separate aggregation question.
+
+### Connecting the two 64k GPU samples with the 128k non-profiled time delta
+
+The relevant **same-day, Performance-verified non-profiled 128k** cohort remains:
+- MTP OFF single run: **381.544s PP, 330.90 tok/s**.
+- MTP ON / Stage-B OFF ABBA mean: **419.545s PP, 300.93 tok/s**.
+- MTP ON / Stage-B ON ABBA mean: **393.152s PP, 321.13 tok/s**.
+- Stage-B eliminates **26.393s** of the measured **38.001s** additional prompt time (~**69.45%**); **11.608s** extra remains (~**30.55%**) vs MTP OFF. This single OFF control needs replication for a precise uncertainty interval.
+
+Two *illustrations, not estimates of measured total 128k overhead*:
+- Target **13.259ms / captured 1024-token unit**, multiplied by an illustrative ~124 1024-token units in a 126,253-token prompt, would be **~1.64s** of the three MoE ops, **if** every unit behaved identically, an assumption not measured. It omits HC/inject/other per-row work.
+- Draft **~62.754ms full graph / captured 1024-token unit**, times the same illustrative ~124 units would be **~7.78s**; its single `mtp_eh_proj` main kernel alone ~57.576ms/unit. This also **assumes** GPU time is invariant as KV increases and does **not** account for cross-backend overlap, submission scheduling or differing GPU frequency. Do **not** add these extrapolations and declare the remainder to be CPU sync/copy; they are not a measured GPU/CPU partition of 11.608s.
+
+The earlier `LLAMA_MTP_PP_TRACE=detail` 64k run reported Draft `llama_process` CPU aggregate ~3.29s and `hidden_get_us` ~89s **including pending GPU completion/synchronization**, not 89s of physical copy. On Strix Halo UMA the calculated F32 hidden-state payload over 126,253 tokens (~4.82GiB logical) is likewise **not** a measured PCIe transfer volume. Profiling/diagnostic PP figures from the OFF/ON RGP runs (e.g. OFF ~327.6, ON ~312.4 tok/s) must **not** be compared as if they were identical non-profiled ABBA trials.
+
+### Updated engineering priority and stop gates
+
+1. **Close the current Draft-FA and Target final-layer *structural* RGP questions:** Stage-B prefill FA is absent in the sampled Draft GPU graphs; OFF final-layer FFN is absent in the sampled zero-output Target, whereas ON has it. No need to rerun either identical RGP solely to recover this structural evidence.
+2. **Rank next optimization candidates using a targeted timing test, not the local fraction alone.** A: retained Draft `mtp_eh_proj` Q8 matmul (~92% of Draft GPU envelope), with VGPR/occupancy and shader workgroup identity; B: Target final-layer NextN all-row HC/FFN cost (especially expensive when no prompt output), and whether necessary NextN rows can be computed more efficiently without breaking future MTP acceptance; C: NextN getter, host preparation, backend synchronization and graph submit/copy.
+3. **Before porting/merging a mathematical shortcut**, verify numerical **Draft K and V parity** for zero-output catch-up against A, not just byte-identical generated text/acceptance counts. Keep the fixed b11618 experiment isolated from newer upstream and Unsloth mixes; use separate refreshed branches/clean A/B for those changes.
+4. If precise contribution to the **11.608s** matters, aggregate GPU timings over representative 64k/128k depth bins or add scope-limited paired instrumentation (no additional global trace spam), then repeat a matched **MTP OFF / ON** control under P-MODE+ADLX. Do not treat a 128-dispatch SQTT slice as total-model timing.
+
+**Result:** **Qualitative GPU attribution is substantially complete**: Stage-B removes Draft prefill FA, while most residual Draft GPU time is `mtp_eh_proj`; Target NextN also activates final-layer HC/FFN compute that OFF can crop away in zero-output prompt microbatches. **Quantitative decomposition of the 128k ~11.61s remaining PP penalty is still open**.
