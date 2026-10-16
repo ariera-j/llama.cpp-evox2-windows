@@ -785,3 +785,32 @@ This dated intake supports, but does not replace, the active [ROADMAP priority c
 6. **WATCH-UPSTREAM** for GDN/CONCAT/large-tile matmul/MTP/recurrent-state candidates; reprioritize only when actual runtime bottleneck, applicability and a same-build A/B gate are established.
 
 **Bounded ROCm next-chat handoff:** stay on validated stable `r5/upstream-refresh-20261009`; do not mix Vulkan investigation source or re-pin upstream. First trace `ggml-hip` → `ggml-cuda/fattn.cu`/FA specialization for the actual qwen4exp model shapes; distinguish `flash_attn_mask_to_KV_max` suffix scans, HIP-disabled CUDA sparse gather, and FA/matmul Stream-K. Second inventory Windows HIP profiling options and select the least invasive logging/timing method. Third, *only if feasible*, collect Japanese literature and code under identical ROCm binary, model, prompt SHA, KV depth and batch parameters. Record call/kernel identity and measured time separately from overall PP. Stop and re-rank if instrumentation is disproportionate to expected optimization benefit. **No source or benchmark changes are authorized by this intake alone.**
+
+
+---
+
+## 2026-10-16 — MTP Target re-warmup (#30511) causal control
+
+A minimal opt-in port of upstream PR #30511 was tested on
+`investigation/r5-mtp-pp-target-rewarmup-30511-20261016` using one new Vulkan
+binary, with Stage-B Draft KV-only enabled in both arms. The only experiment
+switch was `LLAMA_MTP_TARGET_REWARMUP=0/1`.
+
+The 64k ABBA sequence A1/OFF, B1/ON, B2/ON, A2/OFF completed 4/4 under verified
+P-MODE Performance and ADLX Performance-like load. PP was **344.290 tok/s OFF**
+versus **344.395 tok/s ON**: **+0.0305%**, equivalent to only **55.1 ms** prompt
+time over a ~179.4 s prefill. Whole child-process duration differed by only
+**32.5 ms**. Generated text and Draft acceptance (**295/430 = 0.68605**) were
+identical across all four runs.
+
+The earlier short-smoke result appeared much larger, but the counterbalanced
+64k set shows the first A1 process as the cold outlier while the final A2/OFF
+run matches the ON runs. Treat the smoke delta as process/driver/pipeline
+cold-start contamination, not evidence of a persistent re-warmup speedup.
+
+**Decision:** classify #30511 as **NO MATERIAL LONG-PREFILL EFFECT for this
+Windows/Vulkan Qwen3.8-Flash-Next MTP PP case**. Skip the prepared 128k ABBA;
+the prior ~11.608 s 128k Stage-B-vs-MTP-OFF residual should remain attributed
+to steady-state MTP work until measured otherwise. Next priority:
+Draft `mtp_eh_proj` Vulkan Q8 matmul shape/path analysis, followed by Target
+NextN final-layer HC/FFN and hidden-state synchronization.
