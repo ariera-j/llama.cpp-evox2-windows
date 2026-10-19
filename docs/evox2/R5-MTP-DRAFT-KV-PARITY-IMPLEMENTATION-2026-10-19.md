@@ -67,16 +67,17 @@ Use the **actual** checkout/build directory, not the illustrative path if differ
   -OnlyJob kv-short
 ```
 
-Confirm **all three** arms exit0, each emits `mtp_kv_snapshot_v1 OK ... threshold=1`, has saved one file in `kv-parity-output/short`, and has matched prompt length and same compiled executable. Then run the parser locally (NumPy required):
+Confirm **all three** arms exit0, each emits `mtp_kv_snapshot_v1 OK ... threshold=1`, has saved one file and has matched prompt length and same compiled executable. **Important: `Measure-LlamaCli.ps1` starts llama-cli with `-WorkingDirectory` set to its executable directory** (`<new-build>/bin/Release`), so `kv-parity-output/short` is created **under that bin/Release directory**, not under the repository root or the ZIP/logs directory. Use the **absolute `path=` in stderr** as the source of truth. The commands below define `$kvDir` for the illustrative default build; adjust it to the actual path. Then run the parser locally (NumPy required):
 
 ```powershell
+$kvDir = '.\build-vulkan-r5-mtp-kv-parity\bin\Release\kv-parity-output\short'
 python .\tools\evox2\benchmark\analyze_mtp_kv_parity.py `
-  --directory .\kv-parity-output\short --left C --right A --threshold 1 `
-  --report .\kv-parity-output\short\C-vs-A.json
+  --directory $kvDir --left C --right A --threshold 1 `
+  --report (Join-Path $kvDir 'C-vs-A.json')
 
 python .\tools\evox2\benchmark\analyze_mtp_kv_parity.py `
-  --directory .\kv-parity-output\short --left A --right B --threshold 1 `
-  --report .\kv-parity-output\short\A-vs-B.json
+  --directory $kvDir --left A --right B --threshold 1 `
+  --report (Join-Path $kvDir 'A-vs-B.json')
 ```
 
 The comparator emits compact JSON with logical token count/position bounds, per-layer K/V checked element count, **bitwise difference count**, numerical tolerance-failure count, non-finite count, max absolute/relative error and **PASS/FAIL**. Defaults: `atol=0.001, rtol=0.001`, fail for missing positions, seq ownership changes, NaN/Inf or any element outside tolerance. Check the strict difference counts even when within the default tolerance; do not quietly widen tolerances to force success. Record both `C vs A` (Stage B effect) and `A vs B` (flatten effect). Optionally add `C vs B` as a cross-check.
@@ -93,7 +94,7 @@ After the short C/A/B parity and acceptance sanity pass:
   -OnlyJob kv-64k
 ```
 
-Analyze thresholds **1024, 32768, 61789** for C→A and A→B using the same parser, setting `--directory .\kv-parity-output\64k` and `--threshold` for each. Compare actual logged end positions, total active K/V cell count, seq ownership, relative/absolute tolerances and post-prefill 512-token generation text + acceptance. At most one binary snapshot per threshold per arm is expected.
+Analyze thresholds **1024, 32768, 61789** for C→A and A→B using the same parser, setting `--directory (Join-Path (Split-Path $kvDir -Parent) '64k')` and `--threshold` for each (or using the saved `path=` directory in stderr). Compare actual logged end positions, total active K/V cell count, seq ownership, relative/absolute tolerances and post-prefill 512-token generation text + acceptance. At most one binary snapshot per threshold per arm is expected.
 
 Then run `-OnlyJob kv-128k` at thresholds **32768,65536,126253** only if 64k passes. For a bounded first 128k test, `-OnlyVariant A-stageb-on-flat-off,B-stageb-on-flat-on` omits C until the A/B gate passes. Full C/A/B is needed before claiming Stage-B parity through 128k.
 
