@@ -131,3 +131,22 @@ The attached **B-arm** native ZIP `20261019-211544-319-cli-vulkan-b11682-ctx3276
 
 **Next:** run 64k plan, preferably **A/B variants first** to exercise the flattened 1024-token Draft matmul, then C for full Stage-B proof. Thresholds `1024,32768,61789` are first crossed at ubatch boundaries, so compare **actual `pos=` and position maps**, not just filenames. Both pairs must independently pass at each depth, and generated text/acceptance and condition identity must be checked; otherwise halt before 128k. This measurement deliberately forces GPU synchronization and dumps potentially hundreds of MiB of Draft state: **do not interpret PP/TG as a speed result**. Numeric attention KV equality still does not establish recurrent/indexer state parity or forced rejection/rollback.
 
+### 2026-10-19 local Source.Dirty explanation from user
+
+User ran `git status --short` on the Windows checkout after the successful b11682 short test. The only listed changes are benchmarking and monitoring tools copied from a separate branch:
+
+```text
+ M tools/evox2/benchmark/Evox2.Benchmark.psm1
+ M tools/evox2/benchmark/Invoke-BenchmarkMatrix.ps1
+ M tools/evox2/benchmark/Measure-LlamaBench.ps1
+ M tools/evox2/benchmark/Measure-LlamaCli.ps1
+ M tools/evox2/benchmark/Monitor-LlamaProcess.ps1
+ M tools/evox2/lib/Evox2.Common.psm1
+?? tools/evox2/adlx-gpu-monitor/
+?? tools/evox2/pmode/
+```
+
+**No modified inference, Draft, ggml, backend, or model source appears in this status.** This plausibly explains the `Source.Dirty=true` manifest observation. No build rerun or git clean/reset is needed for the immediate **C/A/B correctness comparison** if all arms use the same b11682 executable digest and the same local test harness. Preserve the local P-MODE/ADLX instrumentation until the tests finish. The exact diff/hashes of these uncommitted tooling files have **not** been archived in GitHub by this note; `git status` documents paths but not their content. Before a new-upstream integration or externally reproducible performance baseline, commit or otherwise capture the harness diff and include its provenance. Do not silently transplant those tooling changes into the r5 stable inference tree.
+
+The wording “the build was dirty only because of tools” is a **worktree-status-supported explanation**, not a line-by-line diff audit or a cryptographic proof of the historical build tree. The user-reported status contains no inference-source changes and thus does not undermine the bit-exact short Draft K/V result.
+
