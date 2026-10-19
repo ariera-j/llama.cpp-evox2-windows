@@ -1,6 +1,6 @@
 # r5 MTP `mtp_eh_proj` flatten prototype and measurement plan — 2026-10-16
 
-**Status: WINDOWS VULKAN BUILD VALIDATED; SHORT, 64K ABBA AND 128K ABBA COMPLETE WITH A REPRODUCIBLE POSITIVE PP RESULT. NEXT SESSION STARTS WITH FOCUSED RGP OF FLATTEN ON.**
+**Status (updated 2026-10-19): Vulkan short, 64k/128k ABBA and focused flatten-ON RGP Event timing COMPLETE; same-binary flatten-OFF RGP optional; numerical Draft K/V correctness and rollback gates OPEN before integration. See the 2026-10-19 section below.**
 
 ## Branch and scope
 
