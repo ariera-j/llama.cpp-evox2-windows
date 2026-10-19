@@ -150,3 +150,35 @@ User ran `git status --short` on the Windows checkout after the successful b1168
 
 The wording “the build was dirty only because of tools” is a **worktree-status-supported explanation**, not a line-by-line diff audit or a cryptographic proof of the historical build tree. The user-reported status contains no inference-source changes and thus does not undermine the bit-exact short Draft K/V result.
 
+## 2026-10-19 64k native validation — six numerical comparisons PASS, full input and generation
+
+**Status: 64k Draft attention KV correctness gate PASSED for the tested b11682/Vulkan/Unsloth PLE16 + Q8_0 Draft configuration.** User pasted all six JSON comparison results for the 3 C/A/B snapshots and supplied an archive containing **all three native child runs**. This is not yet a 128k gate, nor a recurrent state / rollback correctness pass.
+
+Native archive: `20261019-212754-335-cli-vulkan-b11682-ctx65536-4393dc97f141.zip`; **SHA256 `29fec25172c2c306c9cd45ac3e4ec81bbfcd242c4fab58e091b63570b96346a3`**. Child runs C=`20261019-212318-012-cli-vulkan-b11682-ctx65536-4e548d200013`, A=`20261019-212754-335-cli-vulkan-b11682-ctx65536-4393dc97f141`, B=`20261019-213226-676-cli-vulkan-b11682-ctx65536-92eb18ac8d8b`. All three are status OK / exit0; b11682, Clang20.1.8, exactly same executable SHA256 `737324a93095a61c31fdbdd155058e6ebdf2eb7b997b67ac877f39a5ff420a38` and runtime artifact digest `c44f279afb663e89dc8ea6595abef87f7e35914303ca735a9036acaccfa5e23e`. The source-dirty fingerprint is likewise unchanged between these runs; previously identified non-inference P-MODE/ADLX harness modifications were left in the local worktree.
+
+Effective run conditions checked via all three `conditions.json`: **61,789 prompt tokens, 512 output**, context65536, Vulkan, f16 Target/Draft KV, ubatch1024, batch2048, PLE16 Target with MTP-Q8_0 sidecar, QSA union ON/minKV32768, MTP enabled, temperature0/seed1234, same input SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`, P-MODE Performance at start/end in all arms. Only Stage-B / flatten settings (and snapshot tag) differ: **C=0/0, A=1/0, B=1/1**.
+
+| requested threshold | actual cell positions | KV element count **per K or V per pair** | C→A | A→B |
+| ---: | ---: | ---: | --- | --- |
+| 1,024 | 0–2,047 (2,048 positions), filename pos2047 | **1,048,576** | **PASS, 0 bit differences** | **PASS, 0 bit differences** |
+| 32,768 | 0–32,767 (32,768 positions), pos32767 | **16,777,216** | **PASS, 0 bit differences** | **PASS, 0 bit differences** |
+| 61,789 | 0–61,788 (61,789 positions), pos61788 | **31,635,968** | **PASS, 0 bit differences** | **PASS, 0 bit differences** |
+
+Every comparison on **one f16 attention layer with 512 floats per token for each K and V**, native row-major V, single sequence. All six pairs report `outside_tolerance=0`, `nonfinite=0`, `max_abs=0.0`, `max_relative=0.0`, matching logical position sets and metadata. Total **98,923,520 K+V values per C/A or A/B pair summed across three cumulative snapshots**; note that these are cumulative, not independent tokens. The first threshold is crossed only at the end of a **2048-token batch**, as indicated by file name `pos-2047`; this is expected and must be labeled as the actual sampled boundary.
+
+Snapshots at each arm/threshold were observed in `stderr.log` (`mtp_kv_snapshot_v1 OK`), and state file sizes were identical across arms at each checkpoint: **5,316,724 bytes, 85,065,844 bytes, 160,404,360 bytes**. Raw `.bin` state snapshots are held locally and **not** part of the uploaded ZIP; all six comparator JSON results were pasted in chat.
+
+Generated text was verified byte-identical across all three child `stdout.log` files **after excluding the printed per-run PP/TG speed banner**; normalized region SHA256 `5013d9308389667530dc78b8008ea27f1ed2d5038d827428dc6bf3ea5e39d5e2`. Draft acceptance in all arms **295/430 (68.605%)**.
+
+| arm | diagnostic PP tok/s | diagnostic TG tok/s | PromptEval ms | Performance P-MODE |
+| --- | ---: | ---: | ---: | --- |
+| C Stage-B OFF / flatten OFF | 313.10 | 28.19 | 197,348.58 | start=end |
+| A Stage-B ON / flatten OFF | 323.85 | 28.91 | 190,797.14 | start=end |
+| B Stage-B ON / flatten ON | 327.80 | 28.87 | 188,496.82 | start=end |
+
+**Do not interpret these numbers as performance evidence:** the capture hook synchronizes and serializes Draft state to disk three times, strongly perturbing execution. Use previous independent uninstrumented ABBA and focused RGP for source performance evidence.
+
+**Implication:** both Stage-B and flatten produced **exactly unchanged Draft attention KV contents over every active position at all sampled depths up to 61,789 prompt tokens**, while ordinary completion text and acceptance matched. This is a robust numerical gate for the tested f16 path, including long-context 1024-token Draft operations. It does **not** compare the recurrent-state buffer, QSA indexer suffix, or controlled accept/reject/rollback behavior.
+
+**Next P0: run the existing `kv-128k` job** using the same b11682 executable, thresholds **32768, 65536, 126253**, C/A/B full matrix. Compare each threshold's actual saved `pos` and both C→A and A→B JSONs; verify generated text/acceptance, hashes and Performance mode. **No code changes or rebuild are needed before 128k.** Expect around 1.5–2 GiB cumulative files depending on recurrent state. Stop if any mismatch. After 128k passes, design/execute a separate recurrent-state and rollback/reject stress test before proposing inclusion in the new-upstream integration candidate.
+
