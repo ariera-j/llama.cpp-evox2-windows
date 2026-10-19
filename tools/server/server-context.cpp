@@ -23,6 +23,8 @@
 #include <cstdlib>
 #include <cstddef>
 #include <cinttypes>
+#include <cstdio>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <filesystem>
@@ -53,6 +55,28 @@ static common_speculative_output_limits server_output_limits(const common_params
     result.total   = std::max<int32_t>(1, result.total);
     result.per_seq = std::max<int32_t>(1, result.per_seq);
     return result;
+}
+
+// Correctness-only MTP rollback instrumentation. Defaults to a no-op.
+// Synthetic acceptance itself is provided by existing --spec-synth-rates;
+// forced checkpoint restore is restricted to an explicit opt-in diagnostic.
+static bool mtp_rollback_diag_enabled() {
+    static const bool value = [] {
+        const char * v = std::getenv("LLAMA_MTP_ROLLBACK_DIAG");
+        return v && std::strcmp(v, "1") == 0;
+    }();
+    return value;
+}
+static bool mtp_rollback_diag_force_ckpt() {
+    static const bool value = [] {
+        const char * v = std::getenv("LLAMA_MTP_ROLLBACK_FORCE_CKPT");
+        return v && std::strcmp(v, "1") == 0;
+    }();
+    return value;
+}
+static const char * mtp_rollback_diag_tag() {
+    const char * v = std::getenv("LLAMA_MTP_ROLLBACK_TAG");
+    return v && *v ? v : "untagged";
 }
 
 // a checkpoint restore dropped tokens the target had accepted - re-accept them rather than verify again
@@ -268,6 +292,9 @@ struct server_slot {
     common_prompt_checkpoint spec_ckpt;
     bool spec_is_replay = false;
     std::mt19937 spec_synth_rng;
+    uint64_t rollback_diag_round = 0; // diagnostics only, per task
+    uint64_t rollback_diag_restores = 0;
+    uint64_t rollback_diag_replay_commits = 0;
 
     // TODO: move members that belong to the task (such as `generated`, `has_new_line`) to task_results_state
     //       see https://github.com/ggml-org/llama.cpp/pull/18283#issuecomment-3710175837
@@ -381,6 +408,9 @@ struct server_slot {
         SLT_DBG(*this, "%s", "\n");
 
         spec_is_replay = false;
+        rollback_diag_round = 0;
+        rollback_diag_restores = 0;
+        rollback_diag_replay_commits = 0;
 
         last_nl_pos    = 0;
         generated      = {};
@@ -1404,6 +1434,23 @@ private:
 
         if (ctx_dft) {
             ctx_dft_seq_rm_type = common_context_can_seq_rm(ctx_dft);
+        }
+
+        if (mtp_rollback_diag_force_ckpt()) {
+            // Only the synthetic correctness stress run may force the replay
+            // checkpoint path. Production inference never enters this branch.
+            if (!mtp_rollback_diag_enabled() || !spec ||
+                common_speculative_get_synth_probs(spec.get()).size() == 0) {
+                SRV_ERR("%s", "MTP rollback FORCE_CKPT requires DIAG=1 and --spec-synth-rates\n");
+                return false;
+            }
+        }
+        if (mtp_rollback_diag_enabled()) {
+            std::fprintf(stderr,
+                "mtp_rollback_diag_v1 event=init tag=%s force_ckpt=%d tgt_rm_type=%d dft_rm_type=%d synthetic=%d\n",
+                mtp_rollback_diag_tag(), (int) mtp_rollback_diag_force_ckpt(),
+                (int) ctx_tgt_seq_rm_type, (int) ctx_dft_seq_rm_type,
+                (int) (spec && !common_speculative_get_synth_probs(spec.get()).empty()));
         }
 
         if (spec) {
@@ -3350,8 +3397,10 @@ private:
             if (spec) {
                 common_speculative_get_draft_params(spec.get(), slot.id).drafting = false;
 
-                const bool use_ckpt_tgt = ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
-                const bool use_ckpt_dft = ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
+                const bool use_ckpt_tgt = mtp_rollback_diag_force_ckpt() ||
+                        ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
+                const bool use_ckpt_dft = mtp_rollback_diag_force_ckpt() ||
+                        ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
 
                 const int n_draft_max = slot.get_n_draft_max();
 
@@ -3413,6 +3462,14 @@ private:
             auto & ckpt  = slot.spec_ckpt;
 
             slot.stats.n_draft_tokens += draft.size();
+            if (mtp_rollback_diag_enabled() && !draft.empty()) {
+                ++slot.rollback_diag_round;
+                std::fprintf(stderr,
+                    "mtp_rollback_diag_v1 event=draft tag=%s slot=%d round=%llu size=%zu replay=%d pos=%d\n",
+                    mtp_rollback_diag_tag(), slot.id,
+                    (unsigned long long) slot.rollback_diag_round, draft.size(),
+                    (int) slot.spec_is_replay, (int) slot.prompt.tokens.pos_next());
+            }
 
             // TODO: avoid restoring the draft context and re-evaluating the drafted tokens when not needed [TAG_SPEC_AVOID_DRAFT_REEVAL]
             const bool use_ckpt_dft = ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
@@ -3429,10 +3486,12 @@ private:
 
             if (!draft.empty()) {
                 const bool use_ckpt_tgt =
+                    mtp_rollback_diag_force_ckpt() ||
                     ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
                    (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && draft.size() > llama_n_rs_seq(ctx_tgt));
 
                 const bool use_ckpt_dft =
+                    mtp_rollback_diag_force_ckpt() ||
                    (ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && draft.size() > llama_n_rs_seq(ctx_dft));
 
                 if (use_ckpt_tgt) {
@@ -4473,8 +4532,17 @@ private:
                 const uint32_t n_rollback = slot.spec_draft.size() + 1 - accepted.size();
 
                 const bool use_ckpt_tgt =
+                    mtp_rollback_diag_force_ckpt() ||
                     ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
                     (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && n_rollback > llama_n_rs_seq(ctx_tgt));
+
+                if (mtp_rollback_diag_enabled()) {
+                    std::fprintf(stderr,
+                        "mtp_rollback_diag_v1 event=decision tag=%s slot=%d round=%llu drafted=%zu accepted=%zu rollback=%u checkpoint=%d replay=%d synthetic=%d\n",
+                        mtp_rollback_diag_tag(), slot.id, (unsigned long long) slot.rollback_diag_round,
+                        n_draft, accepted.size() - 1, (unsigned) n_rollback, (int) use_ckpt_tgt,
+                        (int) slot.spec_is_replay, (int) !synth_probs.empty());
+                }
 
                 // check for partial draft acceptance
                 if (n_rollback > 0) {
@@ -4501,7 +4569,14 @@ private:
 
                         slot.prompt.tokens.keep_first(ckpt.n_tokens);
                         common_sampler_copy(smpl_save.get(), slot.smpl.get());
-
+                        ++slot.rollback_diag_restores;
+                        if (mtp_rollback_diag_enabled()) {
+                            std::fprintf(stderr,
+                                "mtp_rollback_diag_v1 event=checkpoint_restore tag=%s slot=%d round=%llu rollback=%u keep=%lld restores=%llu\n",
+                                mtp_rollback_diag_tag(), slot.id, (unsigned long long) slot.rollback_diag_round,
+                                (unsigned) n_rollback, (long long) ckpt.n_tokens,
+                                (unsigned long long) slot.rollback_diag_restores);
+                        }
                         return;
                     }
                 }
@@ -4517,11 +4592,23 @@ private:
 
             const auto ids = std::move(slot.spec_draft);
 
+            const bool was_replay = slot.spec_is_replay;
             size_t n_accepted = ids.size() - 1;
             if (slot.spec_is_replay && n_accepted > 0) {
                 n_accepted--;
             }
             slot.spec_is_replay = false;
+            if (was_replay) {
+                ++slot.rollback_diag_replay_commits;
+            }
+            if (mtp_rollback_diag_enabled()) {
+                std::fprintf(stderr,
+                    "mtp_rollback_diag_v1 event=commit tag=%s slot=%d round=%llu accepted=%zu replay=%d replay_commits=%llu restores=%llu\n",
+                    mtp_rollback_diag_tag(), slot.id, (unsigned long long) slot.rollback_diag_round,
+                    n_accepted, (int) was_replay,
+                    (unsigned long long) slot.rollback_diag_replay_commits,
+                    (unsigned long long) slot.rollback_diag_restores);
+            }
 
             slot.stats.update_gen_last();
 
