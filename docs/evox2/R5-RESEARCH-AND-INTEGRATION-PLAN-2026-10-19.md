@@ -2,6 +2,8 @@
 
 **Status: planning and external source review only. No new upstream import, optimization merge, test run, integration binary, or tag has been created by this update.** The current scientific control remains the pinned r5 upstream `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b`. Follow [INTEGRATION-POLICY.md](INTEGRATION-POLICY.md) and [PATCHES.md](PATCHES.md); this is the latest user-selected order, superseding dated “NEXT” instructions in older reports.
 
+> **Closed 2026-10-19 20:22 JST:** same-binary A-flat-off and B-flat-on focused Vulkan RGP now both captured and analyzed; `mtp_eh_proj` shader time ~56–58ms OFF vs ~4ms ON, two full Draft graphs ~61–64ms OFF vs ~9.3ms ON. [Canonical measurement report](R5-MTP-EH-PROJ-FLATTEN-RGP-2026-10-19.md). **Next required work: design/perform numerical Draft K/V correctness gate** before accepting Stage B/flatten in an integration build. The date/priority plan below remains an historical decision record; RGP step is complete.
+
 > **Measured follow-up 2026-10-19:** Focused flatten-ON RGP completed. Actual Vulkan flattened GEMM dispatch `(40,64,1)` and ~4.04ms, complete sampled Draft graph ~9.24/9.37ms. Two native runs also quantify trace/RGP timing as reference, see [same-day RGP report](R5-MTP-EH-PROJ-FLATTEN-RGP-2026-10-19.md). Therefore the first item below is **partly complete**: optional same-binary flatten-OFF RGP remains; the *required next gate* is numerical Draft K/V parity and continuation/rollback. No inference source merge has occurred.
 
 ## User-selected order and timing
