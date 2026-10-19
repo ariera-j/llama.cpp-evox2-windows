@@ -1,5 +1,8 @@
 # Evo-X2 upstream-refresh overview
 
+**Current handoff (2026-10-19):** [Research and new-upstream integration plan, flatten RGP procedure, external s1/Strata watch](R5-RESEARCH-AND-INTEGRATION-PLAN-2026-10-19.md). Authoritative 10/16 flatten ABBA, RGP plan and build provenance remain [on the dedicated investigation branch](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-eh-proj-flatten-20261016/docs/evox2/R5-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-16.md). **This stable branch has documentation only for Stage B / flatten; the source remains experimental.**
+
+
 This directory contains downstream documentation for the Windows Evo-X2 work in this repository.
 
 ## Completed research documentation and sync rule — 2026-10-12
