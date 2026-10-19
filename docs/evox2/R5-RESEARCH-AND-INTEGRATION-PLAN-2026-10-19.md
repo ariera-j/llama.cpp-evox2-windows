@@ -14,6 +14,31 @@
 
 > **Measured follow-up 2026-10-19:** Focused flatten-ON RGP completed. Actual Vulkan flattened GEMM dispatch `(40,64,1)` and ~4.04ms, complete sampled Draft graph ~9.24/9.37ms. Two native runs also quantify trace/RGP timing as reference, see [same-day RGP report](R5-MTP-EH-PROJ-FLATTEN-RGP-2026-10-19.md). Therefore the first item below is **partly complete**: optional same-binary flatten-OFF RGP remains; the *required next gate* is numerical Draft K/V parity and continuation/rollback. No inference source merge has occurred.
 
+## Post-integration Gemma 4 Vulkan replacement gate — 2026-10-20
+
+**User objective:** After the tentative Oct 25–26 new-upstream integrated build has passed its main Qwen3.8-Flash-Next checks, also run a **separate Gemma 4 model regression gate** before replacing the currently working **upstream prebuilt Windows Vulkan b10919**. This is *not* a requirement to port Gemma-specific source now, and not evidence that the new integrated build supports them already.
+
+**Existing known working fallback:** `llama.cpp` upstream **b10919 Vulkan prebuilt** (user checked locally on 2026-10-20); retain its binaries, executable/runtime DLLs, configurations and start commands independently. Record hash and actual release/build metadata from the user's local installation when testing; merely knowing the label b10919 does not establish the binary SHA/commit. Do not overwrite or uninstall it before A/B.
+
+**Models to test independently:**
+
+| Model | User's existing GGUF family / relevant path | Why a separate gate |
+| --- | --- | --- |
+| **Gemma 4 31B IT QAT q4_0** | 31B IT QAT 4-bit model; verify actual GGUF path, revision, exact variant and any projector before the run | Dense behavior / template and Vulkan attention/quantization regression |
+| **Gemma 4 26B A4B IT QAT UD-Q4_K_XL** | 26B A4B MoE IT, 4-bit XL GGUF; verify exact GGUF path and model metadata | MoE expert routing / Vulkan shader + memory behavior can differ significantly from 31B |
+
+**Required acceptance sequence (after the integration build itself is verified):**
+
+1. **Freeze a functional baseline on b10919** for each model (not cross-model): same original GGUF files, main context/runtime options, chat template, GPU offload, f16 KV, sampling, Windows P-MODE and prompt fixtures; record full binary/manifest, GPU driver, model/input fingerprints, prompt+generation throughput and representative output. Where applicable also test a *simple* visual input with its matching projector; do not infer projector usability from text-only smoke.
+2. **Vulkan load and short text correctness on integrated build** with both models separately: successful load + template resolution, 1–3 typical prompts, multi-turn chat, absence of abnormal warnings/NaNs, image/projector checks only if used. Gemma 4 model names and capabilities on new upstream should be source-reviewed, not assumed from passing Qwen3.8 tests.
+3. **Representative long-context and stability gates** at the *user's actually used/context-supported* length(s), starting from a cheap 32k control and extending only where memory and native model context allow; monitor peak UMA/dedicated/shared usage, ADLX power and thermals. No automatic 128k+ on an unvalidated model.
+4. **A/B throughput and qualitative output comparisons** for each model under matched conditions: PP, TG, output quality/task compliance, prompt-template behavior, deterministic repetition where meaningful, quant-specific errors, and power-state consistency. The models are not expected to generate bit-identical text across different llama.cpp versions; identify obvious regressions rather than requiring SHA identity.
+5. **Replacement decision: per model and rollback-safe.** Only replace the b10919 executable used for a model if the integrated build provides acceptable correctness, stability and performance on that model. If one Gemma 4 variant fails, **keep b10919 for that variant** while the integration branch continues separately. Model GGUFs and benchmark plans are not overwritten. Do not conflate new Qwen3.8 Stage-B/flatten MTP flags with Gemma execution.
+
+**Status:** planning note only — **no Gemma 4 31B/26B native runs yet on the new integration candidate**, no swap has occurred. This gate is **after** the integrated candidate's initial Vulkan correctness, not a reason to delay or confound current research diagnostics.
+
+---
+
 ## User-selected order and timing
 
 1. **Now, 2026-10-19: finish the existing Vulkan `mtp_eh_proj` flatten RGP** (B ON first, optionally same-binary A OFF). Then investigate **numerical Draft K/V-state correctness** and continuation/rollback. Only promote Stage B / flatten if its individual correctness gates pass.
