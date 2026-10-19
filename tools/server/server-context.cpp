@@ -4570,8 +4570,8 @@ private:
 
                         slot.prompt.tokens.keep_first(ckpt.n_tokens);
                         common_sampler_copy(smpl_save.get(), slot.smpl.get());
-                        ++slot.rollback_diag_restores;
                         if (mtp_rollback_diag_enabled()) {
+                            ++slot.rollback_diag_restores;
                             std::fprintf(stderr,
                                 "mtp_rollback_diag_v1 event=checkpoint_restore tag=%s slot=%d round=%llu rollback=%u keep=%lld restores=%llu\n",
                                 mtp_rollback_diag_tag(), slot.id, (unsigned long long) slot.rollback_diag_round,
@@ -4599,10 +4599,10 @@ private:
                 n_accepted--;
             }
             slot.spec_is_replay = false;
-            if (was_replay) {
-                ++slot.rollback_diag_replay_commits;
-            }
             if (mtp_rollback_diag_enabled()) {
+                if (was_replay) {
+                    ++slot.rollback_diag_replay_commits;
+                }
                 std::fprintf(stderr,
                     "mtp_rollback_diag_v1 event=commit tag=%s slot=%d round=%llu accepted=%zu replay=%d replay_commits=%llu restores=%llu\n",
                     mtp_rollback_diag_tag(), slot.id, (unsigned long long) slot.rollback_diag_round,
