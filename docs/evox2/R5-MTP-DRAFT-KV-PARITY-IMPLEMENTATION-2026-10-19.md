@@ -2,7 +2,7 @@
 
 > **Historical 2026-10-19 build correction (now resolved):** Earlier version referenced nonexistent `common_batch::token::is_prompt` and failed compiling `common/speculative.cpp:1659`. Fixed in commits `e161d313` (server prompt-phase propagation) and `3c437e6e` (Draft hook). Windows b11682 has since built and completed short/64k/128k native runs. This historical note is not a current blocker.
 
-**Status (updated 2026-10-19 ~22:08 JST): native Windows Vulkan b11682 built successfully; short, 64k, and 128k C/A/B Draft attention K/V equality gates all PASSED bitwise at every compared position, and ordinary 512-token generation text/acceptance match at 64k/128k. NOT YET validated: serialized recurrent/indexer state equivalence, forced speculative accept/reject/rollback, other backends or quantizations. Diagnostic PP/TG are not performance measurements.**
+**Status (updated 2026-10-19, after 128k runs): native Windows Vulkan b11682 built successfully; short, 64k and 128k C/A/B Draft attention K/V parity PASSED bitwise, and user-reported whole serialized Draft seq-state SHA256 comparisons also matched across C/A/B at all three 128k checkpoints. Generated text and acceptance match at 64k/128k. Still untested: deliberately exercised speculative accept/reject/rollback and replay/continuation invariants, backends other than Vulkan and alternative quantizations. These diagnostic PP/TG timings are not performance results.**
 
 ## Scope / baseline safety
 
@@ -246,3 +246,19 @@ $checks | Format-Table Threshold, C_vs_A, A_vs_B -AutoSize
 ```
 
 Keep the printed checks and SHA256 values. If all rows are `True`, the entire serialized attention/recurrent/(optional indexer) state is bitwise equal in this serialization. If any are `False`, proceed to structured state comparison **before** interpreting the divergence. Post-prefill replay and forced rollback remain open even if every full state hash matches.
+
+## 2026-10-19 follow-up: complete serialized Draft sequence-state hashes also match
+
+After the 128k numeric K/V comparisons above, user ran the documented PowerShell SHA256 comparison **without rerunning inference**, against local files in `build-vulkan-r5-mtp-kv-parity/bin/Release/kv-parity-output/128k`. Code matched exactly one file per arm/threshold (the command throws otherwise), calculated `Get-FileHash -Algorithm SHA256` on the **entire** `.bin` file and compared C vs A and A vs B.
+
+| Saved threshold | Whole seq-state SHA256 C=A | Whole seq-state SHA256 A=B | Interpretation |
+| ---: | --- | --- | --- |
+| 32,768 | **True** | **True** | bit-identical serialized state across all three arms |
+| 65,536 | **True** | **True** | bit-identical serialized state across all three arms |
+| 126,253 | **True** | **True** | bit-identical serialized state across all three arms |
+
+**Evidence provenance:** equality booleans were pasted from the user's local PowerShell output; the **actual 64-character hashes and large `.bin` files were not uploaded**, so this is a reported result rather than an independent recomputation. The independently analyzed six JSON numeric attention K/V comparisons, native ZIP condition fingerprints and generated output/acceptance are recorded above.
+
+The public `llama_state_seq_save_file` captures the Draft memory module, which for this model includes the attention K/V cache plus the recurrent state and any optional indexer-state suffix. Byte-identical **complete serialized files** mean the saved contents *and serialization metadata* agree, so no separate parser for trailing recurrent/indexer state is needed for **these captured 128k checkpoints**. This does not imply that any un-serialized process-internal structures, sampler RNG state or later speculative accept/reject/rollback flows are identical.
+
+**Updated correctness gates:** prefill Draft numerical attention K/V parity **PASS through 128k**; all-saved Draft memory-state parity **PASS through 128k (user-computed SHA256)**; 512-token ordinary output and acceptance **MATCH**; deliberate rejection, rollback, replay, and post-prefill continuation consistency **NOT YET TESTED**. Next recommended task: implement/test controlled deterministic speculative reject/rollback and compare C/A/B (and optional MTP-OFF negative control) before promoting Stage-B/flatten from experimental to accepted integration components. No newupstream integration source or stable patch has been changed by this note.
