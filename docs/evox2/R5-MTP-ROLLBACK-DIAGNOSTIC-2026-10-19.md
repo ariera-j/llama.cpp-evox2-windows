@@ -1,6 +1,6 @@
 # r5 MTP rollback / replay correctness diagnostic — 2026-10-19
 
-**Status updated 2026-10-19 ~23:40 JST: b11695 short Natural, Reject-zero, Reject-after-one C/A/B all PASS. Accept-all (1,1): 41/43 full-accept rounds and the entire C/A/B output and event stream MATCH, but two unexpected 0/2 rejects (rounds 31 and 37) each caused checkpoint restore/replay. Therefore strict no-rejection Accept-all gate is NOT PASS (source's drafted EOG guard is a likely cause, not yet logged/verified). 64k rollback tests remain OPEN; no optimization-induced divergence observed.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
+**Status updated 2026-10-20 ~00:06 JST: b11695 short Natural, Reject-zero, Reject-after-one C/A/B all PASS; short Accept-all (1,1) C/A/B parity PASS but strict all-accept gate not PASS (two suspected drafted-EOG exclusions). **64k Natural C/A/B also PASS:** 52 exactly identical ordered Draft verification rounds, 75/104 accepted, 128-token output identical, P-MODE/ADLX Performance. **64k forced Reject-after-one checkpoint restore/replay remains OPEN**; no optimization-induced divergence observed.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
 
 - Branch: `investigation/r5-mtp-rollback-diagnostic-20261019`, forked from `investigation/r5-mtp-draft-kv-parity-20261019`.
 - Preserve b11682 and its 128k raw snapshots. Do **not** overwrite `build-vulkan-r5-mtp-kv-parity`.
@@ -255,4 +255,34 @@ All event objects compared after excluding only `tag` and `slot`: **identical ev
 **Judgment:** Accept-all **C/A/B deterministic parity and the real full-accept branch have been exercised and passed**, but the stricter “no rejected token anywhere; no restore anywhere” coverage test **remains not passed**, by design of the fail-closed analyzer. The two exceptions also independently verify stable forced rollback and replay for C/A/B. Synthetic output cannot be used for model quality and timing is diagnostic only.
 
 **Recommended next:** Since 41 independent full-accept rounds have already exercised the intended accept-all branch and no C/A/B divergence was found, proceed with the unchanged **`rollback-64k` Natural** case first, then forced partial reject `rollback-64k` Reject-after-one, while carrying a clearly labeled **Accept-all clean-run exception**. Do not claim all 4 short gates are strict PASS. Optional later enhancement: add opt-in structured `event=eog_guard token=<id> round=<n>` at the synthetic verifier, then repeat only Accept-all once if direct proof of why the two rejections occurred is required for integration sign-off. That enhancement would require a new compile and preserve the b11695 control binary untouched.
+
+## 2026-10-20 ~00:05 JST: 64k Natural C/A/B native PASS
+
+**Archive read locally and analyzed:** `20261020-000104-424-cli-vulkan-b11695-ctx65536-4d3c455d8815.zip`. SHA256 **`a1588c9eb7d2da389ae4ea54d5d5a4b6de2054f69879d1f7e7ee8ee8e187ac03`**, containing all three runs:
+
+- C: `20261019-235227-501-cli-vulkan-b11695-ctx65536-6394c63ee050`;
+- A: `20261019-235649-974-cli-vulkan-b11695-ctx65536-494431ae5741`;
+- B: `20261020-000104-424-cli-vulkan-b11695-ctx65536-4d3c455d8815`.
+
+Independently examined `conditions.json`, `result.json`, `stderr.log`, `stdout.log` for every child. **All OK / exit0**, no observed error/abort/assert lines, same **b11695 / `5a5af4b949d0d481229a8ee1a0310c1f5d98c9f9`**, exact executable SHA256 **`6cc24550d7b3d7f4c54f5570b91bf662b7fdd7b79f0e2ed97210109ab48c4f5e`**, verified runtime-artifact digest **`96eeb77cf15d4f398043e459d945766a33d408d550a5090ac88d3dfcf5f13064`**. C/A/B used identical 61,789-token real-input content SHA256 **`2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`**, same PLE16 Target and MTP Q8_0 Draft identity (paths, byte sizes, timestamps; **model full-file SHA256 was not captured**), context65536, batch2048/ubatch1024, f16 K/V, seed1234/temp0, `--ignore-eos`, QSA union ON, `LLAMA_MTP_ROLLBACK_DIAG=1`, `LLAMA_MTP_ROLLBACK_FORCE_CKPT=0`, **no** `--spec-synth-rates`. C/A/B Stage-B/flatten flags = 0/0, 1/0, 1/1. All 3 P-MODE probes show **Performance** at start and finish; ADLX high-load class **Performance-like** and consistent (mean 110.299, 111.250 and 111.271 W). Same local `Source.Dirty=true` harness fingerprint `13afa3188e82c7377ad0ebbfc9fd763b6df3b7a910ec24fb6370f91618bb3568`, with only the previously documented P-MODE/ADLX measurement tools in porcelain status. No local inference-source differences shown.
+
+| Observation (diagnostic run, do not treat as speed benchmark) | C | A | B |
+| --- | ---: | ---: | ---: |
+| Prompt / generated | 61,789 / 128 | 61,789 / 128 | 61,789 / 128 |
+| Draft accepted / generated | **75 / 104** | **75 / 104** | **75 / 104** |
+| Draft/decision/commit events | **52 / 52 / 52** | **52 / 52 / 52** | **52 / 52 / 52** |
+| 2/2 full accept original rounds | **30** | **30** | **30** |
+| 1/2 partial accept original rounds (rollback=1) | **15** | **15** | **15** |
+| 0/2 full reject original rounds (rollback=2) | **7** | **7** | **7** |
+| Checkpoint restore / replay commit | **0 / 0** | **0 / 0** | **0 / 0** |
+| Ordered structured events including init | **157** | **157** | **157** |
+| Diagnostic PP tok/s | 313.92 | 326.77 | 329.98 |
+| Diagnostic TG tok/s | 28.95 | 29.61 | 29.84 |
+| P-MODE / ADLX class | Performance / Performance-like | Performance / Performance-like | Performance / Performance-like |
+
+**Cryptographic evidence of C/A/B parity:** after discarding only `tag` and `slot` fields from structured `mtp_rollback_diag_v1` event records, all **157 ordered events** matched exactly: canonical JSON-lines SHA256 `b82ef6eb97358d7d1f611b79a1c933fdc7118ce212cc93466c5edb779e3fbab7`. Ordered decision-only events SHA256 `dee823e5736c185543477e4a8955d27cedb1653c6a23524345cb9b03211fae67`. Entire stdout, normalized only for CRLF and volatile Prompt/Generation throughput footer, SHA256 **`7f45904e7cd3b032b6b9ec0a75cdc1cb906ea87701f6081f495fd11074f6d1a5`**, is identical across arms. These are independently recomputed from the uploaded archive in the assistant environment.
+
+**Interpretation:** for the tested 64k real prompt, normal target verification generated the same 128-token response and **every** per-round Draft accept/reject decision at all 52 rounds for C/A/B. This is a strong *long-context generation continuation* correctness gate. Of the 52 rounds, 22 did require partial sequence rollback, but **none took the explicit Target/Draft checkpoint restoration/replay branch** because forced checkpoint mode was disabled (`checkpoint=0`). Synthetic accept/reject and forced checkpoint restore in the 64k KV regime remain a separate gate.
+
+**Next P0:** run the existing `-OnlyJob rollback-64k -OnlyCase reject-after-one` **with the exact retained b11695 binary** and existing config. This sets `--spec-synth-rates 1,0` and `LLAMA_MTP_ROLLBACK_FORCE_CKPT=1`; it should exercise the actual checkpoint restore and replay at long KV depth. Compare C/A/B output and full structured event traces, not merely counters or exit0; existing trace analyzer should fail closed if coverage missing. Native time and memory cost likely substantial because Target and Draft state are serialized repeatedly; do not treat PP/TG as performance. If any native error/mismatch occurs, stop before further tests; **do not launch 128k forced rollback by default**. Still record short Accept-all's two suspected EOG-guard exceptions (strict no-rollback gate open).
 
