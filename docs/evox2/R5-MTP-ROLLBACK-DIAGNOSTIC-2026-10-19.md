@@ -1,6 +1,6 @@
 # r5 MTP rollback / replay correctness diagnostic — 2026-10-19
 
-**Status updated 2026-10-19 ~23:31 JST: native Windows Vulkan b11695 short Natural C/A/B PASSED, synthetic Reject-zero (0,0) PASSED with 63 restores/replays per arm, and synthetic Reject-after-one (1,0) PASSED with 42 restores/replays per arm (41 partial accept+reject and one full reject). Accept-all (1,1) and 64k rollback tests remain OPEN.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
+**Status updated 2026-10-19 ~23:40 JST: b11695 short Natural, Reject-zero, Reject-after-one C/A/B all PASS. Accept-all (1,1): 41/43 full-accept rounds and the entire C/A/B output and event stream MATCH, but two unexpected 0/2 rejects (rounds 31 and 37) each caused checkpoint restore/replay. Therefore strict no-rejection Accept-all gate is NOT PASS (source's drafted EOG guard is a likely cause, not yet logged/verified). 64k rollback tests remain OPEN; no optimization-induced divergence observed.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
 
 - Branch: `investigation/r5-mtp-rollback-diagnostic-20261019`, forked from `investigation/r5-mtp-draft-kv-parity-20261019`.
 - Preserve b11682 and its 128k raw snapshots. Do **not** overwrite `build-vulkan-r5-mtp-kv-parity`.
@@ -218,4 +218,41 @@ These digests were computed from this attached archive; the digest convention is
 **Outcome:** forced first-accept / second-reject C/A/B **PASS** with complete checkpoint restore and replay coverage, exact event streams, exact normalized output, same executable and environment. The one 0/2 decision confirms the run ALSO traversed an all-reject path; it is not a failed expected-probability test. Synthetic outputs are **not** valid-quality samples, and diagnostic PP/TG must not be used to claim optimization.
 
 **Next:** run short `accept-all` (1,1) C/A/B using the **same existing b11695 binary**. Its analyzer must check `checkpoint_restore=0`, `replay_commit=0` and full acceptance on original decisions (except any special EOG token can cause a fail-closed negative result to investigate). Only if all four short scenarios (Natural, Reject-zero, Reject-after-one, Accept-all) PASS, proceed to selected 64k Natural then 64k Reject-after-one (not 128k unless necessary).
+
+## 2026-10-19 ~23:39 JST: synthetic Accept-all (1,1) — C/A/B parity PASS, strict clean accept-all gate FAIL
+
+**The distinction matters:** C/A/B behaved identically and the no-rollback, 2/2-full-accept execution path was exercised **41 times per arm**. Nevertheless, `--spec-synth-rates 1,1` did **not** produce 100% draft acceptance. On exactly two rounds it rejected 0/2 tokens and restored checkpoints; the existing `analyze_mtp_rollback.py --scenario accept-all` deliberately treats **any** rejection/restore as a **strict FAIL**. Do not report that strict all-accept test as PASS.
+
+**Source ZIP independently opened:** `20261019-233802-554-cli-vulkan-b11695-ctx32768-8a93b20ba56e.zip`, SHA256 `1a3825a4450aece55c1f46bd618dff4617877437ccaf49436d1b9e113fbe8bee`. It contains all three Windows Vulkan native children:
+
+- C (Stage-B OFF, flatten OFF): `20261019-233554-125-cli-vulkan-b11695-ctx32768-b6f19ad1ee90`;
+- A (Stage-B ON, flatten OFF): `20261019-233658-399-cli-vulkan-b11695-ctx32768-094290f724f9`;
+- B (Stage-B ON, flatten ON): `20261019-233802-554-cli-vulkan-b11695-ctx32768-8a93b20ba56e`.
+
+All three runs: status OK / exit0, `b11695` identical executable SHA256 `6cc24550d7b3d7f4c54f5570b91bf662b7fdd7b79f0e2ed97210109ab48c4f5e`, runtime digest `96eeb77cf15d4f398043e459d945766a33d408d550a5090ac88d3dfcf5f13064`, same target/Draft model and input identities, `163` input / `128` output tokens, seed1234/temp0, f16 K/V, `--spec-synth-rates 1,1`, opt-in `LLAMA_MTP_ROLLBACK_DIAG=1` and `LLAMA_MTP_ROLLBACK_FORCE_CKPT=1`, identical user-supplied local P-MODE Performance at start/finish. Only Stage-B/flatten flags/tag varied as intended. Neither crash nor logged error was observed.
+
+| Native observation | C | A | B |
+| --- | ---: | ---: | ---: |
+| Synthetic Draft rounds | 43 | 43 | 43 |
+| Original decisions with 2/2 full acceptance | **41** | **41** | **41** |
+| Original decisions with 0/2 rejection | **2** | **2** | **2** |
+| Rejecting round IDs | 31 and 37 | 31 and 37 | 31 and 37 |
+| Forced checkpoint restore events | **2** | **2** | **2** |
+| Replay decision / replay commit | **2 / 2** | **2 / 2** | **2 / 2** |
+| Native `DraftAccepted / DraftGenerated` | **82 / 86** | **82 / 86** | **82 / 86** |
+| Trace events including init | **134** | **134** | **134** |
+| Normalized generated `stdout.log` | identical | identical | identical |
+| Status and P-MODE | OK / Performance | OK / Performance | OK / Performance |
+| Diagnostic PP tok/s | 272.56 | 274.81 | 278.22 |
+| Diagnostic TG tok/s | 38.71 | 39.18 | 39.10 |
+
+Exactly 41 rounds contain `draft(size=2)` → `decision(accepted=2,rollback=0)` → `commit(replay=0)`. Round 31 and round 37 follow `draft(size=2)` → `decision(accepted=0,rollback=2)` → `checkpoint_restore` → `decision(replay=1)` → `commit(replay=1)`. Both histories and positions are identical across all arms.
+
+All event objects compared after excluding only `tag` and `slot`: **identical event stream** in C/A/B, canonical SHA256 `5dea3d633fd9afc7ad151712698fbe6c3e8dd1a2f8dfceb419dd0fa89fa8fffd`; normalized stdout (CRLF→LF and remove dynamic Prompt/Generation footer only) byte-identical SHA256 `f8720df31712fe94898f07f6b1a294de3ac9aec49da79f823d4b968c87039416`.
+
+**Likely cause and precise confidence:** In `tools/server/server-context.cpp`, `server_sample_and_accept_synth` deliberately blocks accepting a *drafted* EOG token, even if `--spec-synth-rates=1,1`. The `--ignore-eos` CLI flag does not bypass this explicit synthetic verifier EOG guard. At 100% synthetic rate, these two 0/2 rejections are consistent with first-draft EOG. However, the current `mtp_rollback_diag_v1` event schema **does not log the rejected draft token ID or `llama_vocab_is_eog`**, so EOG is a **well-supported hypothesis, not a proven diagnosis**. Do not label it confirmed EOG or optimization bug from the existing logs.
+
+**Judgment:** Accept-all **C/A/B deterministic parity and the real full-accept branch have been exercised and passed**, but the stricter “no rejected token anywhere; no restore anywhere” coverage test **remains not passed**, by design of the fail-closed analyzer. The two exceptions also independently verify stable forced rollback and replay for C/A/B. Synthetic output cannot be used for model quality and timing is diagnostic only.
+
+**Recommended next:** Since 41 independent full-accept rounds have already exercised the intended accept-all branch and no C/A/B divergence was found, proceed with the unchanged **`rollback-64k` Natural** case first, then forced partial reject `rollback-64k` Reject-after-one, while carrying a clearly labeled **Accept-all clean-run exception**. Do not claim all 4 short gates are strict PASS. Optional later enhancement: add opt-in structured `event=eog_guard token=<id> round=<n>` at the synthetic verifier, then repeat only Accept-all once if direct proof of why the two rejections occurred is required for integration sign-off. That enhancement would require a new compile and preserve the b11695 control binary untouched.
 
