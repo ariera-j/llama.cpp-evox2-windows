@@ -1,6 +1,6 @@
 # r5 MTP `mtp_eh_proj` flatten prototype and measurement plan — 2026-10-16
 
-**Status (updated 2026-10-19): Vulkan short, 64k/128k ABBA and focused flatten-ON RGP Event timing COMPLETE; same-binary flatten-OFF RGP optional; numerical Draft K/V correctness and rollback gates OPEN before integration. See the 2026-10-19 section below.**
+**Status (updated 2026-10-19 20:22): Vulkan short, 64k/128k normal ABBA and same-binary flatten OFF/ON RGP Event timing COMPLETE. Flatten moves main Q8 GEMM from ~56–58ms to ~4ms and Draft graph from ~61–64ms to ~9.3ms per 1024-token sampled GPU graph. Numerical Draft K/V correctness and rollback gates OPEN before integration; see the 2026-10-19 sections below.**
 
 ## Branch and scope
 
