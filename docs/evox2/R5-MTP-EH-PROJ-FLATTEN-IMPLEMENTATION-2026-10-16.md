@@ -467,3 +467,60 @@ RGP questions:
 
 If B is clear, same-binary A-flat-off RGP is optional. After GPU attribution,
 move to the numerical Draft K/V correctness gate before merge/integration.
+
+## 2026-10-19 Vulkan flatten-ON RGP closure and profiling-overhead reference
+
+**Status: focused flatten-ON RGP Event timing visually captured; numerical Draft K/V equality and same-binary flatten-OFF RGP remain open.** This is an evidence checkpoint based on the uploaded native 64k ZIPs and five consecutive top-to-bottom RGP Event timing screenshots; the raw `.rgp` file was **not** supplied. The RGP export's SQTT warning state and shader pipeline VGPR/occupancy have **not** been confirmed from the screenshots.
+
+### Same-binary run provenance and timings
+
+All native runs used the **same** compiled Vulkan b11659-c192befce, SHA256 `317d76e3d915c766397c076375438602a2c238d60ccefbd0da079e63a28c5009`, verified runtime digest `0b8087e7c2a1ac99a6223c576dc5d6f9c19b77d2e61f3ac63bebd298333b56f8`; identical command, arguments, model/Draft/input identities, effective conditions and environment. Both runs: 61,789 input, 512 output; 64k context; f16 KV; 96GB UMA; Vulkan QSA union ON/minKV32768; MTP Stage-B `LLAMA_MTP_DRAFT_PREFILL_KV_CROP=1` and flatten `LLAMA_MTP_EH_PROJ_FLATTEN=1`; dispatch trace `GGML_VK_MTP_PP_RGP_DISPATCH_TRACE=1`, RGP role markers `GGML_VK_MTP_PP_RGP_MARKERS=1`, phase trace `LLAMA_MTP_PP_TRACE=detail`; P-MODE Performance at start/finish; consistent ADLX. Native ZIPs contain logs, not the `.rgp` binary.
+
+| Cohort | ZIP run ID | SHA256 of uploaded ZIP | PP tok/s | Prompt seconds | TG tok/s | ADLX GPU high-load avg |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| 2026-10-16 untraced ABBA B-flat-on mean | 64k B1/B2; retained report above | refer to prior report | **349.390** | **176.847565** | separate per-arm values above | Performance-like |
+| 2026-10-19 19:40 diagnostic trace, **no RGP capture** | `20261019-194034-647-cli-vulkan-b11659-ctx65536-024dd180ad0f` | `a080a377a386cd6f9c85b8a36cf6c2227688bb0495a4f38db8343faaf1ecaabf` | **330.50** | **186.955460** | 28.48 | **109.333 W** |
+| 2026-10-19 19:53 diagnostic trace **with RGP capture** | `20261019-195315-755-cli-vulkan-b11659-ctx65536-024dd180ad0f` | `0130198b570c4ec431eb09bbc1484d570830196d3af2feef39e4a62d2584fdb3` | **312.20** | **197.911840** | 28.37 | **110.719 W** |
+
+Both 10/19 runs: native `Status=OK`, exit 0, accepted **295/430**; MTP mode Performance -> Performance, no warnings. The exact model/output and environmental identities are equal between the two diagnostic runs, including monitor and tracing flags. The measured PP rate differences are **reference observations, not isolation-proven causal overhead**:
+
+| Comparison | PP-rate difference | Prompt-time difference | Prompt-time ratio |
+| --- | ---: | ---: | ---: |
+| Trace-only vs normal ABBA B mean | **-5.41%** | **+10.108 s** | +5.72% |
+| Trace+RGP vs normal ABBA B mean | **-10.64%** | **+21.064 s** | +11.91% |
+| Trace+RGP vs trace-only | **-5.54%** | **+10.956 s** | +5.86% |
+
+Important: “trace-only” still had **RGP role markers enabled and the dispatch/phase trace enabled**; it means only that **Radeon Developer Panel did not capture an RGP**. This is not a factorial test for each individual marker/trace. Inter-run GPU/runtime variation and profiling-arm state are not controlled by randomized repetitions. The ABBA reference was on 10/16, so cross-day differences must **not** all be attributed to instrumentation. RGP observations and timings are **never** substituted for the untraced ABBA PP benefit.
+
+### Draft dispatch and RGP screenshots
+
+Both 10/19 diagnostic `stderr.log` sets contain **986 contiguous graph records**, and the targeted interval near ~51k prompt tokens is exactly:
+
+```text
+EVOX2_MTP_GRAPH role=draft [215195, 215215) 20 dispatch / 32 nodes
+EVOX2_MTP_GRAPH role=draft [215215, 215235) 20 dispatch / 32 nodes
+```
+
+The RDP Auto capture setting used: **Dispatch range start 215180, count 64, SQTT High**. The five supplied Event timing screenshots traverse both Draft graphs from top to bottom, exposing a full event tree including HC and K/V write paths. Exact **RGP screenshot-derived** local timings:
+
+| Event | Flatten-ON Draft 1 | Flatten-ON Draft 2 |
+| --- | ---: | ---: |
+| `EVOX2_MTP_GRAPH role=draft` inclusive duration | **9,237.963 us (9.238 ms)** | **9,369.707 us (9.370 ms)** |
+| `MUL_MAT node_10` parent / `EVOX2_MTP_MATMUL` group | **4,678.655 us** | **4,751.532 us** |
+| `quantize_q8_1_x4 (81920,1,1)` | **634.449 us** | **705.248 us** |
+| `matmul_q8_0_q8_1_1 (40,64,1)` main kernel | **4,042.842 us** | **4,045.548 us** |
+| `FLASH_ATTN_EXT` inside these Draft graphs | **not present** | **not present** |
+| K/V cache-write evidence | visible `SET_ROWS mtp_draft_cache_write_v` | visible `SET_ROWS mtp_draft_cache_write_v` |
+
+Previous *different-binary* b11618 unflattened Stage-B RGP around ~50–52k KV was Draft inclusive **61,661.875 / 63,845.977 us** and unflattened Q8 main **56,509.501 / 58,642.678 us**, dispatch `(80,1,1024)`. Against those historical local event times, the new main kernels are ~**92.85% / 93.10% shorter**, and the Draft graph durations ~**85.02% / 85.32% shorter**. **These are cross-binary RGP indications, not a same-binary causal GPU A/B.**
+
+Shape inference: current `MUL_MAT node_10` is consistent with the flattened `mtp_eh_proj` (5120 input rows flattened to 4096 HC-token columns); the source model predicted `(20,32,1)` only for a 128x128 tile, while the actual `(40,64,1)` indicates the backend selected a different workgroup tile. The screenshots did **not** literally label `node_10` as `mtp_eh_proj`; source/shape or an OFF counterpart should validate its exact identity. Do not report pipeline occupancy or VGPR until viewing the relevant Pipeline state tab.
+
+All five screenshots together include HC-mix kernels and K/V write nodes and show **no Draft `FLASH_ATTN_EXT`** in the two captured zero-output Draft graphs. This confirms Stage-B FA pruning persists with flatten ON in the sampled RGP interval, **not** Draft K/V numerical equivalence or universal absence in generation-time graphs. The inclusive group and nested Q8/quantize events must **not** be added together as independent time.
+
+### Implication, controls and next action
+
+The roughly 50ms/1024 Draft difference compared with b11618 is consistent in scale with **2.451s** saved over 61,789 prompt tokens in the normal same-binary 64k ABBA, but exact integration/scheduler overlap prevents using local RGP as an additive PP decomposition. The decisive same-binary PP evidence remains +1.386% at 64k and +1.397% at 128k.
+
+**Next recommended step:** a bounded **same-binary A-flat-off RGP** near the identical ~51k KV depth if the user wants to turn this cross-binary GPU comparison into a direct control; remeasure A's dispatch indexes and use only the prepared A variant. It is acceptable to stop RGP after the two clearly measured ON graphs and proceed directly to **numerical Draft K/V parity**, continuation and rollback if GPU instrumentation time is better spent elsewhere. Preserve the b11659 executable. Numerical K/V correctness remains a prerequisite to any source integration.
+
