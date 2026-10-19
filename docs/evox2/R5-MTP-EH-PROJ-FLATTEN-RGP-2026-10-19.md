@@ -62,3 +62,33 @@ A source-control run `LLAMA_MTP_EH_PROJ_FLATTEN=0` completed normally on the **s
 
 **Target→Draft compute-idle interval**: B Wavefront occupancy screenshot shows approximately 40–45ms with no visible compute wavefronts between late Target and Draft work. The source in `common_speculative_impl_draft_mtp::process()` calls `llama_get_embeddings_nextn(ctx_tgt)`, prepares an embedding batch on the host, then calls `llama_process(ctx_dft,...)`; host synchronization, target hidden-state readback, copy or submit latency are candidate contributors. The GPU Compute timeline **cannot show CPU work or uniquely attribute a DMA transfer**. At prompt `end_pos=51199`, A CPU phase trace had `hidden_get_us=3309910, draft_us=94569, prepare_us=19, verify_copy_us=22434`; B trace-only had `hidden_get_us=3242438, draft_us=42064, prepare_us=18, verify_copy_us=22595`. `hidden_get_us` **includes waiting for previously queued Target GPU compute**, so it is not 3.3s of CPU-only processing and cannot be equated with the local RGP idle gap. A host/GPU timestamp correlation would be needed to distinguish CPU, sync, memcpy or GPU queue idleness. Do not branch into that optimization before the current A RGP and Draft K/V numerical correctness gate.
 
+## 2026-10-19 20:22 — same-binary A-flat-off RGP closes flatten GPU attribution
+
+**Evidence:** Seven uploaded RGP Event timing / Pipeline state / Wavefront occupancy screenshots plus native diagnostic ZIP `20261019-202229-773-cli-vulkan-b11659-ctx65536-30acd689bd50.zip`, SHA256 `cd19ed5c54d3c6540efd33a570695e801ede2043a36a651d727cca3ec6a5bd1e`. The raw `.rgp` file was not uploaded, so source is screenshot-derived events rather than an exported machine-readable GPU trace. All A/B RGP captures were made using the *same b11659-c192befce*, exe SHA256 `317d76e3d915c766397c076375438602a2c238d60ccefbd0da079e63a28c5009`, runtime artifact digest `0b8087e7c2a1ac99a6223c576dc5d6f9c19b77d2e61f3ac63bebd298333b56f8`; same model/input/MTP Stage B ON/64k (61,789 actual tokens)/f16 KV/QSA union minKV32768/ubatch1024, same debug/trace flags, effective flatten OFF on A vs ON on B. Both user-supplied RGP event trees sample the same two zero-output 1024-token Draft graphs around 51–53k prompt/KV. Graph dispatch intervals are identical `[215195,215215)` and `[215215,215235)` (20 each; A 30 graph nodes, B 32 reshape-related nodes). User RDP settings Start215180/Count64/SQTT High.
+
+### Direct controlled GPU measurements (microseconds)
+
+| Event from Event timing | A OFF Draft 1 | B ON Draft 1 | A OFF Draft 2 | B ON Draft 2 |
+| --- | ---: | ---: | ---: | ---: |
+| `EVOX2_MTP_GRAPH role=draft` inclusive | **61,014.624** | **9,237.963** | **63,890.600** | **9,369.707** |
+| `MUL_MAT mtp_eh_proj-48` / B `MUL_MAT node_10` parent inclusive | **56,507.117** | **4,678.655** | **59,145.802** | **4,751.532** |
+| `quantize_q8_1_x4` | 640.590 | 634.449 | 656.664 | 705.248 |
+| main Q8 matmul dispatch | **55,865.803** | **4,042.842** | **58,487.483** | **4,045.548** |
+| main dispatch | `matmul_q8_0_q8_1_0 (80,1,1024)` | `matmul_q8_0_q8_1_1 (40,64,1)` | `(80,1,1024)` | `(40,64,1)` |
+
+Each A graph has an explicitly named `MUL_MAT mtp_eh_proj-48`. In B that source projection is reshaped into `MUL_MAT node_10`; the same surrounding graph sequence, quantize node and flattened shape support identifying it as the corresponding projection. Main Q8 kernel reductions **92.763% / 93.083%** (13.82x / 14.46x faster); entire Draft graph reductions **84.859% / 85.335%** (6.61x / 6.82x faster). Per Draft graph **51.777ms / 54.521ms** less inclusive GPU time; main Q8 reduction **51.823ms / 54.442ms**, accounting for almost the full graph reduction. Rest-of-graph envelope (`Draft inclusive - main Q8`) stays approximately **5.149/5.403ms A vs 5.195/5.324ms B**; this difference is descriptive and does not establish an exact exclusive operator-time decomposition.
+
+**Kernel Pipeline state**, same-binary: A wave32, VGPR **256/256**, SGPR **48/128**, LDS **10240B**, no spill, theoretical occupancy **3/16 (LDS-limited)**; B wave32, VGPR **185 used/192 allocated**, SGPR **45/128**, LDS **20480B**, no spill, theoretical occupancy **6/16 (LDS-limited)**. Dispatch group size also changes (A 32 threads/workgroup, B 128). Occupancy correlates with much better tile shape and GEMM performance but is not by itself proven causal.
+
+Both sampled Stage-B Draft graphs retain cache-write events and **no FLASH_ATTN_EXT** appears in the inspected whole trees; these observations do **not** certify numerical Draft K/V equality or ensure generation-time Draft graphs omit attention.
+
+### Native A capture result and instrumentation reference
+
+A capture 20:22 status OK, exit0, MTP accepted **295/430**, generated512, P-MODE Performance→Performance, ADLX high-load average **111.354W / Performance-like**, PP **309.14 tok/s** / prompt **199.876480s**, TG **28.38 tok/s**. A trace-only 20:10 (identical source/args/env, no RGP capture): PP **326.56 tok/s / 189.213430s**. Compared to its same-arm trace-only run, A captured PP rate was **-5.33%** and prompt time **+10.663s (+5.64%)**. Compared with 10/16 normal ABBA A mean **344.615 tok/s**, A trace+RGP is **-10.29%**; cross-day, nonrandomized descriptive only. Similar B trace-only **330.50** vs trace+RGP **312.20** (-5.54%); normal B ABBA mean **349.390**. Profiling runs are *not* new performance baselines and changes cannot be causally attributed exclusively to RGP given possible between-run variation.
+
+### Closure and next action
+
+**Mechanism/RGP gate PASSED for the tested Windows Vulkan 64k Stage-B zero-output Draft path:** shape flattening moved narrow batched `eh_proj` Q8 GEMM into large unbatched Vulkan GEMM, saving ~52–54ms of GPU time per observed 1024-token Draft graph while retaining the FA-bypassed cache-write path. The independent *normal*, marker-free same-binary ABBA still establishes whole-prompt PP gain **+1.386% at 64k / +1.397% at 128k**; do not confuse RGP-local 6.7x Draft speed with whole-inference PP speed.
+
+**Stop GPU profiling for now. Next required gate before integration: numerical K/V correctness and continuation/rollback** across (C) Stage-B OFF, (A) Stage-B ON/flatten OFF, (B) Stage-B ON/flatten ON. Existing text/acceptance identity is insufficient. This report is *not* a declaration that any experimental source is integrated into pinned r5.
+
