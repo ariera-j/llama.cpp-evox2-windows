@@ -2,7 +2,7 @@
 
 > **2026-10-19 build correction:** Earlier version referenced nonexistent `common_batch::token::is_prompt` and failed compiling `common/speculative.cpp:1659`. Fixed in commits `e161d313` (server prompt-phase propagation) and `3c437e6e` (Draft hook). Pull latest branch commit before retrying. No native compile success is asserted yet.
 
-**Status: diagnostic source, C/A/B benchmark plan, Python numerical comparator and synthetic regression tests COMMITTED. Windows Vulkan native compilation and model execution NOT YET PERFORMED; no correctness verdict and no speed claim.**
+**Status (updated 2026-10-19 ~22:08 JST): native Windows Vulkan b11682 built successfully; short, 64k, and 128k C/A/B Draft attention K/V equality gates all PASSED bitwise at every compared position, and ordinary 512-token generation text/acceptance match at 64k/128k. NOT YET validated: serialized recurrent/indexer state equivalence, forced speculative accept/reject/rollback, other backends or quantizations. Diagnostic PP/TG are not performance measurements.**
 
 ## Scope / baseline safety
 
@@ -181,4 +181,36 @@ Generated text was verified byte-identical across all three child `stdout.log` f
 **Implication:** both Stage-B and flatten produced **exactly unchanged Draft attention KV contents over every active position at all sampled depths up to 61,789 prompt tokens**, while ordinary completion text and acceptance matched. This is a robust numerical gate for the tested f16 path, including long-context 1024-token Draft operations. It does **not** compare the recurrent-state buffer, QSA indexer suffix, or controlled accept/reject/rollback behavior.
 
 **Next P0: run the existing `kv-128k` job** using the same b11682 executable, thresholds **32768, 65536, 126253**, C/A/B full matrix. Compare each threshold's actual saved `pos` and both C→A and A→B JSONs; verify generated text/acceptance, hashes and Performance mode. **No code changes or rebuild are needed before 128k.** Expect around 1.5–2 GiB cumulative files depending on recurrent state. Stop if any mismatch. After 128k passes, design/execute a separate recurrent-state and rollback/reject stress test before proposing inclusion in the new-upstream integration candidate.
+
+## 2026-10-19 128k native validation — all six C/A/B attention K/V comparisons PASS
+
+**Completed:** user ran `kv-128k` on the same native b11682 Vulkan binary and pasted all six `analyze_mtp_kv_parity.py` JSON reports. Both C→A (Stage-B OFF→ON) and A→B (flatten OFF→ON) yielded **zero bitwise differences, zero values outside tolerance, zero nonfinite values and zero max abs/relative error** across all active K and V elements at the three prompt positions.
+
+| Threshold tokens | Actual saved position range | K elements per pair | V elements per pair | C→A | A→B |
+| ---: | ---: | ---: | ---: | --- | --- |
+| 32,768 | 0–32,767, file `pos-32767` | 16,777,216 | 16,777,216 | **PASS, bitwise 0** | **PASS, bitwise 0** |
+| 65,536 | 0–65,535, file `pos-65535` | 33,554,432 | 33,554,432 | **PASS, bitwise 0** | **PASS, bitwise 0** |
+| 126,253 | 0–126,252, file `pos-126252` | 64,641,536 | 64,641,536 | **PASS, bitwise 0** | **PASS, bitwise 0** |
+
+Each snapshot contains one **f16** Draft attention layer, K width512 and V width512, V nontransposed, seq0, consistent logical cell sets. The numeric comparator uses `atol=rtol=0.001`, but every value was **bit identical**, not merely within tolerance. Counts are cumulative per snapshot; do not count them as independent tokens. Across all three 128k checkpoints, each C/A or A/B pair compares 114,973,184 K floats and 114,973,184 V floats (repeated older positions intentionally included).
+
+**Native archive:** `20261019-215953-397-cli-vulkan-b11682-ctx131072-ea94f4719823.zip`, SHA256 **`681b024dd215047a86725a8797eae3eb0f66f0e865288d4439f3f66b36efa660`**. It contains all three C/A/B child run directories:
+
+- C: `20261019-214211-882-cli-vulkan-b11682-ctx131072-c5c1f6b2188c`;
+- A: `20261019-215114-656-cli-vulkan-b11682-ctx131072-d4b744d7a87d`;
+- B: `20261019-215953-397-cli-vulkan-b11682-ctx131072-ea94f4719823`.
+
+**Independently checked from all three `conditions.json` and `result.json`:** `Status=OK`, exit0, same executable SHA256 **`737324a93095a61c31fdbdd155058e6ebdf2eb7b997b67ac877f39a5ff420a38`**; same runtime artifact digest **`c44f279afb663e89dc8ea6595abef87f7e35914303ca735a9036acaccfa5e23e`**; b11682 Clang20.1.8; 126,253 prompt / 512 generated tokens; 131072 context, f16 KV, batch2048/ubatch1024, Vulkan, 96GB UMA, same PLE16 model/Draft/input identity (input SHA256 begins `182d14a0ca0a8da365`), seed1234/temp0; QSA union ON/minKV32768; P-MODE **Performance both at start and end** in every arm and ADLX Performance-like. Environment differs in intended `LLAMA_MTP_DRAFT_PREFILL_KV_CROP / LLAMA_MTP_EH_PROJ_FLATTEN / LLAMA_MTP_KV_SNAPSHOT_TAG`: **C=0/0/C, A=1/0/A, B=1/1/B**. All runs report **Draft accepted/generated 295/429**, or 68.765% (note denominator **429** for 128k, versus **430** in earlier 64k results). After removing the printed speed banner, all three `stdout.log` contents were identical, SHA256 **`4a05d0d5e5bc7417e0c48837322ef65ad3db2f3fde711c23bb99ef4ade38052b`**.
+
+| Arm | Diagnostic PP tok/s | Prompt time s | Diagnostic TG tok/s | ADLX high-load W |
+| --- | ---: | ---: | ---: | ---: |
+| C (Stage-B OFF, flatten OFF) | 274.78 | 459.472 | 23.48 | 107.363 |
+| A (Stage-B ON, flatten OFF) | 292.85 | 431.122 | 23.73 | 107.067 |
+| B (Stage-B ON, flatten ON) | 295.47 | 427.289 | 23.86 | 106.732 |
+
+**These timings are diagnostic-only and must not replace uninstrumented ABBA**: the program serializes Draft state synchronously to host/disk at each checkpoint. All 9 expected `mtp_kv_snapshot_v1 OK` messages appear with matching actual positions; every arm's files are identical in size at each threshold: **85,065,844**, **170,131,572**, **327,752,904** bytes. Aggregate binary snapshot size across C/A/B is **1,748,850,960 bytes (~1.63 GiB)**. Raw `.bin` dumps remain local and were not provided in the ZIP; the six comparator JSON outputs were pasted by the user.
+
+**Scope and remaining gates:** the tested Stage-B and flatten optimizations preserve **the Draft attention K/V values at every active position through 126,253 tokens**, not just a statistical sample of K/V rows. This is a strong isolated correctness finding. The Python comparator intentionally **does not read the trailing recurrent state or QSA indexer state** inside the serialized Draft sequence state; it does not prove those buffers equal. Ordinary generated text / acceptance matches; it does not systematically force rejection, replay or rollback. Neither the current branch's diagnostic source nor the optimized Stage-B/flatten implementation is yet incorporated into a validated new-upstream integrated release.
+
+**Next recommended P0:** before investing in another long benchmark, compare **the entire serialized state** (recurrent/indexer sections included) at corresponding C/A/B checkpoints by streaming hashes; if the complete files are byte-identical this provides additional strong evidence beyond K/V. If hashes differ, **do not automatically conclude a model-state failure**: physical slot ordering, nonsemantic metadata or serialization differences may cause binary divergence, so add a structured trailing-state parser or an instrumented state digest for logical-state comparison. Independently test **forced accept/reject/rollback and post-catch-up continuation**, with a deterministic fixed-seed scenario, before final integration acceptance. If broader new-upstream integration is scheduled first, carry Stage-B/flatten as **experimental candidates with these explicit correctness limitations**.
 
