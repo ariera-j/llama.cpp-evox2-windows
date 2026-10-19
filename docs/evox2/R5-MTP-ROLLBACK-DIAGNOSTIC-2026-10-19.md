@@ -1,6 +1,6 @@
 # r5 MTP rollback / replay correctness diagnostic — 2026-10-19
 
-**Implementation status: committed on isolated experimental branch; native Windows Vulkan compile and GGUF runs NOT YET VERIFIED.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
+**Status updated 2026-10-19 ~22:58 JST: native Windows Vulkan b11695 built successfully and short Natural C/A/B real-generation case PASSED; deterministic synthetic checkpoint-restore / replay stress cases remain NOT YET RUN.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
 
 - Branch: `investigation/r5-mtp-rollback-diagnostic-20261019`, forked from `investigation/r5-mtp-draft-kv-parity-20261019`.
 - Preserve b11682 and its 128k raw snapshots. Do **not** overwrite `build-vulkan-r5-mtp-kv-parity`.
@@ -115,3 +115,33 @@ Avoid 128k rollback runs until the short + 64k correctness results justify the c
 **What this can establish if all gates pass:** C/A/B behaved identically for genuine generation on fixed seed and for forced synthetic accept/reject, checkpoint restore and replay; generated text, branch counts and provenance agreed. **What it cannot establish:** synthetic output quality, recovery of every possible concurrent/long-lived state, production checkpoint restore use when not otherwise taken, or correctness on ROCm/other GGUF types.
 
 **Next after confirmed native results:** mark tested generation paths PASSED, record exact SHA256, mode and counts, then consider porting Stage-B/flatten as individually optional optimizations into the separately planned new-upstream integration candidate. Never merge the diagnostic `FORCE_CKPT` mode as a default runtime setting.
+
+## 2026-10-19 22:55–22:57 JST: native b11695 short Natural C/A/B PASSED
+
+The user supplied the **complete three-child run ZIP**: `20261019-225741-655-cli-vulkan-b11695-ctx32768-2ae89c1622fc.zip`, SHA256 **`84aa97db96dd8558fe41b82ddd04680150277da09dfa3481cc8bb02e02f8dca7`**. All three native children ran on the Evo-X2 Windows Vulkan runtime.
+
+| Run | C Stage-B OFF / flatten OFF | A Stage-B ON / flatten OFF | B Stage-B ON / flatten ON |
+| --- | --- | --- | --- |
+| Native child ID | `20261019-225527-229-cli-vulkan-b11695-ctx32768-4258fc984848` | `20261019-225637-366-cli-vulkan-b11695-ctx32768-8c2df0ad3598` | `20261019-225741-655-cli-vulkan-b11695-ctx32768-2ae89c1622fc` |
+| `Status` / `ExitCode` | OK / 0 | OK / 0 | OK / 0 |
+| Prompt/output | 163 / 128 | 163 / 128 | 163 / 128 |
+| Draft accepted/generated | **69/116** | **69/116** | **69/116** |
+| Draft rounds | **58** | **58** | **58** |
+| 0 of 2 accepted | **14** | **14** | **14** |
+| 1 of 2 accepted | **19** | **19** | **19** |
+| 2 of 2 accepted | **25** | **25** | **25** |
+| Checkpoint restorations / replay commits | 0 / 0 | 0 / 0 | 0 / 0 |
+| P-MODE start → finish | Performance → Performance | Performance → Performance | Performance → Performance |
+| PP tok/s, diagnostics ON | 98.60 | 275.39 | 279.22 |
+| TG tok/s, diagnostics ON | 26.49 | 35.45 | 34.80 |
+
+**Provenance:** b11695, Git commit **`5a5af4b949d0d481229a8ee1a0310c1f5d98c9f9`** (diagnostic tracing fix included). All three children use the identical executable SHA256 **`6cc24550d7b3d7f4c54f5570b91bf662b7fdd7b79f0e2ed97210109ab48c4f5e`** and verified runtime digest **`96eeb77cf15d4f398043e459d945766a33d408d550a5090ac88d3dfcf5f13064`**. Same model, self-contained MTP Draft, input SHA256 **`88083a2910b0de75fdfc23d73a7e87ce3db0cf5110bb616ae102841be34368d5`**, 32768 context, f16 K/V, seed1234, no synthetic rates, `LLAMA_MTP_ROLLBACK_DIAG=1`, `LLAMA_MTP_ROLLBACK_FORCE_CKPT=0`. C/A/B flags 0/0, 1/0, 1/1. Local `Source.Dirty=true` still corresponds to the earlier P-MODE/ADLX harness tools; the identical fingerprint **`13afa3188e82c7377ad0ebbfc9fd763b6df3b7a910ec24fb6370f91618bb3568`** was reported for all arms; no inference-source local modification shown.
+
+**Independent log checks:** 58 ordered `event=draft`, 58 `event=decision`, 58 `event=commit`, one `event=init` in each stderr log. Ordered decision tuples (round, drafted, accepted, rollback, checkpoint, replay) have the same SHA256 across C/A/B: **`8507fb5e075afd51402c413bbaeed83c9d93799a45bfda5cd72c6fbf047006cf`**. The actual generated `stdout.log` contents, after removing ONLY the changing throughput footer, are byte-identical (normalized SHA256 **`76dc3bb876829cf1eb376464e0d5268b0ef53b7194ab767647a63ce47ecc767b`**); original stdout files differ only in reported rates. All child stderr logs contain **no observed runtime error lines**.
+
+Natural case includes **33 rejecting rounds (14 all-reject, 19 partial-reject)** and 25 full-accept rounds, all using **the normal native partial sequence-removal path** (`checkpoint=0` at every decision). It **does not** test forced Target/Draft checkpoint restoration, replay after checkpoint restore, or alternative acceptance rates. This is a genuine target-verification and continuation smoke PASS, not the end of the rollback gate.
+
+**Measurement limitations:** b11695 diagnostics are ON; PP/TG from this case are not a general uninstrumented optimization A/B. GPU high-load power classifier says `InsufficientSamples` in all short runs; authoritative P-MODE is Performance from the native WMI probe, no warnings. Avoid turning the very large short C→A PP gap into a speed claim.
+
+**NEXT (bounded):** preserve the same newly compiled b11695 binary and run **`-OnlyJob rollback-short -OnlyCase reject-zero`** with all three variants. This uses existing synthetic rates `0,0` and opt-in force checkpoint; compare the resultant ZIP with `analyze_mtp_rollback.py --scenario reject-zero`. It must show `checkpoint_restore > 0` and replay commits > 0 per arm. If this test fails (including crashes), **do not** proceed to `reject-after-one`, `accept-all`, or 64k; first inspect the diagnostic restore path. If it passes, test `reject-after-one`, then `accept-all` one at a time. Synthetic outputs are intentionally not quality-valid.
+
