@@ -110,3 +110,24 @@ Snapshot files grow with context; verify disk headroom (potentially several GiB 
 4. If these gates pass, record **correctness scope**, numerical tolerances, backend/model/context, build SHA and raw evidence before proposing Stage B / flatten integration into a **new-upstream candidate branch**. ROCm remains a separate native correctness/performance gate.
 
 **Do not merge this experimental diagnostic into the stable inference runtime.** Keep the b11659 ABBA/RGP cohort reproducible.
+
+## 2026-10-19 short native validation — PASS (C/A and A/B)
+
+The user reports that the corrected dedicated branch **compiled successfully on Windows** and the `kv-short` C/A/B matrix produced three `threshold=1` snapshots at **actual prompt end pos=162 (163 tokens)**. The two numerical comparisons were executed with default `atol=rtol=0.001` and report:
+
+| Pair | Logical positions | K elements | V elements | Bitwise differences | Outside tolerance | Max abs/relative | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| C (Stage-B OFF) → A (Stage-B ON, flatten OFF) | 163, range 0..162 | 83,456 | 83,456 | **0 K / 0 V** | 0 | 0 / 0 | **PASS** |
+| A (flatten OFF) → B (flatten ON) | 163, range 0..162 | 83,456 | 83,456 | **0 K / 0 V** | 0 | 0 / 0 | **PASS** |
+
+All compared attention storage is **f16**, **1 attention layer**, **512 elements per token for each K and V**, nontransposed V, and single-sequence state. The raw C/A/B snapshot binary files are retained locally by the user; comparison JSON was pasted in chat. This short prompt does **not** exercise the 1024-token flattened GEMM from RGP or long-cache behavior, so the correctness claim is **short-context/short-prompt only**.
+
+The attached **B-arm** native ZIP `20261019-211544-319-cli-vulkan-b11682-ctx32768-cce740a55b8d.zip` was inspected:
+- Vulkan, **b11682 / reported executable commit `b617984d8`**, compiler Clang 20.1.8, exe SHA256 **`737324a93095a61c31fdbdd155058e6ebdf2eb7b997b67ac877f39a5ff420a38`**, runtime artifact digest **`c44f279afb663e89dc8ea6595abef87f7e35914303ca735a9036acaccfa5e23e`**;
+- normal exit0, 163-token prompt, 32 generated, **Draft 17/27 accepted**, P-MODE **Performance at start and finish**; ADLX high-load classifier `InsufficientSamples` for short job (not an error);
+- `mtp_kv_snapshot_v1 OK tag=B threshold=1 pos=162 seq=0 bytes=423264` with absolute path to `build-vulkan-r5-mtp-kv-parity/bin/Release/kv-parity-output/short`;
+- the manifest marks **`Source.Dirty=true`** (dirty fingerprint `13afa3188e82c7377ad0ebbfc9fd763b6df3b7a910ec24fb6370f91618bb3568`) at native build. **Before using this build as an integration correctness baseline, verify/reconcile local `git status --short` and that C/A/B runs really share the same executable SHA.** We do not infer an actual uncommitted code change from the dirty flag without inspecting the local diff.
+- Only **B run ZIP** accompanied the user message, not the C/A child ZIPs or matrix result metadata. The C/A comparison reports necessarily demonstrate both raw A/C states existed and parsed, but model/executable identity of those arms has not independently been inspected yet. Request their result metadata/ZIP if mismatches arise or before final integration attestation.
+
+**Next:** run 64k plan, preferably **A/B variants first** to exercise the flattened 1024-token Draft matmul, then C for full Stage-B proof. Thresholds `1024,32768,61789` are first crossed at ubatch boundaries, so compare **actual `pos=` and position maps**, not just filenames. Both pairs must independently pass at each depth, and generated text/acceptance and condition identity must be checked; otherwise halt before 128k. This measurement deliberately forces GPU synchronization and dumps potentially hundreds of MiB of Draft state: **do not interpret PP/TG as a speed result**. Numeric attention KV equality still does not establish recurrent/indexer state parity or forced rejection/rollback.
+
