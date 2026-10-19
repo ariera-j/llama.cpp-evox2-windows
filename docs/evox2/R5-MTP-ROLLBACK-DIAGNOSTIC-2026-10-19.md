@@ -1,6 +1,6 @@
 # r5 MTP rollback / replay correctness diagnostic — 2026-10-19
 
-**Status updated 2026-10-19 ~23:14 JST: native Windows Vulkan b11695 short Natural C/A/B PASSED, and synthetic Reject-zero (0,0) C/A/B PASSED with 63 genuine checkpoint restores and 63 replay commits per arm. Reject-after-one (1,0), Accept-all (1,1), and 64k rollback tests remain OPEN.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
+**Status updated 2026-10-19 ~23:31 JST: native Windows Vulkan b11695 short Natural C/A/B PASSED, synthetic Reject-zero (0,0) PASSED with 63 restores/replays per arm, and synthetic Reject-after-one (1,0) PASSED with 42 restores/replays per arm (41 partial accept+reject and one full reject). Accept-all (1,1) and 64k rollback tests remain OPEN.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
 
 - Branch: `investigation/r5-mtp-rollback-diagnostic-20261019`, forked from `investigation/r5-mtp-draft-kv-parity-20261019`.
 - Preserve b11682 and its 128k raw snapshots. Do **not** overwrite `build-vulkan-r5-mtp-kv-parity`.
@@ -175,4 +175,47 @@ C/A/B observed diagnostic-only PP respectively **269.53 / 275.84 / 275.04 tok/s*
 **Conclusions:** synthetic zero-accept / checkpoint restore / replay is now **PASS** with exact C/A/B output and all-event traces, on the specified Windows Vulkan configuration. Natural short C/A/B and prefill full-state parity through 128k were already PASSED separately. This does **not** prove synthetic answer quality, partial acceptance with forced restore, or whole-path correctness on 64k/128k.
 
 **NEXT:** Run `-OnlyJob rollback-short -OnlyCase reject-after-one` on **the same b11695 binary** (no rebuild), confirm each arm has at least one original decision accepting **one** token then restoring/replaying after rejecting the second and that normalized C/A/B output and decision traces match. Only then do `accept-all`. Once all short cases pass, perform selected 64k cases; no 128k rollback before assessing new evidence.
+
+## 2026-10-19 ~23:25 JST: synthetic Reject-after-one (1,0) C/A/B PASSED
+
+**Archive actually inspected:** `20261019-232412-241-cli-vulkan-b11695-ctx32768-7e639faecf17.zip`, SHA256 `c3201d1b251fe87356b5adeb94db97d0be25cfa98c4366861669ec4949285ec3`. Three native child run folders:
+
+| Arm | Native child run | PP tok/s (diagnostic) | TG tok/s (diagnostic) |
+| --- | --- | ---: | ---: |
+| C = Stage-B 0 / flatten 0 | `20261019-232157-821-cli-vulkan-b11695-ctx32768-4288086ff60b` | 270.92 | 22.44 |
+| A = Stage-B 1 / flatten 0 | `20261019-232305-973-cli-vulkan-b11695-ctx32768-1cd50d7daf8d` | 270.57 | 22.55 |
+| B = Stage-B 1 / flatten 1 | `20261019-232412-241-cli-vulkan-b11695-ctx32768-7e639faecf17` | 280.50 | 22.72 |
+
+**Provenance checked independently against all three `result.json` and `conditions.json`**: status `OK` / exit code0, b11695 compiler Clang20.1.8, commit `5a5af4b94`, same Vulkan binary SHA256 `6cc24550d7b3d7f4c54f5570b91bf662b7fdd7b79f0e2ed97210109ab48c4f5e`, same runtime digest `96eeb77cf15d4f398043e459d945766a33d408d550a5090ac88d3dfcf5f13064`, equal model and Draft identities and input SHA256 `88083a2910b0de75fdfc23d73a7e87ce3db0cf5110bb616ae102841be34368d5`; 163 input tokens, 128 generated, context32768, f16 KV, seed1234/temp0, `--spec-synth-rates 1,0`, `LLAMA_MTP_ROLLBACK_DIAG=1`, `LLAMA_MTP_ROLLBACK_FORCE_CKPT=1`, identical QSA settings. P-MODE Performance at start and finish for every arm, no observed error lines.
+
+### Deterministic decision / restore / replay branch coverage
+
+| Event or original draft decision | C | A | B |
+| --- | ---: | ---: | ---: |
+| `init` | 1 | 1 | 1 |
+| `draft` | **43** | **43** | **43** |
+| Original `decision` | **43** | **43** | **43** |
+| Original two-token Draft, accepted1/2, rollback1 | **41** | **41** | **41** |
+| Original two-token Draft, accepted0/2, rollback2 | **1** | **1** | **1** |
+| Final one-token Draft, accepted1/1, rollback0 | **1** | **1** | **1** |
+| `checkpoint_restore` | **42** | **42** | **42** |
+| Replay `decision` | **42** | **42** | **42** |
+| Replay `commit` | **42** | **42** | **42** |
+| Ordinary `commit` | **1** | **1** | **1** |
+| Total structured events including init | **214** | **214** | **214** |
+| User-facing Draft accepted/generated | **42/85** | **42/85** | **42/85** |
+
+The 41 partial-accept original decisions are exactly the `--spec-synth-rates 1,0` branch sought. Round **28** is unusual but **identically so across C/A/B**: two-token Draft accepted0/2, rollback2, checkpoint restore and replay. The existing `server_sample_and_accept_synth` deliberately declines to accept *drafted EOG tokens* even when the synthetic acceptance probability is 1; this is a **plausible cause, not proven** by the available event logs. Round43 ends with a single drafted token accepted1/1 and no restore; the output limit truncates further drafting. Consequently expect **42**, not 43, restores/replays. Do not label this scenario “43 partial accepts”; that would be incorrect.
+
+The actual ordered structured event JSON (all keys retained except C/A/B tag and slot) has the **same SHA256 in C/A/B**:
+`ca39a16e680ed5fcf52b970d1b9eb5691ec68b1b3b18b7399a054a3544c9ebe9`.
+The corresponding ordered decision-event stream digest likewise matches:
+`37e5211123cb44e55ff67e5eab1ac1f80930abdfab54ddce17a07e3eec0e6ae8`.
+The generated `stdout.log` normalized by removing only the dynamic Prompt/Generation throughput footer and normalizing newlines has matching digest
+`cd3758be1da41a1698204ae1b486e6a6b72249c4d0d5339f662b454e9ffcc879`.
+These digests were computed from this attached archive; the digest convention is per-event `json.dumps(...,sort_keys=True,ensure_ascii=False)` joined by LF, not the raw log file hash.
+
+**Outcome:** forced first-accept / second-reject C/A/B **PASS** with complete checkpoint restore and replay coverage, exact event streams, exact normalized output, same executable and environment. The one 0/2 decision confirms the run ALSO traversed an all-reject path; it is not a failed expected-probability test. Synthetic outputs are **not** valid-quality samples, and diagnostic PP/TG must not be used to claim optimization.
+
+**Next:** run short `accept-all` (1,1) C/A/B using the **same existing b11695 binary**. Its analyzer must check `checkpoint_restore=0`, `replay_commit=0` and full acceptance on original decisions (except any special EOG token can cause a fail-closed negative result to investigate). Only if all four short scenarios (Natural, Reject-zero, Reject-after-one, Accept-all) PASS, proceed to selected 64k Natural then 64k Reject-after-one (not 128k unless necessary).
 
