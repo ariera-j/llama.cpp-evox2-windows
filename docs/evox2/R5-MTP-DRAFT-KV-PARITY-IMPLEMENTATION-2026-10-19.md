@@ -1,6 +1,6 @@
 # MTP Draft KV numerical parity gate — 2026-10-19
 
-> **2026-10-19 build correction:** Earlier version referenced nonexistent `common_batch::token::is_prompt` and failed compiling `common/speculative.cpp:1659`. Fixed in commits `e161d313` (server prompt-phase propagation) and `3c437e6e` (Draft hook). Pull latest branch commit before retrying. No native compile success is asserted yet.
+> **Historical 2026-10-19 build correction (now resolved):** Earlier version referenced nonexistent `common_batch::token::is_prompt` and failed compiling `common/speculative.cpp:1659`. Fixed in commits `e161d313` (server prompt-phase propagation) and `3c437e6e` (Draft hook). Windows b11682 has since built and completed short/64k/128k native runs. This historical note is not a current blocker.
 
 **Status (updated 2026-10-19 ~22:08 JST): native Windows Vulkan b11682 built successfully; short, 64k, and 128k C/A/B Draft attention K/V equality gates all PASSED bitwise at every compared position, and ordinary 512-token generation text/acceptance match at 64k/128k. NOT YET validated: serialized recurrent/indexer state equivalence, forced speculative accept/reject/rollback, other backends or quantizations. Diagnostic PP/TG are not performance measurements.**
 
@@ -214,3 +214,35 @@ Each snapshot contains one **f16** Draft attention layer, K width512 and V width
 
 **Next recommended P0:** before investing in another long benchmark, compare **the entire serialized state** (recurrent/indexer sections included) at corresponding C/A/B checkpoints by streaming hashes; if the complete files are byte-identical this provides additional strong evidence beyond K/V. If hashes differ, **do not automatically conclude a model-state failure**: physical slot ordering, nonsemantic metadata or serialization differences may cause binary divergence, so add a structured trailing-state parser or an instrumented state digest for logical-state comparison. Independently test **forced accept/reject/rollback and post-catch-up continuation**, with a deterministic fixed-seed scenario, before final integration acceptance. If broader new-upstream integration is scheduled first, carry Stage-B/flatten as **experimental candidates with these explicit correctness limitations**.
 
+
+### Next local no-rebuild follow-up: full serialized Draft state SHA256
+
+This **compares entire serialized seq-state files**, not just the parsed attention KV. In addition to attention K/V, the public state serializer includes the Draft recurrent state and (when present) indexer state. Identical hashes give strong bitwise equality of the whole serialized byte stream at that checkpoint, including its metadata. Different hashes are **inconclusive** until mapped to logical recurrent/indexer values, since cache-slot order and other serialization metadata can differ without changing model semantics. This is a low-cost triage, **not a substitute** for forced rejection / rollback.
+
+From repository root on Windows, without rerunning inference:
+
+```powershell
+$kvDir = '.\build-vulkan-r5-mtp-kv-parity\bin\Release\kv-parity-output\128k'
+$checks = foreach ($threshold in @(32768, 65536, 126253)) {
+    $hashes = @{}
+    foreach ($arm in @('C', 'A', 'B')) {
+        $files = @(Get-ChildItem -LiteralPath $kvDir -File `
+            -Filter "draft-kv-$arm-threshold-$threshold-pos-*.bin")
+        if ($files.Count -ne 1) {
+            throw "Expected 1 snapshot for $arm at $threshold; got $($files.Count)"
+        }
+        $hashes[$arm] = (Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash
+    }
+    [pscustomobject]@{
+        Threshold = $threshold
+        C_vs_A = ($hashes['C'] -eq $hashes['A'])
+        A_vs_B = ($hashes['A'] -eq $hashes['B'])
+        C_SHA256 = $hashes['C']
+        A_SHA256 = $hashes['A']
+        B_SHA256 = $hashes['B']
+    }
+}
+$checks | Format-Table Threshold, C_vs_A, A_vs_B -AutoSize
+```
+
+Keep the printed checks and SHA256 values. If all rows are `True`, the entire serialized attention/recurrent/(optional indexer) state is bitwise equal in this serialization. If any are `False`, proceed to structured state comparison **before** interpreting the divergence. Post-prefill replay and forced rollback remain open even if every full state hash matches.
