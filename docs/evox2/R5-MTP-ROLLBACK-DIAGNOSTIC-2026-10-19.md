@@ -1,6 +1,6 @@
 # r5 MTP rollback / replay correctness diagnostic — 2026-10-19
 
-**Status updated 2026-10-19 ~22:58 JST: native Windows Vulkan b11695 built successfully and short Natural C/A/B real-generation case PASSED; deterministic synthetic checkpoint-restore / replay stress cases remain NOT YET RUN.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
+**Status updated 2026-10-19 ~23:14 JST: native Windows Vulkan b11695 short Natural C/A/B PASSED, and synthetic Reject-zero (0,0) C/A/B PASSED with 63 genuine checkpoint restores and 63 replay commits per arm. Reject-after-one (1,0), Accept-all (1,1), and 64k rollback tests remain OPEN.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
 
 - Branch: `investigation/r5-mtp-rollback-diagnostic-20261019`, forked from `investigation/r5-mtp-draft-kv-parity-20261019`.
 - Preserve b11682 and its 128k raw snapshots. Do **not** overwrite `build-vulkan-r5-mtp-kv-parity`.
@@ -144,4 +144,35 @@ Natural case includes **33 rejecting rounds (14 all-reject, 19 partial-reject)**
 **Measurement limitations:** b11695 diagnostics are ON; PP/TG from this case are not a general uninstrumented optimization A/B. GPU high-load power classifier says `InsufficientSamples` in all short runs; authoritative P-MODE is Performance from the native WMI probe, no warnings. Avoid turning the very large short C→A PP gap into a speed claim.
 
 **NEXT (bounded):** preserve the same newly compiled b11695 binary and run **`-OnlyJob rollback-short -OnlyCase reject-zero`** with all three variants. This uses existing synthetic rates `0,0` and opt-in force checkpoint; compare the resultant ZIP with `analyze_mtp_rollback.py --scenario reject-zero`. It must show `checkpoint_restore > 0` and replay commits > 0 per arm. If this test fails (including crashes), **do not** proceed to `reject-after-one`, `accept-all`, or 64k; first inspect the diagnostic restore path. If it passes, test `reject-after-one`, then `accept-all` one at a time. Synthetic outputs are intentionally not quality-valid.
+
+## 2026-10-19 ~23:13 JST: synthetic Reject-zero (0,0) C/A/B PASSED
+
+**Source archive examined:** `20261019-231240-100-cli-vulkan-b11695-ctx32768-ac765f161990.zip`, SHA256 **`fe2acf61afed53470a45a04a43e22a1dca32811ba444efb3905911124eacd151`**. Archive contains all 3 children:
+
+- C: `20261019-231019-514-cli-vulkan-b11695-ctx32768-7b8cdc514d99`;
+- A: `20261019-231129-912-cli-vulkan-b11695-ctx32768-cba56012b172`;
+- B: `20261019-231240-100-cli-vulkan-b11695-ctx32768-ac765f161990`.
+
+All native runs completed status **OK / exit0**, same b11695 executable commit `5a5af4b94`, SHA256 **`6cc24550d7b3d7f4c54f5570b91bf662b7fdd7b79f0e2ed97210109ab48c4f5e`**, and same verified runtime artifact digest **`96eeb77cf15d4f398043e459d945766a33d408d550a5090ac88d3dfcf5f13064`**. Same target and Draft GGUF identities, 163-token prompt, 128 generated tokens, input SHA256 **`88083a2910b0de75fdfc23d73a7e87ce3db0cf5110bb616ae102841be34368d5`**, context32768, f16 K/V and seed1234. C/A/B Stage-B/flatten flags **0/0, 1/0, 1/1**; each had `LLAMA_MTP_ROLLBACK_DIAG=1`, `LLAMA_MTP_ROLLBACK_FORCE_CKPT=1`, and CLI `--spec-synth-rates 0,0`. P-MODE **Performance at start and finish** each arm (ADLX classifier: `InsufficientSamples` for short job, not a P-MODE failure).
+
+| Native event / outcome | C | A | B |
+| --- | ---: | ---: | ---: |
+| `event=init` | 1 | 1 | 1 |
+| `event=draft` | 63 | 63 | 63 |
+| `event=decision` | 126 | 126 | 126 |
+| Original decisions: `accepted=0`, `rollback=2`, `checkpoint=1` | 63 | 63 | 63 |
+| `event=checkpoint_restore` | **63** | **63** | **63** |
+| Replay decisions `replay=1` | 63 | 63 | 63 |
+| `event=commit replay=1` | **63** | **63** | **63** |
+| Draft acceptance (user-facing measured metric) | **0/126** | **0/126** | **0/126** |
+| 128-token generated output after volatile throughput-footer removal | identical | identical | identical |
+| Native run status | OK | OK | OK |
+
+**Ordered diagnostic event stream equality:** after removing tag and slot fields, C/A/B event records (316 events per arm) have identical SHA256 `c38f7d59e4db9b6946993d9711dbb226d43590cf612473ad2795d7452fd1f944`. Decision tuples likewise SHA256 `c7502d845820f14bf48a9aa4a93d44db73531bb19cd8045c6d0ffe271819beac`. Generated `stdout.log` normalized by removing *only* the printed Prompt/Generation throughput footer: identical SHA256 `76dc3bb876829cf1eb376464e0d5268b0ef53b7194ab767647a63ce47ecc767b`. The 63 rounds are contiguous from 1 to 63, each forces a full 0/2 Draft rejection followed by checkpoint restore, a replay decision and a completed replay commit. These counters prove the requested branches were actually traversed; this is **not** a success inferred solely from exit0.
+
+C/A/B observed diagnostic-only PP respectively **269.53 / 275.84 / 275.04 tok/s**, TG **14.13 / 14.79 / 13.30 tok/s**. Do **not** benchmark these because forced checkpoints materially change work and memory synchronization. Synthetic text is **not a valid generative-quality test**. The MTP implementation's internal `#acc tokens=63` statistic counts replay-handled accepted tokens and is **not** interchangeable with the final-slot `DraftAccepted=0` metric in this scenario; use the explicit original `event=decision` and `event=commit` fields to establish behavior, avoiding a false contradiction.
+
+**Conclusions:** synthetic zero-accept / checkpoint restore / replay is now **PASS** with exact C/A/B output and all-event traces, on the specified Windows Vulkan configuration. Natural short C/A/B and prefill full-state parity through 128k were already PASSED separately. This does **not** prove synthetic answer quality, partial acceptance with forced restore, or whole-path correctness on 64k/128k.
+
+**NEXT:** Run `-OnlyJob rollback-short -OnlyCase reject-after-one` on **the same b11695 binary** (no rebuild), confirm each arm has at least one original decision accepting **one** token then restoring/replaying after rejecting the second and that normalized C/A/B output and decision traces match. Only then do `accept-all`. Once all short cases pass, perform selected 64k cases; no 128k rollback before assessing new evidence.
 
