@@ -1,5 +1,6 @@
 #include "speculative.h"
 #include "mtp-pp-trace.h"
+#include "mtp-kv-snapshot.h"
 
 #include "common.h"
 #include "ggml.h"
@@ -1392,6 +1393,7 @@ static thread_local int mtp_pp_process_phase = 0; // explicit server phase, not 
 
 struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     mtp_pp_trace::recorder pp_trace{"draft"};
+    mtp_kv_snapshot::recorder kv_snapshot;
     common_params_speculative_draft params; // reuses the draft-model params slot (ctx_tgt/ctx_dft)
 
     common_batch batch;
@@ -1642,6 +1644,19 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
             if (!ok) {
                 return false;
+            }
+
+            // Opt-in correctness diagnostic: the Draft K/V cache has just been
+            // populated for this prompt batch. The public sequence-state save
+            // synchronizes GPU work, so never enable during speed measurements.
+            if (mtp_pp_process_phase == 1) {
+                int64_t pos_end = -1;
+                for (int32_t k = 0; k < n_tokens; ++k) {
+                    pos_end = std::max(pos_end, (int64_t) batch_in.tokens[k].pos[0]);
+                }
+                if (!kv_snapshot.capture(ctx_dft, 0, pos_end, true)) {
+                    return false; // fail closed: missing snapshots are not a PASS
+                }
             }
         }
 
