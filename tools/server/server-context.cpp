@@ -20,6 +20,7 @@
 #include "mtmd-helper.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstddef>
 #include <cinttypes>
 #include <exception>
@@ -4166,7 +4167,10 @@ private:
         // require output; token count or has_output cannot identify the phase.
         int trace_phase = 0;
         int64_t trace_pos = 0;
-        if (trace) {
+        // The MTP KV correctness probe needs the server's actual prompt flag
+        // even when timing trace is off. Its presence is explicitly opt-in.
+        // The ordinary inference path keeps the previous trace-only work.
+        if (trace || std::getenv("LLAMA_MTP_KV_SNAPSHOT_DIR") != nullptr) {
             int n_prompt = 0;
             for (int i = off; i < off + batch.view.size(); ++i) {
                 n_prompt += batch.tokens[i].is_prompt ? 1 : 0;
