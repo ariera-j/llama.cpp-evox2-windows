@@ -1,6 +1,6 @@
 # r5 MTP rollback / replay correctness diagnostic — 2026-10-19
 
-**Status updated 2026-10-20 ~00:06 JST: b11695 short Natural, Reject-zero, Reject-after-one C/A/B all PASS; short Accept-all (1,1) C/A/B parity PASS but strict all-accept gate not PASS (two suspected drafted-EOG exclusions). **64k Natural C/A/B also PASS:** 52 exactly identical ordered Draft verification rounds, 75/104 accepted, 128-token output identical, P-MODE/ADLX Performance. **64k forced Reject-after-one checkpoint restore/replay remains OPEN**; no optimization-induced divergence observed.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
+**Status updated 2026-10-20 ~00:22 JST: 64k forced partial-accept checkpoint restoration and replay PASSED on Windows Vulkan b11695, with 42/42 complete restores and replay commits per C/A/B, exactly matched 211 ordered diagnostic events and generated output. Natural and force-rollback C/A/B gates PASSED for both short and 64k. 128k Draft attention K/V and complete serialized sequence-state checkpoint parity previously PASSED on b11682. Short Accept-all 1,1: 41 full-accept rounds C/A/B identical, with two suspected EOG-related rejects; the strict no-reject gate remains NOT PASS. No new-upstream integration build or ROCm correctness check has been performed.** The same-bit full Draft sequence-state comparison was already completed at 32k/64k/128k on b11682: see [numerical parity report](R5-MTP-DRAFT-KV-PARITY-IMPLEMENTATION-2026-10-19.md). This change adds an **entirely separate generation-time stress diagnostic**, not a performance optimization or release source merge.
 
 - Branch: `investigation/r5-mtp-rollback-diagnostic-20261019`, forked from `investigation/r5-mtp-draft-kv-parity-20261019`.
 - Preserve b11682 and its 128k raw snapshots. Do **not** overwrite `build-vulkan-r5-mtp-kv-parity`.
@@ -285,4 +285,42 @@ Independently examined `conditions.json`, `result.json`, `stderr.log`, `stdout.l
 **Interpretation:** for the tested 64k real prompt, normal target verification generated the same 128-token response and **every** per-round Draft accept/reject decision at all 52 rounds for C/A/B. This is a strong *long-context generation continuation* correctness gate. Of the 52 rounds, 22 did require partial sequence rollback, but **none took the explicit Target/Draft checkpoint restoration/replay branch** because forced checkpoint mode was disabled (`checkpoint=0`). Synthetic accept/reject and forced checkpoint restore in the 64k KV regime remain a separate gate.
 
 **Next P0:** run the existing `-OnlyJob rollback-64k -OnlyCase reject-after-one` **with the exact retained b11695 binary** and existing config. This sets `--spec-synth-rates 1,0` and `LLAMA_MTP_ROLLBACK_FORCE_CKPT=1`; it should exercise the actual checkpoint restore and replay at long KV depth. Compare C/A/B output and full structured event traces, not merely counters or exit0; existing trace analyzer should fail closed if coverage missing. Native time and memory cost likely substantial because Target and Draft state are serialized repeatedly; do not treat PP/TG as performance. If any native error/mismatch occurs, stop before further tests; **do not launch 128k forced rollback by default**. Still record short Accept-all's two suspected EOG-guard exceptions (strict no-rollback gate open).
+
+## 2026-10-20 ~00:19 JST: 64k Reject-after-one (1,0) — full restore/replay C/A/B PASS
+
+**Independently inspected attached archive:** `20261020-001838-694-cli-vulkan-b11695-ctx65536-93a5900b7acc.zip`, SHA256 **`87bfb7555e58872e8c74bfd551283c0eb30db4d31fb90dd51aa7acca86454385`**. Contains three child runs:
+
+- C Stage-B OFF / flatten OFF: `20261020-000949-736-cli-vulkan-b11695-ctx65536-c46dc0baada6`.
+- A Stage-B ON / flatten OFF: `20261020-001418-448-cli-vulkan-b11695-ctx65536-c15d79763513`.
+- B Stage-B ON / flatten ON: `20261020-001838-694-cli-vulkan-b11695-ctx65536-93a5900b7acc`.
+
+All children: **status OK, ExitCode 0**, Windows Vulkan **b11695**, `ExecutableCommit=5a5af4b949d0d481229a8ee1a0310c1f5d98c9f9`, same executable SHA256 **`6cc24550d7b3d7f4c54f5570b91bf662b7fdd7b79f0e2ed97210109ab48c4f5e`** and runtime digest **`96eeb77cf15d4f398043e459d945766a33d408d550a5090ac88d3dfcf5f13064`**, same Target PLE16 and MTP Q8_0 draft metadata (full GGUF SHA not captured), same real input SHA256 **`2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`**, 61,789 prompt tokens, 128 generated, ctx65536, f16 KV, batch2048 / ubatch1024, seed1234 / temp0, QSA union=1/minKV32768. Opt-in `LLAMA_MTP_ROLLBACK_DIAG=1`, `LLAMA_MTP_ROLLBACK_FORCE_CKPT=1`, `--spec-synth-rates 1,0`. C/A/B only differ as intended: Stage-B/flatten flags 0/0, 1/0, 1/1 and trace tag. Start/end P-MODE WMI probes say **Performance**, no mode changes/warnings. ADLX monitor exited normally and recorded 95/92/89 high-load samples respectively. Local source-dirty fingerprint remains unchanged from documented P-MODE/ADLX tool adaptations; no other code change is inferred here.
+
+| Diagnostic item | C | A | B |
+| --- | ---: | ---: | ---: |
+| Native OK / exit 0 | yes | yes | yes |
+| Draft rounds | **42** | **42** | **42** |
+| Original 2-token decisions accepted1, rejected1 | **42** | **42** | **42** |
+| Original 0/2 or full 2/2 branches | 0 | 0 | 0 |
+| Forced Target + Draft `checkpoint_restore` | **42** | **42** | **42** |
+| Replay decisions `replay=1` | **42** | **42** | **42** |
+| Replay commits `replay=1` | **42** | **42** | **42** |
+| Total trace events (1 init, 42 draft, 84 decisions, 42 restores, 42 commits) | **211** | **211** | **211** |
+| Draft accepted/generated | **42/84** | **42/84** | **42/84** |
+| Generated text (128 tokens) | identical | identical | identical |
+| P-MODE | Performance | Performance | Performance |
+| Diagnostic PP tok/s | 314.76 | 326.15 | 330.09 |
+| Diagnostic TG tok/s | 16.37 | 17.64 | 17.78 |
+
+**Cryptographic C/A/B verification of the full ordered execution trace:** excluding only `tag` and `slot` from each structured `mtp_rollback_diag_v1` event, canonical JSON-lines SHA256 of all 211 events equals **`c14804143e4ef3d116dd467986e6c8df9ae59645c321aa1e671c622265087794`** in C, A and B; SHA256 of all 42 *original* decision entries equals **`8fe75ef792072ad0e9e12723a67dcfa297fc9896bba9660b76b260ad432ef284`**. After CRLF→LF normalization and excluding only the dynamic `[ Prompt: ... | Generation: ... ]` footer, stdout SHA256 is **`4db3a320fc827e7448e0634e2f5ff4cbefbc78c3e8ab9aac3cd7f38a18bf8cf1`** in all three. The same files contain no observed errors/asserts/aborts. The 42 actual original accept-one/reject-one rounds have `checkpoint=1`; each is followed by a genuine `checkpoint_restore` and `commit replay=1` at increasing prompt positions 61789 onward (ending at position 61912).
+
+**Interpretation:** **long-KV forced checkpoint restore/replay C/A/B correctness gate PASS**, complementing the already PASS 64k Natural target-verification gate and short synthetic accept/reject/rollback parity, plus 128k serialized Draft memory parity. The synthetic acceptance test intentionally changes verification to 1,0 and generated text is **not a model-quality baseline**; PP/TG above are diagnostic-only, because repeatedly saving/restoring entire Target/Draft state adds substantial work.
+
+**Overall current gate:**
+- **PASS**: native b11695 Vulkan short Natural, short Reject-zero, short Reject-after-one, 64k Natural, 64k forced Reject-after-one, all with matched C/A/B text and events.
+- **Full-accept path exercised and C/A/B MATCH**: short Accept-all 41/43 rounds were fully accepted; strict zero-rejection requirement was **NOT** met owing to two 0/2 reject+restore rounds 31/37. Drafted EOG safeguard is likely but token IDs are not logged, so unconfirmed.
+- **PASS (separate b11682 binary)**: short/64k/128k attention K/V bit equality and user-computed entire 128k serialized Draft state SHA equality at 32,768 / 65,536 / 126,253. No claim of whole-state equality after each force-rollback round; diagnostics traced accepted/rejected decisions and output instead.
+- **Outside validated scope**: source rebased onto future upstream, Windows ROCm, other quantizations/model inputs, multi-client parallel-slot behavior, complete rollback after all possible synthetic / natural histories, or an independent uninstrumented ABBA performance comparison on the final future integration candidate.
+
+**Recommended decision:** Do not schedule a default 128k force-rollback marathon: native long-KV 64k restore/replay and 128k full-state prefill provide strong coverage. Retain short Accept-all's strict exception as an open, **non-divergence** issue; optionally investigate by adding EOG-specific diagnostics (new build) if source-level confirmation is desired. Next higher-value task is to prepare a **separate, feature-toggled new-upstream integration candidate** with Stage-B and flatten independently gated, run native Vulkan smoke and 64k/128k regression plus ROCm build/compatibility when appropriate. Preserve all diagnostics and original b11682/b11695 binaries; do not merge diagnostic FORCE_CKPT logic into default production.
 
