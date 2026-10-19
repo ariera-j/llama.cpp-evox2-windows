@@ -5,7 +5,10 @@
     # Correctness-only diagnostic. llama_state_seq_save_file() explicitly
     # synchronizes and copies the Draft state to disk. NEVER use PP/TG from
     # these jobs to claim performance. Each run produces raw .bin snapshots
-    # in the directory shown by mtp_kv_snapshot_v1 (normally <cwd>/kv-parity-output).
+    # in the directory shown by mtp_kv_snapshot_v1. IMPORTANT:
+    # Measure-LlamaCli.ps1 launches with -WorkingDirectory equal to the
+    # executable's bin/Release directory. Relative paths below resolve there,
+    # NOT relative to the repository root or matrix batch log folder.
     Settings = @{
         CooldownSeconds = 10
         ContinueOnError = $false
