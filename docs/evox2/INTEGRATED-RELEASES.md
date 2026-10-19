@@ -1,5 +1,8 @@
 # Evo-X2 integrated snapshots
 
+> **Checkpoint intent updated 2026-10-19:** [User-selected candidate build and acceptance plan](R5-RESEARCH-AND-INTEGRATION-PLAN-2026-10-19.md): after the current flatten RGP and Draft correctness gate, create an **independent new-upstream integration candidate**, evaluate all beneficial patches by dependency and backend, and perform ROCm toolchain-vs-loaded-runtime version checks. Tentative prior target “10/18–19” is not an accepted release or a deadline; if targeting the next weekend it is Oct 24–25. **No branch, build, accepted release, or tag has been created by this update.**
+
+
 **Status as of 2026-10-11 JST: PLANNED / NOT CREATED.**
 
 No integrated release branch, validated all-patches snapshot, final binary, release tag or integrated benchmark has been produced under this policy yet. Do not infer a release from the existence of the r3/r4/r5 research branches. The first integration checkpoint is intended for a convenient upcoming research break; the approximate 4–6 week cadence is a guideline, not a booked date. **The first checkpoint is intended to include a separate ROCmFP4 compatibility port and correctness gate (COMMON-003) before the integrated release is accepted.** VULKAN-001 remains conditional on the target model/backend.
