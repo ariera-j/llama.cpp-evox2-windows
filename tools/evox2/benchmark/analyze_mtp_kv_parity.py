@@ -245,6 +245,9 @@ def compare(left: Path, right: Path, *, atol: float = 1e-3, rtol: float = 1e-3,
                     "nonfinite_values": nonfinite, "max_abs": max_abs, "max_relative": max_rel,
                     "pass": bool(valid),
                 })
+                # numpy frombuffer views keep mmap exported. Release both views
+                # before mapped_file closes the underlying files.
+                del va, vb
         report["status"] = "PASS" if ok else "FAIL"
         return report
 
