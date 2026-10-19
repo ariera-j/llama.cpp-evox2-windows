@@ -1,5 +1,7 @@
 # Evo-X2 upstream-refresh overview
 
+> **2026-10-20 docs + tools staging only — integration target ~2026-10-25/26:** [r5 collected investigation reports and 26 diagnostic scripts/plans/tests](R5-RESEARCH-ASSET-INVENTORY-2026-10-20.md) are now indexed centrally. Earlier reports were already synced; 5 missing reports and 26 opt-in research assets were added with no inference-source or existing benchmark-tool changes. The latest-upstream integration is **deferred** until around Oct 25–26 and requires a separate user go-ahead; stable r5 is **not** an integrated Stage-B/flatten runtime. P-MODE/ADLX local uncommitted work is a separate sync check.
+
 **Current handoff (2026-10-19):** [Research and new-upstream integration plan, flatten RGP procedure, external s1/Strata watch](R5-RESEARCH-AND-INTEGRATION-PLAN-2026-10-19.md). Authoritative 10/16 flatten ABBA, RGP plan and build provenance remain [on the dedicated investigation branch](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-eh-proj-flatten-20261016/docs/evox2/R5-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-16.md). **This stable branch has documentation only for Stage B / flatten; the source remains experimental.**
 
 
