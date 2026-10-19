@@ -1,5 +1,7 @@
 # Evo-X2 optimization roadmap
 
+> **FOLLOW-UP 2026-10-19 19:53 JST:** [Flatten ON RGP + profiling overhead record](R5-MTP-EH-PROJ-FLATTEN-RGP-2026-10-19.md) is complete. Vulkan main Q8 GEMM ~4.04ms and Draft graph ~9.24/9.37ms locally versus historical old ~56–59ms/62–64ms. Optional same-binary A-flat-off RGP; **next required gate is numerical Draft K/V correctness**. Profiling PP 330.50 trace-only / 312.20 with RGP vs untraced 349.39 tok/s, observational not causally attributed. Stable source unchanged.
+
 > **CURRENT NEXT STEPS — 2026-10-19:** [Oct 19 research, external update and new-upstream integration plan](R5-RESEARCH-AND-INTEGRATION-PLAN-2026-10-19.md). Today: focused **b11659 flatten-ON RGP**, optional same-binary flatten-OFF GPU comparison, then numerical Draft K/V correctness. Next substantive work window: **separate new-upstream candidate integration**, reviewing all beneficial past patches with source/dependency/correctness gates rather than merging blindly. If time before integration: s1-fork shape/CONCAT source review, isolated test only. Strata Windows gfx1151 is a later independent trial. No source integration/rebase/build is asserted by this document-only update.
 
 
