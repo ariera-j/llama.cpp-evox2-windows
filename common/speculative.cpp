@@ -1649,14 +1649,17 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             // Opt-in correctness diagnostic: the Draft K/V cache has just been
             // populated for this prompt batch. The public sequence-state save
             // synchronizes GPU work, so never enable during speed measurements.
-            if (mtp_pp_process_phase == 1) {
-                int64_t pos_end = -1;
-                for (int32_t k = 0; k < n_tokens; ++k) {
-                    pos_end = std::max(pos_end, (int64_t) batch_in.tokens[k].pos[0]);
-                }
-                if (!kv_snapshot.capture(ctx_dft, 0, pos_end, true)) {
-                    return false; // fail closed: missing snapshots are not a PASS
-                }
+            // Do not depend on LLAMA_MTP_PP_TRACE: the server only sets its
+            // trace_phase when CPU tracing is enabled. The real token metadata
+            // records whether each token belongs to prompt prefill.
+            bool is_prompt_batch = true;
+            int64_t pos_end = -1;
+            for (int32_t k = 0; k < n_tokens; ++k) {
+                is_prompt_batch = is_prompt_batch && batch_in.tokens[k].is_prompt;
+                pos_end = std::max(pos_end, (int64_t) batch_in.tokens[k].pos[0]);
+            }
+            if (is_prompt_batch && !kv_snapshot.capture(ctx_dft, 0, pos_end, true)) {
+                return false; // fail closed: missing snapshots are not a PASS
             }
         }
 
