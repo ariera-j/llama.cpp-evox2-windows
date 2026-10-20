@@ -4,10 +4,10 @@
 
     # Stage 4 long-context comparison for the ROCmFPx Vulkan port.
     #
-    # Run order is intentionally:
+    # Run order is intentionally matched by context to reduce time/thermal drift:
     #   1. r5 Stage-3 Vulkan 128k
-    #   2. r5 Stage-3 Vulkan 256k
-    #   3. current AgentionAI dedicated fork 128k
+    #   2. current AgentionAI dedicated fork 128k
+    #   3. r5 Stage-3 Vulkan 256k
     #   4. current AgentionAI dedicated fork 256k
     #
     # Both builds use the same ROCmFP4-FAST v2 PLE16 model, real-input corpus,
@@ -92,47 +92,14 @@
 
     Jobs = @(
         @{
-            Name = 'stage3-longctx'
+            Name = 'rocmfpx-stage3-vs-agention-longctx'
             Tool = 'cli'
 
+            # Invoke-BenchmarkMatrix expands Case -> BuildKey, so this produces
+            # matched pairs at each context:
+            #   128k Stage3 -> 128k Agention -> 256k Stage3 -> 256k Agention.
             BuildKeys = @(
                 'R5RocmFpxStage3Vulkan'
-            )
-
-            ModelKeys = @(
-                'AgentionRocmFp4FastPle16'
-            )
-
-            Cases = @(
-                @{
-                    Name = '128k'
-                    Parameters = @{
-                        Context  = 131072
-                        InputKey = '128k'
-                    }
-                }
-                @{
-                    Name = '256k'
-                    Parameters = @{
-                        Context  = 262144
-                        InputKey = '256k'
-                    }
-                }
-            )
-
-            Variants = @(
-                @{
-                    Name = 'nomtp'
-                    Parameters = @{}
-                }
-            )
-        }
-
-        @{
-            Name = 'agention-longctx'
-            Tool = 'cli'
-
-            BuildKeys = @(
                 'AgentionRocmFpxVulkan'
             )
 
