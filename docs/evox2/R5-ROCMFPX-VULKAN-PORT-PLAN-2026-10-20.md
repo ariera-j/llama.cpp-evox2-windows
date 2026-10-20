@@ -2,7 +2,11 @@
 
 ## Status
 
-**PLANNING COMPLETE. IMPLEMENTATION NOT STARTED.**
+**STAGE 1 COMMON-003A SOURCE IMPLEMENTED; WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
+
+Stage 1 implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
+
+Implementation/validation handoff: [R5-COMMON003A-ROCMFPX-CORE-IMPLEMENTATION-2026-10-20.md](R5-COMMON003A-ROCMFPX-CORE-IMPLEMENTATION-2026-10-20.md).
 
 This branch is intentionally based on the minimal r5 split-PLE checkpoint so ROCmFPx can be attributed independently from the later MTP/QSA/Vulkan experiments.
 
