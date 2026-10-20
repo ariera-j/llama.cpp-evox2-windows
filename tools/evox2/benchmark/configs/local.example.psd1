@@ -7,6 +7,10 @@
     # An explicit path is honored, including a path copied from another worktree.
     LogRoot  = ''
 
+    # Optional external ADLX monitor executable. Leave empty to use the
+    # historical repo-local tools/evox2/adlx-gpu-monitor path.
+    AdlxMonitorExe = ''
+
     # Manual test-condition label. This is intentionally not auto-detected.
     UmaLabel = '96GB'
 
