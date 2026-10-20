@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 3 / VULKAN-001B SOURCE IMPLEMENTED; WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
+**STAGE 3 / VULKAN-001B COMPLETE. NEXT: STAGE 4 / 128K TARGET-MODEL COMPATIBILITY GATE (MTP OFF).**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -458,4 +458,49 @@ Ported scope:
 - normal and MUL_MAT_ID q8_1 dispatch/pipeline registration;
 - integer-MMQ shared-memory sizing.
 
-FP3/FP6 remain on the float matvec path by design. See [R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-20.md](R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-20.md).
+FP3/FP6 remain on the float matvec path by design. See [R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-21.md](R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-21.md).
+
+
+## Stage 3 validation checkpoint — 2026-10-21
+
+Build `b11531-db0b11516` passed the VULKAN-001B model-runtime and focused numerical-correctness gates on Evo-X2.
+
+Model runtime, MTP OFF:
+
+| Context | Dispatch | PP | TG | Result |
+|---|---|---:|---:|---|
+| 32k | normal | 412.22 tok/s | 27.19 tok/s | pass |
+| 32k | `GGML_VK_FORCE_MMVQ=1` | 419.32 tok/s | 27.42 tok/s | pass |
+| 64k | normal | 277.21 tok/s | 26.07 tok/s | pass |
+| 64k | `GGML_VK_FORCE_MMVQ=1` | 277.02 tok/s | 26.41 tok/s | pass |
+
+All four runs retained full GPU model placement and graph splits = 2 and produced coherent output. Relative to Stage 2, normal-dispatch performance is effectively flat in PP (+0.46% at 32k, -0.12% at 64k) with a small TG increase (+0.48% / +0.31%). Forced MMVQ improves 32k PP by 2.19% and TG by 1.33%, but does not improve 64k PP; therefore forced MMVQ is **not** promoted as the default dispatch policy.
+
+The focused correctness test commit is:
+
+```text
+fe36a4d3fcfc6d96952f65386c2ac4b1579d3d51
+tests: add ROCmFPx Vulkan batch-width coverage
+```
+
+The test gate covers these five Vulkan-supported ROCmFPx formats:
+
+- Q4_0_ROCMFP4
+- Q4_0_ROCMFP4_FAST
+- Q3_0_ROCMFPX
+- Q6_0_ROCMFPX
+- Q8_0_ROCMFPX
+
+For both `MUL_MAT` and `MUL_MAT_ID`, widths `n = 1, 3, 4, 5, 6, 7, 8` were compared against the CPU reference under both normal dispatch and `GGML_VK_FORCE_MMVQ=1`.
+
+| Test | Normal | Force MMVQ |
+|---|---:|---:|
+| MUL_MAT | 35/35 pass | 35/35 pass |
+| MUL_MAT_ID | 35/35 pass | 35/35 pass |
+| Total | 70/70 pass | 70/70 pass |
+
+Overall: **140/140 pass, 0 failures**. This explicitly closes the historical batch-3-8 correctness gate before MTP.
+
+Current AgentionAI remains about 1% faster in the long-context comparison, but it also uses a materially different Qwen/indexer/cache graph, so that residual is not treated as evidence of an incomplete ROCmFPx port.
+
+Decision: **close Stage 3**. Preserve normal r5 Vulkan dispatch and proceed to Stage 4 with the target model, MTP OFF, starting at 128k because 64k has already passed on the Stage-3 build.
