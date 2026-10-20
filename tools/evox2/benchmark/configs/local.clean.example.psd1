@@ -3,6 +3,11 @@
     # RepoRoot is descriptive; scripts detect their own Git worktree.
     RepoRoot = ''
     LogRoot = ''
+
+    # Optional external ADLX monitor executable. Leave empty to use the
+    # historical repo-local tools/evox2/adlx-gpu-monitor path.
+    AdlxMonitorExe = ''
+
     UmaLabel = '96GB'
 
     Builds = @{
