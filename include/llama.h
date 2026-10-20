@@ -159,6 +159,19 @@ extern "C" {
         LLAMA_FTYPE_MOSTLY_Q1_0          = 40, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_Q2_0          = 41, // except 1d tensors
 
+        // ROCmFPx experimental AMD-native recipes. Keep published GGUF IDs stable.
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4          = 100,
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN     = 101,
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_COHERENT = 102,
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST     = 103,
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST_COHERENT = 104,
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX    = 105,
+        LLAMA_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN = 106,
+        LLAMA_FTYPE_MOSTLY_Q6_0_ROCMFPX          = 110,
+        LLAMA_FTYPE_MOSTLY_Q8_0_ROCMFPX          = 111,
+        LLAMA_FTYPE_MOSTLY_Q3_0_ROCMFPX          = 112,
+        LLAMA_FTYPE_MOSTLY_Q2_0_ROCMFPX          = 122,
+
         LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
     };
 

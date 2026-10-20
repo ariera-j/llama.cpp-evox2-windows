@@ -430,7 +430,15 @@ extern "C" {
         GGML_TYPE_NVFP4   = 40, // NVFP4 (4 blocks, E4M3 scale)
         GGML_TYPE_Q1_0    = 41,
         GGML_TYPE_Q2_0    = 42,
-        GGML_TYPE_COUNT   = 43,
+        // ROCmFPx experimental AMD-native formats. Keep the historical high IDs
+        // stable because they are serialized directly in existing GGUF tensors.
+        GGML_TYPE_Q4_0_ROCMFP4      = 100,
+        GGML_TYPE_Q4_0_ROCMFP4_FAST = 101,
+        GGML_TYPE_Q6_0_ROCMFPX      = 102,
+        GGML_TYPE_Q8_0_ROCMFPX      = 103,
+        GGML_TYPE_Q3_0_ROCMFPX      = 104,
+        GGML_TYPE_Q2_0_ROCMFPX      = 107,
+        GGML_TYPE_COUNT   = 108,
     };
 
     // [TAG_GGML_PREC]
@@ -486,6 +494,17 @@ extern "C" {
         GGML_FTYPE_MOSTLY_NVFP4   = 26, // except 1d tensors
         GGML_FTYPE_MOSTLY_Q1_0    = 27, // except 1d tensors
         GGML_FTYPE_MOSTLY_Q2_0    = 28, // except 1d tensors
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4          = 100,
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4_LEAN     = 101,
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4_COHERENT = 102,
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST     = 103,
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4_FAST_COHERENT = 104,
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX    = 105,
+        GGML_FTYPE_MOSTLY_Q4_0_ROCMFP4_STRIX_LEAN = 106,
+        GGML_FTYPE_MOSTLY_Q6_0_ROCMFPX          = 110,
+        GGML_FTYPE_MOSTLY_Q8_0_ROCMFPX          = 111,
+        GGML_FTYPE_MOSTLY_Q3_0_ROCMFPX          = 112,
+        GGML_FTYPE_MOSTLY_Q2_0_ROCMFPX          = 113,
     };
 
     // available tensor operations:
