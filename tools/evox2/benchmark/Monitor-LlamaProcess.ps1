@@ -223,9 +223,10 @@ while ($true) {
 
         if ($gpuEngineRejectedCount -gt 0 -and -not $warnedInvalidGpuEngineCounter) {
             Write-Warning (
-                'Discarded {0} invalid GPU engine utilization counter value(s) outside 0..100.5%. ' +
-                'The multi-engine utilization sum itself is allowed to exceed 100%.' -f
-                $gpuEngineRejectedCount
+                (
+                    'Discarded {0} invalid GPU engine utilization counter value(s) outside 0..100.5%. ' +
+                    'The multi-engine utilization sum itself is allowed to exceed 100%.'
+                ) -f $gpuEngineRejectedCount
             )
             $warnedInvalidGpuEngineCounter = $true
         }
