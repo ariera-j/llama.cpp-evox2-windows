@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 2 / VULKAN-001A VALIDATED THROUGH 64K; READY FOR STAGE 3 / VULKAN-001B.**
+**STAGE 3 / VULKAN-001B SOURCE IMPLEMENTED; WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -433,3 +433,29 @@ Build `b11528-f4bd9adac` passed the VULKAN-001A correctness gates on Evo-X2.
 Both runs produced coherent summaries and completed normally. The Stage-1 ~41.8 GiB CPU model buffer did not return.
 
 Decision: close Stage 2 and proceed to VULKAN-001B.
+
+
+## Stage 3 implementation checkpoint — 2026-10-20
+
+VULKAN-001B source commit:
+
+```text
+8205db29206c71feb86ee5322069cdc31e48c061
+vulkan: add ROCmFPx integer-dot paths
+```
+
+Primary donor commits:
+
+- `e282dfd6dfbaaaadc293bf2cb5d11108088400a2`: ROCmFPx q8_1 integer-dot MMVQ/MMQ
+- `f0a2bd6b34e83b4282d62b085e2d21ef2d241864`: batch 3-8 correction
+
+Ported scope:
+
+- MMQ q8_1: Q4_0_ROCMFP4 and Q4_0_ROCMFP4_FAST;
+- MMVQ q8_1: Q4_0_ROCMFP4, Q4_0_ROCMFP4_FAST and Q8_0_ROCMFPX;
+- ROCmFP4/FAST MMVQ K_PER_ITER = 32;
+- FP3/FP6 float-path dequantize4 optimization for batch 3-8;
+- normal and MUL_MAT_ID q8_1 dispatch/pipeline registration;
+- integer-MMQ shared-memory sizing.
+
+FP3/FP6 remain on the float matvec path by design. See [R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-20.md](R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-20.md).
