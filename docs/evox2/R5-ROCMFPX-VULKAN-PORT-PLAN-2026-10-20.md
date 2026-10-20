@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 2 / VULKAN-001A SOURCE IMPLEMENTED; WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
+**STAGE 2 / VULKAN-001A VALIDATED THROUGH 64K; READY FOR STAGE 3 / VULKAN-001B.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -419,3 +419,17 @@ Do not work around a failure by importing a large unrelated agentionai source bl
 | ROCm/HIP parity | high, deferred | large independent Strix-specific kernel/tuning surface |
 
 Overall recommendation: proceed. The Vulkan-only port is bounded enough to be a practical prerequisite for the weekend integrated build, provided the stage/commit boundaries above are kept.
+
+
+## Stage 2 validation checkpoint — 2026-10-20
+
+Build `b11528-f4bd9adac` passed the VULKAN-001A correctness gates on Evo-X2.
+
+| Context | Prompt tokens | PP | TG | Model placement | Graph splits | Result |
+|---|---:|---:|---:|---|---:|---|
+| 32k | 29,557 | 410.33 tok/s | 27.06 tok/s | Vulkan 88,645.69 MiB + Host 497.31 MiB | 2 | pass |
+| 64k | 61,789 | 277.55 tok/s | 25.99 tok/s | Vulkan 88,645.69 MiB + Host 497.31 MiB | 2 | pass |
+
+Both runs produced coherent summaries and completed normally. The Stage-1 ~41.8 GiB CPU model buffer did not return.
+
+Decision: close Stage 2 and proceed to VULKAN-001B.

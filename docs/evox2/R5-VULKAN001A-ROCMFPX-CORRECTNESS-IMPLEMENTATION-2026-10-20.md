@@ -2,7 +2,7 @@
 
 ## Status
 
-**SOURCE IMPLEMENTED. WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
+**VALIDATED ON WINDOWS THROUGH 64K. VULKAN-001A CORRECTNESS BASELINE COMPLETE.**
 
 | Item | Identity |
 |---|---|
@@ -201,3 +201,72 @@ The exit occurs after threadpool initialization. This is not treated as a VULKAN
 - 4k coherent but major CPU model buffer remains: inspect backend capability/routing before Stage 3;
 - 4k full-GPU placement succeeds: advance to 32k/64k correctness, then VULKAN-001B;
 - only after VULKAN-001A/B target-model stability should the MTP ROCmFP4 sidecar compatibility gate begin.
+
+
+## Windows validation results — b11528 / 2026-10-20
+
+VULKAN-001A was validated on Evo-X2 / Radeon 8060S with build `b11528-f4bd9adac`, `-ngl 999 -ncmoe 0`, `-fit off`, MTP OFF.
+
+### 4k smoke
+
+The former Stage-1 host fallback disappeared:
+
+```text
+Vulkan0 model buffer size = 88645.69 MiB
+Vulkan_Host model buffer  =   497.31 MiB
+graph splits              = 2
+CPU model buffer          = absent
+```
+
+Short English/Japanese outputs were coherent and the process exited cleanly.
+
+### 32k real-input gate
+
+Input: `nlp-survey-ch3-d3-b1.txt`
+
+```text
+context            = 32768
+prompt tokens      = 29557
+PP                 = 410.33 tok/s
+TG                 = 27.06 tok/s
+Vulkan model       = 88645.69 MiB
+Vulkan context     = 1072 MiB at shutdown
+Vulkan compute     = 399 MiB at shutdown
+Host total         = 618 MiB
+graph splits       = 2
+result             = complete / coherent
+```
+
+### 64k real-input gate
+
+Input: `nlp-survey-ch3-d7-b1.txt`
+
+```text
+context            = 65536
+prompt tokens      = 61789
+PP                 = 277.55 tok/s
+TG                 = 25.99 tok/s
+Vulkan model       = 88645.69 MiB
+Vulkan context     = 2032 MiB at shutdown
+Vulkan compute     = 655 MiB at shutdown
+Host total         = 698 MiB
+graph splits       = 2
+result             = complete / coherent
+```
+
+The 64k run preserved the same full-GPU model placement and low split count as the 4k/32k runs. PP declines with context length as expected while TG remains close to the 32k result.
+
+## VULKAN-001A decision
+
+VULKAN-001A is accepted as the correctness baseline.
+
+The required compatibility goals are met:
+
+- target ROCmFP4-FAST GGUF loads without custom-type failure;
+- the ~41.8 GiB Stage-1 CPU model placement is eliminated;
+- all 49 layers are offloaded;
+- graph splits remain at 2 through 64k;
+- 32k and 64k real-input runs complete with coherent output;
+- no unexpected ROCmFPx CPU fallback is observed.
+
+Performance optimization is intentionally deferred to VULKAN-001B. The next step is to port the q8_1 MMVQ/MMQ path from `e282dfd6...`, then apply the batch 3–8 correction from `f0a2bd6...` before MTP testing.
