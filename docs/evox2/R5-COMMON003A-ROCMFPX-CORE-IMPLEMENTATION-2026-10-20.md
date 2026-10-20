@@ -2,7 +2,7 @@
 
 ## Status
 
-**SOURCE IMPLEMENTED. WINDOWS BUILD AND TARGET-MODEL VALIDATION PENDING.**
+**SOURCE BUILT ON WINDOWS; TARGET GGUF PARSING/FTYPE VALIDATED. CPU-ONLY EXECUTION LIMITATION REPRODUCED IN CURRENT AGENTIONAI; VULKAN-001A NOW IMPLEMENTED SEPARATELY.**
 
 | Item | Identity |
 |---|---|
@@ -11,7 +11,7 @@
 | COMMON-003A source commit | `85ab8d797f176c322f77647e27ebea3ee5d29931` |
 | Commit title | `ggml: add ROCmFPx core format support` |
 | Target model | `Qwen3.8-Flash-Next-ROCmFP4-FAST-v2-ple16.gguf` |
-| Vulkan kernels | **not implemented yet**; Stage 2 / VULKAN-001A |
+| Vulkan kernels | VULKAN-001A source implemented separately at `202f498877d03aa2c31b7d455b64c5452a4545b8` |
 | ROCm/HIP kernels | out of scope |
 
 The pre-port b11521 failure was:
@@ -209,3 +209,35 @@ Do not run 64k yet if Gate B is clearly blocked by the missing Vulkan implementa
 - **Gate B unexpectedly runs by CPU fallback:** still proceed to VULKAN-001A; confirm that ROCmFPx weights are actually offloaded rather than judging speed from a hybrid path.
 
 The next source implementation after these gates is Stage 2 / VULKAN-001A correctness-first Vulkan dequant/GET_ROWS/MUL_MAT/MUL_MAT_ID support.
+
+
+## Observed Windows Stage-1 validation — 2026-10-20
+
+Windows build b11526 / `f75691e93` successfully crossed the original type-101 loader failure. The target GGUF reports:
+
+```text
+q4_0_rocmfp4_fast: 50 tensors
+q3_0_rocmfpx:      16 tensors
+file type: Q4_0_ROCMFP4_FAST
+```
+
+With `-ngl 999 -ncmoe 0`, Stage 1 generated coherent output but exposed the intended Vulkan boundary:
+
+```text
+CPU model buffer size     = 41765.72 MiB
+Vulkan0 model buffer size = 46879.97 MiB
+Vulkan_Host model buffer  =   497.31 MiB
+```
+
+The current AgentionAI fork under the same short-run configuration instead placed essentially the full model on Vulkan:
+
+```text
+Vulkan0 model buffer size = 88645.69 MiB
+Vulkan_Host model buffer  =   497.31 MiB
+```
+
+This confirms that COMMON-003A parses the format correctly while the missing VULKAN-001 path causes the major Stage-1 host placement.
+
+The CPU-only `-ngl 0 --no-warmup` probe terminates after threadpool initialization with Windows exit code `-1073740791` (`0xC0000409`). The same model and command reproduce the same symptom in the current AgentionAI fork, so this is recorded as a reference-path limitation rather than a regression introduced by COMMON-003A. It does not block the Vulkan port.
+
+The next validation target is [VULKAN-001A](R5-VULKAN001A-ROCMFPX-CORRECTNESS-IMPLEMENTATION-2026-10-20.md).

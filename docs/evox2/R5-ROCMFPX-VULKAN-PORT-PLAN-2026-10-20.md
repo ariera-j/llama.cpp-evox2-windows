@@ -2,11 +2,16 @@
 
 ## Status
 
-**STAGE 1 COMMON-003A SOURCE IMPLEMENTED; WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
+**STAGE 2 / VULKAN-001A SOURCE IMPLEMENTED; WINDOWS BUILD/RUNTIME VALIDATION PENDING.**
 
-Stage 1 implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
+Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
-Implementation/validation handoff: [R5-COMMON003A-ROCMFPX-CORE-IMPLEMENTATION-2026-10-20.md](R5-COMMON003A-ROCMFPX-CORE-IMPLEMENTATION-2026-10-20.md).
+Stage 2 / VULKAN-001A implementation commit: `202f498877d03aa2c31b7d455b64c5452a4545b8` (`vulkan: add ROCmFPx correctness kernels`).
+
+Handoffs:
+
+- [COMMON-003A core implementation and observed Stage-1 runtime](R5-COMMON003A-ROCMFPX-CORE-IMPLEMENTATION-2026-10-20.md)
+- [VULKAN-001A correctness implementation and Windows gates](R5-VULKAN001A-ROCMFPX-CORRECTNESS-IMPLEMENTATION-2026-10-20.md)
 
 This branch is intentionally based on the minimal r5 split-PLE checkpoint so ROCmFPx can be attributed independently from the later MTP/QSA/Vulkan experiments.
 
@@ -233,16 +238,17 @@ Required Vulkan capabilities for the target model:
 
 ### Stage 2 gates
 
-Use a fresh build directory, e.g. `build-vulkan-rocmfpx-stage2`.
+Use a fresh build directory, e.g. `build-vulkan-rocmfpx-stage2a`.
 
 Run with `-fit off` first.
 
-1. Allocation/model load, MTP OFF, 32k context.
-2. Short generation, MTP OFF, 32k, fixed seed/sampling; verify coherent output and clean exit.
-3. Check logs for unexpected CPU tensor placement/fallback.
-4. Repeat with 64k real input.
-5. Preserve PP/TG only as a diagnostic; do **not** judge performance yet.
-6. Compare generated text against r2/current-agentionai reference where practical. Exact byte equality is not required unless sampling is deterministic and the compared graph path is numerically equivalent.
+1. 4k smoke load/generation with `-ngl 999 -ncmoe 0`. The Stage-1 hybrid baseline left 41765.72 MiB in the CPU model buffer; VULKAN-001A should instead place the ROCmFPx weights on Vulkan and move toward the current-AgentionAI reference of about 88645.69 MiB Vulkan model / 497.31 MiB Vulkan_Host.
+2. Verify coherent output and clean exit. Exact performance parity with current AgentionAI is not expected because q8_1 MMVQ/MMQ and unrelated Qwen/indexer changes are intentionally absent.
+3. Check logs for unexpected CPU model placement/fallback. Graph split count should fall materially from the Stage-1 hybrid path; exact parity with the AgentionAI graph is not required.
+4. Repeat at 32k, MTP OFF, fixed sampling.
+5. Repeat with 64k real input after 32k is clean.
+6. Preserve PP/TG as diagnostics; do **not** make the Stage-3 performance decision from the 4k smoke test.
+7. Compare generated text against r2/current-agentionai where practical. Exact byte equality is not required unless sampling is deterministic and the compared graph path is numerically equivalent.
 
 Commit boundary: **VULKAN-001A correctness baseline**.
 
