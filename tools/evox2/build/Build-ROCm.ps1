@@ -133,7 +133,7 @@ $rocmSdkCommand = Get-Command rocm-sdk -CommandType Application -ErrorAction Sil
 if ($rocmSdkCommand) {
     $rocmSdkVersionCapture = Invoke-Evox2NativeCapture -FilePath $rocmSdkCommand.Source -ArgumentList @('version')
     if ($rocmSdkVersionCapture.ExitCode -eq 0) {
-        $versionMatch = [regex]::Match($rocmSdkVersionCapture.Text, '\\b\\d+\\.\\d+\\.\\d+\\b')
+        $versionMatch = [regex]::Match($rocmSdkVersionCapture.Text, '\b\d+\.\d+\.\d+\b')
         if ($versionMatch.Success) {
             $rocmSdkVersionObserved = $versionMatch.Value
         }
@@ -344,7 +344,7 @@ try {
             [string]$Path
         )
 
-        $root = [IO.Path]::GetFullPath($Path).TrimEnd('\\')
+        $root = [IO.Path]::GetFullPath($Path).TrimEnd('\')
         if (-not (Test-Path -LiteralPath $root -PathType Container)) {
             throw "ROCm runtime data directory not found: $root"
         }
@@ -357,7 +357,7 @@ try {
         $rows = @()
         [int64]$totalBytes = 0
         foreach ($file in $files) {
-            $relative = $file.FullName.Substring($root.Length).TrimStart('\\')
+            $relative = $file.FullName.Substring($root.Length).TrimStart('\')
             $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             $rows += ('{0}|{1}|{2}' -f $relative, $file.Length, $hash)
             $totalBytes += $file.Length
