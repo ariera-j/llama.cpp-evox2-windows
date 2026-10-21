@@ -317,9 +317,31 @@ void llama_model_qwen4exp::load_arch_tensors(llama_model_loader & ml) {
         nextn.enorm        = create_tensor(tn(LLM_TENSOR_NEXTN_ENORM,        "weight", il), { n_embd }, mtp_flags);
         // RMS per hc stream of the trunk residual, so the gammas load as [n_embd, hc] like the mixer norms
         nextn.hnorm        = create_tensor(tn(LLM_TENSOR_NEXTN_HNORM,        "weight", il), { n_embd, hc }, mtp_flags | TENSOR_ALLOW_RESHAPE);
-        nextn.hc_head_norm = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_NORM, "weight", il), { n_embd, hc }, mtp_flags | TENSOR_ALLOW_RESHAPE);
-        nextn.hc_head_down = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_DOWN, "weight", il), { hc_dim, hc_lr }, mtp_flags);
-        nextn.hc_head_up   = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_UP,   "weight", il), { hc_lr, hc_dim }, mtp_flags);
+
+        // The MTP block's final mixer uses blk.<il>.nextn.hc_head_* in current
+        // upstream GGUFs. Older AgentionAI MTP-only sidecars stored the same
+        // three tensors under output_hc_*. Keep the current names preferred,
+        // but allow the old layout as a compatibility fallback.
+        nextn.hc_head_norm = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_NORM, "weight", il),
+                { n_embd, hc }, mtp_flags | TENSOR_NOT_REQUIRED | TENSOR_ALLOW_RESHAPE);
+        nextn.hc_head_down = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_DOWN, "weight", il),
+                { hc_dim, hc_lr }, mtp_flags | TENSOR_NOT_REQUIRED);
+        nextn.hc_head_up   = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_UP,   "weight", il),
+                { hc_lr, hc_dim }, mtp_flags | TENSOR_NOT_REQUIRED);
+
+        if (ml.load_mtp) {
+            const bool has_nextn = nextn.hc_head_norm && nextn.hc_head_down && nextn.hc_head_up;
+            const bool has_old   = hc_head_norm && hc_head_down && hc_head_up;
+
+            if (!has_nextn && (nextn.hc_head_norm || nextn.hc_head_down || nextn.hc_head_up)) {
+                throw std::runtime_error(format(
+                        "MTP block %d has an incomplete nextn.hc_head_{norm,down,up} set", il));
+            }
+            if (!has_nextn && !has_old) {
+                throw std::runtime_error(format(
+                        "MTP block %d has no final mixer: need blk.%d.nextn.hc_head_* or output_hc_*", il, il));
+            }
+        }
     }
 }
 
@@ -556,7 +578,9 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     const int il = hparams.n_layer();
     const auto & layer = model.layers[il];
 
-    GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm && layer.nextn.hc_head_norm &&
+    GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm &&
+            ((layer.nextn.hc_head_norm && layer.nextn.hc_head_down && layer.nextn.hc_head_up) ||
+             (model.hc_head_norm && model.hc_head_down && model.hc_head_up)) &&
             "MTP block missing, load the model with MTP enabled");
 
     int sections[4];
@@ -623,8 +647,13 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     cb(res->t_h_nextn, "h_nextn", il);
     ggml_build_forward_expand(gf, res->t_h_nextn);
 
+    // Prefer current upstream blk.<il>.nextn.hc_head_* tensors. Older
+    // MTP-only sidecars use output_hc_* for the same final mixer.
+    const bool nextn_head = layer.nextn.hc_head_norm != nullptr;
     cur = build_hc_mix(ggml_reshape_3d(ctx0, flat_out, n_embd, hc, flat_out->ne[1]),
-            layer.nextn.hc_head_norm, layer.nextn.hc_head_down, layer.nextn.hc_head_up,
+            nextn_head ? layer.nextn.hc_head_norm : model.hc_head_norm,
+            nextn_head ? layer.nextn.hc_head_down : model.hc_head_down,
+            nextn_head ? layer.nextn.hc_head_up   : model.hc_head_up,
             nullptr, nullptr, il);
     cb(cur, "result_norm", -1);
     res->t_embd = cur;
