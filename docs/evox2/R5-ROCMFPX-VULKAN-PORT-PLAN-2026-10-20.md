@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 4 TARGET-MODEL COMPATIBILITY COMPLETE THROUGH 256K (MTP OFF). TELEMETRY RESTORED. NEXT: STAGE 5A MTP SIDECAR LOAD + 32K COMPATIBILITY GATE.**
+**STAGE 5A OLD-HC COMPATIBILITY PATCH IMPLEMENTED AFTER EXPECTED MTP SIDECAR LOAD FAILURE. NEXT: BUILD STAGE5 AND RE-RUN 4K -> 32K MTP GATE.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -603,3 +603,76 @@ Stage 5A acceptance criteria:
 - no ROCmFPx batch-width/numerical failure is observed.
 
 After Stage 5A passes, prepare the Stage 5B 64k MTP OFF/ON matched gate. Do not import later r5 MTP PP/TG optimization patches into this compatibility branch.
+
+
+## Stage 5A first load result — 2026-10-21
+
+The first 4k MTP allocation smoke used the unmodified Stage-3 build `b11531-db0b11516` with:
+
+- target: `Qwen3.8-Flash-Next-ROCmFP4-FAST-v2-ple16.gguf`;
+- draft: `Qwen3.8-Flash-Next-MTP-ROCmFP4-FAST.gguf`;
+- MTP enabled, draft max = 2;
+- P-MODE/ADLX telemetry enabled and working.
+
+The target model loaded successfully. The draft GGUF also passed ROCmFPx parsing and reported:
+
+- GGUF V3;
+- file type `Q4_0_ROCMFP4_FAST`;
+- 34 tensors total;
+- 19 tensors of type `q4_0_rocmfp4_fast`.
+
+The load then failed exactly at the expected MTP layout boundary:
+
+```text
+llama_model_load: error loading model:
+check_tensor_dims: tensor 'blk.48.nextn.hc_head_norm.weight' not found
+```
+
+This is not a ROCmFPx format/Vulkan failure. The draft sidecar is an older AgentionAI MTP-only layout that stores the final hyper-connection mixer under `output_hc_{norm,down,up}`, while the current upstream qwen4exp loader expects `blk.<il>.nextn.hc_head_*`.
+
+### Stage 5A compatibility implementation
+
+Implemented in:
+
+```text
+9fa9970b19c1c4aba87934686c9b74f3b2f32ecf
+qwen4exp: support old MTP HC head layout
+```
+
+The current r5 base already contains:
+
+- `LLM_TENSOR_NEXTN_HC_HEAD_{NORM,DOWN,UP}`;
+- tensor-name mappings;
+- tensor infos;
+- `llama_layer_nextn::hc_head_*` fields.
+
+Therefore the compatibility patch is intentionally limited to `src/models/qwen4exp.cpp`:
+
+1. current `blk.<il>.nextn.hc_head_*` tensors become optional at MTP load;
+2. require either a complete current nextn set or a complete old `output_hc_*` set;
+3. reject a partial current set explicitly;
+4. graph construction prefers the current nextn set and falls back to `model.hc_head_*` only when the current set is absent.
+
+No ROCmFPx GGML/Vulkan code is changed by this patch.
+
+This is adapted from AgentionAI compatibility commit:
+
+`93a24e52cc12687213c0432af41c7fe2ab1a0eda`
+
+but only the runtime qwen4exp compatibility logic is needed on this r5 base; converter/tensor-enum additions from that historical commit are already present upstream.
+
+### Re-test
+
+Use a separate Stage-5 build so the validated Stage-3 binary remains intact.
+
+The Stage-5 plan now expects build key:
+
+`R5RocmFpxStage5Vulkan`
+
+and retains the sequence:
+
+1. 4k allocation smoke, MTP ON;
+2. stop on error;
+3. 32k real-input MTP run only after the 4k gate passes.
+
+Acceptance remains target/draft load, GPU placement, coherent output and nonzero/plausible draft acceptance. Performance is not a gate here.
