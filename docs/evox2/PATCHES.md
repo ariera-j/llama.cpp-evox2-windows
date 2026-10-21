@@ -20,11 +20,11 @@
 | **COMMON-002** — MTP compatibility *umbrella* | Evaluate/native MTP | Native MTP + minimal dense draft guard | Native upstream MTP; local guard **not ported** | [Recovered r2 64k/128k MTP ON/OFF logs](R2-MTP-LOG-RECOVERY-2026-10-11.md) verify r2 MTP works with Unsloth self-contained Q8_0 and PP/TG trade-off; r5 not yet smoke-tested, likely ratio-zero draft input issue. r4 minimal guard candidate first, before performance ports |
 | **MTP-DENSE-001** — omit dead dense-draft indexer | Not ported | Ported / Vulkan verified | Not ported | r4 Vulkan 256k MTP ON TG **15.220→20.185 (+32.62%)**, matched response/acceptance ([report](R4-COMMON002-DENSE-INDEXER-ABBA-VALIDATION-2026-10-04.md)); not a total-latency win against MTP OFF |
 | **MTP-NOOP-001** — suppress target QSA no-op invalidation | Not ported | Ported / Vulkan verified; ROCm long output gate open | Not ported | r4 Vulkan 256k TG **20.205→22.830 (+12.99%)** with dense omission already ON ([report](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md)); ROCm 256k attribution/equivalence not established |
-| **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | **Planned for first integrated snapshot preparation**: AgentionAI ROCmFP4-FAST GGUF loader/core + HIP correctness and model inference; not yet implemented or validated, no r5 speed claim |
+| **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | **Integration rehearsal PASS on NOOP line (2026-10-21)** | AgentionAI ROCmFP4-FAST target + old-layout MTP sidecar validated on Windows/Vulkan; backend width tests 140/140, native NOOP gate PASS, all-on VULKAN-002+DENSE+NOOP+ROCmFPx smoke PASS. Weekend newest-upstream port still pending. |
 | **COMMON-004** — incremental pooled-key cache | Ported / verified | Upstream functionally covered; old patch not ported | Upstream functionally covered; old patch not ported | Major pooled-key path revised via [#29751](https://github.com/ggml-org/llama.cpp/pull/29751), graph stability via [#29958](https://github.com/ggml-org/llama.cpp/pull/29958). Avoid treating this as source-identical port |
 | **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | **Not ported; adaptation required; deferred** | r3 ROCm 256k TG **11.68→17.37 (+48.7%)** ([ABBA/RGP](COMMON005-ROCM-VALIDATION-2026-10-02.md)). [r5 source review](R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md): same gather *principle*, but `top_k` replaced with additive `sel` + `selected_rows` including dump ids; old text cannot be cherry-picked safely. Not a normal MTP-verification optimization; defer until non-MTP deep decode/integration. |
 | **COMMON-006** — block-domain QSA select | Proposed; not ported | Upstream-covered | Upstream-covered | Direction implemented in [#29751](https://github.com/ggml-org/llama.cpp/pull/29751); retain semantic checks, not a standing port |
-| **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | Not ported | **Conditional** on target model/Vulkan path during first integration; separate compatibility and backend decision from COMMON-003 |
+| **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | **Integration rehearsal PASS on NOOP line (2026-10-21)** | Correctness + integer-dot paths replay cleanly over VULKAN-002; 140/140 focused backend tests pass and all-on real Qwen3.8 MTP smoke enters grouped-union prefill successfully. Weekend newest-upstream semantic port still pending. |
 | **VULKAN-002** — grouped-union prefill QSA | Not ported (r2 donor existed) | **Ported / verified** | **Ported / verified, opt-in** | r5 PLE16 64k **+25.61%**, 128k **+71.27%**, 256k **+105.54% PP** with f16 K/V; native Vulkan FA OFF/ON 18/18, real runs 12/12 ([report](R5-VULKAN002-VALIDATION-2026-10-09.md)); model-level quality/default ON not certified |
 | **VULKAN-MOE-001** — legacy per-expert tile selection | Not ported | Ported / verified | **Upstream-covered; no port** | r4 64k PP **+8.25%**; [#29936](https://github.com/ggml-org/llama.cpp/pull/29936), merged **2026-10-05**, restored selector semantics on r5 ([audit](R5-MOE-TILE-UPSTREAM-REVERT-2026-10-09.md)) |
 | **VULKAN-GR-001** — GET_ROWS 128x4 experiment | Not ported | Ported experiment / **no useful measured gain** | Not ported | r4 [profile](R4-GET-ROWS-128X4-AB-2026-10-03.md); do not carry by default |
@@ -993,3 +993,17 @@ For this project, validation normally means:
 4. target workload completes
 5. result is compared to the immediately preceding baseline
 6. logs are retained outside Git when they are too large or machine-specific
+
+
+### 2026-10-21 integration rehearsal checkpoint
+
+Branch `integration-check/r5-noop-rocmfpx-20261021` proves runtime coexistence of VULKAN-002 + MTP-DENSE + MTP-NOOP + ROCmFP4/ROCmFPx + old Agention HC-head MTP layout on the pinned r5 lineage.
+
+Evidence:
+
+- focused ROCmFPx Vulkan backend tests: 140/140 pass across normal and forced-MMVQ dispatch;
+- native QSA no-op policy/model-state/rollback gate: Complete / Passed;
+- all-on short real-model smoke: target 49/49 GPU, draft 50/50 GPU, DENSE evidence Verified/omitted, NOOP evidence Verified/enabled, draft acceptance 69/114;
+- grouped-union emits an active-prefill proof before the expected decode fallback.
+
+This is not the final integrated release. Do not merge whole files from the isolated ROCmFPx branch; VULKAN-002 was absent there. Reapply features semantically when refreshing to the selected newest upstream.
