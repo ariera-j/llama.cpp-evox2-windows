@@ -30,6 +30,12 @@ Six additional canonical reports were copied to stable r5 without importing expe
 
 The current integration ordering is now centralized in [R5-INTEGRATION-PLAN-2026-10-21.md](R5-INTEGRATION-PLAN-2026-10-21.md).
 
+### 2026-10-21 post-integration optimization research snapshot
+
+[R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md) preserves the current external-source review and final provisional priority after the integrated candidate is frozen. It consolidates s1/Strata research with halo-box, tetherto, Gufo Windows, pwilkin and wider upstream/fork evidence, plus the DeepSeek review corrections.
+
+This is **documentation/research only**: no new Windows build, Evo-X2 benchmark or source adoption was performed. It does not alter the first integration candidate. The snapshot's current order is audit/MMVQ widths → transposed CONCAT → residual Vulkan FA → select remaining GPU/host work from measured cost → smaller-weight/Draft/QSA follow-ups. Re-check all upstream PR and donor states at the actual post-integration start rather than treating the 2026-10-21 revisions as permanent pins.
+
 **Other existing stable documents**: [PATCHES.md](PATCHES.md), [ROADMAP.md](ROADMAP.md), [research/integration plan](R5-RESEARCH-AND-INTEGRATION-PLAN-2026-10-19.md), [Stage-B Stage1 implementation](R5-MTP-PP-KV-CROP-STAGE1-IMPLEMENTATION-2026-10-14.md), [RGP evidence](R5-MTP-EH-PROJ-FLATTEN-RGP-2026-10-19.md), MTP-DENSE/NOOP reports, [performance research log](PERFORMANCE-RESEARCH-LOG.md), and [Vulkan FA dispatch diagnostics](R5-VULKAN-OFF-FA-DISPATCH-DIAGNOSTICS-2026-10-10.md). The long-lived log and stable PATCHES/ROADMAP are more current than older branch snapshots; this sync does **not** overwrite them.
 
 ### Tool copies in `tools/evox2/`
