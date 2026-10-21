@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 3 / VULKAN-001B COMPLETE. NEXT: STAGE 4 / 128K TARGET-MODEL COMPATIBILITY GATE (MTP OFF).**
+**STAGE 4 TARGET-MODEL COMPATIBILITY COMPLETE THROUGH 256K (MTP OFF). PERFORMANCE COMPARISON IS PROVISIONAL BECAUSE P-MODE/ADLX TELEMETRY WAS NOT RECORDED. NEXT: RESTORE TELEMETRY, THEN STAGE 5 MTP SIDECAR COMPATIBILITY.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -504,3 +504,44 @@ Overall: **140/140 pass, 0 failures**. This explicitly closes the historical bat
 Current AgentionAI remains about 1% faster in the long-context comparison, but it also uses a materially different Qwen/indexer/cache graph, so that residual is not treated as evidence of an incomplete ROCmFPx port.
 
 Decision: **close Stage 3**. Preserve normal r5 Vulkan dispatch and proceed to Stage 4 with the target model, MTP OFF, starting at 128k because 64k has already passed on the Stage-3 build.
+
+
+## Stage 4 validation checkpoint — 2026-10-21
+
+The standard Evo-X2 matrix runner was used with the same real-input long-context conditions for the r5 Stage-3 Vulkan build and the current AgentionAI dedicated Vulkan fork.
+
+Important qualification: this ROCmFPx investigation branch still had the pre-2026-10-15 measurement scripts, so P-MODE start/finish and ADLX GPU clock/temperature/power telemetry were **not recorded**. The runs are valid as compatibility/stability evidence, but the cross-build performance comparison is provisional until the updated telemetry tooling is used.
+
+All four runs completed with status OK and coherent output.
+
+| Context | Build | Prompt tokens | PP | TG | Result |
+|---|---|---:|---:|---:|---|
+| 128k | r5 Stage-3 b11531-db0b11516 | 126,253 | 181.83 tok/s | 23.38 tok/s | pass |
+| 128k | current AgentionAI dedicated fork | 126,253 | 166.91 tok/s | 23.05 tok/s | pass |
+| 256k | r5 Stage-3 b11531-db0b11516 | 255,181 | 126.79 tok/s | 18.63 tok/s | pass |
+| 256k | current AgentionAI dedicated fork | 255,181 | 91.03 tok/s | 19.18 tok/s | pass |
+
+Provisional Stage-3 versus AgentionAI differences:
+
+- 128k PP: +8.94%
+- 128k TG: +1.43%
+- 256k PP: +39.28%
+- 256k TG: -2.87%
+
+The 256k PP gap is accompanied by a materially different memory/cache layout:
+
+| Context | Build | Indexer KV | Pooled indexer cache | Vulkan compute buffer |
+|---|---|---:|---:|---:|
+| 128k | r5 Stage-3 | 768 MiB | none reported | 1,148.91 MiB |
+| 128k | AgentionAI | 384 MiB | 192.01 MiB | 2,824.68 MiB |
+| 256k | r5 Stage-3 | 1,536 MiB | none reported | 2,005.28 MiB |
+| 256k | AgentionAI | 768 MiB | 384.01 MiB | 4,373.93 MiB |
+
+At 256k the resource monitor observed approximately 99.9 GiB peak target GPU committed for Stage-3 versus 102.7 GiB for AgentionAI, with about 5.1 GiB versus 7.8 GiB peak target shared GPU memory. This is consistent with the AgentionAI graph using substantially more long-context working memory and crossing further into shared memory, but no causal performance attribution is made without matched P-MODE/ADLX telemetry and profiling.
+
+Decision:
+
+- Stage 4 compatibility/stability gate: **PASS through 256k**.
+- Stage-3 ROCmFPx port remains stable at long context with full GPU model placement.
+- Cross-build performance ranking: **provisional** because P-MODE/ADLX telemetry is absent from these runs.
+- Before Stage 5, sync the benchmark telemetry tooling from the r5 line and use the external ADLX monitor path from local configuration; do not re-add the ADLX source/build tree to Git.
