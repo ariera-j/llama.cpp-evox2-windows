@@ -8,6 +8,8 @@ The pinned research/control lineage remains `r5/upstream-refresh-20261009`. No l
 
 Current authoritative build/order details: [R5-INTEGRATION-PLAN-2026-10-21.md](R5-INTEGRATION-PLAN-2026-10-21.md).
 
+Post-integration optimization research is tracked separately in [R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md). That 2026-10-21 snapshot does **not** add s1/Strata/halo/Gufo experiments to the first integration candidate. Its provisional order begins only after the integrated baseline is frozen: runtime/build/MMVQ audit → transposed CONCAT → residual Vulkan FA → measured remaining GPU/host work → small-weight/Draft/QSA follow-ups. Re-audit upstream and donor revisions when that work actually starts.
+
 ### Status meanings
 
 - **移植予定**: semantically reapply on the selected newer upstream only if equivalent functionality is still missing; no blind cherry-pick or whole-file copy.
