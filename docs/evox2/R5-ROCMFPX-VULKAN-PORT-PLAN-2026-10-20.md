@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 5A OLD-HC COMPATIBILITY PATCH IMPLEMENTED AFTER EXPECTED MTP SIDECAR LOAD FAILURE. NEXT: BUILD STAGE5 AND RE-RUN 4K -> 32K MTP GATE.**
+**STAGE 5A ADVANCED PAST OLD-HC LOAD; DENSE-MTP K-POOL NULL-BUFFER COMPATIBILITY PATCH IMPLEMENTED. NEXT: REBUILD STAGE5 AND RE-RUN 4K -> 32K MTP GATE.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -676,3 +676,54 @@ and retains the sequence:
 3. 32k real-input MTP run only after the 4k gate passes.
 
 Acceptance remains target/draft load, GPU placement, coherent output and nonzero/plausible draft acceptance. Performance is not a gate here.
+
+
+## Stage 5A second smoke result — 2026-10-21
+
+Build `b11558-05b288018` included the old-HC compatibility path and progressed materially further than the first Stage-5 smoke.
+
+Observed sequence:
+
+1. target ROCmFP4-FAST model loaded;
+2. draft ROCmFP4-FAST sidecar loaded;
+3. old `output_hc_*` fallback successfully bypassed the previous
+   `blk.48.nextn.hc_head_norm.weight not found` failure;
+4. draft model offloaded 50/50 layers to Vulkan;
+5. draft context allocated attention KV and indexer KV;
+6. draft graph scheduler reserve completed;
+7. speculative implementation `draft-mtp` was registered;
+8. a subsequent reserve completed;
+9. process aborted at:
+   ```text
+   ggml/src/ggml-backend.cpp:345: GGML_ASSERT(buffer) failed
+   ```
+
+The assertion is `ggml_backend_buffer_get_type(nullptr)`, not a GGUF/tensor-type parser failure.
+
+This matches the previously isolated r5 dense-MTP compatibility defect from commit `f8d24494`: the MTP layer has `dsv4_compress_ratios[il] == 0` (dense attention), but the graph registers a k-pool input solely because the indexer cache and global k-pool feature exist. The dense MTP graph never consumes that input, so no backend buffer is assigned and the input setter later reaches a null buffer.
+
+### Stage 5A dense-MTP compatibility implementation
+
+Implemented in:
+
+```text
+a09d40719f6d0af159216357708f376ff51170ea
+qwen4exp: skip k-pool input for dense MTP
+```
+
+Change scope is one MTP-graph condition in `src/models/qwen4exp.cpp`:
+
+```cpp
+if (mctx_hyb->get_idx() &&
+    hparams.indexer_kpool > 0 &&
+    hparams.dsv4_compress_ratios[il] > 0) {
+    ...
+    inp_kpool = build_inp_kpool(mctx_hyb);
+}
+```
+
+Positive-ratio MTP/QSA behavior is unchanged. Target/trunk QSA is unchanged. Draft indexer KV allocation may still appear; this patch only avoids registering the unused k-pool graph input for the ratio-zero dense MTP block.
+
+This is a compatibility fix already validated independently on the r5 line and is not a ROCmFPx performance optimization.
+
+Rebuild the dedicated Stage-5 Vulkan directory and repeat the same matrix. The expected causality gate is disappearance of the `ggml-backend.cpp:345` assertion and successful token generation/draft acceptance at 4k before the automatic 32k run.
