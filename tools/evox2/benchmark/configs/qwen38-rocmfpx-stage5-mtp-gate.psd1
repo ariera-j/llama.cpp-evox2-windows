@@ -17,7 +17,7 @@
     # Required local.psd1 keys:
     #
     # Builds:
-    #   R5RocmFpxStage3Vulkan
+    #   R5RocmFpxStage5Vulkan  (build after the Stage-5 old-HC compatibility patch)
     #
     # Models:
     #   AgentionRocmFp4FastPle16
@@ -102,7 +102,7 @@
             Tool = 'cli'
 
             BuildKeys = @(
-                'R5RocmFpxStage3Vulkan'
+                'R5RocmFpxStage5Vulkan'
             )
 
             ModelKeys = @(
@@ -135,7 +135,7 @@
             Tool = 'cli'
 
             BuildKeys = @(
-                'R5RocmFpxStage3Vulkan'
+                'R5RocmFpxStage5Vulkan'
             )
 
             ModelKeys = @(
