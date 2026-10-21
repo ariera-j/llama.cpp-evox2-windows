@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 5B MTP-ON PASSES AT 64K. MTP-OFF OUTPUT-DEGENERATION ANOMALY PENDING ONE EXACT-CONDITION RECHECK BEFORE CLOSING STAGE 5B.**
+**STAGE 5B PASS AT 64K. THE FIRST MTP-OFF OUTPUT-DEGENERATION ANOMALY DID NOT REPRODUCE. NEXT: SMALL STAGE 5C WIDE-DRAFT REAL-WORKLOAD CHECK, THEN PORT-COMPLETION DECISION.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -868,3 +868,55 @@ Interpretation:
 - if the same or similar degeneration repeats, investigate target-only numerical stability before final port completion.
 
 Do not repeat the successful 64k MTP-ON run unless later evidence requires it.
+
+
+## Stage 5B MTP-OFF recheck — 2026-10-21
+
+The exact-condition single-run MTP-OFF recheck on the same build/model/input completed normally.
+
+Build:
+
+`b11561-bddcbf2f1`
+
+Recheck result:
+
+| Item | First Stage-5B OFF | Recheck OFF |
+|---|---:|---:|
+| Prompt tokens | 61,789 | 61,789 |
+| PP | 281.98 tok/s | 277.24 tok/s |
+| TG | 25.83 tok/s | 25.67 tok/s |
+| Generated tokens | 1,024 | 579 |
+| Output | degenerates to repeated `/` near the end | coherent, normal termination |
+| Exit | 0 | 0 |
+| Target GPU layers | 49/49 | 49/49 |
+| P-MODE start/finish | Performance / Performance | Performance / Performance |
+| ADLX high-load power | 108.451 W | 109.474 W |
+| ADLX class | Performance-like | Performance-like |
+
+The recheck PP is 1.68% lower and TG 0.62% lower than the first MTP-OFF run. Both runs have matching Performance P-MODE and Performance-like ADLX telemetry; these small timing differences are not treated as a compatibility regression.
+
+Most importantly, the output degeneration did **not** reproduce. The second run produced a coherent Japanese summary and terminated after 579 generated tokens rather than reaching the 1,024-token ceiling.
+
+Decision:
+
+- classify the first `/` repetition as a non-reproduced stochastic generation anomaly;
+- no target-only ROCmFPx regression is established;
+- **Stage 5B PASS**;
+- do not spend additional long-context runs on this anomaly unless it reappears.
+
+The validated 64k Stage-5 state is therefore:
+
+- MTP OFF target-only run: coherent on recheck, full GPU placement;
+- MTP ON: coherent, target 49/49 GPU, draft 50/50 GPU;
+- MTP acceptance: 417/578 = 72.145%;
+- old-HC and ratio-zero dense-MTP compatibility fixes remain stable.
+
+### Stage 5C recommendation
+
+Before declaring the ROCmFP4 upstream port complete, perform one small real-workload speculative-width check rather than another long-context benchmark.
+
+Purpose: complement the Stage-3 numerical MUL_MAT/MUL_MAT_ID coverage at widths 3-8 with an actual MTP verification graph that requests a wider draft batch.
+
+Use a short input, keep MTP enabled, and test at least `DraftMax=7` with `DraftPMin=0`. A full 7-token draft allows the target verification batch to reach width 8 (draft tokens plus the current target token). This is a correctness gate only; acceptance and speed are diagnostic.
+
+If the wide-draft run completes with coherent output, nonzero acceptance, full GPU placement and no ROCmFPx/backend failure, Stage 5 and the isolated ROCmFP4/ROCmFPx upstream-port validation can be closed.
