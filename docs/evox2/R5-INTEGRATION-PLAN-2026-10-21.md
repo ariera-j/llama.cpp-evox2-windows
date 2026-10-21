@@ -84,6 +84,22 @@ The complete all-feature combination has **not** yet been natively built/run tog
 
 The Stage-B/flatten replay also exposed a practical porting hazard: Qwen4Exp target and MTP builders contain similar `inp_pos / inp_out_ids` text. Anchor the output-id crop specifically inside `graph_mtp::graph_mtp()`; do not use a global first textual match.
 
+### ROCm build/runtime provenance closed; unified TheRock 10.0 policy
+
+[ROCm runtime provenance and 64k same-binary ABBA](R5-ROCM-RUNTIME-PROVENANCE-ABBA-2026-10-21.md) resolved the earlier build/runtime ambiguity.
+
+- b11521 was **built with TheRock / ROCm SDK 10.0.0** (Clang 23, gfx1151). The old shell HIP 7.2 variables did not drive CMake because the build script supplied explicit TheRock paths.
+- the historical `build-rocm-common001` runtime was nevertheless **mixed at the BLAS boundary**: staged TheRock HIP core DLLs were used, while `hipblas.dll`, `rocblas.dll` and `hipblaslt.dll` were loaded from `C:\Program Files\AMD\ROCm\7.2\bin`.
+- a same-binary pure-TheRock runtime was constructed with the complete DLL closure plus `rocblas/library/gfx1151` and `hipblaslt/library/gfx1151`. A DLL-only copy was insufficient: real GEMM initialization requires the Tensile/runtime data trees.
+- 64k ABBA, MTP OFF, 61,789 prompt tokens: mixed A1/A2 = **380.47/389.21 PP, 20.92/21.18 TG**; unified TheRock B1/B2 = **375.55/389.94 PP, 21.01/21.02 TG**. P-MODE stayed Performance and high-load power stayed ~120 W.
+- the aggregate PP spread was concentrated in the first 8k. A1/B1 read ~0.75 GiB during that interval, versus ~0.15/0.22 GiB for B2/A2. From 8,192 to 61,440 tokens all four runs converge to ~378-381 tok/s with ~99.7-99.8% GPU usage. Treat this as cold/warm initialization/page-cache behavior, not a sustained runtime-speed advantage.
+- warmed B2 vs A2 is effectively tied: **PP +0.19%**, **TG -0.76%** for unified TheRock.
+- the four temp=0/fixed-seed outputs were not identical, including B1 vs B2. Runtime unification therefore does **not** close the separate ROCm output-repeatability issue.
+
+`tools/evox2/build/Build-ROCm.ps1` now defaults to `ExpectedRocmSdkVersion=10.0.0` and stages the complete TheRock HIP/BLAS closure plus the target-specific rocBLAS/hipBLASLt data trees. Future manifests record `RuntimePolicy.Mode = TheRockUnified`, expected/observed SDK version, DLL hashes and runtime-data-tree digests. Historical ROCm archives built before this change remain potentially mixed unless their process-module provenance was captured.
+
+Near-term investigation order is fixed as: **ROCm runtime provenance (complete) → ROCm output repeatability → ROCmFP4 vs Unsloth same-binary speed → QSA mask visualization → ROCm RGP → needle test v1 on Qwen3.8 ROCmFP4 and Gemma 4**.
+
 ## Measurement and provenance tooling — preserve as first-class integration assets
 
 The current r5 branch already contains the validated measurement infrastructure. Do **not** overwrite it with older investigation-branch copies.
@@ -139,7 +155,7 @@ A telemetry probe failure remains fail-open for execution but makes the run unsu
 3. Freeze one exact upstream SHA.
 4. Build **untouched upstream** Vulkan and ROCm references before local inference-source changes.
 5. Use the stable r5 measurement harness externally if needed so the untouched-upstream source remains a genuine baseline.
-6. Record the actual compile-time HIP/ROCm toolchain and runtime-loaded HIP/ROCm DLL paths/versions; resolve the previously suspected build-version/runtime-version mismatch instead of inferring it from labels.
+6. Use the unified TheRock runtime staging policy from `Build-ROCm.ps1` (currently pinned to SDK 10.0.0), preserve its runtime manifest/digests, and verify loaded module paths on the candidate. Historical pre-2026-10-21 ROCm builds may be mixed at the BLAS boundary; do not use them as runtime-provenance references without module-path evidence.
 
 ### 1. Loader/model prerequisites
 
