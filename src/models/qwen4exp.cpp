@@ -653,14 +653,18 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
 
     ggml_tensor * inject = nullptr;
     ggml_tensor * cur = build_hc_mix(res_hc, layer.hc_attn_norm, layer.hc_attn_down, layer.hc_attn_up, layer.hc_attn_inject, &inject, il);
-    cur    = build_layer_attn(inp_hyb->get_attn(), mctx_hyb, inp_kpool, cur, inp_pos, sections, il);
-
-    // build_attn() already expanded Q, K, V and K/V cache copy roots. No
-    // downstream root means the FA/WO subtree does not enter the executable
-    // graph. Keep the full graph for output-producing draft/verification.
     if (draft_prefill_kv_crop) {
+        // Cache-only Draft catch-up, including short zero-output batches in TG.
+        // Do not call build_layer_attn()/build_attn_mha(): the latter explicitly
+        // roots Flash Attention even when the returned output is unused.
+        // This dedicated path keeps K/V writes (and the recurrent-copy root
+        // above) without constructing Q, FA, gate, HC/FFN or output tensors.
+        GGML_ASSERT(inp_kpool == nullptr && "KV-only Draft requires dense MTP");
+        build_layer_attn_kv_only(inp_hyb->get_attn(), cur, inp_pos, sections, il);
         return;
     }
+
+    cur    = build_layer_attn(inp_hyb->get_attn(), mctx_hyb, inp_kpool, cur, inp_pos, sections, il);
 
     res_hc = build_hc_combine(res_hc, cur, inject, il);
 
@@ -1004,6 +1008,59 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
     }
 
     return cur;
+}
+
+// Dense, ratio-zero Qwen4Exp MTP Draft catch-up only. This is intentionally
+// separate from the ordinary attention builder: common build_attn_mha() roots
+// its FA output unconditionally. K/V maths below mirror build_layer_attn() +
+// build_attn(llm_graph_input_attn_kv) in exactly the same order; only unused
+// Q, attention-output, HC and FFN work is omitted. Keep this method in sync
+// with changes to the dense K/V path during future upstream refreshes.
+void llama_model_qwen4exp::graph::build_layer_attn_kv_only(
+        llm_graph_input_attn_kv * inp,
+        ggml_tensor *             cur,
+        ggml_tensor *             inp_pos,
+        int *                     sections,
+        int                       il) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(hparams.dsv4_compress_ratios[il] == 0 &&
+                "KV-only MTP catch-up cannot use a QSA/indexer layer");
+
+    // Match the full path's K and V projections.
+    ggml_tensor * k_cur = build_lora_mm(model.layers[il].wk, cur, model.layers[il].wk_s);
+    ggml_tensor * v_cur = build_lora_mm(model.layers[il].wv, cur, model.layers[il].wv_s);
+
+    k_cur = ggml_reshape_3d(ctx0, k_cur, n_embd_head, n_head_kv, n_tokens);
+    k_cur = build_norm(k_cur, model.layers[il].attn_k_norm, nullptr, LLM_NORM_RMS, il);
+    v_cur = ggml_reshape_3d(ctx0, v_cur, n_embd_head, n_head_kv, n_tokens);
+
+    // Identical M-RoPE arguments and transform order to build_layer_attn().
+    k_cur = ggml_rope_multi(
+            ctx0, k_cur, inp_pos, nullptr,
+            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+            ext_factor, attn_factor, beta_fast, beta_slow);
+
+    // Match rotations in llm_graph_context::build_attn() before cache copies.
+    if (inp->self_k_rot) {
+        k_cur = llama_mul_mat_hadamard(ctx0, k_cur, inp->self_k_rot);
+    }
+    if (inp->self_v_rot) {
+        v_cur = llama_mul_mat_hadamard(ctx0, v_cur, inp->self_v_rot);
+    }
+
+    // Preserve the original independent projection and cache-copy graph roots.
+    // Their SET_ROWS outputs must be executable even with zero output rows.
+    ggml_build_forward_expand(gf, v_cur);
+    ggml_build_forward_expand(gf, k_cur);
+
+    const auto * mctx_cur = inp->mctx;
+    ggml_tensor * cache_write_k = mctx_cur->cpy_k(ctx0, k_cur, inp->get_k_idxs(), il);
+    ggml_tensor * cache_write_v = mctx_cur->cpy_v(ctx0, v_cur, inp->get_v_idxs(), il);
+    ggml_set_name(cache_write_k, "mtp_draft_cache_write_k");
+    ggml_set_name(cache_write_v, "mtp_draft_cache_write_v");
+    ggml_build_forward_expand(gf, cache_write_k);
+    ggml_build_forward_expand(gf, cache_write_v);
 }
 
 ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
