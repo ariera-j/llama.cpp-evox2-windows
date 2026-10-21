@@ -8,6 +8,8 @@ The goal is not to merge investigation branches wholesale. The goal is to start 
 
 No final latest-upstream integrated candidate, release tag or replacement binary exists yet.
 
+> **Post-integration optimization research is tracked separately.** The 2026-10-21 point-in-time priority snapshot is [R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md). It does **not** change the candidate-construction order in this document. Use it only after the integrated candidate is frozen and re-check upstream PR/fork state at the actual start of the next optimization session.
+
 ### Point-in-time upstream watch
 
 At the 2026-10-21 review checkpoint, upstream `ggml-org/llama.cpp` master is:
