@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 5A ADVANCED PAST OLD-HC LOAD; DENSE-MTP K-POOL NULL-BUFFER COMPATIBILITY PATCH IMPLEMENTED. NEXT: REBUILD STAGE5 AND RE-RUN 4K -> 32K MTP GATE.**
+**STAGE 5A PASS AT 32K WITH ROCmFP4 MTP SIDECAR. NEXT: STAGE 5B 64K MTP OFF/ON MATCHED GATE.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -727,3 +727,74 @@ Positive-ratio MTP/QSA behavior is unchanged. Target/trunk QSA is unchanged. Dra
 This is a compatibility fix already validated independently on the r5 line and is not a ROCmFPx performance optimization.
 
 Rebuild the dedicated Stage-5 Vulkan directory and repeat the same matrix. The expected causality gate is disappearance of the `ggml-backend.cpp:345` assertion and successful token generation/draft acceptance at 4k before the automatic 32k run.
+
+
+## Stage 5A validation result — 2026-10-21
+
+Dedicated Stage-5 Vulkan build:
+
+```text
+b11561-bddcbf2f1
+```
+
+includes both compatibility fixes required by the existing AgentionAI ROCmFP4 MTP sidecar:
+
+1. `9fa9970b1` — old `output_hc_*` final-mixer fallback;
+2. `a09d40719` — skip unused k-pool graph input for ratio-zero dense MTP.
+
+The 4k gate passed and the matrix proceeded to the 32k real-input run.
+
+32k result:
+
+| Item | Result |
+|---|---:|
+| Status | OK / exit 0 |
+| Context | 32,768 |
+| Prompt tokens | 29,557 |
+| PP | 384.28 tok/s |
+| Generated tokens | 626 |
+| TG | 36.42 tok/s |
+| Draft generated | 528 |
+| Draft accepted | 361 |
+| Draft acceptance | **68.371%** |
+| Mean accepted length | 2.37 |
+| Target GPU layers | 49/49 |
+| Draft GPU layers | 50/50 |
+| P-MODE start/finish | Performance / Performance |
+| P-MODE changed | false |
+| ADLX high-load power | 119.829 W |
+| ADLX power class | Performance-like |
+| P-MODE/ADLX consistency | true |
+
+Speculative statistics:
+
+```text
+draft-mtp: #calls(b,g,a) = 1 264 264
+#gen drafts = 264
+#acc drafts = 210
+#gen tokens = 528
+#acc tokens = 361
+#mean acc len = 2.37
+#acc rate/pos = (0.795, 0.572)
+```
+
+The generated Japanese summary is coherent and relevant to the input document. There are no ROCmFPx type, Vulkan pipeline, HC-layout or null-buffer failures.
+
+Decision: **Stage 5A PASS**.
+
+This is the key integration result: the upstream-based r5 branch can now run the existing ROCmFP4-FAST target GGUF together with the existing ROCmFP4-FAST MTP sidecar through real 32k generation.
+
+### Stage 5B
+
+Prepared:
+
+`tools/evox2/benchmark/configs/qwen38-rocmfpx-stage5b-mtp-64k.psd1`
+
+It runs one matched 64k pair on the same Stage-5 build:
+
+1. MTP OFF;
+2. MTP ON with the same sidecar, `DraftMax=2`, `DraftPMin=0`.
+
+Stage 5B remains a compatibility gate. Record completion, coherent output, draft acceptance, GPU placement and telemetry. PP/TG are diagnostic only.
+
+After 64k passes, use a small bounded DraftMax expansion test to exercise wider speculative verification in a real MTP graph. The Stage-3 backend tests have already validated ROCmFPx MUL_MAT/MUL_MAT_ID widths 3-8 numerically, so this final real-workload check need not be a long-context performance run.
