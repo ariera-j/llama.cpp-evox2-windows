@@ -14,6 +14,22 @@ This sync identified eleven r5 investigation branches and checked the tracked r5
 | [Rollback/replay events, through 64k](R5-MTP-ROLLBACK-DIAGNOSTIC-2026-10-19.md) | `investigation/r5-mtp-rollback-diagnostic-20261019` | b11695 64k forced restore/replay, short accept-all caveat |
 | [Target re-warmup negative control](R5-MTP-PP-TARGET-REWARMUP-30511-2026-10-16.md) | `investigation/r5-mtp-pp-target-rewarmup-30511-20261016` | #30511 same-binary 64k ABBA no material long-PP gain |
 
+
+### 2026-10-21 ROCmFPx / integration-rehearsal documentation sync
+
+Six additional canonical reports were copied to stable r5 without importing experimental inference source:
+
+| Document now in stable | Source branch | What it preserves |
+| --- | --- | --- |
+| [ROCmFPx core implementation](R5-COMMON003A-ROCMFPX-CORE-IMPLEMENTATION-2026-10-20.md) | `investigation/r5-rocmfpx-vulkan-20261020` | COMMON-003A format/core + CPU fallback port |
+| [ROCmFPx full port/validation plan](R5-ROCMFPX-VULKAN-PORT-PLAN-2026-10-20.md) | `investigation/r5-rocmfpx-vulkan-20261020` | isolated target/MTP validation through 256k / wide verify |
+| [VULKAN-001A correctness implementation](R5-VULKAN001A-ROCMFPX-CORRECTNESS-IMPLEMENTATION-2026-10-20.md) | `investigation/r5-rocmfpx-vulkan-20261020` | Vulkan correctness/dequant/copy path |
+| [VULKAN-001B integer-dot implementation](R5-VULKAN001B-ROCMFPX-INTEGER-DOT-IMPLEMENTATION-2026-10-21.md) | `investigation/r5-rocmfpx-vulkan-20261020` | MMVQ/MMQ/MUL_MAT_ID and 140/140 width gate |
+| [NOOP + ROCmFPx runtime integration rehearsal](R5-NOOP-ROCMFPX-INTEGRATION-CHECK-2026-10-21.md) | `integration-check/r5-noop-rocmfpx-20261021` | VULKAN-002 + DENSE + NOOP + ROCmFPx + old-HC runtime coexistence |
+| [Stage-B + flatten source integration rehearsal](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md) | `integration-check/r5-noop-rocmfpx-stageb-flatten-20261021` | source-level coexistence of Stage-B/flatten with the combined stack |
+
+The current integration ordering is now centralized in [R5-INTEGRATION-PLAN-2026-10-21.md](R5-INTEGRATION-PLAN-2026-10-21.md).
+
 **Other existing stable documents**: [PATCHES.md](PATCHES.md), [ROADMAP.md](ROADMAP.md), [research/integration plan](R5-RESEARCH-AND-INTEGRATION-PLAN-2026-10-19.md), [Stage-B Stage1 implementation](R5-MTP-PP-KV-CROP-STAGE1-IMPLEMENTATION-2026-10-14.md), [RGP evidence](R5-MTP-EH-PROJ-FLATTEN-RGP-2026-10-19.md), MTP-DENSE/NOOP reports, [performance research log](PERFORMANCE-RESEARCH-LOG.md), and [Vulkan FA dispatch diagnostics](R5-VULKAN-OFF-FA-DISPATCH-DIAGNOSTICS-2026-10-10.md). The long-lived log and stable PATCHES/ROADMAP are more current than older branch snapshots; this sync does **not** overwrite them.
 
 ### Tool copies in `tools/evox2/`
@@ -37,17 +53,18 @@ For rollback stress, `--spec-synth-rates` forces artificial accept/reject; **syn
 
 - **NOT copied:** `common/`, `src/`, `ggml/`, `tools/server/` inference source or experimental C++ headers; specifically exclude checkpoint-force and trace hooks from production.
 - **NOT overwritten:** stable `tools/evox2/benchmark/{Evox2.Benchmark.psm1,Invoke-BenchmarkMatrix.ps1,Measure-LlamaBench.ps1,Measure-LlamaCli.ps1,Monitor-LlamaProcess.ps1}`, `tools/evox2/lib/Evox2.Common.psm1`, ADLX/P-MODE monitoring implementation, benchmark manifests or stable QSA test. Older branches lack newer measurement/monitoring fixes.
-- The local Windows worktree previously showed uncommitted P-MODE/ADLX tracking modifications and untracked `tools/evox2/adlx-gpu-monitor/` and `tools/evox2/pmode/`. **Remote Git tree cannot reveal or import those local uncommitted bytes.** This sync does not resolve local `Source.Dirty=true`. Before 10/25–26 integration, inspect `git status --short`, diff the local tooling against stable remote, and commit only verified desired changes on a separate tooling branch if still needed. **Do not use `git reset --hard` or a forced branch switch** and accidentally discard user changes.
+- **2026-10-21 status:** validated ADLX/P-MODE monitoring source is tracked on stable r5 (`tools/evox2/adlx-gpu-monitor/`, `tools/evox2/pmode/`, benchmark wrappers and `Evox2.Common.psm1`) and is now part of the required integration measurement plan. Preserve these newer stable copies; do not replace them with older experiment-branch variants. Local working-tree cleanliness still has to be checked before switching integration branches, but there is no remaining plan to reconstruct ADLX/P-MODE from investigation branches.
 - The legacy `Test-QsaNoopInvalidation.ps1` still covers its original r4 use. r5 experiment variant is kept under a distinct name; executing native test requires the experimental NOOP implementation and corresponding binaries.
 - Re-warmup plan variant kept in `configs/archive/` intentionally because the general Stage1 plan already has a newer differing set of cases.
 
-## Next preparation checkpoint, not integration now
+## Next preparation checkpoint
 
-1. Verify that stable r5 source and existing tracked benchmarking modules have identical blobs before/after this documentation/tool sync. Keep baseline binaries (especially b11682 and b11695) untouched.
-2. Review any uncommitted local P-MODE/ADLX tool differences at the user's workstation; plan an isolated tools-only preservation commit if necessary.
-3. Around **10/25–26** and **only on explicit new request**, check latest upstream/Unsloth/Strix Halo changes; fork an integration candidate branch and pin the exact upstream SHA. Port Stage-B and flatten separately behind switches, excluding diagnostic checkpoint-force.
-4. Validate new candidate (Vulkan first: builds/smoke, 64k/128k correctness, uninstrumented ABBA). ROCm validation should also check **actual compile-time ROCm/HIP SDK and runtime-loaded ROCm/HIP DLL versions**; do not assume they match from labels. Keep ROCmFP4/MTP variants as independent gates.
-5. Decide promotion only after recorded native results; never equate consolidated documentation with accepted or enabled source optimizations.
+1. Keep the pinned r5 runtime/binaries as controls; this documentation sync does not merge inference optimizations into stable.
+2. At the integration session, re-check upstream and freeze one exact immutable SHA before source edits; follow [R5-INTEGRATION-PLAN-2026-10-21.md](R5-INTEGRATION-PLAN-2026-10-21.md).
+3. Build untouched new-upstream Vulkan/ROCm baselines first, using the stable ADLX/P-MODE benchmark harness for provenance.
+4. Port required functionality semantically: COMMON-001 if needed, ROCmFPx core/Vulkan, native MTP compatibility, VULKAN-002, DENSE, NOOP, Stage-B, then flatten. Do not copy whole files from isolated branches.
+5. Validate the combined candidate with backend tests, short all-on gates, bounded 64k/128k, final 256k only when stable, and explicit ROCm compile/runtime DLL provenance.
+6. Decide promotion only after recorded native results and the Gemma 4 regression gate; never equate consolidated documentation with accepted/enabled source optimizations.
 
 ## Source branches catalog
 
