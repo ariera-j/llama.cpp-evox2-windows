@@ -475,9 +475,7 @@ llama_model_qwen4exp::graph::graph(const llama_model & model, const llm_graph_pa
     }
 
     ggml_tensor * inp_pos     = build_inp_pos();
-    // No output rows are requested during catch-up. Avoid an unallocated zero-row
-    // output-index input in this cache-write-only graph.
-    ggml_tensor * inp_out_ids = draft_prefill_kv_crop ? nullptr : build_inp_out_ids();
+    ggml_tensor * inp_out_ids = build_inp_out_ids();
 
     ggml_tensor * ple_emb = nullptr;
     if (hparams.ple_n_heads > 0) {
@@ -596,6 +594,17 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
         ubatch.n_seqs_unq == 1 &&
         hparams.dsv4_compress_ratios[il] == 0;
 
+    // Experimental eh_proj geometry change. Qwen4Exp applies the same [2*n_embd -> n_embd]
+    // projection independently to every HC stream and token. Flattening [hc, n_tokens]
+    // into the MUL_MAT column axis preserves the mathematics while avoiding a Vulkan
+    // batched-N=hc dispatch such as M=2560,N=4,K=5120,batch=1024.
+    // Read at graph construction time; changing the environment on a live context whose
+    // graph may be reused is unsupported. Off unless explicitly enabled.
+    const char * eh_proj_flatten_env = std::getenv("LLAMA_MTP_EH_PROJ_FLATTEN");
+    const bool mtp_eh_proj_flatten =
+        draft_prefill_kv_crop &&
+        eh_proj_flatten_env && std::strcmp(eh_proj_flatten_env, "1") == 0;
+
     GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm &&
             ((layer.nextn.hc_head_norm && layer.nextn.hc_head_down && layer.nextn.hc_head_up) ||
              (model.hc_head_norm && model.hc_head_down && model.hc_head_up)) &&
@@ -639,7 +648,9 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     }
 
     ggml_tensor * inp_pos     = build_inp_pos();
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    // No output rows are requested during catch-up. Avoid an unallocated zero-row
+    // output-index input in this cache-write-only graph.
+    ggml_tensor * inp_out_ids = draft_prefill_kv_crop ? nullptr : build_inp_out_ids();
 
     ggml_tensor * h_norm = build_norm(ggml_reshape_3d(ctx0, h, n_embd, hc, n_tokens), layer.nextn.hnorm, nullptr, LLM_NORM_RMS, il);
     cb(h_norm, "mtp_hnorm", il);
@@ -648,7 +659,17 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     e_norm = ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, e_norm, n_embd, 1, n_tokens), n_embd, hc, n_tokens, 1);
     cb(e_norm, "mtp_enorm", il);
 
-    ggml_tensor * res_hc = build_lora_mm(layer.nextn.eh_proj, ggml_concat(ctx0, e_norm, h_norm, 0)); // [n_embd, hc, n_tokens]
+    ggml_tensor * eh_in = ggml_concat(ctx0, e_norm, h_norm, 0); // [2*n_embd, hc, n_tokens]
+    ggml_tensor * res_hc = nullptr;
+    if (mtp_eh_proj_flatten) {
+        // CONCAT creates a contiguous tensor, so this is a view-only reshape:
+        // [2*n_embd, hc, T] -> [2*n_embd, hc*T].
+        eh_in = ggml_reshape_2d(ctx0, eh_in, 2*n_embd, hc*n_tokens);
+        res_hc = build_lora_mm(layer.nextn.eh_proj, eh_in); // [n_embd, hc*T]
+        res_hc = ggml_reshape_3d(ctx0, res_hc, n_embd, hc, n_tokens);
+    } else {
+        res_hc = build_lora_mm(layer.nextn.eh_proj, eh_in); // [n_embd, hc, n_tokens]
+    }
     cb(res_hc, "mtp_eh_proj", il);
 
     ggml_tensor * inject = nullptr;
