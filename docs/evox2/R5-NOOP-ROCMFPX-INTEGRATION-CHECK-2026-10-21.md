@@ -214,3 +214,121 @@ Backend coexistence is now validated. The remaining bounded checks are model-lev
 4. no 128k/256k performance run is required for this rehearsal.
 
 If those model-level gates pass, mark the NOOP + ROCmFPx integration rehearsal complete and leave Stage-B / EH-proj flatten as the next independent interaction check.
+
+
+## Native NOOP + all-on model validation — 2026-10-21
+
+### Native QSA NOOP gate
+
+`Test-QsaNoopInvalidation.ps1` completed with:
+
+```text
+Status       = Complete
+SourceChecks = Passed
+PolicyTest   = Passed
+ModelTest    = Passed
+```
+
+Both native executables exited 0 with verified runtime/build identity.
+
+The model/state/rollback gate used the Agention ROCmFP4 target GGUF and reported:
+
+```text
+QSA no-op invalidation: PASS (target numeric, pools, rollback, state and fallback)
+```
+
+The detailed numeric checks reported zero NMSE / zero max-absolute error across the tested target logits/hidden-state restore and trim cases.
+
+### All-on real model smoke
+
+Run:
+
+```text
+build      : b11588-1c3167fb6
+context    : 32768
+prompt     : 163 tokens
+target     : Qwen3.8-Flash-Next-ROCmFP4-FAST-v2-ple16.gguf
+draft      : Qwen3.8-Flash-Next-MTP-ROCmFP4-FAST.gguf
+DraftMax   : 2
+```
+
+Enabled together:
+
+```text
+GGML_VK_QSA_UNION=1
+GGML_VK_QSA_UNION_MIN_KV=1
+LLAMA_MTP_SKIP_DENSE_INDEXER=1
+LLAMA_QSA_SKIP_NOOP_INVALIDATION=1
+```
+
+Result:
+
+| Item | Result |
+| --- | ---: |
+| Status | OK / exit 0 |
+| Target file type | Q4_0_ROCMFP4_FAST |
+| Target GPU layers | 49/49 |
+| Draft GPU layers | 50/50 |
+| Prompt tokens | 163 |
+| PP | 97.57 tok/s |
+| Generated tokens | 128 |
+| TG | 25.05 tok/s |
+| Draft generated | 114 |
+| Draft accepted | 69 |
+| Draft acceptance | 60.526% |
+| Mean accepted length | 2.21 |
+| Dense indexer evidence | Verified / omitted |
+| NOOP invalidation evidence | Verified / enabled |
+| Output | coherent |
+
+The short run is a correctness stress only; PP/TG are not performance numbers.
+
+### Grouped-union path proof
+
+The Vulkan backend first reports:
+
+```text
+ggml_vulkan: QSA grouped-union = on (group=64, min_kv=1)
+```
+
+and during the target prefill actually enters the optimized path:
+
+```text
+ggml_vulkan: qsa-union active (r5), group=64, bitmap=16KiB,
+path=1, Br=16, Bc=64, f32acc=1, groups=1, capacity=256,
+min_kv=1, scratch=558096 bytes
+```
+
+Later generation emits:
+
+```text
+ggml_vulkan: qsa-union fallback: query count or KV threshold
+```
+
+This later fallback is expected for decode / single-query shapes; it does not negate the earlier active-prefill proof.
+
+Therefore this single run conclusively exercised:
+
+- ROCmFP4/ROCmFPx target Vulkan kernels;
+- ROCmFP4 MTP draft model and old-HC fallback;
+- MTP-DENSE indexer omission;
+- MTP-NOOP target invalidation suppression;
+- VULKAN-002 grouped-union target prefill;
+- normal decode fallback after the grouped-union prefill path.
+
+### Integration-rehearsal decision
+
+**PASS — COMPLETE.**
+
+The pinned-r5 source families are proven to coexist both structurally and at runtime:
+
+- VULKAN-002;
+- MTP-DENSE;
+- MTP-NOOP;
+- ROCmFP4 / ROCmFPx core;
+- ROCmFPx Vulkan correctness and integer-dot;
+- old-layout Agention ROCmFP4 MTP compatibility.
+
+No additional long-context run is required for this rehearsal.
+
+The next independent interaction question is Stage-B + EH-proj flatten. The weekend integrated build should still start from the newest selected upstream and replay these features semantically rather than copying whole files from this branch.
