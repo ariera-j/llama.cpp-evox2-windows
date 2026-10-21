@@ -12,6 +12,11 @@ param(
     [string]$RocmPath = '',
     [string]$RocmBin = '',
     [string]$RocmCmakePath = '',
+
+    # Reproducibility guard for the current Windows ROCm line. Pass an empty
+    # string only when deliberately validating another TheRock SDK version.
+    [string]$ExpectedRocmSdkVersion = '10.0.0',
+
     [string]$DependencyCacheRoot = '',
 
     [string]$AmdGpuTarget = 'gfx1151',
@@ -121,6 +126,28 @@ if (-not $ManifestOnly -and
     -not $BuildOnly -and
     [string]::IsNullOrWhiteSpace($RocmPath)) {
     throw 'ROCm SDK root could not be resolved. Activate the TheRock venv or pass -RocmPath.'
+}
+
+$rocmSdkVersionObserved = $null
+$rocmSdkCommand = Get-Command rocm-sdk -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($rocmSdkCommand) {
+    $rocmSdkVersionCapture = Invoke-Evox2NativeCapture -FilePath $rocmSdkCommand.Source -ArgumentList @('version')
+    if ($rocmSdkVersionCapture.ExitCode -eq 0) {
+        $versionMatch = [regex]::Match($rocmSdkVersionCapture.Text, '\\b\\d+\\.\\d+\\.\\d+\\b')
+        if ($versionMatch.Success) {
+            $rocmSdkVersionObserved = $versionMatch.Value
+        }
+    }
+}
+
+if (-not $ManifestOnly -and
+    -not [string]::IsNullOrWhiteSpace($ExpectedRocmSdkVersion)) {
+    if ([string]::IsNullOrWhiteSpace($rocmSdkVersionObserved)) {
+        throw "Unable to determine TheRock ROCm SDK version; expected $ExpectedRocmSdkVersion. Activate the intended TheRock venv or pass -ExpectedRocmSdkVersion ''."
+    }
+    if ($rocmSdkVersionObserved -ne $ExpectedRocmSdkVersion) {
+        throw "TheRock ROCm SDK version mismatch: expected $ExpectedRocmSdkVersion, observed $rocmSdkVersionObserved. Use the pinned SDK or explicitly override -ExpectedRocmSdkVersion."
+    }
 }
 
 $environmentNames = @(
@@ -377,6 +404,8 @@ try {
     $runtimePolicy = [ordered]@{
         Mode = 'TheRockUnified'
         EffectiveFrom = '2026-10-21'
+        ExpectedSdkVersion = $ExpectedRocmSdkVersion
+        ObservedSdkVersion = $rocmSdkVersionObserved
         SourceBin = $RocmBin
         AmdGpuTarget = $AmdGpuTarget
         HistoricalNote = 'ROCm builds produced before 2026-10-21 by this script staged only HIP core DLLs; Windows PATH could therefore supply the BLAS stack from another ROCm/HIP installation (observed from C:\Program Files\AMD\ROCm\7.2\bin on the b11521 investigation build).'
