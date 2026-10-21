@@ -458,7 +458,14 @@ if ($Jobs.Count -eq 0) {
 
 $cliCommand = Get-Command -Name $measureCli
 $benchCommand = Get-Command -Name $measureBench
-$validCliParameters = @($cliCommand.Parameters.Keys)
+# Windows PowerShell 5.1 can omit array-valued script parameters from
+# ExternalScriptInfo.Parameters in some path-based Get-Command cases. ExtraArgs
+# is a real Measure-LlamaCli.ps1 parameter and is intentionally supported by
+# matrix plans for flags that do not yet have dedicated wrapper parameters.
+$validCliParameters = @(
+    @($cliCommand.Parameters.Keys)
+    'ExtraArgs'
+) | Select-Object -Unique
 $validBenchParameters = @($benchCommand.Parameters.Keys)
 
 $expanded = @()
