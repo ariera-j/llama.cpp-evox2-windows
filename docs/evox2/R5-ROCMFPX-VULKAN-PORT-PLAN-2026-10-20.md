@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 5A PASS AT 32K WITH ROCmFP4 MTP SIDECAR. NEXT: STAGE 5B 64K MTP OFF/ON MATCHED GATE.**
+**STAGE 5B MTP-ON PASSES AT 64K. MTP-OFF OUTPUT-DEGENERATION ANOMALY PENDING ONE EXACT-CONDITION RECHECK BEFORE CLOSING STAGE 5B.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -798,3 +798,73 @@ It runs one matched 64k pair on the same Stage-5 build:
 Stage 5B remains a compatibility gate. Record completion, coherent output, draft acceptance, GPU placement and telemetry. PP/TG are diagnostic only.
 
 After 64k passes, use a small bounded DraftMax expansion test to exercise wider speculative verification in a real MTP graph. The Stage-3 backend tests have already validated ROCmFPx MUL_MAT/MUL_MAT_ID widths 3-8 numerically, so this final real-workload check need not be a long-context performance run.
+
+
+## Stage 5B first 64k matched result — 2026-10-21
+
+Build: `b11561-bddcbf2f1`
+
+Both runs completed with `Status=OK` / exit 0 and no backend errors, assertions, unsupported-type messages or CPU fallback warnings.
+
+| Item | MTP OFF | MTP ON |
+|---|---:|---:|
+| Prompt tokens | 61,789 | 61,789 |
+| PP | 281.98 tok/s | 259.53 tok/s |
+| Generated tokens | 1,024 | 707 |
+| TG | 25.83 tok/s | 32.91 tok/s |
+| Target GPU layers | 49/49 | 49/49 |
+| Draft GPU layers | - | 50/50 |
+| Draft generated | - | 578 |
+| Draft accepted | - | 417 |
+| Draft acceptance | - | **72.145%** |
+| Mean accepted length | - | **2.44** |
+| P-MODE start/finish | Performance / Performance | Performance / Performance |
+| ADLX high-load power | 108.451 W | 110.966 W |
+| ADLX class | Performance-like | Performance-like |
+| P-MODE/ADLX consistent | yes | yes |
+
+MTP speculative statistics:
+
+```text
+draft-mtp: #calls(b,g,a) = 1 289 289
+#gen drafts = 289
+#acc drafts = 241
+#gen tokens = 578
+#acc tokens = 417
+#mean acc len = 2.44
+#acc rate/pos = (0.834, 0.609)
+```
+
+### MTP-ON decision
+
+The 64k MTP run is a **PASS**:
+
+- old-HC compatibility remains functional;
+- dense-MTP k-pool compatibility remains functional;
+- target and draft remain fully GPU-offloaded;
+- draft acceptance is nonzero and strong;
+- generated Japanese summary is coherent;
+- telemetry is stable and consistent.
+
+This establishes the key Stage-5 compatibility objective at 64k.
+
+### MTP-OFF output anomaly
+
+The paired MTP-OFF run itself exits cleanly and has normal backend/resource telemetry, but its generated answer degenerates after an initially coherent summary into a long repetition of `/` characters.
+
+No error, assertion, fallback or unsupported ROCmFPx operation appears in stderr.
+
+Because the Stage-5 compatibility source changes are confined to MTP-only qwen4exp loading/graph paths, there is no direct expected code path by which those patches should alter a no-MTP target graph. Nevertheless, output coherence is part of the compatibility gate, so do not close Stage 5B on one anomalous stochastic run.
+
+Prepared exact-condition recheck:
+
+`tools/evox2/benchmark/configs/qwen38-rocmfpx-stage5b-nomtp-recheck.psd1`
+
+Run one additional 64k MTP-OFF measurement with the same model/build/input/sampling/environment. This is a correctness/reproducibility check, not a speed measurement.
+
+Interpretation:
+
+- if the recheck output is coherent, classify the first MTP-OFF degeneration as a non-reproduced stochastic output anomaly and close Stage 5B;
+- if the same or similar degeneration repeats, investigate target-only numerical stability before final port completion.
+
+Do not repeat the successful 64k MTP-ON run unless later evidence requires it.
