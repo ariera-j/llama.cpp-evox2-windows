@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstdlib>
+#include <cstring>
 
 // bad metadata must be catchable: GGML_ASSERT aborts the whole process
 static void qwen4exp_require_nonzero(const llama_model_loader & ml, llm_kv kid, uint32_t value) {
@@ -473,7 +475,9 @@ llama_model_qwen4exp::graph::graph(const llama_model & model, const llm_graph_pa
     }
 
     ggml_tensor * inp_pos     = build_inp_pos();
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    // No output rows are requested during catch-up. Avoid an unallocated zero-row
+    // output-index input in this cache-write-only graph.
+    ggml_tensor * inp_out_ids = draft_prefill_kv_crop ? nullptr : build_inp_out_ids();
 
     ggml_tensor * ple_emb = nullptr;
     if (hparams.ple_n_heads > 0) {
@@ -578,6 +582,20 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     const int il = hparams.n_layer();
     const auto & layer = model.layers[il];
 
+    // Experimental Stage A: keep all draft K/V writes but skip its unused prompt-time
+    // attention output, HC/FFN and logits. Off unless explicitly enabled.
+    // Select by context/output semantics, not ubatch.token. An upstream MTP+vision
+    // port can supply image embeddings and a separate Target embd_state.
+    // This pinned Qwen4Exp implementation still requires token IDs (assert above).
+    const char * kv_crop_env = std::getenv("LLAMA_MTP_DRAFT_PREFILL_KV_CROP");
+    const bool draft_prefill_kv_crop =
+        kv_crop_env && std::strcmp(kv_crop_env, "1") == 0 &&
+        n_outputs == 0 &&
+        cparams.embeddings_nextn && cparams.embeddings_nextn_masked &&
+        !cparams.training && !cparams.kv_unified &&
+        ubatch.n_seqs_unq == 1 &&
+        hparams.dsv4_compress_ratios[il] == 0;
+
     GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm &&
             ((layer.nextn.hc_head_norm && layer.nextn.hc_head_down && layer.nextn.hc_head_up) ||
              (model.hc_head_norm && model.hc_head_down && model.hc_head_up)) &&
@@ -636,6 +654,14 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     ggml_tensor * inject = nullptr;
     ggml_tensor * cur = build_hc_mix(res_hc, layer.hc_attn_norm, layer.hc_attn_down, layer.hc_attn_up, layer.hc_attn_inject, &inject, il);
     cur    = build_layer_attn(inp_hyb->get_attn(), mctx_hyb, inp_kpool, cur, inp_pos, sections, il);
+
+    // build_attn() already expanded Q, K, V and K/V cache copy roots. No
+    // downstream root means the FA/WO subtree does not enter the executable
+    // graph. Keep the full graph for output-producing draft/verification.
+    if (draft_prefill_kv_crop) {
+        return;
+    }
+
     res_hc = build_hc_combine(res_hc, cur, inject, il);
 
     cur    = build_hc_mix(res_hc, layer.hc_ffn_norm, layer.hc_ffn_down, layer.hc_ffn_up, layer.hc_ffn_inject, &inject, il);
