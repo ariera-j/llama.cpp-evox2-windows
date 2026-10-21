@@ -342,9 +342,9 @@ function ConvertTo-Evox2MatrixResultRow {
             BenchTest         = $null
             PromptTokens      = $ChildRow.PromptTokens
             GenerationTokens  = $ChildRow.GeneratedTokens
-            GeneratedTextSha256 = $ChildRow.GeneratedTextSha256
-            GeneratedTextBytes  = $ChildRow.GeneratedTextBytes
-            GeneratedTextCaptureStatus = $ChildRow.GeneratedTextCaptureStatus
+            OutputFingerprintSha256 = $ChildRow.OutputFingerprintSha256
+            OutputFingerprintBytes  = $ChildRow.OutputFingerprintBytes
+            OutputFingerprintStatus = $ChildRow.OutputFingerprintStatus
             Depth             = $null
             AvgTokensPerSec   = $null
             StdDevTokensPerSec = $null
@@ -389,9 +389,9 @@ function ConvertTo-Evox2MatrixResultRow {
         BenchTest         = $ChildRow.Test
         PromptTokens      = $ChildRow.PromptTokens
         GenerationTokens  = $ChildRow.GenerationTokens
-        GeneratedTextSha256 = $null
-        GeneratedTextBytes  = $null
-        GeneratedTextCaptureStatus = $null
+        OutputFingerprintSha256 = $null
+        OutputFingerprintBytes  = $null
+        OutputFingerprintStatus = $null
         Depth             = $ChildRow.Depth
         AvgTokensPerSec   = $ChildRow.AvgTokensPerSec
         StdDevTokensPerSec = $ChildRow.StdDevTokensPerSec
