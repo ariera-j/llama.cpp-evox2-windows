@@ -16,7 +16,7 @@ This directory contains downstream documentation for the Windows Evo-X2 work in 
 
 Find research results here:
 
-- **Source and verification matrix:** [PATCHES.md](PATCHES.md); **next research:** [ROADMAP.md](ROADMAP.md) — after MTP DENSE/NOOP TG, investigate MTP ON **PP overhead**.
+- **Source and verification matrix:** [PATCHES.md](PATCHES.md); **current integration order:** [R5-INTEGRATION-PLAN-2026-10-21.md](R5-INTEGRATION-PLAN-2026-10-21.md); **post-integration optimization priority snapshot:** [R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md). [ROADMAP.md](ROADMAP.md) remains the chronological roadmap/index.
 - **MTP-DENSE-001:** [r5 candidate implementation and 64k–256k Vulkan/ROCm measurements](R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md); actual source stays on `investigation/r5-mtp-dense-indexer-20261011`.
 - **MTP-NOOP-001:** [implementation + correctness gates](R5-MTP-NOOP-IMPLEMENTATION-2026-10-12.md), [Vulkan 64k–256k](R5-MTP-NOOP-VULKAN-VALIDATION-2026-10-12.md), [ROCm 64k–256k](R5-MTP-NOOP-ROCM-VALIDATION-2026-10-12.md), [ROCm 128k detail](R5-MTP-NOOP-ROCM-128K-2026-10-12.md); source/tests/scripts stay on `investigation/r5-mtp-noop-20261012`.
 - **MTP ON PP investigation (2026-10-13):** [source trace, 64k/128k OFF/ON baselines, opt-in phase-tracing plan and r2 MTP-QSA no-port decision](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md). Source diagnostics belong only to `investigation/r5-mtp-pp-trace-20261013`; stable r5 carries **documentation only**.
