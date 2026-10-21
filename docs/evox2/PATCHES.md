@@ -10,6 +10,17 @@ Current authoritative build/order details: [R5-INTEGRATION-PLAN-2026-10-21.md](R
 
 Post-integration optimization research is tracked separately in [R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md). That 2026-10-21 snapshot does **not** add s1/Strata/halo/Gufo experiments to the first integration candidate. Its provisional order begins only after the integrated baseline is frozen: runtime/build/MMVQ audit → transposed CONCAT → residual Vulkan FA → measured remaining GPU/host work → small-weight/Draft/QSA follow-ups. Re-audit upstream and donor revisions when that work actually starts.
 
+### ROCm runtime provenance policy — 2026-10-21
+
+[ROCm runtime provenance / same-binary ABBA](R5-ROCM-RUNTIME-PROVENANCE-ABBA-2026-10-21.md) establishes a new provenance boundary for Windows ROCm results.
+
+- Existing b11521 and earlier r5 ROCm binaries may have been **compiled with TheRock 10.0 but run with a mixed BLAS stack** because the old build script staged only `amdhip64_7.dll`, `amd_comgr.dll` and `rocm_kpack.dll`. On the investigated b11521 run, `hipblas.dll`, `rocblas.dll` and `hipblaslt.dll` were loaded from the `C:\Program Files\AMD\ROCm\7.2\bin` install root.
+- This does **not** invalidate same-environment patch A/B results. It does mean that old absolute ROCm results and cross-build/runtime claims must preserve the historical runtime qualification.
+- From build-script change **2026-10-21 onward**, normal `Build-ROCm.ps1` staging is `TheRockUnified`: SDK version guard defaults to **10.0.0**, and the script copies the full HIP/BLAS DLL closure plus `rocblas` and `hipblaslt` target data trees beside the executables and records their provenance/digests in `evox2-build.json`.
+- The 64k same-binary mixed-vs-unified ABBA found no meaningful warmed throughput advantage for the mixed layout (B2 pure TheRock vs A2 mixed: PP +0.19%, TG -0.76% for pure TheRock). First-run PP differences were concentrated in the first 8k and correlate with cold disk/runtime data activity.
+- Do not retroactively relabel pre-change binaries as pure TheRock. Future performance baselines should use the unified runtime unless a runtime-compatibility experiment explicitly requires otherwise.
+- A separate ROCm output-repeatability investigation is next, because temp=0/fixed-seed output still varied inside the unified TheRock arm.
+
 ### Status meanings
 
 - **移植予定**: semantically reapply on the selected newer upstream only if equivalent functionality is still missing; no blind cherry-pick or whole-file copy.
