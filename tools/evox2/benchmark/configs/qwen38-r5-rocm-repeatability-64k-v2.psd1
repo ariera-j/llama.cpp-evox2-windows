@@ -93,7 +93,7 @@
             GGML_VK_GET_ROWS_128X4              = $null
 
             ROCM_RUNTIME_VARIANT                = 'therock10-pure'
-            ROCM_REPEATABILITY_PHASE            = 'fresh-process-cli-v1'
+            ROCM_REPEATABILITY_PHASE            = 'fresh-process-cli-v2'
             ROCM_REPEATABILITY_CASE             = $null
             ROCM_REPEATABILITY_REP              = $null
         }
@@ -181,15 +181,6 @@
                     Parameters = @{ FlashAttn = 'off' }
                     Environment = @{
                         ROCM_REPEATABILITY_CASE = 'fa-off'
-                        ROCM_REPEATABILITY_REP = '4'
-                    }
-                },
-                @{
-                    Name = 'hip-blocking-r4'
-                    Parameters = @{ FlashAttn = 'auto' }
-                    Environment = @{
-                        HIP_LAUNCH_BLOCKING = '1'
-                        ROCM_REPEATABILITY_CASE = 'hip-launch-blocking'
                         ROCM_REPEATABILITY_REP = '4'
                     }
                 }
