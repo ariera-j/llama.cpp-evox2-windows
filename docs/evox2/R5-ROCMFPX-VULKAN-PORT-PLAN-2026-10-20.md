@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 4 TARGET-MODEL COMPATIBILITY COMPLETE THROUGH 256K (MTP OFF). PERFORMANCE COMPARISON IS PROVISIONAL BECAUSE P-MODE/ADLX TELEMETRY WAS NOT RECORDED. NEXT: RESTORE TELEMETRY, THEN STAGE 5 MTP SIDECAR COMPATIBILITY.**
+**STAGE 4 TARGET-MODEL COMPATIBILITY COMPLETE THROUGH 256K (MTP OFF). TELEMETRY RESTORED. NEXT: STAGE 5A MTP SIDECAR LOAD + 32K COMPATIBILITY GATE.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -545,3 +545,61 @@ Decision:
 - Stage-3 ROCmFPx port remains stable at long context with full GPU model placement.
 - Cross-build performance ranking: **provisional** because P-MODE/ADLX telemetry is absent from these runs.
 - Before Stage 5, sync the benchmark telemetry tooling from the r5 line and use the external ADLX monitor path from local configuration; do not re-add the ADLX source/build tree to Git.
+
+
+## Telemetry restore checkpoint — 2026-10-21
+
+The ROCmFPx branch benchmark tooling was synchronized with the validated r5 P-MODE/ADLX measurement path before starting Stage 5.
+
+A 4k target-only allocation smoke on build `b11531-db0b11516` confirmed:
+
+- run status: `OK`;
+- P-MODE start: `Performance`;
+- P-MODE finish: `Performance`;
+- P-MODE changed: `False`;
+- ADLX monitor requested/started successfully;
+- ADLX exit code: 0;
+- ADLX samples: 21;
+- `gpu-metrics.csv` contains GPU usage, core clock, VRAM clock, temperature, power and VRAM usage;
+- no P-MODE warnings.
+
+The P-MODE/ADLX high-load consistency classifier reports `InsufficientSamples` for this smoke because it is an allocation/short-prompt run and produced no >=95% GPU-usage samples. This is expected and is not a telemetry failure.
+
+The external ADLX executable remains outside Git management and is selected through `local.psd1` using `AdlxMonitorExe`.
+
+### Deferred performance follow-up
+
+The previous Stage-4 128k/256k cross-build speed results remain useful as compatibility observations but are provisional performance data because those runs predated telemetry restoration.
+
+Do **not** block Stage 5 on repeating them. Keep these as later investigation candidates:
+
+1. repeat the 256k Stage-3 vs AgentionAI matched comparison with P-MODE/ADLX enabled;
+2. capture RGP at 256k, where the dedicated fork showed a much larger PP slowdown and substantially larger compute/shared-memory usage.
+
+These are performance-attribution tasks, not requirements for proving the ROCmFP4/ROCmFPx upstream port correct.
+
+## Stage 5A execution checkpoint — 2026-10-21
+
+Prepared:
+
+`tools/evox2/benchmark/configs/qwen38-rocmfpx-stage5-mtp-gate.psd1`
+
+The gate deliberately uses the existing ROCmFP4 MTP sidecar **without any old-HC compatibility patch first**.
+
+Run sequence:
+
+1. 4k allocation smoke with MTP ON, draft max = 2;
+2. only if the 4k load succeeds, 32k real-input generation with MTP ON.
+
+The matrix stops on the first failure. If the 4k run fails specifically because the sidecar uses the older `output_hc_{norm,down,up}` naming instead of current upstream `blk.<il>.nextn.hc_head_*`, then and only then port the bounded compatibility fallback from AgentionAI commit `93a24e52cc12687213c0432af41c7fe2ab1a0eda`.
+
+Stage 5A acceptance criteria:
+
+- target and draft both load;
+- no major target/draft CPU fallback;
+- 32k completes normally;
+- output remains coherent;
+- draft acceptance is nonzero and plausible;
+- no ROCmFPx batch-width/numerical failure is observed.
+
+After Stage 5A passes, prepare the Stage 5B 64k MTP OFF/ON matched gate. Do not import later r5 MTP PP/TG optimization patches into this compatibility branch.
