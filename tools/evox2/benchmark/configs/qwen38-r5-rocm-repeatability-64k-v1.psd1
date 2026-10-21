@@ -19,8 +19,10 @@
     #   Models.UnslothPle16
     #   Inputs.64k
     #
-    # Measure-LlamaCli.ps1 writes generated.txt and GeneratedTextSha256 when
-    # --no-display-prompt is active. matrix-results.csv surfaces the hash/status.
+    # Measure-LlamaCli.ps1 hashes normalized stdout when --no-display-prompt is active.
+    # The normalization removes the variable PP/TG footer line; the remaining
+    # stdout contains the generated content plus deterministic CLI framing.
+    # matrix-results.csv surfaces OutputFingerprintSha256/status.
     #
     # Execution order is interleaved by repetition to reduce time/order bias:
     #   baseline-r1 -> fa-off-r1 -> hip-blocking-r1 -> ... -> r4
