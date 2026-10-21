@@ -2,7 +2,7 @@
 
 ## Status
 
-**STAGE 5B PASS AT 64K. THE FIRST MTP-OFF OUTPUT-DEGENERATION ANOMALY DID NOT REPRODUCE. NEXT: SMALL STAGE 5C WIDE-DRAFT REAL-WORKLOAD CHECK, THEN PORT-COMPLETION DECISION.**
+**ISOLATED ROCmFP4/ROCmFPx UPSTREAM-BASED PORT VALIDATION COMPLETE. STAGES 1-5C PASS, INCLUDING 256K TARGET-ONLY AND REAL MTP VERIFY WIDTH 8. NEXT: STAGE 6 CLEAN INTEGRATION INTO THE SELECTED r5 OPTIMIZED LINE.**
 
 Stage 1 / COMMON-003A implementation commit: `85ab8d797f176c322f77647e27ebea3ee5d29931` (`ggml: add ROCmFPx core format support`).
 
@@ -920,3 +920,125 @@ Purpose: complement the Stage-3 numerical MUL_MAT/MUL_MAT_ID coverage at widths 
 Use a short input, keep MTP enabled, and test at least `DraftMax=7` with `DraftPMin=0`. A full 7-token draft allows the target verification batch to reach width 8 (draft tokens plus the current target token). This is a correctness gate only; acceptance and speed are diagnostic.
 
 If the wide-draft run completes with coherent output, nonzero acceptance, full GPU placement and no ROCmFPx/backend failure, Stage 5 and the isolated ROCmFP4/ROCmFPx upstream-port validation can be closed.
+
+
+## Stage 5C wide-draft validation — 2026-10-21
+
+Build:
+
+`b11561-bddcbf2f1`
+
+Configuration:
+
+- target: `Qwen3.8-Flash-Next-ROCmFP4-FAST-v2-ple16.gguf`;
+- draft: `Qwen3.8-Flash-Next-MTP-ROCmFP4-FAST.gguf`;
+- context: 32,768;
+- short real workload: `tools/evox2/benchmark/inputs/mtp-short.txt`;
+- `DraftMax=7`;
+- `DraftPMin=0`;
+- generation limit: 256.
+
+Result:
+
+| Item | Result |
+|---|---:|
+| Status | OK / exit 0 |
+| Prompt tokens | 163 |
+| Generated tokens | 90 |
+| PP | 261.61 tok/s |
+| TG | 14.31 tok/s |
+| Target GPU layers | 49/49 |
+| Draft GPU layers | 50/50 |
+| Draft calls | 29 |
+| Draft sequences generated | 29 |
+| Draft tokens generated | **203** |
+| Draft tokens accepted | 60 |
+| Draft acceptance | **29.557%** |
+| Mean accepted length | **3.07** |
+| P-MODE start/finish | Performance / Performance |
+| Backend | Vulkan |
+
+Speculative statistics:
+
+```text
+n_max=7, n_min=0, p_min=0.00
+draft-mtp: #calls(b,g,a) = 1 29 29
+#gen drafts = 29
+#acc drafts = 23
+#gen tokens = 203
+#acc tokens = 60
+#mean acc len = 3.07
+#acc rate/pos = (0.793, 0.517, 0.379, 0.172, 0.138, 0.069)
+```
+
+The key width gate is conclusive:
+
+```text
+203 generated draft tokens / 29 draft generations = exactly 7 draft tokens per generation
+```
+
+Therefore every speculative generation reached the requested `DraftMax=7`. The target verification batch consequently exercises the intended maximum width of 8 (current target token plus seven draft tokens) in a real MTP graph.
+
+The run completed without:
+
+- ROCmFPx numerical/backend failures;
+- Vulkan unsupported-type/pipeline errors;
+- HC-layout errors;
+- dense-MTP k-pool buffer assertions;
+- target/draft CPU fallback;
+- output corruption.
+
+The generated Japanese answer correctly separates confirmed facts from unresolved items in the short test input.
+
+Decision: **Stage 5C PASS**.
+
+## Isolated port validation conclusion — 2026-10-21
+
+The original investigation objective is satisfied: the ROCmFP4/ROCmFPx format family can be ported onto the upstream-based r5 line on Windows/Vulkan while retaining compatibility with the existing AgentionAI ROCmFP4 target and MTP GGUFs.
+
+Validated coverage:
+
+1. ROCmFPx GGML type/core loading and CPU fallback.
+2. Vulkan correctness paths for the target ROCmFPx tensor family.
+3. q8_1 integer-dot MMVQ/MMQ paths.
+4. Focused backend numerical coverage:
+   - five Vulkan-supported ROCmFPx formats;
+   - MUL_MAT and MUL_MAT_ID;
+   - widths 1,3,4,5,6,7,8;
+   - normal and forced-MMVQ dispatch;
+   - **140/140 pass**.
+5. Target-only real model:
+   - 32k / 64k;
+   - 128k / 256k;
+   - full GPU placement and coherent output.
+6. Existing old-layout ROCmFP4 MTP sidecar:
+   - old `output_hc_*` compatibility;
+   - ratio-zero dense-MTP k-pool compatibility;
+   - 32k real input;
+   - 64k real input;
+   - full target/draft GPU placement;
+   - nonzero/plausible draft acceptance.
+7. Real MTP verification workload at `DraftMax=7`, conclusively generating seven draft tokens on every draft generation and exercising target verify width 8.
+
+The first 64k MTP-OFF output-degeneration event did not reproduce on an exact-condition recheck and is not treated as an established port regression.
+
+Performance attribution is intentionally outside the completion gate. The following remain deferred candidates:
+
+- telemetry-controlled 256k Stage-3 versus current AgentionAI repeat;
+- 256k RGP comparison to investigate the large PP/memory-layout difference;
+- later MTP/QSA PP/TG optimization work.
+
+### Next step: Stage 6 integration
+
+Do not merge the entire investigation branch blindly.
+
+Carry forward the validated logical units onto the selected r5 optimized base:
+
+1. COMMON-003 ROCmFPx core support;
+2. VULKAN-001A/B ROCmFPx Vulkan support;
+3. old-layout MTP HC compatibility (`9fa9970b1`);
+4. dense-MTP k-pool compatibility (`a09d40719`) if the selected integration base does not already contain the equivalent fix;
+5. focused ROCmFPx backend tests;
+6. documentation/tooling as appropriate.
+
+After integration, run regression gates for Qwen3.8 target+MTP and then verify Gemma 4 31B / 26B before replacing the existing b10919 Vulkan installation.
