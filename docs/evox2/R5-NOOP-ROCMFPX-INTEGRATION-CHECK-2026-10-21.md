@@ -162,3 +162,55 @@ Current evidence says the following source families are structurally compatible 
 For the weekend newest-upstream build, repeat the same semantic-port approach because upstream Qwen4Exp, k-pool, speculative decoding and Vulkan code have moved materially since the r5 pin.
 
 Stage-B and EH-proj flatten remain a separate interaction gate and are not proven combined by this branch.
+
+
+## Windows backend validation — 2026-10-21
+
+Build directory:
+
+`build-vulkan-r5-noop-rocmfpx`
+
+Focused ROCmFPx Vulkan backend tests were repeated on the integrated NOOP/VULKAN-002 branch.
+
+Observed Vulkan device:
+
+```text
+AMD Radeon(TM) 8060S Graphics
+int dot: 1
+matrix cores: KHR_coopmat
+```
+
+The backend reports `QSA grouped-union = off` for these backend-op tests, which is expected because the grouped-union feature is an opt-in model-level path and is not part of these focused matrix-operation tests.
+
+Results:
+
+| Gate | Normal dispatch | GGML_VK_FORCE_MMVQ=1 |
+| --- | ---: | ---: |
+| MUL_MAT | 35/35 | 35/35 |
+| MUL_MAT_ID | 35/35 | 35/35 |
+| Total | 70/70 | 70/70 |
+
+Overall: **140/140 PASS, zero failures**.
+
+Covered ROCmFPx Vulkan types:
+
+- `q4_0_rocmfp4`
+- `q4_0_rocmfp4_fast`
+- `q3_0_rocmfpx`
+- `q6_0_rocmfpx`
+- `q8_0_rocmfpx`
+
+For each type, widths `n = 1, 3, 4, 5, 6, 7, 8` passed for both `MUL_MAT` and `MUL_MAT_ID`.
+
+This confirms that the validated ROCmFPx correctness and integer-dot paths remain numerically healthy after being replayed onto the r5 VULKAN-002 + MTP-DENSE + MTP-NOOP branch.
+
+### Remaining integration gates
+
+Backend coexistence is now validated. The remaining bounded checks are model-level:
+
+1. run the existing NOOP native policy/model-state gate on this integrated build using the Agention ROCmFP4 target model;
+2. run one short real target+ROCmFP4-MTP inference with DENSE=1 and NOOP=1;
+3. grouped-union should be enabled in the model-level gate so the retained VULKAN-002 path is exercised in a real Qwen3.8 graph;
+4. no 128k/256k performance run is required for this rehearsal.
+
+If those model-level gates pass, mark the NOOP + ROCmFPx integration rehearsal complete and leave Stage-B / EH-proj flatten as the next independent interaction check.
