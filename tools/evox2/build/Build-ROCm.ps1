@@ -401,20 +401,24 @@ try {
     )
     $legacyRuntimeFilesRemoved = @()
 
+    $runtimeStagingRequested = (-not $ManifestOnly -and
+        -not $SkipRuntimeDllCopy -and
+        -not [string]::IsNullOrWhiteSpace($RocmBin))
+
     $runtimePolicy = [ordered]@{
-        Mode = 'TheRockUnified'
+        Mode = if ($runtimeStagingRequested) { 'TheRockUnifiedPending' } elseif ($ManifestOnly) { 'ObservedOnly' } else { 'ExternalRuntimeUnverified' }
         EffectiveFrom = '2026-10-21'
         ExpectedSdkVersion = $ExpectedRocmSdkVersion
         ObservedSdkVersion = $rocmSdkVersionObserved
         SourceBin = $RocmBin
         AmdGpuTarget = $AmdGpuTarget
+        StagingPerformed = $false
+        Verification = 'NotStagedByThisInvocation'
         HistoricalNote = 'ROCm builds produced before 2026-10-21 by this script staged only HIP core DLLs; Windows PATH could therefore supply the BLAS stack from another ROCm/HIP installation (observed from C:\Program Files\AMD\ROCm\7.2\bin on the b11521 investigation build).'
         CurrentNote = 'With runtime staging enabled, copy the complete TheRock HIP/BLAS DLL closure plus rocBLAS and hipBLASLt architecture data beside the executables.'
     }
 
-    if (-not $ManifestOnly -and
-        -not $SkipRuntimeDllCopy -and
-        -not [string]::IsNullOrWhiteSpace($RocmBin)) {
+    if ($runtimeStagingRequested) {
         Write-Host 'Copying unified TheRock ROCm runtime beside the executables...'
 
         foreach ($name in $legacyRuntimeDllNames) {
@@ -480,6 +484,10 @@ try {
                 TargetDataPath = $targetDataPath
             }
         }
+
+        $runtimePolicy.Mode = 'TheRockUnified'
+        $runtimePolicy.StagingPerformed = $true
+        $runtimePolicy.Verification = 'DllAndRuntimeDataHashesVerified'
     } else {
         foreach ($name in $runtimeDllNames) {
             $destination = Join-Path $BinDir $name
