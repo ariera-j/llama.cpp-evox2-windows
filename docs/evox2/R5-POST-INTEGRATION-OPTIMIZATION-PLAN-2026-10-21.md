@@ -9,6 +9,18 @@
 
 今回行ったのは資料・ソースの調査。新しいWindowsビルド、Evo-X2での性能測定、実装の採用判定は行っていない。以下の「最終順位」は調査時点の着手順であり、未完成の統合版の速度を予測した順位ではない。
 
+## 0. 直近のROCm確認タスク順 — 2026-10-21追記
+
+高速化候補へ戻る前に、ROCm側の provenance / correctness / model差を次の順で処理する。
+
+1. **ROCm build/runtime provenance確認** — 完了。[記録](R5-ROCM-RUNTIME-PROVENANCE-ABBA-2026-10-21.md)。b11521はTheRock/ROCm SDK 10.0.0 buildだが、旧runtimeはBLAS境界で`ROCm\\7.2` install rootと混在していた。64k same-binary ABBAではwarm後の速度差は実質なし。
+2. **ROCm出力再現性調査** — 次に実施。最近の同条件runではVulkanは複数回一致する一方、ROCmはtemp=0/fixed seedでも時々出力が変わる。runtime ABBAでもpure-TheRock B1/B2が一致しなかったため、runtime統一とは別のcorrectness課題として扱う。
+3. **ROCmFP4モデル vs Unslothモデルを同一llama.cpp binaryで速度比較** — 出力再現性の切り分け後。同じunified TheRock 10.0 runtimeを使う。
+4. **入力種類比較の続き** — QSA mask可視化を先に完了し、その後selectedなROCm RGPへ進む。
+5. **needle test v1** — Qwen3.8 ROCmFP4とGemma 4に適用する。
+
+今後のWindows ROCm buildは`Build-ROCm.ps1`の`TheRockUnified` policyを使い、既定ではROCm SDK 10.0.0を要求する。2026-10-21以前のROCm測定値は、実ロードDLL provenanceが別途確認されていない限り、mixed-runtimeの可能性を注記する。
+
 ## 1. 固定する前提と、今回変えない基準
 
 - まず[r5最新統合計画][r5-plan]を完了する。PLE16、ROCmFPx、VULKAN-002、MTP-DENSE/NOOP、Stage-B、eh_proj flattenは既存候補で、新規高速化として再登録しない。
