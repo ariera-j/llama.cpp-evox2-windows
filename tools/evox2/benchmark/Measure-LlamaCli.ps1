@@ -968,6 +968,10 @@ $Status = if ($null -ne $runException) {
     'OK'
 }
 
+if ($Status -eq 'OK' -and $NoDisplayPromptActive -and $GeneratedTextCapture.Status -ne 'Captured') {
+    $Status = 'CHECK_GENERATED_TEXT'
+}
+
 $resourceSampleCount = 0
 $adlxSampleCount = 0
 if ($Status -eq 'OK' -and $Mtp -and $env:LLAMA_MTP_SKIP_DENSE_INDEXER -in @('0', '1') -and
