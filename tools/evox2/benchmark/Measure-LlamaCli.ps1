@@ -145,17 +145,11 @@ function Get-Evox2GeneratedTextCapture {
     )
 
     if (-not (Test-Path -LiteralPath $StdOutPath -PathType Leaf)) {
-        return [PSCustomObject]@{
-            Status = 'StdOutMissing'
-            Text = $null
-        }
+        return [PSCustomObject]@{ Status = 'StdOutMissing'; Text = $null }
     }
 
     if (-not $NoDisplayPrompt) {
-        return [PSCustomObject]@{
-            Status = 'SkippedPromptDisplayed'
-            Text = $null
-        }
+        return [PSCustomObject]@{ Status = 'SkippedPromptDisplayed'; Text = $null }
     }
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -171,10 +165,7 @@ function Get-Evox2GeneratedTextCapture {
     }
 
     if ($commandsIndex -lt 0) {
-        return [PSCustomObject]@{
-            Status = 'CommandsMarkerMissing'
-            Text = $null
-        }
+        return [PSCustomObject]@{ Status = 'CommandsMarkerMissing'; Text = $null }
     }
 
     $startIndex = -1
@@ -192,15 +183,48 @@ function Get-Evox2GeneratedTextCapture {
     }
 
     if ($startIndex -lt 0) {
-        return [PSCustomObject]@{
-            Status = 'GeneratedTextStartMissing'
-            Text = $null
+        return [PSCustomObject]@{ Status = 'GeneratedTextStartMissing'; Text = $null }
+    }
+
+    $endIndex = -1
+    for ($i = $startIndex; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\[\s*Prompt:\s*[\d.]+\s*t/s\s*\|\s*Generation:\s*[\d.]+\s*t/s\s*\]\s*\z') {
+            $endIndex = $i
+            break
         }
     }
 
-    $endIndex = $lines.Count
-    for ($i = $startIndex; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match '^\[\s*Prompt:\s*[\d.]+\s*t/s\s*\|\s*Generation:\s*[\d.]+\s*t/s\s*\]\s*$RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
+    if ($endIndex -lt 0) {
+        return [PSCustomObject]@{ Status = 'GeneratedTextEndMissing'; Text = $null }
+    }
+
+    if ($endIndex -eq $startIndex) {
+        return [PSCustomObject]@{ Status = 'GeneratedTextEmpty'; Text = '' }
+    }
+
+    $captured = @($lines[$startIndex..($endIndex - 1)])
+    while ($captured.Count -gt 0 -and [string]::IsNullOrWhiteSpace($captured[0])) {
+        $captured = @($captured | Select-Object -Skip 1)
+    }
+    while ($captured.Count -gt 0 -and [string]::IsNullOrWhiteSpace($captured[$captured.Count - 1])) {
+        if ($captured.Count -eq 1) {
+            $captured = @()
+        } else {
+            $captured = @($captured[0..($captured.Count - 2)])
+        }
+    }
+
+    if ($captured.Count -eq 0) {
+        return [PSCustomObject]@{ Status = 'GeneratedTextEmpty'; Text = '' }
+    }
+
+    return [PSCustomObject]@{
+        Status = 'Captured'
+        Text = ($captured -join [Environment]::NewLine)
+    }
+}
+
+$RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
 
 $AdlxMonitorRequested = -not [bool]$NoAdlxMonitor
 if ([string]::IsNullOrWhiteSpace($AdlxMonitorExe)) {
