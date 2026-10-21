@@ -829,7 +829,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
     cb(score, "indexer_score", il);
 
     const int64_t n_top_pool = std::min<int64_t>(n_pool, hparams.indexer_top_k / kpool);
-    ggml_tensor * top_k = ggml_top_k(ctx0, score, n_top_pool); // [n_top_pool, n_tokens], unordered
+    ggml_tensor * top_k = ggml_argsort_top_k(ctx0, score, n_top_pool); // [n_top_pool, n_tokens], unordered
     cb(top_k, "indexer_top_k", il);
 
     // the top blocks, then the incomplete tail with n_kv for missing cells
