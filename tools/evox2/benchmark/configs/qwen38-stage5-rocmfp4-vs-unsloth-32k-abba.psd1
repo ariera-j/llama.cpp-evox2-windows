@@ -69,6 +69,7 @@
     Jobs = @(
         @{
             Name      = '32k-01-rocmfp4'
+            Environment = @{ EVOX2_ABBA_RUN = '32k-01-rocmfp4' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
@@ -85,6 +86,7 @@
         }
         @{
             Name      = '32k-02-unsloth'
+            Environment = @{ EVOX2_ABBA_RUN = '32k-02-unsloth' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('UnslothPle16')
@@ -101,6 +103,7 @@
         }
         @{
             Name      = '32k-03-unsloth'
+            Environment = @{ EVOX2_ABBA_RUN = '32k-03-unsloth' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('UnslothPle16')
@@ -117,6 +120,7 @@
         }
         @{
             Name      = '32k-04-rocmfp4'
+            Environment = @{ EVOX2_ABBA_RUN = '32k-04-rocmfp4' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
