@@ -1,6 +1,6 @@
 # EVO-X2: unexplained Windows restarts during LLM benchmarking
 
-**Last updated:** 2026-10-22 JST (22:07 hang log and 22:40 Windows event follow-up)  
+**Last updated:** 2026-10-22 JST (22:50 RDP-only completion follow-up)  
 **Host:** GMKtec EVO-X2 / Ryzen AI Max+ 395 / Windows 11 / UMA VRAM ordinarily configured at 96 GB
 
 This is the **single ongoing incident ledger** for sudden *OS-level* restarts, resets or apparent hard power-cycle events during llama.cpp or local LLM **performance testing**. Preserve exact measured facts and provenance; do not treat an unexplained reset as an established model, driver, power-supply, firmware or application bug.
@@ -126,6 +126,21 @@ Artifacts received in conversation:
 - **Comparison:** symptom resembles 2026-10-22 02:44 ROCm `FLASH_ATTN_EXT` backend-test GPU/display hang (RDP/display unresponsive), **but no evidence currently establishes the same low-level trigger**; this time the active workload was **Vulkan** and there is **no DMP**.
 - **Confounding:** physical monitor disconnection occurred just before the incident, but that timing does **not establish causation**. Do not actively reproduce by repeatedly disconnecting the monitor under GPU load; prioritize preserving hardware stability and collecting event evidence.
 - **Disposition:** pending event logs, no causal claim. Count separately as a fourth **incident** only when including hangs; keep the **unexplained spontaneous reboot count at three**.
+
+### 22:50 RDP-only retest after manual recovery — completed, PP low again
+
+The user's next unchanged **32k ROCmFP4 PLE16 target + matching MTP** test, with **physical monitor disconnected since the manual reboot** and **RDP active**, finished successfully. Source archive: `20261022-225007-431-cli-vulkan-b11588-ctx32768-587a0dcffad5.zip`.
+
+- Started **22:50:08**, finished **22:52:29 JST**; ExitCode **0**, `Status=OK`. `b11588 / 1c3167fb6`, runtime verified, model/input/target/draft and benchmark flags unchanged; prompt **29,557 tokens**, generated **512**.
+- **PP 376.15 tok/s; TG 36.32 tok/s**; draft acceptance **70.686%**, accepted **299/423**. Output fingerprint `21d9ce4059613c9ee2920b3d035d5a55dd5bc85c76d9e8d59808489c88432e3b` matches the earlier comparable 21:57 run.
+- `DisplayEnvironmentAtFinish.PresentPhysicalCandidateCount=0`; one **RDP indirect monitor only**, `SessionName=RDP-Tcp#0`; ADLX `remote_session=1`. P-MODE **Performance** at start and finish, no state change, ADLX finished cleanly (**70** samples), resource monitor **69** samples.
+- Prefill sampling: high GPU utilization >=97%, excluding TG, **36** ADLX observations. VRAM **~875 MHz**, GPU core **~2,870 MHz**, GPU power **~108.3 W**, temperature **~67°C** average (max **73°C** among sampled prefill points); VRAM clock by chronological thirds ~**920 → 864 → 841 MHz**. In generation, VRAM clock returned toward ~1000 MHz.
+- **Comparison to 21:57 RDP WITH physical monitor:** PP **397.31 → 376.15 tok/s** (**-5.32%**); TG **36.52 → 36.32** (**-0.55%**); PP VRAM clock **~958 → ~875 MHz** (**-8.7%**); GPU core **~2,858 → ~2,870 MHz**; PP GPU power **~114.7 → ~108.3 W**. P-MODE, output and acceptance were stable.
+- **Comparison to 21:06 RDP without physical monitor** (before AC disconnect): PP **376.23 vs 376.15 tok/s**, nearly identical, and prefilling VRAM ~**877 vs 875 MHz**.
+
+**Interpretation limit:** This is a strong *association* between headless/RDP-only display topology and a lower sustained VRAM clock/PP rate on this specific session/build. However a **system-wide hang and manual reboot** also intervened between the monitored-connected 21:57 and monitor-disconnected 22:50 runs; the physical monitor was unplugged shortly before the preceding failed run. Do **not** claim an isolated randomized display-connect causal result, or that monitor hot-unplugging caused the hang. Normal completion of the next run argues against inevitable headless-mode failure, but does not establish stability over many repetitions.
+
+**Operational choice:** avoid further hot unplug/replug during GPU workloads. If stable high-speed benchmarking is the priority, consider using a fixed physical monitor connection and labeling display topology in all result sets; defer further A/B isolation and BIOS/firmware changes until the system is stable. Always record ADLX high-load VRAM clocks alongside PP/TG.
 
 ## Events excluded from the unexplained-reboot count
 
