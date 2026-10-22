@@ -55,12 +55,12 @@ TheRock environment. Do not recreate a working venv just for this refresh.
 
 ```powershell
 & C:\TheRock\build\.venv\Scripts\Activate.ps1
-.\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-clean -Parallel 4 -RunBackendTest
+.\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-clean -Parallel 4
 ```
 
-Pass `-BuildDir .\build-rocm-clean` explicitly; the imported wrapper's default remains `build-rocm-r4`. Use a fresh directory for the first refresh build. The wrapper configures and builds HIP/tools, copies runtime DLLs,
-runs identity/device smoke checks and the requested FLASH_ATTN_EXT test, and
-writes `evox2-build.json`. Model loading is a separate check.
+Pass `-BuildDir .\build-rocm-clean` explicitly; the imported wrapper's default remains `build-rocm-r4`. Use a fresh directory for the first refresh build. The wrapper configures and builds HIP/tools, stages the unified TheRock runtime, runs identity/device smoke checks and writes `evox2-build.json`. Model loading is a separate check.
+
+> **gfx1151 / Windows warning (2026-10-22): do not use the broad `-RunBackendTest` / full `FLASH_ATTN_EXT` sweep as a routine build gate.** A current test case with DKQ=64 plus logit-softcap passed the higher-level support check but reaches a HIP kernel path that intentionally executes `NO_DEVICE_CODE` / trap. During the observed run this produced an unspecified HIP launch failure and was followed by Windows `LiveKernelEvent 141` with `WATCHDOG-20261022-0244.dmp`, while the display/RDP path became unresponsive. Direct causality from the kernel trap to the watchdog dump is strongly correlated but not proven by dump analysis. Use targeted backend-op tests for the feature under investigation instead.
 
 ## Create the ROCm environment (only if not already installed)
 
@@ -259,18 +259,36 @@ After installation and `rocm-sdk init`, the rocBLAS data is placed under an arch
 
 A top-level `TensileLibrary.dat` is not required by the current per-architecture layout.
 
-## Backend test
+## Backend tests
+
+Do **not** run the entire `FLASH_ATTN_EXT` matrix as a routine Windows/gfx1151 post-build check on the current r5/TheRock 10.0 setup.
+
+The 2026-10-22 investigation found a support/dispatch mismatch for a DKQ=64 + logit-softcap case:
+
+- the test is accepted by the higher-level support path;
+- `fattn-mma-f16.cuh` rejects that combination and enters `NO_DEVICE_CODE` / GPU trap;
+- the process then reports an unspecified HIP launch failure;
+- Windows later recorded `LiveKernelEvent 141` and `WATCHDOG-20261022-0244.dmp` for the same 02:44 incident;
+- the machine's display/RDP path remained unusable until a manual reboot.
+
+Kernel-Power 41 after reboot had `BugcheckCode=0` and `WHEABootErrorCount=0`, so this was not a normal BSOD/WHEA crash. The exact causal chain has not been proven with WinDbg, but the full FA sweep is not considered a safe generic build gate on this machine until the support-check mismatch is fixed.
+
+Use focused tests instead. Example from the QSA determinism investigation:
 
 ```powershell
-& "$Bin\test-backend-ops.exe" test -b ROCm0 -o FLASH_ATTN_EXT
+& "$Bin\test-backend-ops.exe" test -b ROCm0 -o ARGSORT
 ```
 
-Historical r3 result (verify again for this refresh):
+That focused gfx1151 ROCm ARGSORT suite passed all supported cases (74/74). For other changes, select only the relevant operator/case set rather than running the whole FA matrix.
+
+Historical r3 full-FA result:
 
 ```text
 3982/3982 tests passed
 Backend ROCm0: OK
 ```
+
+Keep that historical result as provenance only; do not interpret it as proof that the current full matrix is safe on the newer source/runtime combination.
 
 ## Model smoke test
 
