@@ -69,6 +69,7 @@
     Jobs = @(
         @{
             Name      = '64k-01-unsloth'
+            Environment = @{ EVOX2_ABBA_RUN = '64k-01-unsloth' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('UnslothPle16')
@@ -85,6 +86,7 @@
         }
         @{
             Name      = '64k-02-rocmfp4'
+            Environment = @{ EVOX2_ABBA_RUN = '64k-02-rocmfp4' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
@@ -101,6 +103,7 @@
         }
         @{
             Name      = '64k-03-rocmfp4'
+            Environment = @{ EVOX2_ABBA_RUN = '64k-03-rocmfp4' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
@@ -117,6 +120,7 @@
         }
         @{
             Name      = '64k-04-unsloth'
+            Environment = @{ EVOX2_ABBA_RUN = '64k-04-unsloth' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('UnslothPle16')
@@ -133,6 +137,7 @@
         }
         @{
             Name      = '128k-05-rocmfp4'
+            Environment = @{ EVOX2_ABBA_RUN = '128k-05-rocmfp4' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
@@ -149,6 +154,7 @@
         }
         @{
             Name      = '128k-06-unsloth'
+            Environment = @{ EVOX2_ABBA_RUN = '128k-06-unsloth' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('UnslothPle16')
@@ -165,6 +171,7 @@
         }
         @{
             Name      = '128k-07-unsloth'
+            Environment = @{ EVOX2_ABBA_RUN = '128k-07-unsloth' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('UnslothPle16')
@@ -181,6 +188,7 @@
         }
         @{
             Name      = '128k-08-rocmfp4'
+            Environment = @{ EVOX2_ABBA_RUN = '128k-08-rocmfp4' }
             Tool      = 'cli'
             BuildKeys = @('R5RocmFpxStage5Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
