@@ -244,16 +244,25 @@ This is not evidence that the runtime packaging caused the variation:
 - B1 and B2 differ from each other;
 - therefore the output variation remains even inside the unified TheRock runtime arm.
 
-This becomes the next focused investigation before the ROCmFP4-vs-Unsloth speed comparison.
+The follow-up investigation is now complete; see [R5-ROCM-QSA-REPEATABILITY-2026-10-22.md](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md).
+
+The same-parent / same-TheRock-10.0 64k control restored the missing attribution:
+
+- normal Qwen4Exp `ggml_top_k`: **4 distinct outputs / 4**;
+- `ggml_cont(ggml_argsort_top_k(...))`: **1 identical output / 4**;
+- FA OFF still produced 4 distinct outputs / 4.
+
+Therefore runtime packaging and Flash Attention alone are not sufficient explanations. QSA top-k selection is the strongest localized cause found for the observed ROCm greedy-output drift.
 
 Current task order:
 
 ~~~text
-1. ROCm build/runtime provenance and unified runtime      <- this note
-2. ROCm output repeatability / nondeterminism investigation
-3. ROCmFP4 vs Unsloth, same llama.cpp binary
-4. input-type investigation continuation: QSA mask visualization -> ROCm RGP
-5. needle test v1: Qwen3.8 ROCmFP4 and Gemma 4
+1. ROCm build/runtime provenance and unified runtime      <- complete / this note
+2. ROCm output repeatability / QSA top-k investigation    <- complete
+3. lightweight Windows event checks                       <- backend-test hang + argsort-r3 stall
+4. ROCmFP4 vs Unsloth, same llama.cpp binary
+5. input-type investigation continuation: QSA mask visualization -> ROCm RGP
+6. needle test v1: Qwen3.8 ROCmFP4 and Gemma 4
 ~~~
 
-The output-repeatability investigation must remain a separate correctness study. Do not use the small B2/A2 speed delta to explain or dismiss it.
+The normal fast top-k path remains the performance default. A future opt-in deterministic QSA selector is recorded in the repeatability report, with 64k-only ROCm coverage at this checkpoint.
