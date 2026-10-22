@@ -19,7 +19,8 @@ Post-integration optimization research is tracked separately in [R5-POST-INTEGRA
 - From build-script change **2026-10-21 onward**, normal `Build-ROCm.ps1` staging is `TheRockUnified`: SDK version guard defaults to **10.0.0**, and the script copies the full HIP/BLAS DLL closure plus `rocblas` and `hipblaslt` target data trees beside the executables and records their provenance/digests in `evox2-build.json`.
 - The 64k same-binary mixed-vs-unified ABBA found no meaningful warmed throughput advantage for the mixed layout (B2 pure TheRock vs A2 mixed: PP +0.19%, TG -0.76% for pure TheRock). First-run PP differences were concentrated in the first 8k and correlate with cold disk/runtime data activity.
 - Do not retroactively relabel pre-change binaries as pure TheRock. Future performance baselines should use the unified runtime unless a runtime-compatibility experiment explicitly requires otherwise.
-- A separate ROCm output-repeatability investigation is next, because temp=0/fixed-seed output still varied inside the unified TheRock arm.
+- The follow-up ROCm output-repeatability investigation is now complete: [R5-ROCM-QSA-REPEATABILITY-2026-10-22.md](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md). Same-parent / same-TheRock-10.0 64k control runs using Qwen4Exp `ggml_top_k` produced **4 distinct outputs / 4**, while `ggml_cont(ggml_argsort_top_k(...))` produced **1 identical output / 4**. FA OFF did not restore repeatability, so QSA top-k selection is the strongest localized cause of the observed ROCm greedy-output drift.
+- Keep the normal fast `ggml_top_k` path as the performance/default path. A proposed future opt-in `QWEN4EXP_QSA_DETERMINISTIC_TOPK=1` may select argsort+cont for quality/regression/corpus-comparison runs where stable output matters. This is a **QSA-selection determinism control**, not a guarantee of global model determinism. Current ROCm validation is 64k only; longer contexts need separate coverage.
 
 ### Status meanings
 
@@ -76,7 +77,7 @@ Performance attribution requires executable/runtime/model/input identities plus 
 | **UPSTREAM-FIX-002** MTP checkpoint/hidden-state restore #30141 | Upstream status/semantics may overlap later Qwen/MTP changes | Re-audit selected SHA; keep diagnostic force-checkpoint code out of production |
 | **Current Qwen4Exp/k-pool graph structure** | Has changed materially since r5 pin; the ROCmFPx and Stage-B rehearsals proved semantic ports on pinned r5 only | Re-anchor by function/semantics, especially `graph_mtp::graph_mtp()`; do not first-match similar Target/MTP text |
 | **Current Vulkan backend** | Changed since r5 pin; VULKAN-001 and VULKAN-002 both touch overlapping backend areas | Reapply hunks/logic, never whole-file copy from isolated branches |
-| **ROCm compile/runtime pairing** | Previous concern that build/runtime ROCm versions may differ remains unverified | Mandatory provenance check at next ROCm build/run: compile SDK, loaded DLL paths/versions, gfx1151 target |
+| **Qwen4Exp deterministic QSA selection** | Same-parent 64k ROCm A/B: `ggml_top_k` = 4 distinct outputs / 4; argsort+cont = 1 identical output / 4. Normal PP cost ~3.16% and TG cost ~5.18%; ROCm ARGSORT verified only through width 16,384 | **要確認 / optional opt-in only**. Keep default OFF for normal inference/performance. If implemented, prefer `QWEN4EXP_QSA_DETERMINISTIC_TOPK=1`; validate longer contexts before claiming >64k support |
 | **q8_0 K/V FA path** | Upstream core support exists; VULKAN-002 union evidence is f16-KV-specific | Treat q8_0 as separate config A/B, not part of union performance claim |
 | **COMMON-005 compact selected-K/V decode** | Historical r3 deep-decode ROCm benefit, no safe r5 semantic port | Defer from first candidate; separate later deep-context/non-MTP investigation |
 | **New s1/Strata/other optimizations** | External evidence only or separate runtime | Exclude from first controlled integration; evaluate after candidate baseline |
@@ -116,7 +117,7 @@ Stop promotion and isolate the feature on build/shader failure, unsupported type
 
 Do **not** block the first candidate on the deferred 256k Stage3-vs-Agention telemetry rerun/RGP, COMMON-005, s1 experiments or Strata. Those resume after the integrated candidate is frozen.
 
-**Documents:** [current integration plan](R5-INTEGRATION-PLAN-2026-10-21.md), [ROCmFPx full port record](R5-ROCMFPX-VULKAN-PORT-PLAN-2026-10-20.md), [NOOP+ROCmFPx runtime rehearsal](R5-NOOP-ROCMFPX-INTEGRATION-CHECK-2026-10-21.md), [Stage-B+flatten source rehearsal](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md), [ADLX/P-MODE validation](R5-ADLX-PMODE-VALIDATION-2026-10-15.md), [asset inventory](R5-RESEARCH-ASSET-INVENTORY-2026-10-20.md), [ROADMAP](ROADMAP.md), [INTEGRATION-POLICY](INTEGRATION-POLICY.md).
+**Documents:** [current integration plan](R5-INTEGRATION-PLAN-2026-10-21.md), [ROCm QSA repeatability](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md), [ROCmFPx full port record](R5-ROCMFPX-VULKAN-PORT-PLAN-2026-10-20.md), [NOOP+ROCmFPx runtime rehearsal](R5-NOOP-ROCMFPX-INTEGRATION-CHECK-2026-10-21.md), [Stage-B+flatten source rehearsal](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md), [ADLX/P-MODE validation](R5-ADLX-PMODE-VALIDATION-2026-10-15.md), [asset inventory](R5-RESEARCH-ASSET-INVENTORY-2026-10-20.md), [ROADMAP](ROADMAP.md), [INTEGRATION-POLICY](INTEGRATION-POLICY.md).
 
 ---
 
