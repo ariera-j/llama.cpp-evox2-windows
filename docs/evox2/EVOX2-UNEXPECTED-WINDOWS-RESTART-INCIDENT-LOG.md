@@ -142,6 +142,17 @@ The user's next unchanged **32k ROCmFP4 PLE16 target + matching MTP** test, with
 
 **Operational choice:** avoid further hot unplug/replug during GPU workloads. If stable high-speed benchmarking is the priority, consider using a fixed physical monitor connection and labeling display topology in all result sets; defer further A/B isolation and BIOS/firmware changes until the system is stable. Always record ADLX high-load VRAM clocks alongside PP/TG.
 
+### 23:23 AC-unplug + power-button hold + ten-minute rest, **no physical display**: PP remained slow
+
+To isolate the AC/power-button intervention from monitor attachment, the user **shut down, unplugged AC, held the power button, left the machine without power for about ten minutes, then powered on with no physical display connected**. A matched 32k ROCmFP4+MTP run was completed through RDP: `20261022-232334-057-cli-vulkan-b11588-ctx32768-587a0dcffad5.zip`.
+
+- Run **23:23:35–23:25:53 JST**, `Status=OK`, ExitCode 0. Same `b11588 / 1c3167fb6` executable and conditions, **29,557 prompt/512 generation tokens**, MTP acceptance **70.686%** (299/423), identical output fingerprint **`21d9ce4059613c9ee2920b3d035d5a55dd5bc85c76d9e8d59808489c88432e3b`**.
+- PP **377.11 tok/s**, TG **36.07 tok/s**; low-speed state sustained vs 22:50 headless PP **376.15** and 21:57 physically connected PP **397.31**.
+- ADLX PP high-utilization interval (~**37** samples): mean VRAM clock **877.38 MHz**, core **2873.19 MHz**, GPU power **107.89 W**, GPU temperature **65.73°C**, usage **99.27%**. VRAM clock by three chronological thirds **931 → 868 → 836 MHz**. `AdlxMonitorExitCode=0` and resource-monitor results present.
+- `PModeAtStart/Finish=Performance` and unchanged. `DisplayEnvironmentAtFinish`: RDP only; one remote-like monitor, **zero physical candidates**; ADLX `remote_session=1`.
+- **Finding:** AC removal, long power-button hold, ten minutes unplugged, and headless reboot were **insufficient to restore the high PP/VRAM-clock state**. This does *not* prove no EC reset occurred or prove a protection state exists. A comparable pre-17:46 high-speed run had also been headless, so **headless state alone cannot fully explain all observations**.
+- **Next planned isolating intervention:** normal shutdown, **leave AC plugged in**, attach physical display **while powered off**, boot, then run the *same* 32k Vulkan benchmark. Avoid hot-plugging displays while under GPU load after the recent whole-system hang. Do not change BIOS, driver or P-MODE during comparison.
+
 ## Events excluded from the unexplained-reboot count
 
 - **2026-10-22 ~02:44 — ROCm FLASH_ATTN_EXT backend-test failure:** A broad backend test reached an unsupported DKQ=64/logit-softcap HIP kernel and invoked a `NO_DEVICE_CODE` trap; Windows reported **LiveKernelEvent 141**, `WATCHDOG-20261022-0244.dmp`, display/RDP became unusable and manual reboot followed. **Separate, comparatively well-correlated backend-test issue, not the unexplained benchmark restart above.** The exact kernel→OS failure chain remains unproven without dump analysis. See [R5-ROCM-QSA-REPEATABILITY-2026-10-22.md](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md#build-script-side-findings-during-this-investigation). **Do not routinely run the full FLASH_ATTN_EXT test sweep** on this configuration pending support-check fix.
