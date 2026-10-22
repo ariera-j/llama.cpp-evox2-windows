@@ -1,6 +1,6 @@
 # EVO-X2: unexplained Windows restarts during LLM benchmarking
 
-**Last updated:** 2026-10-22 JST (post-21:57 hang; event check pending)  
+**Last updated:** 2026-10-22 JST (22:07 hang log and 22:40 Windows event follow-up)  
 **Host:** GMKtec EVO-X2 / Ryzen AI Max+ 395 / Windows 11 / UMA VRAM ordinarily configured at 96 GB
 
 This is the **single ongoing incident ledger** for sudden *OS-level* restarts, resets or apparent hard power-cycle events during llama.cpp or local LLM **performance testing**. Preserve exact measured facts and provenance; do not treat an unexplained reset as an established model, driver, power-supply, firmware or application bug.
@@ -99,6 +99,22 @@ The next matched 32k ROCmFP4+MTP run was started through **RDP** while leaving t
 - **Next isolating check (optional):** with AC unchanged, continue RDP then disconnect only the physical monitor (or change display switching) and rerun the same 32k model/MTP case; retain ADLX/display metadata. This is more diagnostic than another restart or BIOS modification, but avoid interrupting any ongoing workload.
 
 ## HNG-20261022-PM — apparent whole-system hang during display-detached RDP benchmark (time not yet established)
+
+### Follow-up: raw partial inference and Windows events (22:06–22:44 JST)
+
+Artifacts received in conversation:
+- `20261022-220636-149-cli-vulkan-b11588-ctx32768-587a0dcffad5.zip` — incomplete per-run folder, contains `conditions.json`, `stderr.log`, `resources.csv`, `gpu-metrics.csv`; **no result/summary/normal-exit record**.
+- `貼り付けたテキスト（1）(20261022-134824).txt` — copied `Get-WinEvent` System/Application output after manual recovery. Repeated WER records refer to historical crashes and are **not new dump timestamps**.
+
+**Run identity:** started `2026-10-22T22:06:36.985+09:00`, llama.cpp `b11588 (1c3167fb6)`, executable SHA-256 `a816c4e8bf68e923d662f2e470f06b892bd9d8c6c2b0305cc2d26ad597f0c1d5`, Vulkan ROCmFP4-FAST v2 PLE16 + Agention ROCmFP4 MTP, `n_ctx=32768`, prompt `29557`, `-n 512`, temp=0, `GGML_VK_QSA_UNION=1`, r5 DENSE/NOOP, `PModeAtStart=Performance`. Physical monitor **absent**, PnP probe saw **one RDP-indirect monitor only** (`PresentPhysicalCandidateCount=0`); ADLX `remote_session=1`.
+
+**Progress and last samples:** `stderr.log` last records at about **22:07:27** include `prompt processing, n_tokens=4096, progress=0.14`, rolling **659.03 tok/s** for the early 4k (NOT a full-context PP result), followed by a `cached n_tokens=4096` line. Last ADLX sample timestamp **22:07:27.259**: usage **99%**, GPU core **2804 MHz**, VRAM clock **1000 MHz**, GPU temperature **64 °C**, GPU power **126 W**, ADLX VRAM used **95729 MB**. Latest valid `resources.csv` sample **22:07:26.555**: system commit **83.0% of 127.647 GiB**, physical RAM free **22.44 GiB**, target GPU local **94.148 GiB**, GPU shared **1.286 GiB**, adapter local **94.772 GiB**. Previous successful 32k runs had comparable GPU model/KV allocations, so these numbers **do not establish OOM**; they do show a substantial GPU-memory footprint at failure. `resources.csv` ends with an incomplete/NUL-filled row; monitor tail and inference log were not closed normally. No obvious preceding GPU thermal or VRAM-clock-downshift symptom was sampled. There is **no measured full PP/TG for this interrupted run**.
+
+**Manual recovery:** Windows `Kernel-Power 41` logged at **22:39:47** and `EventLog 6008` at **22:39:54** after the forced restart. Event 6008's reported *previous shutdown* time **21:47:22** is incompatible with 22:07 monitoring data and **must not be used as a reliable hang timestamp**. Actual hang onset is bracketed near the final 22:07 samples, not exactly timestamped by the later boot events. User checked current `LiveKernelReports` and `Minidump` and found **no new dump**.
+
+**Important WER interpretation:** `Application / Windows Error Reporting 1001` entries at about **22:40:02–22:44:01** reference existing **`WATCHDOG-20261022-0244.dmp`** (LiveKernelEvent 141) and **`WATCHDOG-20261010-1011.dmp`** (also 141), plus older September/August dumps. These timestamps are WER reporting/requeue times; the `*.dmp` names identify **older original incidents**. This copied event output provides **no fresh 22:07 LiveKernelEvent 141 or new dump attributable to this hang**. An **October 10 historical GPU WATCHDOG 141 report is now evidenced**, but whether a corresponding independent *OS spontaneous reboot* occurred then remains unconfirmed; do not reclassify the separate 2026-10-06 reboot. `crashpad_log` for `setup.exe/EdgeInstallerError` at 22:44 is unrelated without further evidence.
+
+**Status / safe policy:** Unknown root cause. Display detachment shortly before workload is temporal association only. Inference also used ~95 GiB-class local GPU memory with high GPU utilization, so avoid asserting a pure display-path cause. A same-condition retest from RDP without a physical monitor was planned by the user after recovery, but **its outcome is pending**. Because the prior full-machine hang required manual recovery, do **not** repeatedly hot-unplug/replug displays under inference load. If an identical 32k/no-display workload hangs again, stop the stress test and investigate before extended 128k/256k runs.
 
 **Classification: suspected system-wide hang requiring manual restart; NOT an observed spontaneous restart and NOT part of the three confirmed unexplained reboot events above.**
 
