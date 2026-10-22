@@ -114,7 +114,12 @@ Key evidence:
 
 Default integration policy remains the faster normal top-k path. A future optional quality/regression control may use `QWEN4EXP_QSA_DETERMINISTIC_TOPK=1` to select argsort+cont, but that switch is **proposed, not yet implemented on stable r5**, and must not be described as a global deterministic-output guarantee.
 
-Near-term investigation order is now: **ROCm runtime provenance (complete) → ROCm output repeatability (complete) → lightweight Windows event checks for the backend-test hang and argsort-r3 host stall → ROCmFP4 vs Unsloth same-binary speed → QSA mask visualization → ROCm RGP → needle test v1 on Qwen3.8 ROCmFP4 and Gemma 4**.
+The lightweight Windows event checks are also complete:
+
+- the early-morning full `FLASH_ATTN_EXT` backend-test failure is correlated with a new **LiveKernelEvent 141** and **`WATCHDOG-20261022-0244.dmp`**; do not use the broad FA sweep as a routine gfx1151/Windows build gate until the DKQ=64 + logit-softcap support-check mismatch is fixed;
+- the argsort-r3 ~9 s PP outlier had no matching System/Application/Defender/Windows Update event and remains best classified as a one-off host paging/I/O stall while the GPU sat near idle.
+
+Near-term investigation order is now: **ROCm runtime provenance (complete) → ROCm output repeatability (complete) → Windows event checks (complete) → ROCmFP4 vs Unsloth same-binary speed → QSA mask visualization → ROCm RGP → needle test v1 on Qwen3.8 ROCmFP4 and Gemma 4**.
 
 ## Measurement and provenance tooling — preserve as first-class integration assets
 
