@@ -86,6 +86,18 @@ Recommended low-cost next isolation: with AC and physical display **unchanged**,
 
 **128k rerun status:** The complete 128k ABBA recheck on 2026-10-22 evening finished four of four. ROCmFP4 mean PP **276.78**, Unsloth mean PP **276.52** tok/s; both substantially lower than the first two runs before the reboot. High-load VRAM clocks also differed between sessions. Do not treat the original 128k PP inversion as a stable target-model property.
 
+### Follow-up: RDP session with physical display still attached (2026-10-22 21:57)
+
+The next matched 32k ROCmFP4+MTP run was started through **RDP** while leaving the physical `E2K60V2` display plugged in, **without** a further power cycle. Artifact: `20261022-215727-143-cli-vulkan-b11588-ctx32768-587a0dcffad5.zip`.
+
+- Build `b11588 / 1c3167fb6`; 29,557 prompt tokens; 512 generated; temp=0; OutputFingerprintSha256 `21d9ce4059613c9ee2920b3d035d5a55dd5bc85c76d9e8d59808489c88432e3b`, same as earlier matched runs; MTP acceptance `70.686%`.
+- **PP 397.31 tok/s, TG 36.52 tok/s**, exit 0, P-MODE Performance throughout, no monitoring warnings.
+- ADLX `remote_session=1` confirms RDP for the monitoring process; both RDP indirect and physically attached `E2K60V2` displays are enumerated. Caution: `DisplayEnvironmentAtFinish.SessionName` reported `Console` despite the ADLX remote-session flag; these probes do not necessarily describe the same process/session and should not be conflated.
+- Prefill high-utilization section (35 2-second samples, 21:58:18–21:59:26, GPU usage 97–100%): mean GPU VRAM clock **957.49 MHz**, GPU core **2858.31 MHz**, GPU power **114.69 W**, temperature **70.60°C**, usage **99.0%**. VRAM clock across three prefill segments averaged **969.7 → 953.8 → 948.3 MHz**.
+- Compared with preceding local-Console 21:48 run (PP 393.12, TG 36.47, mean PP VRAM ~937 MHz), RDP run is **+1.07% PP**. Compared with ~16:50 fast baseline (PP 398.65), it is **-0.34% PP**. Compared with the low-clock ~21:06 normal-power-cycle run (PP 376.23), it is **+5.60% PP**.
+- **Inference:** near-baseline prefill speed is retained through RDP while a physical monitor remains attached. Therefore **RDP alone is unlikely to explain the ~5% degradation**. The difference between 21:48 and 21:57 is one run each and **does not prove warm-up**; GPU/load state and noise can also affect it. The AC-unplug/button-hold and physical-monitor attachment occurred simultaneously before 21:48, so these two interventions remain confounded.
+- **Next isolating check (optional):** with AC unchanged, continue RDP then disconnect only the physical monitor (or change display switching) and rerun the same 32k model/MTP case; retain ADLX/display metadata. This is more diagnostic than another restart or BIOS modification, but avoid interrupting any ongoing workload.
+
 ## Events excluded from the unexplained-reboot count
 
 - **2026-10-22 ~02:44 — ROCm FLASH_ATTN_EXT backend-test failure:** A broad backend test reached an unsupported DKQ=64/logit-softcap HIP kernel and invoked a `NO_DEVICE_CODE` trap; Windows reported **LiveKernelEvent 141**, `WATCHDOG-20261022-0244.dmp`, display/RDP became unusable and manual reboot followed. **Separate, comparatively well-correlated backend-test issue, not the unexplained benchmark restart above.** The exact kernel→OS failure chain remains unproven without dump analysis. See [R5-ROCM-QSA-REPEATABILITY-2026-10-22.md](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md#build-script-side-findings-during-this-investigation). **Do not routinely run the full FLASH_ATTN_EXT test sweep** on this configuration pending support-check fix.
