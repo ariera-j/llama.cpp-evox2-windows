@@ -1,5 +1,7 @@
 # ROCmFP4 FAST vs Unsloth IQ3 — same-binary Vulkan comparison (2026-10-22)
 
+> **整理済みの最終集計：** [R5-QWEN38-TWO-BINARY-MODEL-COMPARISON-2026-10-23.md](R5-QWEN38-TWO-BINARY-MODEL-COMPARISON-2026-10-23.md) に、b11561/b11588の高速状態ABBA計28run、参考低速状態、MTP ON/OFF条件および生ログを統合しました。本書は元の時系列記録として残します。途中にある「32k MTP OFF未測定」はその時点の状態であり、10/23の高速状態4run完走で解消しています。
+
 ## Scope and sources
 
 GMKtec Evo-X2, Windows/Vulkan, identical Stage-5 llama.cpp binary `b11561`, MTP OFF, normal dispatch. Targets are Agention ROCmFP4-FAST v2 PLE16 and Unsloth UD-IQ3_XXS PLE16. Input is the same ANLP ch3 corpus across sizes (not three independent domains). Temperatures 0, reasoning off, generation cap 512, f16 KV, -ngl 999 -ncmoe 0, -t/-tb 4, -b 2048, -ub 1024, --fa auto, P-MODE Performance and ADLX logging. Every context has ABBA four independent process runs (two per model).
