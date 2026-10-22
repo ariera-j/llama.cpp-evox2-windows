@@ -26,7 +26,7 @@ de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b
 
 This is **not yet the selected integration SHA**. Re-read upstream at the start of the integration session, review relevant Qwen4Exp/MTP/Vulkan/HIP changes, and freeze one immutable SHA before modifying source.
 
-## Evidence added on 2026-10-20/21
+## Evidence added on 2026-10-20/22
 
 ### ROCmFP4 / ROCmFPx isolated port
 
@@ -98,7 +98,23 @@ The Stage-B/flatten replay also exposed a practical porting hazard: Qwen4Exp tar
 
 `tools/evox2/build/Build-ROCm.ps1` now defaults to `ExpectedRocmSdkVersion=10.0.0` and stages the complete TheRock HIP/BLAS closure plus the target-specific rocBLAS/hipBLASLt data trees. Future manifests record `RuntimePolicy.Mode = TheRockUnified`, expected/observed SDK version, DLL hashes and runtime-data-tree digests. Historical ROCm archives built before this change remain potentially mixed unless their process-module provenance was captured.
 
-Near-term investigation order is fixed as: **ROCm runtime provenance (complete) → ROCm output repeatability → ROCmFP4 vs Unsloth same-binary speed → QSA mask visualization → ROCm RGP → needle test v1 on Qwen3.8 ROCmFP4 and Gemma 4**.
+### ROCm output repeatability closed; QSA top-k isolated
+
+[ROCm QSA output repeatability](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md) closes the second ROCm correctness question on the pinned r5 line.
+
+Key evidence:
+
+- fresh-process 64k runs remained nondeterministic with FA OFF, so Flash Attention alone is not a sufficient explanation;
+- a same-parent / same-TheRock-10.0 control using normal Qwen4Exp `ggml_top_k` produced **4 distinct outputs / 4**;
+- replacing only the QSA selector with `ggml_cont(ggml_argsort_top_k(...))` produced **1 identical output / 4**;
+- same-parent normal top-k control averaged **394.34 PP / 21.14 TG**;
+- non-stalled argsort runs averaged **381.88 PP** and argsort TG averaged about **20.04**, corresponding to roughly **-3.16% PP / -5.18% TG**;
+- the argsort r3 aggregate PP outlier was caused by a separate ~9 s host-side stall while the GPU dropped near idle, not by sustained slower GPU compute;
+- focused gfx1151 ROCm ARGSORT testing passed 74/74 supported cases, but one-dimensional widths above 16,384 were reported unsupported, so deterministic-selection coverage is currently **64k only**.
+
+Default integration policy remains the faster normal top-k path. A future optional quality/regression control may use `QWEN4EXP_QSA_DETERMINISTIC_TOPK=1` to select argsort+cont, but that switch is **proposed, not yet implemented on stable r5**, and must not be described as a global deterministic-output guarantee.
+
+Near-term investigation order is now: **ROCm runtime provenance (complete) → ROCm output repeatability (complete) → lightweight Windows event checks for the backend-test hang and argsort-r3 host stall → ROCmFP4 vs Unsloth same-binary speed → QSA mask visualization → ROCm RGP → needle test v1 on Qwen3.8 ROCmFP4 and Gemma 4**.
 
 ## Measurement and provenance tooling — preserve as first-class integration assets
 
@@ -142,7 +158,7 @@ For any integration performance claim, record at minimum:
 - ADLX start/exit/sample count;
 - high-load GPU clock/power/temperature and consistency classification where enough samples exist;
 - GPU dedicated/shared/committed memory and system committed memory;
-- effective inference flags, especially QSA union, DENSE, NOOP, Stage-B, flatten, MMVQ and KV dtype.
+- effective inference flags, especially QSA union, DENSE, NOOP, Stage-B, flatten, MMVQ, KV dtype, and any deterministic-QSA selector when present.
 
 A telemetry probe failure remains fail-open for execution but makes the run unsuitable for a strong performance attribution unless the missing condition is independently established.
 
