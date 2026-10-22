@@ -1,6 +1,6 @@
 # EVO-X2: unexplained Windows restarts during LLM benchmarking
 
-**Last updated:** 2026-10-22 JST  
+**Last updated:** 2026-10-22 JST (21:48 follow-up)  
 **Host:** GMKtec EVO-X2 / Ryzen AI Max+ 395 / Windows 11 / UMA VRAM ordinarily configured at 96 GB
 
 This is the **single ongoing incident ledger** for sudden *OS-level* restarts, resets or apparent hard power-cycle events during llama.cpp or local LLM **performance testing**. Preserve exact measured facts and provenance; do not treat an unexplained reset as an established model, driver, power-supply, firmware or application bug.
@@ -65,6 +65,26 @@ This is the **single ongoing incident ledger** for sudden *OS-level* restarts, r
 
 - **Run artifacts in conversation:** `20261022-170625-072-qwen38-r5-noop-rocmfpx-mtp-64k128k-abba.zip`, `windows-restart-20261022.csv`, plus XML field output pasted in chat.
 - **Recheck plan:** rerun **128k ABBA all four runs** for clean paired PP/TG comparisons. User had started this recheck when the incident ledger was requested. The actual result must be filled in when available.
+
+## 2026-10-22 evening: subsequent PP/VRAM-clock and power-cycle investigation
+
+This is a **follow-up to RST-20261022-PM, not a fourth unexpected reset**. Data below are matched 32k Vulkan `b11588 / 1c3167fb6` tests: Agention ROCmFP4 PLE16 target + matching MTP draft, MTP ON, ~29,557 input tokens, 512 generated, temperature 0, QSA union/DENSE/NOOP enabled. Exit codes were 0; draft acceptance was 70.686%; P-MODE consistently Performance. Comparison input/output/model build hashes matched according to the run logs.
+
+| Local run time | Prior action/session | PP tok/s | TG tok/s | Mean PP VRAM clock | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| ~16:50 | Prior long-running Windows session, RDP | 398.65 | 36.60 | ~970 MHz | Reference fast state |
+| ~20:32 | After ~17:46 unexpected OS restart, RDP | 376.88 | 35.95 | ~884 MHz | PP clock decayed over prefill |
+| ~20:53 | **Normal Windows Restart-Computer**, RDP | 380.02 | 35.93 | ~895 MHz | Boot time 20:49:56; no substantive recovery |
+| ~21:06 | **Normal shutdown → power on**, RDP | 376.23 | 36.14 | ~876 MHz | Still not recovered |
+| ~21:48 | **AC cord removed, power button long-held while unplugged, then power and physical display connected**, local Console session | **393.12** | **36.47** | **~937 MHz** | Partial recovery; still ~1.4% below reference |
+
+The latest run is recorded as `20261022-214850-765-cli-vulkan-b11588-ctx32768-587a0dcffad5.zip`, `ExecutableCommit=1c3167fb6`, `OutputFingerprintSha256=21d9ce4059...`, `PModeAtStart/Finish=Performance`, `DisplayEnvironmentAtFinish.SessionName=Console`, one physical display `E2K60V2`, and ADLX `remote_session=0`. Its high-utilization prefill section (35 samples, usage >=95%) averaged **937.31 MHz VRAM**, **2864.86 MHz GPU core**, **112.63 W GPU**, **68.94°C GPU temperature**, **99.03% GPU utilization**. VRAM-clock progression across the prefill was approximately **968 → 939 → 915 MHz** in consecutive thirds; generation-phase VRAM returned near 1000 MHz.
+
+**Interpretation:** The combination of AC removal/button hold **and** a physical-display/Console-session change coincided with a ~4.49% PP recovery relative to the preceding normal-shutdown run. Normal Restart-Computer and normal shutdown→power-on had not restored the prior rate. This is a strong **lead for power-control reset state or display/session-related GPU behavior**, but the two interventions were performed together and **cannot be causally separated**. It does *not* prove that an EC reset occurred, that a firmware protection state triggered the original OS reset, or that the VRAM-clock change is a direct causal mechanism rather than a correlated control variable.
+
+Recommended low-cost next isolation: with AC and physical display **unchanged**, enter **RDP and repeat one identical 32k run**. Compare against the Console run; then, optionally, repeat under RDP with the physical display disconnected. Record `DisplayEnvironmentAtFinish` and ADLX `remote_session` for each. Do not change BIOS, P-MODE or driver during this isolation. User attempted to enter BIOS via Esc but Windows booted normally; **no BIOS information was obtained** during this step.
+
+**128k rerun status:** The complete 128k ABBA recheck on 2026-10-22 evening finished four of four. ROCmFP4 mean PP **276.78**, Unsloth mean PP **276.52** tok/s; both substantially lower than the first two runs before the reboot. High-load VRAM clocks also differed between sessions. Do not treat the original 128k PP inversion as a stable target-model property.
 
 ## Events excluded from the unexplained-reboot count
 
