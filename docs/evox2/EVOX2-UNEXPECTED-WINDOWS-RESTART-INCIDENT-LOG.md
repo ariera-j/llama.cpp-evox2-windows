@@ -1,6 +1,6 @@
 # EVO-X2: unexplained Windows restarts during LLM benchmarking
 
-**Last updated:** 2026-10-22 JST (21:48 follow-up)  
+**Last updated:** 2026-10-22 JST (post-21:57 hang; event check pending)  
 **Host:** GMKtec EVO-X2 / Ryzen AI Max+ 395 / Windows 11 / UMA VRAM ordinarily configured at 96 GB
 
 This is the **single ongoing incident ledger** for sudden *OS-level* restarts, resets or apparent hard power-cycle events during llama.cpp or local LLM **performance testing**. Preserve exact measured facts and provenance; do not treat an unexplained reset as an established model, driver, power-supply, firmware or application bug.
@@ -97,6 +97,19 @@ The next matched 32k ROCmFP4+MTP run was started through **RDP** while leaving t
 - Compared with preceding local-Console 21:48 run (PP 393.12, TG 36.47, mean PP VRAM ~937 MHz), RDP run is **+1.07% PP**. Compared with ~16:50 fast baseline (PP 398.65), it is **-0.34% PP**. Compared with the low-clock ~21:06 normal-power-cycle run (PP 376.23), it is **+5.60% PP**.
 - **Inference:** near-baseline prefill speed is retained through RDP while a physical monitor remains attached. Therefore **RDP alone is unlikely to explain the ~5% degradation**. The difference between 21:48 and 21:57 is one run each and **does not prove warm-up**; GPU/load state and noise can also affect it. The AC-unplug/button-hold and physical-monitor attachment occurred simultaneously before 21:48, so these two interventions remain confounded.
 - **Next isolating check (optional):** with AC unchanged, continue RDP then disconnect only the physical monitor (or change display switching) and rerun the same 32k model/MTP case; retain ADLX/display metadata. This is more diagnostic than another restart or BIOS modification, but avoid interrupting any ongoing workload.
+
+## HNG-20261022-PM — apparent whole-system hang during display-detached RDP benchmark (time not yet established)
+
+**Classification: suspected system-wide hang requiring manual restart; NOT an observed spontaneous restart and NOT part of the three confirmed unexplained reboot events above.**
+
+- **Time:** 2026-10-22 JST, **after the 21:57 successful matched RDP run**. Exact hang and manual reboot timestamps are **not yet confirmed**; do not infer them from this entry.
+- **Workload/environment:** subsequent 32k matched ROCmFP4 + MTP Vulkan benchmark (`build-vulkan-r5-noop-rocmfpx`, same workflow as earlier matched cases), controlled through RDP, **physical monitor deliberately detached** to isolate display-connection effects. The particular interrupted run's full conditions, PID, token progress and binary hash have **not yet been independently retrieved**.
+- **Symptom:** during inference/benchmarking, RDP connection failed; SSH and ping were also unreachable. Reconnecting a physical display produced no visible response. **Power-button indicator remained lit.** User intended to restart via physical power button. Windows **did not visibly auto-reboot** before that action.
+- **Dump check after recovery:** user checked `C:\\Windows\\LiveKernelReports` and `C:\\Windows\\Minidump`; **no new DMP/Minidump** was found. This does **not** rule out a GPU hang, driver failure or unrecorded OS stall; it establishes only that these searched locations contained no captured dump.
+- **Windows System/Application events / WER Reliability Monitor:** **pending inspection**. In particular, check whether WER logged `LiveKernelEvent 141/117` even without a dump; check Kernel-Power 41/EventLog 6008 after manual power-off separately from the initiating failure. Such 41/6008 events would be *consequences of the manual recovery* and cannot by themselves identify the root cause.
+- **Comparison:** symptom resembles 2026-10-22 02:44 ROCm `FLASH_ATTN_EXT` backend-test GPU/display hang (RDP/display unresponsive), **but no evidence currently establishes the same low-level trigger**; this time the active workload was **Vulkan** and there is **no DMP**.
+- **Confounding:** physical monitor disconnection occurred just before the incident, but that timing does **not establish causation**. Do not actively reproduce by repeatedly disconnecting the monitor under GPU load; prioritize preserving hardware stability and collecting event evidence.
+- **Disposition:** pending event logs, no causal claim. Count separately as a fourth **incident** only when including hangs; keep the **unexplained spontaneous reboot count at three**.
 
 ## Events excluded from the unexplained-reboot count
 
