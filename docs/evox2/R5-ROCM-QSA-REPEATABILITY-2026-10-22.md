@@ -229,7 +229,19 @@ The corrected Windows ROCm build path was successfully exercised end to end:
 - complete DLL closure staged and hash-verified;
 - rocBLAS/hipBLASLt gfx1151 runtime-data trees staged with matching digests.
 
-A separate full `FLASH_ATTN_EXT` backend-test run exposed an existing support-check mismatch for a DKQ=64 + logit-softcap test. The HIP kernel intentionally enters `NO_DEVICE_CODE` / trap for that combination even though the higher-level support path allowed the test to launch. This was unrelated to the QSA argsort change. Until that support-test mismatch is fixed, do not use the full FLASH_ATTN_EXT sweep as a mandatory post-build gate on this gfx1151 Windows configuration.
+A separate full `FLASH_ATTN_EXT` backend-test run exposed an existing support-check mismatch for a DKQ=64 + logit-softcap test. The HIP kernel intentionally enters `NO_DEVICE_CODE` / trap for that combination even though the higher-level support path allowed the test to launch. This was unrelated to the QSA argsort change.
+
+The follow-up Windows event check found evidence for the same incident:
+
+- backend-test failure occurred at approximately **2026-10-22 02:44**;
+- Windows Error Reporting retained **`LiveKernelEvent 141`** with **`WATCHDOG-20261022-0244.dmp`**;
+- after the incident both RDP and the physical display were unusable until manual reboot;
+- the subsequent Kernel-Power 41 record had **`BugcheckCode=0`** and **`WHEABootErrorCount=0`**;
+- no normal BSOD/WHEA crash was identified.
+
+This strongly associates the FA backend-test GPU trap with a Windows GPU/display watchdog event on the shared gfx1151 device, but the exact causal chain is **not proven** because the live dump was not analyzed in WinDbg.
+
+Operational rule: until the support-check mismatch is fixed, **do not use the broad full `FLASH_ATTN_EXT` sweep as a routine post-build gate** on this Windows/gfx1151 configuration. Prefer targeted operator tests for the specific feature being changed.
 
 The focused ARGSORT backend suite is safe and passed 74/74.
 
@@ -249,7 +261,9 @@ The next planned performance task remains:
 ROCmFP4 vs Unsloth model speed comparison using the same llama.cpp binary
 ~~~
 
-Before that comparison, separately perform the lightweight Windows-event checks for:
+The lightweight Windows-event checks are now complete:
 
-1. the early-morning GPU/backend-test system hang;
-2. the ~9 s host-side stall seen in argsort r3.
+1. **backend-test hang:** correlated with the new 02:44 `LiveKernelEvent 141` / `WATCHDOG-20261022-0244.dmp` incident described above;
+2. **argsort r3 ~9 s stall:** no matching System, Application, Defender or Windows Update event was recorded around 10:42. Resource telemetry showed page-in/disk-read activity while GPU utilization/clock/power dropped near idle, then normal GPU throughput resumed. Treat this run as a one-off **host-side paging/I/O stall**, not sustained argsort compute slowdown.
+
+No further Windows-event investigation is required before the next planned model comparison.
