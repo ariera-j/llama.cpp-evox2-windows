@@ -40,3 +40,22 @@ The older comparison differed substantially in binary/fork and upstream baseline
 ## Follow-up: optimized r5 integration binary, MTP ON
 
 Use separate matched plans on `build-vulkan-r5-noop-rocmfpx` (`R5NoopRocmFpxVulkan` local key): 32k ABBA gate, then 64k+128k continuous ABBA. Each target uses its own matching MTP sidecar (Agention ROCmFP4 or Unsloth Q8_0), DraftMax=2, DraftPMin=0.0, identical normal Vulkan/QSA union/DENSE/NOOP settings. This next experiment measures **model+draft system throughput and acceptance**, not a target-only quantization effect. Review matched draft compatibility and memory allocation at 32k before committing to longer workloads. P-MODE/ADLX and output checks remain mandatory.
+
+## Follow-up: 128k optimized-r5 MTP ON ABBA in recovered high-speed regime (2026-10-22 23:53 to 2026-10-23 00:26 JST)
+
+Source: user-supplied `20261022-235301-027-qwen38-r5-noop-rocmfpx-mtp-64k128k-abba.zip`. Four completed `-OnlyCase 128k` runs from `qwen38-r5-noop-rocmfpx-mtp-64k128k-abba.psd1`, same `b11588 / 1c3167fb6` binary, 126,253 prompt tokens and 512 generated, `-c 131072`, Kv f16, QSA union/DENSE/NOOP, two-token MTP. This follows a period of variable VRAM clocks and unexpected system hangs; see [EVOX2-UNEXPECTED-WINDOWS-RESTART-INCIDENT-LOG.md](EVOX2-UNEXPECTED-WINDOWS-RESTART-INCIDENT-LOG.md).
+
+| Order | Target + matching draft | PP tok/s | TG tok/s | MTP draft acceptance | Approx. prefill high-load VRAM mean MHz | GPU core mean MHz | GPU power mean W | GPU temp mean °C |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 / `128k-05` | ROCmFP4 | **300.98** | **29.62** | 66.972% | 918.5 | 2844.8 | 111.7 | 76.2 |
+| 2 / `128k-06` | Unsloth | 298.32 | 28.40 | 67.667% | 906.5 | 2857.2 | 111.6 | 78.4 |
+| 3 / `128k-07` | Unsloth | 297.27 | 28.39 | 67.667% | 902.5 | 2857.8 | 111.3 | 78.8 |
+| 4 / `128k-08` | ROCmFP4 | **293.51** | **29.44** | 66.972% | 905.0 | 2842.9 | 111.1 | 78.5 |
+
+Each run exited 0 and logged P-MODE Performance at start and finish with zero warnings; matched runs have internally identical output fingerprint per target, consistent model and executable hashes. High-utilization PP ADLX means use gpu_usage >=95%, excluding load/TG via result duration: first ROCmFP4 run n=202 samples, last n=207; thus approximate phase boundaries, not exact kernel profiling.
+
+- ROCmFP4 PP **first vs fourth 300.98→293.51 (-2.48%)**, GPU VRAM clock **918.5→905.0 MHz**; core nearly unchanged, mean GPU temperature **76.2→78.5°C**, GPU power **111.7→111.1W**. Clock by prefill thirds first **935.4→910.9→909.4 MHz**, fourth **913.9→904.9→896.0 MHz**. This supports a *correlation* with VRAM clock drift, not an established causal or thermal-protection mechanism.
+- Unsloth PP 298.32→297.27 (-0.35%), VRAM clock 906.5→902.5 MHz. In this run order, ROCmFP4 is more affected by sequence/time variation.
+- ABBA mean **ROCmFP4 PP 297.245 / TG 29.53**, **Unsloth PP 297.795 / TG 28.395**: ROCmFP4 PP **-0.18%** (effectively tied), TG **+4.00%**. This is the *model+matching MTP draft* comparison, not isolated target quantization.
+- Earlier post-reboot low-clock 128k 4run ABBA (same day) gave ROCmFP4 PP ~276.78, Unsloth ~276.52; this recovered-regime run improved PP by **~7.4% / ~7.7%**, respectively. Cross-session speed differences must not be interpreted as code changes.
+- **32k MTP OFF outstanding in high-speed state.** The prior optimized-r5 MTP OFF 32k ABBA (`20261022-201146-028-qwen38-r5-noop-rocmfpx-nomtp-32k-abba.zip`) was measured in the earlier low-VRAM-clock regime: ROCmFP4 mean PP **406.88**, TG **26.95**; Unsloth PP **390.81**, TG **27.05**. Do not combine that OFF dataset with recovered high-clock MTP ON results for a controlled MTP-on/off comparison. Re-run existing `tools/evox2/benchmark/configs/qwen38-r5-noop-rocmfpx-nomtp-32k-abba.psd1` in the now-stable high-clock state; preserve P-MODE, ADLX and headless/display metadata.
