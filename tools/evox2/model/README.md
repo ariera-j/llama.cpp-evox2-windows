@@ -132,8 +132,14 @@ entry with the new single-file `Path`; do not overwrite the original model
 entry. Define BuildKeys pointing at the saved COMMON-001 binaries.
 
 The previous UD-IQ3_XXS verification showed PLE heads on Vulkan GPU but on
-ROCm CPU. **The huihui IQ4_XS model has not yet been converted or tested**.
-Its backend placement must be measured independently.
+ROCm CPU. **Status update (2026-10-24): the huihui IQ4_XS was converted,
+recovered using `-FinalizePartial -VerifyBytes`, and validated on both
+backends at 4k; Vulkan proceeded to 128k plus 126,253 actual input tokens.**
+On this IQ4_XS, Vulkan PLE16 device model allocation is 86.61 GiB with no
+CPU model buffer reported; ROCm still reports 26.82 GiB CPU model buffer.
+See [run-by-run validation and ZIP hashes](../../docs/evox2/R5-HUIHUI-IQ4XS-PLE16-VALIDATION-2026-10-24.md).
+The following original source-boundary note describes only the conversion-tool
+commit, not the subsequent Windows acceptance runs.
 
 ## Source boundaries
 
