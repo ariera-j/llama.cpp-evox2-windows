@@ -176,6 +176,8 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--check-only", action="store_true",
                         help="validate source shards, metadata and PLE tensor shape without writing")
+    parser.add_argument("--expect-operation", choices=("split", "join", "auto"),
+                        default="auto", help="fail rather than silently use the wrong direction")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -244,6 +246,8 @@ def main() -> None:
     else:
         raise SystemExit(f"Neither {JOINED} nor split PLE heads found")
 
+    if args.expect_operation != "auto" and args.expect_operation != operation:
+        raise SystemExit(f"Expected {args.expect_operation} operation, detected {operation}")
     logger.info("PLE preflight: OK, %s, %d tensors, %d heads, PLE %.2f GiB",
                 operation, len(tensors), len(offsets), ple_size / 2**30)
     if args.check_only:
