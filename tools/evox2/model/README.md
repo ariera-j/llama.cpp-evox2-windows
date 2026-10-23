@@ -79,6 +79,44 @@ model-file metadata; by default it does not hash whole models.
 - Conversion success alone does **not** prove GPU placement or long-context
   stability. Verify with llama.cpp.
 
+## Recovering a completed 87 GiB partial GGUF (2026-10-24)
+
+The initial r5 wrapper had a Windows PowerShell 5.1 `Start-Process`
+ExitCode=$null problem and mistakenly checked the final output name before
+verification. This is a wrapper failure, **not proof the Python converter
+failed**. If the converter printed `100.0%` and `wrote ...partial.gguf`,
+retain the partial file rather than rerunning conversion.
+
+After pulling the fixed r5 branch:
+
+```powershell
+# Use the inputModel, outputModel and converter variables defined above.
+# Inspect the existing partial first; it should be roughly the input size:
+Get-Item -LiteralPath ($outputModel + '.partial.gguf') |
+    Select-Object FullName, Length, LastWriteTime
+
+# Verify the existing partial against the original three GGUF shards and
+# then atomically rename it. No Python conversion or second 87 GiB write.
+& $converter -InputFile $inputModel -OutputFile $outputModel -FinalizePartial -VerifyBytes
+```
+
+`-FinalizePartial` requires the existing `*.partial.gguf`, never overwrites
+an already existing final GGUF, skips conversion, checks the 16-head layout and
+all tensor metadata, and then renames the existing verified file. Add
+`-VerifyBytes` (strongly recommended when the original exit code is unknown)
+for a **streaming SHA-256 check of every tensor's payload**. It reads substantial
+disk data but does not regenerate the GGUF.
+
+If verification fails, the partial file stays in place for diagnosis. The
+recovery invocation writes a new provenance record with
+`RecoveredExistingPartial=true` and **does not claim the original Python
+process exited with code zero**. Keep the original
+`20261024-003604-840-ple-layout` converter logs separately as evidence.
+
+The fixed normal conversion path now uses the same native
+`GetExitCodeProcess` fallback already established in Measure-LlamaCli.ps1,
+checks the partial rather than final path, and verifies before the rename.
+
 ## Testing converted model
 
 `build-vulkan-clean`/`build-rocm-clean` at b11517 lack COMMON-001 split-PLE
