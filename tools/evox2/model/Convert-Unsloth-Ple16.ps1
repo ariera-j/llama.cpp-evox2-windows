@@ -135,7 +135,9 @@ $SidecarPath = [IO.Path]::GetFullPath($SidecarPath)
 $converterArgs = @(
     $ConverterScript,
     $InputFile,
-    $PartialOutput
+    $PartialOutput,
+    '--expect-operation',
+    'split'
 )
 if ($VerboseConverter) {
     $converterArgs += '--verbose'
@@ -191,7 +193,7 @@ if ($DryRun) {
 
 if ($PreflightOnly) {
     Write-Host 'Running GGUF layout preflight (no output created)...'
-    & $Python $ConverterScript $InputFile $PartialOutput --check-only
+    & $Python $ConverterScript $InputFile $PartialOutput --check-only --expect-operation split --expect-operation split
     if ($LASTEXITCODE -ne 0) {
         throw "PLE preflight failed: exit code $LASTEXITCODE."
     }
