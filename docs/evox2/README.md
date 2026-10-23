@@ -1,5 +1,8 @@
 # Evo-X2 upstream-refresh overview
 
+> **2026-10-24 PLE16 converter tools restored:** [model conversion README](../../tools/evox2/model/README.md) covers the r2-derived Python head splitter adapted to r5 gguf-py, r3-style PowerShell wrapper, metadata/payload verification and non-writing preflight for the huihui IQ4_XS GGUF. These are **model preparation tools only**: no model was converted or tested on Windows by this commit; stable r5 inference source is unchanged. Converted split heads need COMMON-001 or equivalent loader support, not b11517 clean.
+
+
 
 > **2026-10-21 post-integration optimization research:** [R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md) is the canonical point-in-time priority document for **after** the next integrated build is complete. It consolidates s1/Strata plus halo-box, tetherto, Gufo Windows, pwilkin and wider upstream/fork research. The current integration plan remains authoritative first; re-check upstream/fork/PR state when post-integration optimization actually begins.
 
