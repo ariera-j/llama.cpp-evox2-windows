@@ -1,5 +1,8 @@
 # Evo-X2 Windows tooling
 
+> **2026-10-24 PLE16 model preparation:** [`model/README.md`](model/README.md) documents the r5-local, r2-derived Python converter, r3-derived PowerShell wrapper, preflight mode, verification and large-model safety checks. No inference or benchmark runtime code changed; run converted GGUFs using COMMON-001-capable binaries.
+
+
 ## Current refresh entry point
 
 Build and measurement utilities are imported from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Use the [current handoff](../../docs/evox2/R5-REFRESH-2026-10-09.md), [refresh procedure](../../docs/evox2/UPSTREAM-REFRESH.md) and current build guides.
