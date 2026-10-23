@@ -8,6 +8,8 @@ The goal is not to merge investigation branches wholesale. The goal is to start 
 
 No final latest-upstream integrated candidate, release tag or replacement binary exists yet.
 
+> **New 2026-10-24 input-model validation / post-build regression evidence (does not reorder this plan):** [huihui UD-IQ4_XS PLE16 report](R5-HUIHUI-IQ4XS-PLE16-VALIDATION-2026-10-24.md) documents successful 96GB UMA Vulkan COMMON-001 b11521 4k–128k allocation and 126,253-token real-paper prefill + 256-token decode; its ROCm PLE16 copy remains CPU-table-bound. The user intends first to load-check the original Unsloth UD-IQ4_XS PLE16 and compare four output variants (ROCmFP4-FAST-v2, UD-IQ3_XXS, huihui UD-IQ4_XS, original UD-IQ4_XS) on one selected ROCmFPx-compatible r5 Vulkan binary, then run the **same four models and chosen input** again after building the integrated candidate. This is an **additional optional controlled post-integration output-regression check**, not a prerequisite for selecting the upstream SHA or permission to merge experimental patches. Record exact prompt, model hashes, executable/runtime fingerprint, sample parameters and top-k repeatability caveat; neither original four-model baseline nor integrated candidate has been completed as of this note.
+
 > **Post-integration optimization research is tracked separately.** The 2026-10-21 point-in-time priority snapshot is [R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md). It does **not** change the candidate-construction order in this document. Use it only after the integrated candidate is frozen and re-check upstream PR/fork state at the actual start of the next optimization session.
 
 ### Point-in-time upstream watch
