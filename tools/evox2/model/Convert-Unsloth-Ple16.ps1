@@ -19,10 +19,25 @@ param(
     [switch]$SkipVerify,
     [switch]$VerifyBytes,
     [switch]$PreflightOnly,
+    [switch]$FinalizePartial,
     [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Identical Win32 fallback to the validated benchmark launcher: PowerShell 5.1
+# can return $null for Process.ExitCode after Start-Process -PassThru.
+if (-not ('Evox2NativeProcess' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class Evox2NativeProcess {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+}
+'@
+}
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $toolsRoot = Split-Path -Parent $scriptDir
@@ -35,15 +50,26 @@ $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
 if ($VerifyBytes -and $SkipVerify) {
     throw 'Do not use -VerifyBytes together with -SkipVerify.'
 }
+if ($FinalizePartial -and $PreflightOnly) {
+    throw 'Use -FinalizePartial or -PreflightOnly, not both.'
+}
+if ($FinalizePartial -and $SkipVerify) {
+    throw 'Cannot finalize an existing partial GGUF without verification.'
+}
 
 $InputFile = (Resolve-Path -LiteralPath $InputFile).Path
 $OutputFile = [IO.Path]::GetFullPath($OutputFile)
 
 $PartialOutput = $OutputFile + '.partial.gguf'
-foreach ($candidate in @($OutputFile, $PartialOutput)) {
-    if (Test-Path -LiteralPath $candidate) {
-        throw "Output already exists (nothing overwritten): $candidate"
+if (Test-Path -LiteralPath $OutputFile) {
+    throw "Output already exists (nothing overwritten): $OutputFile"
+}
+if ($FinalizePartial) {
+    if (-not (Test-Path -LiteralPath $PartialOutput -PathType Leaf)) {
+        throw "No partial GGUF to verify: $PartialOutput"
     }
+} elseif (Test-Path -LiteralPath $PartialOutput) {
+    throw "Partial GGUF already exists. Use -FinalizePartial to verify/recover it, or inspect it manually: $PartialOutput"
 }
 if ($InputFile -eq $OutputFile -or $InputFile -eq $PartialOutput) {
     throw 'Output path must differ from input path.'
@@ -110,7 +136,8 @@ foreach ($shard in $InputShards) {
     $InputBytes += (Get-Item -LiteralPath $shard).Length
 }
 $outputDrive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($OutputFile))
-if ($outputDrive.AvailableFreeSpace -lt ($InputBytes + 1GB)) {
+if (-not $FinalizePartial -and -not $PreflightOnly -and -not $DryRun -and
+    $outputDrive.AvailableFreeSpace -lt ($InputBytes + 1GB)) {
     throw ('Insufficient output disk space: available {0:N2} GiB, need at least {1:N2} GiB.' -f
         ($outputDrive.AvailableFreeSpace / 1GB), (($InputBytes + 1GB) / 1GB))
 }
@@ -175,6 +202,7 @@ $preview = [PSCustomObject]@{
     AvailableOutputBytes = $outputDrive.AvailableFreeSpace
     Verify = (-not $SkipVerify)
     VerifyBytes = [bool]$VerifyBytes
+    FinalizePartial = [bool]$FinalizePartial
     HashModels = [bool]$HashModels
 }
 
@@ -184,6 +212,9 @@ $preview | Format-List | Out-Host
 Write-Host ''
 Write-Host 'Derived converter: LaurentZuijdwijk/llama.cpp (MIT), adapted for r5.'
 Write-Host 'Original input is retained; output remains partial until verified.'
+if ($FinalizePartial) {
+    Write-Host 'RECOVERY: no conversion will run; existing partial GGUF must pass verification.'
+}
 Write-Host '========================================================'
 Write-Host ''
 
@@ -193,7 +224,7 @@ if ($DryRun) {
 
 if ($PreflightOnly) {
     Write-Host 'Running GGUF layout preflight (no output created)...'
-    & $Python $ConverterScript $InputFile $PartialOutput --check-only --expect-operation split --expect-operation split
+    & $Python $ConverterScript $InputFile $PartialOutput --check-only --expect-operation split
     if ($LASTEXITCODE -ne 0) {
         throw "PLE preflight failed: exit code $LASTEXITCODE."
     }
@@ -201,73 +232,93 @@ if ($PreflightOnly) {
     return $preview
 }
 
-& $Python $ConverterScript $InputFile $PartialOutput --check-only
-if ($LASTEXITCODE -ne 0) {
-    throw "PLE preflight failed: exit code $LASTEXITCODE."
+# A previous complete conversion can be recovered without rewriting ~87 GiB.
+if (-not $FinalizePartial) {
+    & $Python $ConverterScript $InputFile $PartialOutput --check-only --expect-operation split
+    if ($LASTEXITCODE -ne 0) {
+        throw "PLE preflight failed: exit code $LASTEXITCODE."
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputFile) | Out-Null
 
 $started = Get-Date
+$exitCode = $null
+$exitCodeSource = if ($FinalizePartial) { 'unavailable-from-original-run' } else { 'not-collected' }
+$recoveredPartial = [bool]$FinalizePartial
 
-Write-Host "Conversion log directory: $runDir"
-Write-Host 'Starting external converter...'
+if (-not $FinalizePartial) {
+    Write-Host "Conversion log directory: $runDir"
+    Write-Host 'Starting PLE converter...'
 
-$argumentLine = (
-    $converterArgs |
-    ForEach-Object {
-        $value = [string]$_
-        if ($value -match '[\s"]') {
-            '"' + ($value -replace '"', '\"') + '"'
-        } else {
-            $value
+    $argumentLine = (
+        $converterArgs |
+        ForEach-Object {
+            $value = [string]$_
+            if ($value -match '[\\s"]') {
+                '"' + ($value -replace '"', '\\"') + '"'
+            } else {
+                $value
+            }
+        }
+    ) -join ' '
+
+    $process = Start-Process `
+        -FilePath $Python `
+        -ArgumentList $argumentLine `
+        -WorkingDirectory $SourceForkRoot `
+        -RedirectStandardOutput $stdoutPath `
+        -RedirectStandardError $stderrPath `
+        -NoNewWindow `
+        -PassThru
+
+    # Retain the native handle BEFORE the process exits, as with Measure-LlamaCli.ps1.
+    $processHandle = $process.Handle
+    $nextHeartbeat = (Get-Date).AddSeconds(30)
+    while (-not $process.HasExited) {
+        Start-Sleep -Seconds 1
+        $process.Refresh()
+        if ((Get-Date) -ge $nextHeartbeat) {
+            $elapsed = (Get-Date) - $started
+            Write-Host (
+                'Converting... PID {0}, elapsed {1:N1} min' -f
+                $process.Id, $elapsed.TotalMinutes
+            )
+            $nextHeartbeat = (Get-Date).AddSeconds(30)
         }
     }
-) -join ' '
-
-$process = Start-Process `
-    -FilePath $Python `
-    -ArgumentList $argumentLine `
-    -WorkingDirectory $SourceForkRoot `
-    -RedirectStandardOutput $stdoutPath `
-    -RedirectStandardError $stderrPath `
-    -NoNewWindow `
-    -PassThru
-
-$nextHeartbeat = (Get-Date).AddSeconds(30)
-while (-not $process.HasExited) {
-    Start-Sleep -Seconds 1
+    $process.WaitForExit()
     $process.Refresh()
-
-    if ((Get-Date) -ge $nextHeartbeat) {
-        $elapsed = (Get-Date) - $started
-        Write-Host (
-            'Converting... PID {0}, elapsed {1:N1} min' -f
-            $process.Id,
-            $elapsed.TotalMinutes
-        )
-        $nextHeartbeat = (Get-Date).AddSeconds(30)
-    }
-}
-
-$process.WaitForExit()
-$process.Refresh()
-$exitCode = $process.ExitCode
-$finished = Get-Date
-
-if ($exitCode -ne 0) {
-    Write-Host 'Last converter stderr lines:'
-    if (Test-Path -LiteralPath $stderrPath) {
-        Get-Content -LiteralPath $stderrPath -Tail 80 | ForEach-Object {
-            Write-Host $_
+    try {
+        $managedCode = $process.ExitCode
+        if ($null -ne $managedCode -and "$managedCode" -ne '') {
+            $exitCode = [uint32]$managedCode
+            $exitCodeSource = 'Process.ExitCode'
+        }
+    } catch {}
+    if ($null -eq $exitCode -and $processHandle -ne [IntPtr]::Zero) {
+        [uint32]$nativeCode = 0
+        $nativeOk = [Evox2NativeProcess]::GetExitCodeProcess($processHandle, [ref]$nativeCode)
+        if ($nativeOk) {
+            $exitCode = $nativeCode
+            $exitCodeSource = 'GetExitCodeProcess'
         }
     }
-    throw "External PLE converter failed with exit code $exitCode."
+    if ($null -eq $exitCode -or $exitCode -ne 0) {
+        Write-Host 'Last converter stderr lines:'
+        if (Test-Path -LiteralPath $stderrPath) {
+            Get-Content -LiteralPath $stderrPath -Tail 80 | ForEach-Object { Write-Host $_ }
+        }
+        throw "Converter failed or exit status unavailable: $exitCode (source: $exitCodeSource). Check partial GGUF; recover with -FinalizePartial only after inspecting logs."
+    }
+} else {
+    Write-Host "Recovering existing partial GGUF: $PartialOutput"
+    Write-Host 'Conversion will NOT run. Rechecking existing output before renaming.'
 }
 
-if (-not (Test-Path -LiteralPath $OutputFile -PathType Leaf)) {
-    throw "Converter returned success but output is missing: $OutputFile"
+if (-not (Test-Path -LiteralPath $PartialOutput -PathType Leaf)) {
+    throw "Expected partial output GGUF not found: $PartialOutput"
 }
 
 $verifyRecord = $null
@@ -287,7 +338,7 @@ if (-not $SkipVerify) {
         -FilePath $Python `
         -ArgumentList @(
             $verifyScript,
-            $OutputFile,
+            $PartialOutput,
             '--gguf-py', $ggufPy,
             '--expect', 'split',
             '--json', $verifyPath
@@ -325,7 +376,10 @@ if (-not $SkipVerify) {
 }
 
 # Rename only after both conversion and enabled verification succeed.
+# The original source and the verified partial are on the same output drive
+# when the user follows the documented layout; this rename avoids a second copy.
 Move-Item -LiteralPath $PartialOutput -Destination $OutputFile -ErrorAction Stop
+$finished = Get-Date
 
 $outputIdentity = Get-Evox2FileIdentity `
     -Path $OutputFile `
@@ -367,14 +421,19 @@ $provenance = [ordered]@{
         Arguments = @($converterArgs)
         WorkingDirectory = $SourceForkRoot
         ExitCode = $exitCode
+        ExitCodeSource = $exitCodeSource
+        RecoveredExistingPartial = $recoveredPartial
+        Note = if ($recoveredPartial) {
+            'The original conversion exited earlier without a readable exit status; this invocation performed verification and finalization only.'
+        } else { $null }
     }
 
     Verification = $verifyRecord
 
     Logs = [ordered]@{
         RunDirectory = $runDir
-        Stdout = $stdoutPath
-        Stderr = $stderrPath
+        Stdout = if ($recoveredPartial) { $null } else { $stdoutPath }
+        Stderr = if ($recoveredPartial) { $null } else { $stderrPath }
         VerificationJson = if (Test-Path -LiteralPath $verifyPath) {
             $verifyPath
         } else {
@@ -387,7 +446,11 @@ Write-Evox2Json -InputObject $provenance -Path $provenancePath -Depth 32
 Write-Evox2Json -InputObject $provenance -Path $SidecarPath -Depth 32
 
 Write-Host ''
-Write-Host 'PLE conversion completed.'
+if ($recoveredPartial) {
+    Write-Host 'PLE recovery verified and finalized successfully.'
+} else {
+    Write-Host 'PLE conversion completed.'
+}
 Write-Host "Output     : $OutputFile"
 Write-Host "Provenance : $SidecarPath"
 Write-Host "Run log    : $runDir"
