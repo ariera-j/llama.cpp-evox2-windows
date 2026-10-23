@@ -312,7 +312,7 @@ if (-not $SkipVerify) {
     $payloadCheck = Invoke-Evox2NativeCapture `
         -FilePath $Python `
         -ArgumentList $payloadArgs
-    $verifyRecord.PayloadVerification = [ordered]@{
+    $verifyRecord['PayloadVerification'] = [ordered]@{
         ExitCode = $payloadCheck.ExitCode
         Output = $payloadCheck.Text
         VerifyBytes = [bool]$VerifyBytes
