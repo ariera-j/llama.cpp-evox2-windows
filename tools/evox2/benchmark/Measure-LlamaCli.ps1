@@ -858,6 +858,13 @@ $DenseIndexerEvidence = Get-Evox2MtpDenseIndexerEvidence -Text $CombinedText `
     -Setting $env:LLAMA_MTP_SKIP_DENSE_INDEXER -Mtp ([bool]$Mtp)
 $QsaNoopEvidence = Get-Evox2QsaNoopInvalidationEvidence -Text $CombinedText `
     -Setting $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION
+# The QSA no-op invalidation decision is specific to qwen4exp.
+# Other architectures, such as gemma4, do not emit this diagnostic.
+# Keep a missing/unknown architecture fail-closed if validation was requested.
+if (-not [string]::IsNullOrWhiteSpace($Parsed.ModelArchitecture) -and
+    $Parsed.ModelArchitecture -ne 'qwen4exp') {
+    $QsaNoopEvidence.Status = 'NotApplicable'
+}
 
 $EnoughInput = $false
 if (-not $AllocationOnly -and $null -ne $Parsed.PromptTokens) {
@@ -891,7 +898,8 @@ if ($Status -eq 'OK' -and $Mtp -and $env:LLAMA_MTP_SKIP_DENSE_INDEXER -in @('0',
     $DenseIndexerEvidence.Status -ne 'Verified') {
     $Status = 'CANDIDATE_EVIDENCE_' + $DenseIndexerEvidence.Status.ToUpperInvariant()
 }
-if ($Status -eq 'OK' -and $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION -in @('0', '1') -and
+if ($Status -eq 'OK' -and $QsaNoopEvidence.Status -ne 'NotApplicable' -and
+    $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION -in @('0', '1') -and
     $QsaNoopEvidence.Status -ne 'Verified') {
     $Status = 'QSA_NOOP_EVIDENCE_' + $QsaNoopEvidence.Status.ToUpperInvariant()
 }
