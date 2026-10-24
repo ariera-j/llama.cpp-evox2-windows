@@ -88,6 +88,8 @@ The `20261023-233507...`, `20261023-234738...` and `20261024-010405...` ZIPs eac
 
 ## Next work: four models, then the integrated build (user plan as of 2026-10-24)
 
+**Follow-up (2026-10-24):** The planned output-content comparison was carried out as a separate **five-model** summary/prompt/seed study (including Gemma 4). Results and run provenance are maintained in [evox2-llm-experiments — summary-prompt-variation](https://github.com/ariera-j/evox2-llm-experiments/tree/main/benchmarks/summary-prompt-variation). The dated plan below is retained as historical context; quality-analysis data belong in the experiments repository.
+
 **Do not expand 128k further now.** Preserve this 128k real-input result as a model usability gate, then switch to a small, bounded **output-content comparison**:
 
 1. Overnight download the **original Unsloth UD-IQ4_XS** (the source-family counterpart to the tested huihui abliteration); next morning run `-PreflightOnly`, convert joined PLE to PLE16 with the r5 tool, verify, and do a **short Vulkan load/memory gate only**. Do not assume the original model's exact bytes/file size match the huihui variant without checking.
