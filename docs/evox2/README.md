@@ -1,5 +1,7 @@
 # Evo-X2 upstream-refresh overview
 
+> **Output-content comparison (2026-10-24):** The planned Qwen3.8 quantization/abliteration comparison was completed as a five-model summary study; its results and run index are in [evox2-llm-experiments / summary-prompt-variation](https://github.com/ariera-j/evox2-llm-experiments/tree/main/benchmarks/summary-prompt-variation). This implementation repository retains only the reference and historical plan.
+
 > **2026-10-24 huihui UD-IQ4_XS PLE16 128k PASS:** [actual Windows log-backed results and four-model next steps](R5-HUIHUI-IQ4XS-PLE16-VALIDATION-2026-10-24.md) — 87.24 GiB model, Vulkan COMMON-001 b11521 full-GPU 4k–128k allocation gates, 126,253-token paper input + 256-token generation, PP 183.26/TG 22.73 tok/s and no truncation; ROCm retains ~26.82 GiB PLE on CPU. User's next comparison: Unsloth UD-IQ4_XS original PLE16 smoke, four-model output-detail/v1 tests on ROCmFPx-capable r5 build, then exact-input recheck after the future integrated candidate. Existing integration order unchanged.
 
 > **2026-10-24 PLE16 converter tools restored:** [model conversion README](../../tools/evox2/model/README.md) covers the r2-derived Python head splitter adapted to r5 gguf-py, r3-style PowerShell wrapper, metadata/payload verification and non-writing preflight for the huihui IQ4_XS GGUF. These are **model preparation tools only**: no model was converted or tested on Windows by this commit; stable r5 inference source is unchanged. Converted split heads need COMMON-001 or equivalent loader support, not b11517 clean.
