@@ -103,3 +103,14 @@ The `20261023-233507...`, `20261023-234738...` and `20261024-010405...` ZIPs eac
 ### Integration-policy boundary
 
 This addendum is **validation evidence and next-comparison planning** only. It does not change the priority/order in the authoritative [2026-10-21 integrated-candidate plan](R5-INTEGRATION-PLAN-2026-10-21.md), nor assert that MTP-DENSE/NOOP, Stage-B or ROCmFPx inference support is now present on stable r5. It introduces no new native source patch and no replacement release claim.
+
+## Reusable runner configurations (checked in 2026-10-25)
+
+The previously untracked huihui test plans are kept under [benchmark/configs](../../tools/evox2/benchmark/configs) for reproducibility:
+
+- [qwen38-huihui-iq4xs-load-check.psd1](../../tools/evox2/benchmark/configs/qwen38-huihui-iq4xs-load-check.psd1): original joined-PLE Clean Vulkan/ROCm allocation matrix; historical ROCm progression stopped early due to CPU PLE placement.
+- [qwen38-huihui-iq4xs-ple16-common001.psd1](../../tools/evox2/benchmark/configs/qwen38-huihui-iq4xs-ple16-common001.psd1): split-PLE COMMON-001 allocation smoke matrix, with the validated extended contexts on Vulkan only.
+- [qwen38-huihui-iq4xs-ple16-common001-128k-paper.psd1](../../tools/evox2/benchmark/configs/qwen38-huihui-iq4xs-ple16-common001-128k-paper.psd1): actual 128k paper input and 256-token output, not AllocationOnly.
+- [local.huihui-iq4xs-ple16.common001.example.psd1](../../tools/evox2/benchmark/configs/local.huihui-iq4xs-ple16.common001.example.psd1): path placeholders for a private model/input/build map; must be copied and edited before use.
+
+The private `local.huihui-iq4xs.psd1` remains outside Git tracking. The actual `local.huihui-iq4xs-ple16.psd1` saved inside `evox2-logs/` remains in that ignored run evidence; neither is committed. The published plans preserve runner parameters and historical names, with comments clarified where `AllocationOnly` was mistakenly described as a 32-token generation run. Do not treat the existence of ROCm build keys as an endorsement of high-context ROCm tests.
