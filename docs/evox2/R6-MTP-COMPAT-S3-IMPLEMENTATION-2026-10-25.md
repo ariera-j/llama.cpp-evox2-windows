@@ -3,7 +3,7 @@
 ## Status and fixed scope
 
 - **S3 branch:** `r6/mtp-compat-20261025`, created from passing S2 `r6/rocmfpx-vulkan-20261025` / remote `739af71c117f463236bf33d1624a9438f945ccf2`.
-- **Status: compatibility fixes built; 4k DraftMax=2/7 and 32k MTP ON PASSED for both matching drafts on b11889; 64k and ROCm IQ3 check pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
+- **Status: Vulkan compatibility gates PASSED at 4k DraftMax=2/7, 32k and 64k MTP ON for both pairs on b11889; separate ROCm IQ3 compatibility check pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
 - **Models:** Unsloth UD-IQ3_XXS PLE16 **with Unsloth Q8_0 MTP**; Agention ROCmFP4 FAST PLE16 **with matching Agention ROCmFP4 FAST MTP**. Never mix the two drafts when drawing model-pair conclusions.
 - **Purpose:** confirm loading, model/draft GPU placement, real speculative acceptance and coherent output. Do **not** mix this with S4 QSA union, S5 DENSE/NOOP, S6 Stage-B/flatten, MMVQ forcing, new HIP ROCmFP4 kernels, or 256k.
 
@@ -82,7 +82,35 @@ Both report **zero graph reallocations** and no visible model-load/runtime asser
 
 **Gate decision:** **32k MTP ON PASS for both matching pairs.** The 32k acceptance percentages are meaningfully measured on long input but are **not** a head-to-head model-quality ranking. Neither pair has a matched 32k MTP OFF measurement in this gate, so the displayed TG and PP values do **not** measure an MTP speedup. No extra A/B, 256k, or optimization investigation is authorized by this PASS.
 
-**Next fixed step:** `-OnlyCase 64k -OnlyVariant on -PlanOnly`, confirm exactly `s3-iq3-ple16` and `s3-rocmfp4-fast-ple16` (both `S3Vulkan`), then execute that **two-run ON-only** matrix. Record output, PP/TG, acceptance, GPU placement, P-MODE/ADLX and memory headroom; pause for review before a separate S3 ROCm IQ3 build/check or S4 work.
+**Historical next step, completed:** `-OnlyCase 64k -OnlyVariant on` ran the two intended S3Vulkan jobs. The results follow below; the stage next moves to its separately planned ROCm IQ3 check, not S4 yet.
+
+## Patched S3 Vulkan 64k real-document MTP ON — PASS (2026-10-25 JST)
+
+User matrix archive: `20261025-212727-882-qwen38-r6-s3-mtp-native.zip`. Matrix summary: **2/2 complete, OK=2, NonOK=0**, no early stop. Both use the **same unchanged S3 Vulkan b11889 executable** / `befbc4538` (SHA256 `42ebf2a69d3c7b2239b9f9e57673760da88ef65367bc5581aadfa4aaae9e6aac`), **61,789 input tokens**, **512 generated tokens**, ctx65536, `DraftMax=2`, matching Q8_0/ROCmFP4 drafts, f16 K/V. No other optimization source was ported after the 4k/32k runs.
+
+| Model and run | PP tok/s | TG tok/s | MTP acceptance | Native PP+TG | Memory and output |
+| --- | ---: | ---: | --- | ---: | --- |
+| IQ3 PLE16 + Unsloth Q8_0 draft, `20261025-212732-269-cli-vulkan-b11889-ctx65536-537a02544b08` | **318.67** | **33.45** | **304/413 = 73.61%**, mean length 2.47 | **209.172s** | GPU free **22,739 MiB**, main **49/49**, draft **50/50**, coherent Japanese technical summary |
+| Agention ROCmFP4 FAST PLE16 + matching FP4 draft, `20261025-213209-764-cli-vulkan-b11889-ctx65536-c66091d36f51` | **323.37** | **33.29** | **294/433 = 67.90%**, mean length 2.35 | **206.432s** | GPU free **14,060 MiB**, main **49/49**, draft **50/50**, coherent Japanese technical summary |
+
+Both: `Status=OK`, exit0, zero graph reallocations, no partial GPU model placement, P-MODE **Performance** before and after, ADLX high-load classification **Performance-like** with average GPU power **119.548/119.591W** and 93 high-load samples each. No obvious low-clock state or system instability. The final output text ends mid-discussion at the fixed token cap, not because of a crash.
+
+### Speed interpretation: useful TG signal, not a controlled same-binary patch effect
+
+The earlier S2 b11882 **MTP OFF** 64k measurements on the same input/model files were IQ3 **343.56 PP / 26.23 TG** and FP4 **351.27 PP / 26.28 TG**. Comparing these **different binaries and nonidentical generated counts** to the S3 ON run gives the following **reference-only directional effects**:
+
+| Reference comparison | PP difference | TG difference | 512-token normalized native PP+TG estimate (OFF → ON) |
+| --- | ---: | ---: | --- |
+| IQ3, S2 OFF → S3 ON | **−7.24%** | **+27.53%** | ~199.37s → **209.17s** (+9.8s) |
+| ROCmFP4 FAST, S2 OFF → S3 ON | **−7.94%** | **+26.67%** | ~195.38s → **206.43s** (+11.1s) |
+
+The OFF totals above are **calculated** from S2 rates with a hypothetical 512 output tokens, **not measured new OFF runs**: the actual S2 IQ3/FP4 generated 518/602 tokens. The PP cost outweighs TG savings for this one fresh long prompt + 512-token reply, while TG improvement may matter more for longer replies. The previous r5 b11560 Unsloth Vulkan 64k MTP ON mean was **28.885 TG tok/s** (current r6 IQ3 S3 **33.45**, **+15.8% absolute**), but r5 used its own QSA union, `temp=0`/seed and upstream/tool configuration. **Do not attribute cross-version differences to an individual S3 compatibility patch or claim a measured same-binary MTP uplift.** That belongs to later matched A/B gates if needed; do not interrupt S3 now.
+
+**Gate decision:** **Vulkan S3 model/draft compatibility at 64k PASS**, completing this stage's predetermined Vulkan 4k→32k→64k sequence. **S3 overall is still pending the previously scheduled independent ROCm IQ3 backend confirmation.** Keep the S2 and S3 binaries and all raw logs, do not introduce an extra 64k A/B, a 256k run, or S4–S6 tuning here.
+
+### Next isolated backend confirmation
+
+Use the same S3 source commit to build an independent Windows ROCm binary in a new directory (TheRock 10.0 runtime, `gfx1151`, no broad `FLASH_ATTN_EXT`/`-RunBackendTest`). Check **IQ3 PLE16 + Unsloth Q8_0 MTP** first at **4k DraftMax=2** with `-NoThrowOnFailure` and matched flags; review before any long ROCm run. No ROCmFP4-specific HIP kernel is added or required for this S3 test. Only after that compatibility check passes should S3 be considered for closure and S4 Vulkan QSA union work begin.
 
 ### Original Windows rebuild and 4k smoke procedure — completed
 
