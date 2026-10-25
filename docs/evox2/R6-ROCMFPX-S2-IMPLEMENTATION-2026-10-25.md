@@ -4,7 +4,7 @@
 
 - **Base:** `r6/common001-ple16-20261025` at `39920946753e14b0e9bc43eba00e186441370ba3` (S1 PASS), with ggml-org/llama.cpp b11870 as its original upstream.
 - **Working branch:** `r6/rocmfpx-vulkan-20261025` (separate from S1 and r6 clean).
-- **State:** Windows Vulkan build and GPU shader compilation PASS, focused numerical gate **150/150 PASS**, ROCmFP4 FAST PLE16 **4k/16k smoke PASS**, and the planned **64k IQ3/ROCmFP4 pair PASS**. The fixed **128k ROCmFP4 measurement remains pending**; do not mark S2 overall PASS yet.
+- **State: S2 PASS (2026-10-25).** Windows Vulkan build/shaders verified; focused numerical **150/150 PASS**; ROCmFP4 FAST PLE16 **4k/16k smoke PASS**, **64k IQ3/ROCmFP4 pair PASS**, and **128k ROCmFP4 PASS**. Next is a separate S3 MTP-compatibility branch; S2 inference source is fixed for handoff.
 - **Donor:** `investigation/r5-rocmfpx-vulkan-20261020`. Reused tested commits `85ab8d79` (core), `202f4988` (correctness shaders), `8205db29` (integer dot), `fe36a4d3` (tests).
 - **Unchanged roadmap:** S2 then S3, without opportunistic performance changes. ROCmFP4-specific HIP kernels and forcing MMVQ for normal use are **not** included.
 
@@ -111,6 +111,30 @@ Both models produced coherent Japanese technical summaries and have no error/cra
 **Comparisons (one run per r6 S2 model):** S1 IQ3 PLE16 Vulkan 64k PP/TG **344.51 / 26.51** versus S2 **343.56 / 26.23** (PP **−0.28%**, TG **−1.06%**): no material regression. S2 ROCmFP4 has PP **+2.24%** relative to S2 IQ3, with essentially tied TG. This resembles r5 Stage5 b11561 MTP-OFF 64k ABBA (**277.50 ROCmFP4 vs 272.29 IQ3**, +1.91%), but **r5→r6 absolute performance differences are not the isolated effect of this ROCmFPx patch**: upstream version and sampling/output limits differ (r5 temp 0/max 512 versus r6 temp 0.2/max 1024), and GPU state can vary. No superiority in output quality is inferred from the different outputs or generation lengths.
 
 **Decision:** S2 **64k dual-model real-document gate PASS**. The fixed remaining gate is **one 128k ROCmFP4 FAST PLE16 Vulkan run**; no new 64k repeats, 256k runs, or unrelated optimization work. If the 128k run passes model placement, coherent output, execution, and P-MODE/ADLX checks, complete S2 and proceed to the planned S3 MTP compatibility work.
+
+### Evo-X2 128k ROCmFP4 FAST PLE16 real-document gate: PASS (2026-10-25)
+
+User-provided archive `20261025-193755-157-cli-vulkan-b11882-ctx131072-bf7552400da9.zip` verifies the sole planned S2 128k case. Binary b11882 / `70545f998`; normal Vulkan dispatch, MTP OFF, f16 K/V, `-ngl 999`, `-ncmoe 0`, temperature 0.2, top-p 0.8, reasoning off. Input `nlp-survey-ch3-d15-b1.txt` has **126,253 tokens** and SHA-256 **`182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`**, matching S0/S1's 128k corpus.
+
+| Evidence | Observed |
+| --- | --- |
+| Result / exit / runtime artifacts | `OK` / 0 / `Verified` |
+| GGUF | `Q4_0_ROCMFP4_FAST`, model file 87.05 GiB |
+| PP / TG | **275.28 / 24.19 tok/s** |
+| Prompt / generated tokens | **126,253 / 577** |
+| Duration | 532.357 s |
+| GPU placement | **49/49 GPU layers**, no CPU model buffer |
+| Vulkan0 model + KV + compute | 88645.69 + 3840.00 + 828.60 MiB |
+| Vulkan0 memory breakdown `free` | 14788 MiB |
+| P-MODE | Performance start/end, no mode change |
+| ADLX high-load samples / power | 240 / **117.7 W**, Performance-like / consistent |
+| ADLX VRAM clock / GPU temperature, high-load mean | **999.6 MHz / 82.9°C** |
+
+Output is a coherent Japanese summary of sentiment lexicons, semantic relations, PMI/co-occurrence, context-sensitive polarity and document classification, with no mojibake or runaway repetition. The known nonfatal `fused top-k mask not supported, set to disabled` warning remains. No crashes, hidden model CPU placement, high-load P-MODE mismatch, or sustained low-VRAM-clock state occurred.
+
+**Context-only comparisons:** r6 S1 b11879 IQ3 PLE16 128k was **270.57 PP / 24.35 TG**, versus r6 S2 ROCmFP4 **275.28 / 24.19**. These are different model formats and different builds, not an isolated ROCmFPx-patch A/B. Historical r5 Stage5 b11561 ROCmFP4 MTP-OFF 128k ABBA was **180.75 PP / 23.90 TG**; the r6 S2 PP is about **52.3% higher**, primarily a cross-upstream/build observation, **not attributable specifically to this port**. Measurement is one run, not a repeatability study.
+
+**Final decision: S2 PASS.** COMMON-003A + VULKAN-001A/001B meet the predetermined build, 150-case numerical, 4k/16k smoke, 64k dual-model and 128k ROCmFP4 gates on Evo-X2. Preserve this branch/build as the S2 baseline. Next create a dedicated **S3 MTP compatibility** branch from the passing S2 source. Follow the precommitted plan: first check b11870 native MTP behavior for IQ3/ROCmFP4 target + matching draft, then port only compatibility differences actually needed. Do **not** introduce performance patches, 256k reruns, or HIP ROCmFP4 kernels into S3 scope.
 
 ## User-side build and validation sequence (Windows / Evo-X2)
 
