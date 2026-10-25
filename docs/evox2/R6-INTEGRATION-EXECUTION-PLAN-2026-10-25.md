@@ -110,6 +110,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | Stage | Source / build | Gate result | Decision | Next |
 | --- | --- | --- | --- | --- |
 | **S0完了** | b11870推論ソース未変更、b11875/280a639f3・Vulkan/ROCm clean build | 4k smoke各1run＋64/128/256k各backend1runの全8run PASS、P-MODE正常、[S0 baseline](R6-CLEAN-BASELINE-VALIDATION-2026-10-25.md) | **PASS**（256kを事前合意で追加） | **S1 COMMON-001 PLE16移植** |
+| **S1コード移植** | [COMMON-001実装・計測手順](R6-COMMON001-PLE16-IMPLEMENTATION-2026-10-25.md)、`259a0b95`、独立 `r6/common001-ple16-20261025` | C++ 4ファイル、r5移植差分一致。Windowsのbuild・計測は未実施 | **実装済・実測待ち**（S1 PASS未判定） | Vulkan/ROCm別clean build → 4k×4条件 → 64k×4run → 128k split×2run |
 
 
 ## 6. 過去パッチの移植漏れ監査（2026-10-25追記）
