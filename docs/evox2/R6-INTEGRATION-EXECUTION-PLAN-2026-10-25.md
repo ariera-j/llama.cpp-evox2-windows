@@ -1,0 +1,109 @@
+# r6 b11870 統合実行計画：パッチ順序・計測ゲート固定版
+
+- **決定日:** 2026-10-25 JST
+- **対象ブランチ:** `r6/upstream-refresh-20261025`
+- **固定upstream:** `ggml-org/llama.cpp` b11870 / `74bca3950054eed1795f525cb9cf06bfe796492d`
+- **初期状態:** b11870 の推論ソース無変更。r5から `tools/evox2/`、`docs/evox2/`、`.gitignore` のみ移管。r6の初回コミット完了。Vulkan/ROCmクリーンビルド・推論検証は未実施。
+- **既存の根拠:** [r5パッチ管理表](PATCHES.md)、[r5統合計画](R5-INTEGRATION-PLAN-2026-10-21.md)、[ROCmFPx Vulkan検証](R5-ROCMFPX-VULKAN-PORT-PLAN-2026-10-20.md)、[Stage-B/flatten複合ソース検証](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md)。
+- **この文書の位置付け:** r6の初回統合に限り、実行順序、採否、モデル割当、性能計測の回数・タイミングは本書を優先。r5の既存文書・実測値は履歴と移植の根拠として保持する。
+
+## 1. 固定する方針
+
+1. **まず再現可能な初回統合を完成させる。** この作業中にs1、Strata、Halogen、project-maya等の新規高速化は加えない。上流の新しいタグへの乗換えもしない（再現可能な重大不具合を除く）。
+2. **移植対象を最初に凍結する。** 下表にないパッチ・診断用C++・計測仮説を途中で足さない。各移植前にb11870上での既存実装と重複を短時間確認し、不要なら「upstreamで充足」とする。
+3. **ソースは意味単位で移植。** r5実験ブランチから `ggml-vulkan.cpp` 等を丸ごと置き換えない。新しいQwen4Expのmask/top-k/入力契約とVulkan shader ABIを優先。
+4. **正確性→実行経路→速度の順。** 新型式対応と互換性修正を速度パッチとして評価しない。速度差は同一バイナリ・同一入力・opt-in ON/OFFのABBAを優先する。
+5. **性能ベンチ中はPerformance P-MODE固定、ADLX/P-MODE/ビルド・モデル・入力の証跡を保存。** 64k・128kは入力トークン数も固定。ROCmはTheRock 10.0統一のDLL/データツリーとロード元を記録。
+6. **失敗時は原因を一段だけ切り分けて、採用/保留/除外を記録する。** 当日の勢いで新しい探索項目を増やさず、想定外の事象だけ本書の判断ログを更新する。
+
+## 2. 候補一覧と採用順（この順序を変更しない）
+
+| 優先 / ID | 対象 | b11870での判定・実装方針 | 次段階に進む条件 |
+| --- | --- | --- | --- |
+| **S0 / BASE** | 素のb11870、ビルド/計測基盤 | VulkanとROCmを独立クリーンビルド。変更のない推論ソースを保存 | version/device、実モデル短文、計測証跡が正常 |
+| **S1 / COMMON-001** | オリジナル結合PLEとsplit PLE16ローダ | upstream未実装なら必須移植。**この段階だけIQ3オリジナルとPLE16変換版の両方を計測** | 原版/変換版のロード、同条件出力、32/64k動作 |
+| **S2 / COMMON-003A** | ROCmFPx GGML型・GGUFローダ・CPUフォールバック | ROCmFP4モデル利用の前提。不要になった上流部分は除外 | 型/量子化の単体・ロード確認。未対応GPU型をCPUに黙って逃がさない |
+| **S2 / VULKAN-001A** | ROCmFPx Vulkan正確性 | 対応する演算・shader・pipelineを意味単位で移植 | 対象型の数値テスト、4k実モデル・GPU配置 |
+| **S2 / VULKAN-001B** | 整数dot MMVQ/MMQ・MUL_MAT_ID | `-1` expert indexと`block_a_to_shmem`変更に追従 | 5形式×幅1,3–8×通常/強制MMVQの**140/140**（想定）と64k実モデル |
+| **S3 / MTP-COMPAT** | Agention旧`output_hc_*`、ratio-zero unused k-pool guard | まずb11870ネイティブMTPを試す。不足分だけ最小移植。旧COMMON-002全体は戻さない | IQ3および利用可能なROCmFP4 target+Draft短文、全GPU配置、acceptance>0、DraftMax=7幅8 |
+| **S4 / VULKAN-002** | grouped-union QSA prefill（f16 KV） | upstream同等機能を先に監査。必要ならopt-inで移植、#30965変更後のmask/selection契約に合わせる | `qsa-union active`を実確認、短文fallback、64/128kの同一バイナリA/B |
+| **S5 / MTP-DENSE-001** | ratio-zero Draft indexerを省略 | 独立ON/OFF。MTP互換性と状態検査を通してからTG評価 | 64/128k MTP ON のA/B、状態/acceptance整合 |
+| **S5 / MTP-NOOP-001** | Target側のQSA no-op invalidation抑止 | DENSEから独立に無効化可能。native policy/state/rollbackを先に確認 | 64/128kの増分A/B、ROCmFP4+QSA+DENSE+NOOP短文複合smoke |
+| **S6 / MTP Stage-B** | Draft KV-only zero-output prefill、Draft FA省略 | 独立opt-in。短文C/A/BのC（OFF）とA（Stage-B ON/flatten OFF）を評価 | 活性グラフのK/V書込みとFA省略、64/128kのPP/TG、rollback正常 |
+| **S6 / `mtp_eh_proj` flatten** | Stage-B prefill内の投影flatten | Stage-Bとは独立に無効化可。短文B（Stage-B+flatten）を加え、C/A/B比較 | 短文/rollback、64/128k ABBAで小幅PP差を再確認 |
+| **S7 / COMBINED** | 上記で採用したものだけ | flagを個別に切れる状態で統合。有効化設定を別途明記 | 32/64→128→必要な256k、MTP OFF/ON、各backend・モデルで検証 |
+| **S8 / FINAL MODELS** | IQ4、huihui、Gemma4 | **完成後にまとめて実測**。b10919のGemma4運用版は維持 | 各モデルのロード/品質/PP/TGを別判定。安定後にリリース化 |
+
+注：ROCmFP4は**モデルの量子化形式**。既存のisolated移植で実証済みなのは主に**Vulkan実行対応**であり、HIP/ROCm backendのROCmFPx GPU kernel移植はS2の範囲外。ROCm backendの性能計測は原則IQ3 PLE16で行い、ROCmFP4をROCm backendで走らせることは別途対応確認できた場合だけ追加する。
+
+### 今回は移植しない
+
+| 区分 | 対象 | 取扱い |
+| --- | --- | --- |
+| upstream充足の可能性 | HIP/CUDA FA同期 #30103、MTPチェックポイント/hidden restore #30141、Qwen4Exp関連変更、既存の旧COMMON-004/006、VULKAN-MOE-001 | **ソース監査のみ**。欠けた実際の不具合がなければ再移植しない |
+| 旧実験で効果不十分 | VULKAN-GR-001、r2 MTP-QSA、Stage-A単独、Target rewarmup | 移植しない |
+| 製品ソースに入れない | RGP/dispatchトレース、Draft KVパリティの強制checkpointなどの合成診断コード | レポートと外部解析ツールだけ残す |
+| 初回統合対象外 | COMMON-005深コンテキスト、QSA決定化argsortオプション、q8_0 K/V union、新s1/Strata/halogen/Gufo/project-maya/CONCAT/Expert分布/MASK可視化/RGP深掘り | 完成後の研究キューへ。初回統合の停止理由にしない |
+
+## 3. モデルと計測タイミングを固定
+
+### 対象モデル
+
+| モデル | S0 | S1（PLE16前後） | S2以降の各パッチ | S7完成候補 | S8最終 |
+| --- | --- | --- | --- | --- | --- |
+| **IQ3オリジナル（結合PLE）** | **主要baseline**、Vulkan/ROCm | **変換版との比較のみ** | 原則測らない | 必要な回帰smokeだけ | 常時計測対象外 |
+| **IQ3 PLE16変換版** | split未対応ならロード可否のみ | **主要baselineに移行**、Vulkan/ROCm | **最優先：該当backendで64k、性能patchは128kも** | 32/64/128k、選択的256k | 回帰比較の基準 |
+| **Agention ROCmFP4-FAST PLE16** | 未対応ならロード可否のみ | 未対応なら速度測定しない | **S2対応後に追加**。Vulkanを主対象。初回64/128k、その後は主要速度patchの64kと段階的128k | 32/64/128k（Vulkan）、必要時256k | 品質と速度を最終記録 |
+| **Unsloth IQ4 / huihui IQ4XS PLE16** | なし | なし | なし | なし | 4/16k起動、代表64/128k、固定入力で品質・PP/TG |
+| **Gemma4 31B/26B** | **原則なし**。必要な場合のみ短文ロードsmoke | なし | なし | なし | b10919既存版を残して別々にロード・文章・長文・PP/TG |
+
+S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わしい変更が見つかった場合や、S8で不具合が出て原因がupstreamかr6移植か分からない場合に限り、**未改変b11870を使った短い切り分け測定**を追加する。
+
+### 段階別の計測ゲート
+
+| ゲート | 実施する計測 | 実施しないこと |
+| --- | --- | --- |
+| **G0 / S0 clean** | Vulkan・ROCm IQ3原版：4k smoke、固定64k PP/TG、128k代表1run（基本MTP OFF）。ビルド/モデル/入力のSHAと環境を記録 | 変換PLE16の無理な速度比較、IQ4/huihui/Gemma4長文 |
+| **G1 / S1 PLE16** | IQ3原版 vs splitを**同一S1バイナリで64k**（Vulkan/ROCm）、変換版128k代表。S0の原版との橋渡しを記録 | S1以降の原版の反復計測 |
+| **G2 / S2 ROCmFPx** | まず型・shader backend数値テスト、4k/16kロード、完全GPU配置。ROCmFP4 Vulkan 64/128k代表値 | correctness未達での長文性能主張、HIP向けの新kernel開発 |
+| **G3 / S3 MTP互換性** | IQ3 split・ROCmFP4の4k短文target+Draft、32/64k MTP ON、DraftMax=7短距離検証 | 互換性修正自体の高速化率の主張 |
+| **G4 / S4 union** | Vulkan IQ3 splitの64/128k MTP OFFでunion OFF/ON。ROCmFP4 Vulkanは64kと128k代表。強制経路が実際に有効か確認 | 全corpus/全KV型/全backend探索 |
+| **G5 / S5 DENSE/NOOP** | IQ3 splitのVulkan+ROCm各64/128k MTP ONを個別switchでA/B。ROCmFP4 Vulkanは64k、複合smokeは必須 | DENSEとNOOPを同時導入して差を混同すること |
+| **G6 / S6 Stage-B/flatten** | IQ3 split Vulkan 64k→128kで**C/A/B**。ROCmは64kで状態と方向確認、ROCmFP4 Vulkanは64k、128kはS7でまとめて確認 | RGP深掘りを合格条件にすること、合成診断パッチの常時有効化 |
+| **G7 / S7 統合** | IQ3 split + ROCmFP4 Vulkanの32/64/128k実入力、MTP OFF/ON、DraftMax=2と短い7、1回の選択的256k安定性確認、MH-128K固定入力の正解基準 | 速度上昇率を各パッチの改善率の足し算で算出 |
+| **G8 / S8 完成後** | IQ4/huihui/Gemma4の別建て品質・速度とb10919フォールバック判定 | これらを前段パッチの毎回のベンチ対象に増やすこと |
+
+性能計測の固定入力は、過去の64k（約61,789 tokens）・128k（約126,253 tokens）の既存実文書系を優先し、**入力本文ハッシュ、実token数、n-predict、sampler、KV dtype、FA、MTP Draft/flagsを必ず併記**する。既存 `tools/evox2/benchmark` の計測ログ形式を使い、具体的なPSD1は各ゲート開始前にそのゲート用として固定する。256kは最終候補の安定性ゲートであり、各中間patchで繰り返さない。
+
+## 4. 速度採否のルール
+
+- **互換性パッチ（S1–S3）:** 出力正常・モデル/quantのロードとGPU配置・数値正確性を採否基準にする。速度向上の証明を要求しない。明確な速度低下があれば原因メモのみ付け、次の速度patchに混ぜない。
+- **速度パッチ（S4–S6）:** まず短文の活性化・安全性テスト。その後**同一バイナリのOFF/ONでABBA（原則A1/B1/B2/A2）**。PPとTGを両方記録する。片方を改善し片方を落とすときは絶対速度だけで採否を決めず、64/128kの用途（PP重視/TG重視）と実行時間で判定。
+- **差が概ね3%未満、またはABBA内で方向が揺れる場合:** 暫定判定として追加のABBAを**最大1セット**だけ実施。再現できない場合は「効果未確定・既定OFF」で保留し、無制限に条件を探さない。
+- **flattenの事前例外:** r5で観測したPP差は約1.4%なので、3%未満でも連続した2セットのABBAで方向一致、同一設定でTG/品質の悪化がない場合に限り候補として残せる。最終デフォルトONの採否は統合状態S7で確定。
+- **Stage-Bの事前注意:** r5では64k改善と128k悪化の実測がある。64kだけの改善を理由に128kで既定ONにしない。128kで再現性のある悪化なら、128k既定OFFまたはパッチ保留とし、新しいPP原因調査をその場で開始しない。
+- **ROCmの出力再現性:** 通常 `ggml_top_k` の非決定性を既知条件として扱う。temp=0でも全runのbyte一致は要求しない。正解/破綻/acceptance/状態を比較する。argsort決定化は初回統合に加えない。
+- **比較不能run:** P-MODE変更、電源/クロック異常、ROCm DLL不整合、強いGPU idle stall、異なるモデル/入力、明らかなcold-cache大差は性能採否に使わない。原ログは保持して理由を記録する。
+- **強制停止:** ビルド/数値失敗、CPU fallback、出力崩壊、MTP状態・rollback不整合、必須経路が実行されない場合、そのパッチの次段階へ進まない。必要なら除外して、独立した他のパッチへ進む。
+- **安全:** Windows/gfx1151の広範囲 `FLASH_ATTN_EXT` backendテスト、および `Build-ROCm.ps1 -RunBackendTest` は実行しない。必要な演算/形状に絞ったbackendテストを使う。
+
+## 5. 実行管理：予定外の変更を抑える
+
+各Sの完了時、以下の短い1行を本書末尾の記録表に追記する（ログは別ファイルでも可）。
+
+`Stage | commit/binary | model/backend | test & performance evidence | PASS/DEFER/UPSTREAM/FAIL | next stage`
+
+予定を変更できるのは次の4条件に限る。
+
+1. **事前ゲートの失敗:** 安全性・正確性・GPU配置が成立しない。
+2. **upstreamと実際の重複:** パッチの意味が既に充足され、適用不要になった。
+3. **モデル/backend固有の技術的制約:** 例：ROCmFP4モデルのHIP非対応、b11870でのDraft互換性問題。IQ3の独立系列は継続可能。
+4. **実測に基づく採否変更:** 同じ条件の繰返しで速度効果が出ない／悪化する。不要patchを残さない。
+
+その他の面白そうな変更・別forkの高速化・mask/Expert可視化・RGP詳細追跡は、[統合版完成後の研究計画](R5-POST-INTEGRATION-OPTIMIZATION-PLAN-2026-10-21.md)にメモだけ残し、S8完了まで実装しない。
+
+### Stage実績（初期状態）
+
+| Stage | Source / build | Gate result | Decision | Next |
+| --- | --- | --- | --- | --- |
+| S0準備 | r6新ブランチ、b11870 + ツール/ドキュメント初回コミット | ソース未改変、ビルド未実施 | 進行中 | Vulkan/ROCm clean build |
