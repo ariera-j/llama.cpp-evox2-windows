@@ -1,5 +1,7 @@
 # Evo-X2 downstream patch registry
 
+> **r6 / b11870 active execution plan (2026-10-25):** [R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md) fixes patch order, prerequisites, per-stage performance gates, model scope and failure/defer rules. The r5 matrix below remains the prior validated patch inventory and historical evidence; old unqualified "next" wording no longer overrides the r6 plan.
+
 ## Authoritative current r5 patch disposition — 2026-10-21
 
 **This section is the current integration decision table.** It supersedes dated “LATEST/NEXT” text below for planning, while all older sections remain as time-stamped experimental evidence.
