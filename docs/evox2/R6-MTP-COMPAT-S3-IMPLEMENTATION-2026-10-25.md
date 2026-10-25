@@ -3,7 +3,7 @@
 ## Status and fixed scope
 
 - **S3 branch:** `r6/mtp-compat-20261025`, created from passing S2 `r6/rocmfpx-vulkan-20261025` / remote `739af71c117f463236bf33d1624a9438f945ccf2`.
-- **Status: native 4k gate FAILED for both matching drafts; two minimal compatibility source fixes now implemented, Windows rebuild/retest pending.** The S2 b11882 / `70545f998` executable must remain untouched as historical baseline.
+- **Status: compatibility fixes built and post-fix 4k DraftMax=2 smoke PASSED for both matching drafts on b11889; DraftMax=7 and 32/64k pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
 - **Models:** Unsloth UD-IQ3_XXS PLE16 **with Unsloth Q8_0 MTP**; Agention ROCmFP4 FAST PLE16 **with matching Agention ROCmFP4 FAST MTP**. Never mix the two drafts when drawing model-pair conclusions.
 - **Purpose:** confirm loading, model/draft GPU placement, real speculative acceptance and coherent output. Do **not** mix this with S4 QSA union, S5 DENSE/NOOP, S6 Stage-B/flatten, MMVQ forcing, new HIP ROCmFP4 kernels, or 256k.
 
@@ -32,9 +32,31 @@ User archive: `20261025-202024-892-cli-vulkan-b11882-ctx4096-e77de269b276.zip` (
 1. `graph_mtp`: extend the existing `mctx_hyb->get_idx() && hparams.indexer_kpool > 0` condition with `hparams.dsv4_compress_ratios[il] > 0`. The nonzero-ratio QSA path remains unchanged; no `LLAMA_MTP_SKIP_DENSE_INDEXER` optimization is imported.
 2. In the **MTP block loader only**, probe all three `blk.<il>.nextn.hc_head_*` tensors as optional, preserving their priority. If all are absent, reuse the already loaded `output_hc_{norm,down,up}` tensors (the source already probed those via `hc_head_*` using `trunk_flags` and `TENSOR_NOT_REQUIRED` for MTP-only GGUFs). If only some new names are present, or neither complete trio exists, report a load error. Reusing avoids allocating/registering the same legacy tensor twice. No GGUF renaming or generalized tensor-name rewrite.
 
-**Implementation is not yet runtime-validated.** A matching failure after rebuilding must be diagnosed rather than marked PASS. The Unsloth assertion cause is inferred from the source plus r5's successful controlled fix; no fresh r6 stack trace was collected.
+**At the original source-implementation checkpoint the runtime result was still unknown.** The subsequent b11889 smoke results are recorded below. The Unsloth assertion cause is inferred from the source plus r5's successful controlled fix; no fresh r6 stack trace was collected.
 
-### Build and smoke gate on Windows — required next
+## Patched S3 Vulkan build and 4k DraftMax=2 — PASS (2026-10-25 JST)
+
+User build manifest: `(vulkan-mtp)evox2-build.json`; user smoke archive: `20261025-204912-737-cli-vulkan-b11889-ctx4096-f5d7224f74d4.zip` (contains both matching target+draft runs). These two smokes use the same patched executable; no comparison of GGUF-based PP/TG is attempted at this short length.
+
+| Identity / result | Value |
+| --- | --- |
+| Source and branch | `r6/mtp-compat-20261025` / GitHub commit **`befbc45388ed9eee211c94becafaa4963fc3eb5a`**; build manifest source clean, `BuildIdentity.Status=Verified` |
+| Vulkan binary | **b11889** / embedded `befbc4538`, Clang 20.1.8, `llama-cli.exe` SHA256 **`42ebf2a69d3c7b2239b9f9e57673760da88ef65367bc5581aadfa4aaae9e6aac`** |
+| Build path | `build-vulkan-r6-mtp-compat/bin/Release`, separate from retained S2 b11882 |
+| Device | AMD Radeon(TM) 8060S Graphics, Vulkan0; `llama-cli --version` and `--list-devices` exit 0 |
+| Test flags | ctx4096, **DraftMax=2**, DraftPMin=0, f16 main/draft K/V, `--temp 0 --ignore-eos`, allocation-only short prompt, 32 generated tokens |
+| Power telemetry | Both runs: IP3-WMI P-MODE **Performance=1** at start and finish; ADLX data collected, but no high-load samples, so workload power classification is **not** available/required at 4k |
+
+| Actual run | Pair | GPU offload (main/draft) | Exit / generation | Speculative acceptance |
+| --- | --- | --- | --- | --- |
+| `20261025-204558-172-cli-vulkan-b11889-ctx4096-797150290a44` | Unsloth IQ3 PLE16 + matching Q8_0 MTP | **49/49 + 50/50** | `OK`, exit0, 32 tokens; prints `OK. I am ready to assist you…` | **12 accepted / 36 generated draft tokens = 33.33%**, mean length 1.67 |
+| `20261025-204912-737-cli-vulkan-b11889-ctx4096-f5d7224f74d4` | Agention ROCmFP4 FAST PLE16 + matching ROCmFP4 FAST MTP | **49/49 + 50/50** | `OK`, exit0, 32 tokens; prints `OK.`, `</think>`, repeated `OK.` under `--ignore-eos` | **17 accepted / 28 generated draft tokens = 60.71%**, mean length 2.21 |
+
+**Gate decision:** **PASS for 4k DraftMax=2 only.** Both previously failing model/draft pairs now load, execute MTP and accept draft tokens on the same clean b11889 binary. The repeated `OK` / post-`</think>` continuation in the FP4 run is not treated as quality evidence: `--ignore-eos` forces generation beyond the natural response. Short-prompt acceptance percentages are not long-context performance estimates. The earlier ratio-zero failure still has no independently collected stack trace; runtime success after the narrowly scoped fix is the practical causality check. The S3 stage itself is **not yet PASS**.
+
+**Next unchanged step:** repeat exactly these two 4k allocation-only smoke runs using `-BuildKey S3Vulkan -DraftMax 7` (other flags and main/draft pairs unchanged). Validate exit0, 50/50 draft GPU, bounded width and nonzero acceptance. Stop to inspect both logs before the planned 32k MTP ON run, then 64k. **Do not add S4/S5/S6 performance patches or 256k runs yet.**
+
+### Original Windows rebuild and 4k smoke procedure — completed
 
 From the r6 worktree, after fetching the S3 branch, build **new** `build-vulkan-r6-mtp-compat`. Leave `build-vulkan-r6-rocmfpx` (b11882) unchanged:
 
@@ -59,7 +81,7 @@ S3Vulkan = @{
 }
 ```
 
-First repeat **the same two 4k 32-token DraftMax=2 runs**, substituting `-BuildKey S3Vulkan` for `S2Vulkan` in the commands below. Keep each target+draft pairing and all runtime flags identical. **Stop and send the new logs before DraftMax=7 or longer inputs.** Confirm source/manifest points to the patched S3 commit and contains no dirty source; the new executable `llama-cli` is not the old S2 binary. If 4k passes, continue with the original fixed 4k DraftMax7 → 32k → 64k plan. The matrix in `qwen38-r6-s3-mtp-native.psd1` now selects `S3Vulkan` for both models; its historical name is retained to avoid changing paths midway through S3.
+The two 4k DraftMax=2 repeats have **passed** on b11889; see the recorded result above. Continue with the original fixed **4k DraftMax7 → 32k → 64k** plan. The matrix in `qwen38-r6-s3-mtp-native.psd1` selects `S3Vulkan` for both models; its historical name is retained to avoid changing paths midway through S3.
 
 ## First gate: reuse b11882, 4k MTP smoke
 
