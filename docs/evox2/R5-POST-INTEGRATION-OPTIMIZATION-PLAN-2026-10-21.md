@@ -9,6 +9,13 @@
 
 今回行ったのは資料・ソースの調査。新しいWindowsビルド、Evo-X2での性能測定、実装の採用判定は行っていない。以下の「最終順位」は調査時点の着手順であり、未完成の統合版の速度を予測した順位ではない。
 
+## 2026-10-25 最新予定（下記10/24予定より優先）
+
+- **完了：** 直接ID検索（旧V1）128k/192k、CR-128K、MH-128Kの試験。MHは Qwen3.8 **4モデル×2seed×A/B=16run**（IQ3 45/48、FP4 48/48、IQ4 48/48、Huihui 46/48）。生成器・独立oracle・採点器・詳細結果は[専用実験リポジトリ](https://github.com/ariera-j/evox2-llm-experiments/tree/main/benchmarks/search-retrieval/EXPERIMENTS-2026-10-25.md)へ保存。Gemma 4の長文PPは今回の研究本筋とは切り離す。
+- **直近：** 本書の研究候補への着手ではなく、[r5統合版作成](R5-INTEGRATION-PLAN-2026-10-21.md)を優先。完成後は旧b11592と凍結MH入力で最小限の品質・性能回帰チェックを行う。詳細は[10/25引き継ぎ](R5-MODEL-QUALITY-AND-POST-INTEGRATION-HANDOFF-2026-10-25.md)。
+- **統合後：** 必要なら複数成立経路からの選択を要求するMH-Hardを別版として設計。Gemma 4は統合版で16k/32kと選択した長文を再測定し、必要に応じてFlash Attention kernel経路を調べてから高速化ターゲット採否・優先度を決める。QSA mask/selected IDs、入力別MoE Expert routing、選択したROCm RGPも継続候補とする。
+- いずれも**統合版作成のブロッカーにはしない**。下の技術最適化順位・ガード・既存測定provenanceをこの品質結果だけで書き換えない。
+
 ## 2026-10-24 作業順変更（下記10/21時点のキューに優先）
 
 - **完了:** ROCm runtime整合、同一seedの出力再現性、Windowsイベント確認、モデル速度比較、5モデル×5プロンプトの要約出力比較。要約55runとバックエンド比較は[実験専用リポジトリ](https://github.com/ariera-j/evox2-llm-experiments/tree/main/benchmarks/summary-prompt-variation)に記録。
