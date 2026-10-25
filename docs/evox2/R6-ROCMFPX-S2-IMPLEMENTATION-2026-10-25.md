@@ -44,7 +44,22 @@ User-provided `(vulkan-rocmfpx)evox2-build.json` verifies:
 
 The build targets include `llama-cli`, `llama-server`, `llama-bench`, and `test-backend-ops`. Shader build completion is established by the completed build and Vulkan artifact, **not yet by numerical execution**. The `cl` information probe produced D8003 / exit 2 because it was invoked without a source filename; Clang 20.1.8 is the actual compiler recorded for this build. No implication of a failed Vulkan build.
 
-**S2 remains in progress.** The next gate is the focused Vulkan numerical test (historical 140 width cases plus 10 skipped-expert cases) before the ROCmFP4 real-model smoke and performance runs. `llama-tokenize` is intentionally deferred to the final integrated build; see the [r6 integration plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md#最終統合版のビルド対象2026-10-25追加).
+At this **build-only checkpoint**, S2 remained in progress and the next gate was the focused Vulkan numerical test (historical 140 width cases plus 10 skipped-expert cases). Its result is recorded below. `llama-tokenize` is intentionally deferred to the final integrated build; see the [r6 integration plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md#最終統合版のビルド対象2026-10-25追加).
+
+### Evo-X2 numerical correctness gate: PASS (2026-10-25)
+
+User-provided PowerShell log `貼り付けたテキスト（1）(20261025-100712).txt` contains six completed invocations of `test-backend-ops.exe test -b Vulkan0` against the b11882 build.
+
+| Target | Normal | `GGML_VK_FORCE_MMVQ=1` | Total |
+| --- | ---: | ---: | ---: |
+| `MUL_MAT`, five formats × widths 1/3/4/5/6/7/8 | 35/35 | 35/35 | 70/70 |
+| `MUL_MAT_ID`, normal expert IDs | 35/35 | 35/35 | 70/70 |
+| `MUL_MAT_ID`, skipped (`-1`) expert IDs | 5/5 | 5/5 | 10/10 |
+| **Total** | **75/75** | **75/75** | **150/150 PASS** |
+
+Each invocation ended with `Backend Vulkan0: OK`, `2/2 backends passed`, `OK`. The CPU backend's `Skipping` line is expected from the explicit `-b Vulkan0` filter; the Vulkan-versus-CPU reference numerical comparison was performed inside the test runner. The driver reports `int dot: 1`; no failures or unexpected skipped test cases appeared. The loop's `finally` block removes the forced-MMVQ environment variable afterward.
+
+**Decision:** S2 Vulkan **build and focused numerical correctness gates PASS**. No further numerical-test exploration or shader adjustment is warranted on this evidence. Next, execute the already-fixed 4k/16k ROCmFP4 FAST PLE16 model smoke, verify Vulkan placement, then the prescribed 64k and 128k model runs. **S2 overall remains pending real-model validation.**
 
 ## User-side build and validation sequence (Windows / Evo-X2)
 

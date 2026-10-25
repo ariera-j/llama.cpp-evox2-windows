@@ -114,6 +114,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | **S1完了** | b11879 / `73324d6d`、[S1最終結果](R6-COMMON001-PLE16-IMPLEMENTATION-2026-10-25.md#s1完了実測2026-10-25追記) | Vulkan/ROCm build、4k 4run、64k 4run、128k split 2run全PASS。128k ROCm TG 17.55、r6 S0 17.50、r5 clean 17.13 tok/s | **PASS**。COMMON-005追加条件なし、保留継続。256k追加なし | **S2 COMMON-003A → VULKAN-001A/001B ROCmFPx** |
 | **S2コード移植** | `r6/rocmfpx-vulkan-20261025`、[S2実装・計測手順](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md) | r5の型/ローダ・Vulkan正確性・整数dot・140幅テストを移植。b11870のMMQ範囲チェック引数に対応し、追加の負expert IDテストを設置。ローカルC/C++構文チェックPASS、Windows build/実測未着手 | **実装済・実測待ち。S2 PASSとはしない** | Vulkan build → 数値テスト140+10件 → 4k/16k smoke → 64k IQ3/ROCmFP4 → 128k ROCmFP4。合格後のみS3へ進行 |
 | **S2 Vulkanビルド確認** | b11882 / `70545f998`、`(vulkan-rocmfpx)evox2-build.json`（2026-10-25 18:55 JST） | `BuildIdentity=Verified`、source clean、Clang 20.1.8、Vulkan0 Radeon 8060S認識、`ggml-vulkan.dll`/`test-backend-ops.exe`生成、`llama-cli --version`/`--list-devices`成功 | **ビルドゲートPASS。数値/モデル推論は未判定** | 140+10数値テスト → 4k/16k ROCmFP4 smoke → 64/128k |
+| **S2 数値テスト完了** | b11882 / `70545f998`、[結果と条件](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md#evo-x2-numerical-correctness-gate-pass-2026-10-25) | Vulkan0で5形式×幅1/3～8のMUL_MAT・MUL_MAT_ID、normal/強制MMVQ各75件を全実行。追加した`-1` expert ID 10件含め**150/150 PASS**、失敗なし | **数値正確性ゲートPASS。S2全体のPASSは実モデル確認後** | 計画どおりROCmFP4 FAST PLE16の4k/16k smoke → 64k IQ3/ROCmFP4 → 128k ROCmFP4 |
 
 ### 最終統合版のビルド対象（2026-10-25追加）
 
