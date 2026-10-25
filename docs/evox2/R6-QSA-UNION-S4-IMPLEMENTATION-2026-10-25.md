@@ -6,6 +6,10 @@
 - **Status:** source implementation prepared. **Windows Vulkan build, GPU correctness and same-binary PP/TG are NOT yet verified.** Keep S3 binaries untouched.
 - **Scope:** f16 K/V QSA prefill, Vulkan only. No ROCm source modifications, q8_0-KV expansion, union-stats CSV, RGP, MTP DENSE/NOOP, Stage-B, or 256k.
 
+### First Windows build feedback and compile fix (2026-10-25)
+
+The first S4 Windows Clang 20.1.8/Ninja build stopped while compiling `ggml-vulkan.cpp` (build step 464/1114), before runtime testing. The two diagnostics at lines 8359 and 8387 were both caused by one local variable declared `const vk_pipeline sparse_compact`: upstream `ggml_pipeline_request_descriptor_sets()` and `ggml_vk_dispatch_pipeline()` require a mutable `vk_pipeline &`, so the const-qualified shared-pointer variable cannot bind to either. **Removed `const` from that local `vk_pipeline` variable only**; pipeline selection and contents are unchanged. This is a compile-compatibility correction, **not** a measured optimization or a completed build pass. Re-run the same build directory after pulling the fix; a new clean build directory is unnecessary for this source-only correction.
+
 ## 1. Upstream source audit before port
 
 The r5 VULKAN-002 donor cannot be replayed unchanged. The r5 graph placed an explicit per-query selection-ID list into `FLASH_ATTN_EXT` source slot 5; r5's union shader read that list directly. On b11870 the Qwen4Exp graph passes **only the final selection mask** and sets `n_kv_max` in flash-attention op parameter 4. r6 does **not** expose those selected IDs through FA `src[5]`.

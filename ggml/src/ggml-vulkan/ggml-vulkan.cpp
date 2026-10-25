@@ -8282,7 +8282,7 @@ static bool ggml_vk_qsa_union(ggml_backend_vk_context * ctx, vk_context & subctx
     };
 
     const auto & limits = ctx->device->properties.limits;
-    const vk_pipeline sparse_compact = ctx->device->fa_sparse_compact_use_subgroups
+    vk_pipeline sparse_compact = ctx->device->fa_sparse_compact_use_subgroups
         ? ctx->device->pipeline_fa_sparse_compact_subgroup
         : ctx->device->pipeline_fa_sparse_compact;
     if (!ctx->device->pipeline_qsa_union || !ctx->device->pipeline_qsa_gather ||
