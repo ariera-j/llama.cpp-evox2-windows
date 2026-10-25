@@ -5,7 +5,7 @@
 - **実装ブランチ:** `r6/common001-ple16-20261025`
 - **コードコミット:** `259a0b95a653f303a207f2919901560e6c0b3408`
 - **実装元:** r5 COMMON-001 `b45025848b97fc8fd3efa7333305567bc897f61f`
-- **状態:** ソース移植・GitHub差分検証済み。**Windowsビルド、起動・速度・品質は未検証。**
+- **状態:** **S1 PASS（2026-10-25）**。Vulkan/ROCmビルド、4k 4run、64k 4run、128k split 2runを完走。後続S2へ進行可能。
 
 ## 移植内容
 
@@ -91,10 +91,43 @@ foreach ($backend in @('S1Vulkan','S1ROCm')) {
 
 | Gate | Vulkan | ROCm |
 | --- | --- | --- |
-| ビルド/manifest | 未実施 | 未実施 |
-| 4k Original | 未実施 | 未実施 |
-| 4k split PLE16 | 未実施 | 未実施 |
-| 64k Original vs split | 未実施 | 未実施 |
-| 128k split | 未実施 | 未実施 |
+| ビルド/manifest | **PASS**：b11879 / Clang 20.1.8 | **PASS**：b11879 / Clang 23.0.0 / TheRock 10.0 |
+| 4k Original | **PASS**：49/49 GPU、出力OK | **PASS**：49/49 GPU、出力OK |
+| 4k split PLE16 | **PASS**：49/49 GPU、出力OK | **PASS**：49/49 GPU、出力OK |
+| 64k Original vs split | **PASS**：PP 339.77→344.51、TG 25.35→26.51 | **PASS**：PP 405.18→404.63、TG 21.55→21.78 |
+| 128k split | **PASS**：PP 270.57、TG 24.35 | **PASS**：PP 301.43、TG 17.55 |
 
 P-MODE Performance、ADLX、モデル/input SHA、build manifest、推論backendを記録する。ロード失敗・出力崩壊・CPU fallback等なら後続ゲートへ進まず、このブランチで原因を限定する。
+
+
+## S1完了実測（2026-10-25追記）
+
+**総合判定：COMMON-001 S1 PASS。** 4k 4run + 64k 4run + 128k split 2runの全10runが `Status=OK`、`ExitCode=0`、49/49層GPUオフロード、P-MODE開始/終了Performance、RuntimeArtifact Verified。長文runではADLX高負荷電力分類もPerformance-likeで一致。新しいPLE tensor名の認識、Original lazy pathの回帰防止、長文での出力正常性を確認した。
+
+### 測定結果（単位 tok/s、MTP OFF、各条件1run）
+
+| backend | 64k Original PP/TG | 64k PLE16 PP/TG | 128k PLE16 PP/TG | 128k S0 Original PP/TG |
+| --- | ---: | ---: | ---: | ---: |
+| Vulkan | 339.77 / 25.35 | **344.51 / 26.51** | **270.57 / 24.35** | 268.60 / 23.54 |
+| ROCm | 405.18 / 21.55 | **404.63 / 21.78** | **301.43 / 17.55** | 303.66 / 17.50 |
+
+- 64k: 61,789 prompt tokens、入力SHA `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`。同一S1バイナリでOriginalとPLE16を比較。VulkanのPLE16差分はPP +1.40%、TG +4.58%、ROCmはPP −0.14%、TG +1.07%。
+- 128k: 126,253 prompt tokens、入力SHA `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`。PLE16対S0 OriginalはVulkan PP +0.73% / TG +3.44%、ROCm PP −0.73% / TG +0.29%。
+- 64k・128kとも出力は評価表現辞書、語彙ネットワーク／共起／文脈、評価文書分類と限界を取り上げた自然な日本語要約。**出力崩壊なし**。temp 0.2、生成長が異なり、文面の完全一致は検証条件にしない。
+- Vulkan PLE16ではOriginalのCPUモデルbuffer約27,466MiBがGPUモデルbufferに移動し約77,657MiB GPU配置。ROCmではPLE16もCPUモデルbuffer約27,466MiBとGPU約50,191MiBで、r5同様の傾向。49/49層GPUオフロードで完走したため、このbuffer差だけで計算のCPU fallbackとは判定しない。
+- Vulkanのfused top-k mask disabled警告、ROCmでenabledはS0からの既知差。Vulkan PLE16の64k速度小幅改善は1runのため確定的効果と断定しない。
+
+### 原ログ（ユーザーの計測アーカイブ）
+
+- 4k 4run：`20261025-170750-890-cli-rocm-b11879-ctx4096-80bb4e0637f9.zip`
+- 64k 4run：`20261025-173742-334-cli-rocm-b11879-ctx65536-9cba2c8e8700.zip`
+- 128k 2run：`20261025-175836-436-cli-rocm-b11879-ctx131072-bcd32c1e52ff.zip`
+- Vulkan/ROCmビルド：`(vulkan-common001)evox2-build.json`、`(rocm-common001)evox2-build.json`。双方BuildIdentity Verified、コミット `73324d6d`、clean、S0と同等のビルドオプション。
+
+### COMMON-005判断
+
+- r5 clean Originalの128k ROCm TG **17.13**、r6 S0 Original **17.50**、r6 S1 PLE16 **17.55 tok/s**。
+- 計画で設定した「PLE16 128k ROCmでr5同条件より概ね10%以上のTG低下が再現」の条件に該当しない。**COMMON-005は初回r6統合では移植しない。S8後の条件付き研究項目として保留継続。**
+- S1の同一バイナリ64k Original/PLE16比較で著しいPP/TG回帰なし。r6 S0のOriginal速度も維持。パッチ採用を確定し、**S2 COMMON-003A + VULKAN-001A/001B（ROCmFPx対応）**へ移る。
+
+※測定は各条件1run。小幅なPP/TG差の統計的有意性や因果は検証していない。256kの追加反復は行わない。
