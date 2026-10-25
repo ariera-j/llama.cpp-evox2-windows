@@ -26,6 +26,9 @@ const bool LOGIT_SOFTCAP   = (Flags & 4) != 0;
 const bool OLD_AMD_WINDOWS = (Flags & 8) != 0;
 // Sparse: gather binding-7 indices instead of scanning [0,KV); p.split_kv = n_kv_max.
 const bool USE_SPARSE      = (Flags & 16) != 0;
+// Grouped-union mode uses binding 7 for the dynamically rounded KV count,
+// not for sparse row indices. Keep bit 16 clear when using this mode.
+const bool DYNAMIC_KV      = (Flags & 32) != 0;
 
 // Round up head sizes to a multiple of 16, for coopmat1/coopmat2 paths
 const uint32_t HSK_pad = (HSK + 15) & ~15;
@@ -153,7 +156,7 @@ uint32_t i, N, KV, split_k_index, Tr, start_j, end_j,
 void init_indices()
 {
     N = p.N;
-    KV = p.KV;
+    KV = DYNAMIC_KV ? uint32_t(data_sparse[0]) : p.KV;
 
     if (p.k_num > 1) {
         if (p.gqa_ratio > 1) {

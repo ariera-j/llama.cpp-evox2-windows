@@ -989,6 +989,10 @@ struct vk_device_struct {
     vk_pipeline pipeline_fa_sparse_compact_subgroup;
     bool fa_sparse_compact_use_subgroups;
 
+    // Optional QSA prefill path: union selected KV cells across query groups.
+    vk_pipeline pipeline_qsa_union;
+    vk_pipeline pipeline_qsa_gather;
+
     vk_pipeline pipeline_flash_attn_split_k_reduce;
     std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, std::pair<vk_pipeline, vk_pipeline>> pipeline_xe_fa_decode_dual_phases;
     vk_pipeline pipeline_count_experts;
@@ -1250,6 +1254,9 @@ struct ggml_backend_vk_context {
     // These are checked before writing to the buffer (and call ggml_vk_sync_buffers if set),
     // and set to true after the buffer contents are consumed.
     bool prealloc_x_need_sync, prealloc_y_need_sync, prealloc_split_k_need_sync;
+
+    bool qsa_union_active_logged {};
+    bool qsa_union_fallback_logged {};
 
     vk_context_ref compute_ctx;
 
