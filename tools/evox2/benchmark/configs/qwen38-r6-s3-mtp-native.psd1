@@ -2,11 +2,11 @@
     SchemaVersion = 1
     Name = 'qwen38-r6-s3-mtp-native'
 
-    # S3 compatibility gate only. Run 4k smoke with Measure-LlamaCli.ps1 first.
-    # Reuse the validated S2Vulkan b11882 binary for the *unpatched* native gate.
-    # After any source fix, copy this plan with BuildKeys changed to the new S3Vulkan
-    # build so MTP OFF and ON are compared using exactly the same executable.
-    # Required local.psd1 keys: S2Vulkan, UnslothPle16, UnslothMtp,
+    # S3 compatibility gate only. The upstream-native 4k gate on S2Vulkan b11882
+    # failed both drafts; the matching compatibility fixes are now in S3 source.
+    # Build S3Vulkan independently, then run 4k smoke before this 32/64k plan.
+    # OFF/ON variants use the same patched executable; S2Vulkan stays untouched.
+    # Required local.psd1 keys: S3Vulkan, UnslothPle16, UnslothMtp,
     # AgentionRocmFp4FastPle16, AgentionRocmFp4FastMtp, Inputs.32k/64k.
     Settings = @{
         CooldownSeconds = 10
@@ -63,7 +63,7 @@
         @{
             Name = 's3-iq3-ple16'
             Tool = 'cli'
-            BuildKeys = @('S2Vulkan')
+            BuildKeys = @('S3Vulkan')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{ Name = '32k'; Parameters = @{ Context = 32768; InputKey = '32k'; GenerationTokens = 256 } }
@@ -77,7 +77,7 @@
         @{
             Name = 's3-rocmfp4-fast-ple16'
             Tool = 'cli'
-            BuildKeys = @('S2Vulkan')
+            BuildKeys = @('S3Vulkan')
             ModelKeys = @('AgentionRocmFp4FastPle16')
             Cases = @(
                 @{ Name = '32k'; Parameters = @{ Context = 32768; InputKey = '32k'; GenerationTokens = 256 } }

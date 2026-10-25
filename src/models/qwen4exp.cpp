@@ -320,9 +320,27 @@ void llama_model_qwen4exp::load_arch_tensors(llama_model_loader & ml) {
         nextn.enorm        = create_tensor(tn(LLM_TENSOR_NEXTN_ENORM,        "weight", il), { n_embd }, mtp_flags);
         // RMS per hc stream of the trunk residual, so the gammas load as [n_embd, hc] like the mixer norms
         nextn.hnorm        = create_tensor(tn(LLM_TENSOR_NEXTN_HNORM,        "weight", il), { n_embd, hc }, mtp_flags | TENSOR_ALLOW_RESHAPE);
-        nextn.hc_head_norm = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_NORM, "weight", il), { n_embd, hc }, mtp_flags | TENSOR_ALLOW_RESHAPE);
-        nextn.hc_head_down = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_DOWN, "weight", il), { hc_dim, hc_lr }, mtp_flags);
-        nextn.hc_head_up   = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_UP,   "weight", il), { hc_lr, hc_dim }, mtp_flags);
+        // Older standalone MTP GGUFs store this output mixer at output_hc_* instead of
+        // blk.<il>.nextn.hc_head_*. Keep the current layout preferred, and fall back
+        // only if all three current tensors are absent (never mix the two layouts).
+        const int optional_mtp_flags = mtp_flags | TENSOR_NOT_REQUIRED;
+        nextn.hc_head_norm = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_NORM, "weight", il), { n_embd, hc }, optional_mtp_flags | TENSOR_ALLOW_RESHAPE);
+        nextn.hc_head_down = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_DOWN, "weight", il), { hc_dim, hc_lr }, optional_mtp_flags);
+        nextn.hc_head_up   = create_tensor(tn(LLM_TENSOR_NEXTN_HC_HEAD_UP,   "weight", il), { hc_lr, hc_dim }, optional_mtp_flags);
+
+        if (!nextn.hc_head_norm && !nextn.hc_head_down && !nextn.hc_head_up) {
+            // output_hc_* was already probed above as the trunk's output mixer.
+            // On a legacy MTP-only file it is present despite the missing trunk;
+            // reuse those tensors rather than registering the same weights twice.
+            if (!hc_head_norm || !hc_head_down || !hc_head_up) {
+                throw std::runtime_error("qwen4exp MTP has neither a complete nextn.hc_head_* nor output_hc_* tensor trio");
+            }
+            nextn.hc_head_norm = hc_head_norm;
+            nextn.hc_head_down = hc_head_down;
+            nextn.hc_head_up   = hc_head_up;
+        } else if (!nextn.hc_head_norm || !nextn.hc_head_down || !nextn.hc_head_up) {
+            throw std::runtime_error("qwen4exp MTP requires a complete blk.<il>.nextn.hc_head_* tensor trio");
+        }
     }
 }
 
@@ -612,7 +630,9 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     ggml_build_forward_expand(gf, inp_hyb->get_recr()->s_copy);
 
     llm_graph_input_kpool * inp_kpool = nullptr;
-    if (mctx_hyb->get_idx() && hparams.indexer_kpool > 0) {
+    // A ratio-zero MTP layer is dense: its graph must not register unused
+    // pooled-indexer inputs even if the trunk has a nonzero QSA pool size.
+    if (mctx_hyb->get_idx() && hparams.indexer_kpool > 0 && hparams.dsv4_compress_ratios[il] > 0) {
         GGML_ASSERT(mctx_hyb->get_idx()->get_n_kv() == mctx_hyb->get_attn()->get_n_kv() &&
                 "the indexer cache must track the attention cache cell for cell");
         inp_kpool = build_inp_kpool(mctx_hyb);
