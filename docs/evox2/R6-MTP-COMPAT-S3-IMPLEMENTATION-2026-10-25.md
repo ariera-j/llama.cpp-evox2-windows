@@ -3,7 +3,7 @@
 ## Status and fixed scope
 
 - **S3 branch:** `r6/mtp-compat-20261025`, created from passing S2 `r6/rocmfpx-vulkan-20261025` / remote `739af71c117f463236bf33d1624a9438f945ccf2`.
-- **Status: compatibility fixes built; post-fix 4k DraftMax=2 and DraftMax=7 smokes both PASSED for both matching drafts on b11889; 32/64k pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
+- **Status: compatibility fixes built; 4k DraftMax=2/7 and 32k MTP ON PASSED for both matching drafts on b11889; 64k and ROCm IQ3 check pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
 - **Models:** Unsloth UD-IQ3_XXS PLE16 **with Unsloth Q8_0 MTP**; Agention ROCmFP4 FAST PLE16 **with matching Agention ROCmFP4 FAST MTP**. Never mix the two drafts when drawing model-pair conclusions.
 - **Purpose:** confirm loading, model/draft GPU placement, real speculative acceptance and coherent output. Do **not** mix this with S4 QSA union, S5 DENSE/NOOP, S6 Stage-B/flatten, MMVQ forcing, new HIP ROCmFP4 kernels, or 256k.
 
@@ -67,7 +67,22 @@ User archive: `20261025-205954-487-cli-vulkan-b11889-ctx4096-ffdf8db7e2c0.zip` (
 
 Both have **nonzero acceptance with seven-position draft width** and terminate normally without a load/graph assertion; the per-position acceptance arrays each contain seven positions. P-MODE never changed; ADLX had zero high-load samples, so the 4k power class is inconclusive but not a stop. Lower acceptance *percentage* compared with DraftMax2 is unsurprising because more candidate positions are proposed; this tiny forced-generation workload is **not** a speed or quality comparison. No independent bitwise hidden-state/rollback equivalence test has been claimed here.
 
-**Gate decision:** **4k MTP compatibility/width smoke PASS for both target+draft pairs.** S3 overall still awaits **32k MTP ON ×2**, followed by **64k MTP ON ×2** and a separately planned ROCm IQ3 compatibility check. Next run the preconfigured `-OnlyCase 32k -OnlyVariant on` matrix below after confirming `-PlanOnly` expands exactly the two intended `S3Vulkan` jobs. Stop for log inspection before 64k.
+**Gate decision:** **4k MTP compatibility/width smoke PASS for both target+draft pairs.** The subsequent **32k MTP ON ×2** result is recorded below. S3 overall still awaits **64k MTP ON ×2** and a separately planned ROCm IQ3 compatibility check. Performance patches S4–S6 remain untouched.
+
+## Patched S3 Vulkan 32k real-document MTP ON — PASS (2026-10-25 JST)
+
+User matrix archive: `20261025-211444-407-qwen38-r6-s3-mtp-native.zip`. `matrix-result.json` states `Complete=true`, `RunCountPlanned=2`, `RunCountFinished=2`, `OK=2`, `NonOK=0`, no early stop. `-OnlyCase 32k -OnlyVariant on` correctly produced one Unsloth IQ3 and one Agention ROCmFP4 run on **S3Vulkan**. Both use exactly **29,557 input tokens**, **256 generated tokens**, ctx32768, `DraftMax=2`, f16 draft KV, the same source and binary **b11889 / befbc4538** (`llama-cli.exe` SHA256 `42ebf2a69d3c7b2239b9f9e57673760da88ef65367bc5581aadfa4aaae9e6aac`).
+
+| Run / model | PP tok/s | TG tok/s | MTP acceptance | PP+TG time | GPU placement, power and output |
+| --- | ---: | ---: | --- | ---: | --- |
+| `20261025-211449-060-cli-vulkan-b11889-ctx32768-7f7ca8b46b8d` Unsloth IQ3 PLE16 + Unsloth Q8_0 MTP | **386.12** | **33.49** | **145/220 = 65.91%**, mean length 2.32 | **84.165 s** | `Status=OK`/exit0, GPU target **49/49**, draft **50/50**, P-MODE Performance at both ends, ADLX high-load **119.486 W**, classification agrees. Output is a coherent Japanese technical summary truncated by 256-token limit. |
+| `20261025-211719-366-cli-vulkan-b11889-ctx32768-a4bf32fe85e2` Agention ROCmFP4 FAST PLE16 + matching FP4 MTP | **396.92** | **38.05** | **149/212 = 70.28%**, mean length 2.41 | **81.169 s** | `Status=OK`/exit0, GPU target **49/49**, draft **50/50**, P-MODE Performance at both ends, ADLX high-load **120.229 W**, classification agrees. Output is likewise a coherent Japanese technical summary truncated by 256-token limit. |
+
+Both report **zero graph reallocations** and no visible model-load/runtime assertions, unexpected CPU model fallback or text corruption. Power telemetry has 35 high-load samples per run and confirms the previously observed low-clock/P-MODE problem is **not** present in these measurements. A host-side model/utility buffer is normal and is not misidentified as CPU layer offload.
+
+**Gate decision:** **32k MTP ON PASS for both matching pairs.** The 32k acceptance percentages are meaningfully measured on long input but are **not** a head-to-head model-quality ranking. Neither pair has a matched 32k MTP OFF measurement in this gate, so the displayed TG and PP values do **not** measure an MTP speedup. No extra A/B, 256k, or optimization investigation is authorized by this PASS.
+
+**Next fixed step:** `-OnlyCase 64k -OnlyVariant on -PlanOnly`, confirm exactly `s3-iq3-ple16` and `s3-rocmfp4-fast-ple16` (both `S3Vulkan`), then execute that **two-run ON-only** matrix. Record output, PP/TG, acceptance, GPU placement, P-MODE/ADLX and memory headroom; pause for review before a separate S3 ROCm IQ3 build/check or S4 work.
 
 ### Original Windows rebuild and 4k smoke procedure — completed
 
@@ -142,7 +157,7 @@ $plan = "$bench\configs\qwen38-r6-s3-mtp-native.psd1"
 & "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $plan -LocalConfig $local -OnlyCase 64k -OnlyVariant on
 ```
 
-Stop after 32k to inspect acceptance and output before 64k. The `off` variant is reserved for an explicitly needed same-binary regression/control pair, not an automatic speed-optimization A/B. **Compatibility source code was added after the native failure.** Build a new `S3Vulkan` target in a separate output directory; the matrix `BuildKeys` are now `S3Vulkan`, leaving native S2 baseline intact. Re-run smoke, then the 32k/64k gates. Test the IQ3 path on ROCm when the source becomes final (new independent S3 ROCm build); FP4 on HIP remains outside S3.
+The 32k gate has now passed; **stop after 64k** to inspect acceptance and output before advancing the stage. The `off` variant is reserved for an explicitly needed same-binary regression/control pair, not an automatic speed-optimization A/B. **Compatibility source code was added after the native failure.** The matrix `BuildKeys` are now `S3Vulkan`, leaving native S2 baseline intact. Test the IQ3 path on ROCm when the source becomes final (new independent S3 ROCm build); FP4 on HIP remains outside S3.
 
 ## PASS/STOP and handoff
 
