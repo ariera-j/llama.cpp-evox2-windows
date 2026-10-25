@@ -113,6 +113,16 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | **S1コード移植** | [COMMON-001実装・計測手順](R6-COMMON001-PLE16-IMPLEMENTATION-2026-10-25.md)、`259a0b95`、独立 `r6/common001-ple16-20261025` | C++ 4ファイル、r5移植差分一致。Windowsのbuild・計測は未実施 | **実装済・実測待ち**（S1 PASS未判定） | Vulkan/ROCm別clean build → 4k×4条件 → 64k×4run → 128k split×2run |
 | **S1完了** | b11879 / `73324d6d`、[S1最終結果](R6-COMMON001-PLE16-IMPLEMENTATION-2026-10-25.md#s1完了実測2026-10-25追記) | Vulkan/ROCm build、4k 4run、64k 4run、128k split 2run全PASS。128k ROCm TG 17.55、r6 S0 17.50、r5 clean 17.13 tok/s | **PASS**。COMMON-005追加条件なし、保留継続。256k追加なし | **S2 COMMON-003A → VULKAN-001A/001B ROCmFPx** |
 | **S2コード移植** | `r6/rocmfpx-vulkan-20261025`、[S2実装・計測手順](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md) | r5の型/ローダ・Vulkan正確性・整数dot・140幅テストを移植。b11870のMMQ範囲チェック引数に対応し、追加の負expert IDテストを設置。ローカルC/C++構文チェックPASS、Windows build/実測未着手 | **実装済・実測待ち。S2 PASSとはしない** | Vulkan build → 数値テスト140+10件 → 4k/16k smoke → 64k IQ3/ROCmFP4 → 128k ROCmFP4。合格後のみS3へ進行 |
+| **S2 Vulkanビルド確認** | b11882 / `70545f998`、`(vulkan-rocmfpx)evox2-build.json`（2026-10-25 18:55 JST） | `BuildIdentity=Verified`、source clean、Clang 20.1.8、Vulkan0 Radeon 8060S認識、`ggml-vulkan.dll`/`test-backend-ops.exe`生成、`llama-cli --version`/`--list-devices`成功 | **ビルドゲートPASS。数値/モデル推論は未判定** | 140+10数値テスト → 4k/16k ROCmFP4 smoke → 64/128k |
+
+### 最終統合版のビルド対象（2026-10-25追加）
+
+**S7で統合版候補を固め、S8の最終確認・配布用ビルドを行う際、`llama-tokenize.exe` をVulkan版・ROCm版ともに含める。** それ以前のS2〜S6の途中ビルドでは必須にしない。推論の高速化パッチ採否・計測順は変更しない。
+
+- `tools/tokenize/CMakeLists.txt` に `llama-tokenize` ターゲットが既存。`LLAMA_BUILD_TOOLS=ON` の構成を継続する。
+- `Build-Vulkan.ps1` と `Build-ROCm.ps1` は既に `-ExtraTargets` を受け付けるので、最終ビルド時に **`-ExtraTargets llama-tokenize`** を指定する。デフォルトターゲットを途中で変更する必要はない。
+- 最終成果物チェックに `llama-tokenize.exe` の存在・ビルドJSON `Build.Targets` への記録・小さな日本語/英語入力のトークン化結果（`--ids` / `--show-count`）を追加する。
+- 現行のS2 b11882ビルドには `llama-tokenize` が含まれていないが、S2の不備とはしない。
 
 
 ## 6. 過去パッチの移植漏れ監査（2026-10-25追記）

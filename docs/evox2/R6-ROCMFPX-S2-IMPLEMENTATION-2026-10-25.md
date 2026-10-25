@@ -28,6 +28,24 @@ The existing upstream `MUL_MAT_ID` test fixture also supports `skip=true` (`-1` 
 - Local GCC syntax checks passed for `rocmfp4.c`, `rocmfpx.c`, `ggml-quants.c`, `ggml-cpu.c`, and G++ syntax check passed for `ggml-cpu/ops.cpp`.
 - This Linux workspace **does not contain the Windows Vulkan SDK, `glslc`, or CMake**. Actual shader compilation and end-to-end execution must be performed on Evo-X2. No performance or GPU correctness claim is made from syntax checks.
 
+### Evo-X2 Vulkan build gate: PASS (2026-10-25 18:55 JST)
+
+User-provided `(vulkan-rocmfpx)evox2-build.json` verifies:
+
+| Item | Observed |
+| --- | --- |
+| Binary / commit | b11882 / `70545f99826cc1f9d6a0690cd44684124914f2e8` |
+| Branch / source state | `r6/rocmfpx-vulkan-20261025`, `Dirty=false` |
+| Build identity | **Verified**: embedded commit matches source and source remained stable |
+| Config / compiler | Release; LLVM Clang 20.1.8; Ninja Multi-Config; Vulkan SDK 1.4.357.0 |
+| Generated artifacts | `ggml-vulkan.dll` (51,179,008 bytes), `test-backend-ops.exe`, `llama-cli.exe`, `llama-server.exe`, `llama-bench.exe` |
+| Runtime device | Vulkan0 AMD Radeon(TM) 8060S Graphics, 114507 MiB total |
+| Lightweight checks | `llama-cli --version` and `--list-devices` both exit 0 |
+
+The build targets include `llama-cli`, `llama-server`, `llama-bench`, and `test-backend-ops`. Shader build completion is established by the completed build and Vulkan artifact, **not yet by numerical execution**. The `cl` information probe produced D8003 / exit 2 because it was invoked without a source filename; Clang 20.1.8 is the actual compiler recorded for this build. No implication of a failed Vulkan build.
+
+**S2 remains in progress.** The next gate is the focused Vulkan numerical test (historical 140 width cases plus 10 skipped-expert cases) before the ROCmFP4 real-model smoke and performance runs. `llama-tokenize` is intentionally deferred to the final integrated build; see the [r6 integration plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md#最終統合版のビルド対象2026-10-25追加).
+
 ## User-side build and validation sequence (Windows / Evo-X2)
 
 **1. Preserve S1 baseline, fetch and check out the S2 branch.** Run in the existing r6 worktree; keep the S0 and S1 build directories untouched.
