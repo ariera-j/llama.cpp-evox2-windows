@@ -3,7 +3,7 @@
 ## Status and fixed scope
 
 - **S3 branch:** `r6/mtp-compat-20261025`, created from passing S2 `r6/rocmfpx-vulkan-20261025` / remote `739af71c117f463236bf33d1624a9438f945ccf2`.
-- **Status: compatibility fixes built and post-fix 4k DraftMax=2 smoke PASSED for both matching drafts on b11889; DraftMax=7 and 32/64k pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
+- **Status: compatibility fixes built; post-fix 4k DraftMax=2 and DraftMax=7 smokes both PASSED for both matching drafts on b11889; 32/64k pending.** S2 b11882 / `70545f998` is preserved as the historical upstream-native failed baseline.
 - **Models:** Unsloth UD-IQ3_XXS PLE16 **with Unsloth Q8_0 MTP**; Agention ROCmFP4 FAST PLE16 **with matching Agention ROCmFP4 FAST MTP**. Never mix the two drafts when drawing model-pair conclusions.
 - **Purpose:** confirm loading, model/draft GPU placement, real speculative acceptance and coherent output. Do **not** mix this with S4 QSA union, S5 DENSE/NOOP, S6 Stage-B/flatten, MMVQ forcing, new HIP ROCmFP4 kernels, or 256k.
 
@@ -54,7 +54,20 @@ User build manifest: `(vulkan-mtp)evox2-build.json`; user smoke archive: `202610
 
 **Gate decision:** **PASS for 4k DraftMax=2 only.** Both previously failing model/draft pairs now load, execute MTP and accept draft tokens on the same clean b11889 binary. The repeated `OK` / post-`</think>` continuation in the FP4 run is not treated as quality evidence: `--ignore-eos` forces generation beyond the natural response. Short-prompt acceptance percentages are not long-context performance estimates. The earlier ratio-zero failure still has no independently collected stack trace; runtime success after the narrowly scoped fix is the practical causality check. The S3 stage itself is **not yet PASS**.
 
-**Next unchanged step:** repeat exactly these two 4k allocation-only smoke runs using `-BuildKey S3Vulkan -DraftMax 7` (other flags and main/draft pairs unchanged). Validate exit0, 50/50 draft GPU, bounded width and nonzero acceptance. Stop to inspect both logs before the planned 32k MTP ON run, then 64k. **Do not add S4/S5/S6 performance patches or 256k runs yet.**
+**Historical next step, now completed:** repeat both 4k allocation-only smoke runs using `-BuildKey S3Vulkan -DraftMax 7` (other flags and pairs unchanged). The results follow below. **Do not add S4/S5/S6 performance patches or 256k runs yet.**
+
+## Patched S3 Vulkan 4k DraftMax=7 — PASS (2026-10-25 JST)
+
+User archive: `20261025-205954-487-cli-vulkan-b11889-ctx4096-ffdf8db7e2c0.zip` (two target/draft runs). Executable identity unchanged from the previous 4k gate: **b11889** / `befbc4538`, SHA256 `42ebf2a69d3c7b2239b9f9e57673760da88ef65367bc5581aadfa4aaae9e6aac`; both use `--spec-draft-n-max 7`, ctx4096, fixed prompt, `--ignore-eos`, f16 draft KV, 32 output tokens.
+
+| Run | Model and matching draft | Exit and GPU placement | Draft statistics | Power / output |
+| --- | --- | --- | --- | --- |
+| `20261025-205851-925-cli-vulkan-b11889-ctx4096-c0e18e4737bf` | Unsloth IQ3 PLE16 + Q8_0 MTP | `Status=OK`, exit0; main **49/49**, draft **50/50** GPU | **15 accepted / 95 generated = 15.79%**, mean accepted length **1.94**, 16 draft batches | Start/finish P-MODE Performance. Output begins `OK. I am ready to assist…`; continued beyond natural answer because EOS was ignored |
+| `20261025-205954-487-cli-vulkan-b11889-ctx4096-ffdf8db7e2c0` | Agention ROCmFP4 FAST PLE16 + matching FP4 MTP | `Status=OK`, exit0; main **49/49**, draft **50/50** GPU | **20 accepted / 71 generated = 28.17%**, mean accepted length **2.82**, 11 draft batches | Start/finish P-MODE Performance. `OK.`, `</think>`, repeated `OK.` under ignored EOS |
+
+Both have **nonzero acceptance with seven-position draft width** and terminate normally without a load/graph assertion; the per-position acceptance arrays each contain seven positions. P-MODE never changed; ADLX had zero high-load samples, so the 4k power class is inconclusive but not a stop. Lower acceptance *percentage* compared with DraftMax2 is unsurprising because more candidate positions are proposed; this tiny forced-generation workload is **not** a speed or quality comparison. No independent bitwise hidden-state/rollback equivalence test has been claimed here.
+
+**Gate decision:** **4k MTP compatibility/width smoke PASS for both target+draft pairs.** S3 overall still awaits **32k MTP ON ×2**, followed by **64k MTP ON ×2** and a separately planned ROCm IQ3 compatibility check. Next run the preconfigured `-OnlyCase 32k -OnlyVariant on` matrix below after confirming `-PlanOnly` expands exactly the two intended `S3Vulkan` jobs. Stop for log inspection before 64k.
 
 ### Original Windows rebuild and 4k smoke procedure — completed
 
@@ -81,7 +94,7 @@ S3Vulkan = @{
 }
 ```
 
-The two 4k DraftMax=2 repeats have **passed** on b11889; see the recorded result above. Continue with the original fixed **4k DraftMax7 → 32k → 64k** plan. The matrix in `qwen38-r6-s3-mtp-native.psd1` selects `S3Vulkan` for both models; its historical name is retained to avoid changing paths midway through S3.
+The two 4k DraftMax=2 and two DraftMax=7 repeats have **all passed** on b11889; see the recorded results above. Continue with the remaining fixed **32k → 64k** plan. The matrix in `qwen38-r6-s3-mtp-native.psd1` selects `S3Vulkan` for both models; its historical name is retained to avoid changing paths midway through S3.
 
 ## First gate: reuse b11882, 4k MTP smoke
 
