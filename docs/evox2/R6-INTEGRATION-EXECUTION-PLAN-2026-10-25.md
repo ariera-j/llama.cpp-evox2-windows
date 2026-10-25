@@ -22,6 +22,7 @@
 | --- | --- | --- | --- |
 | **S0 / BASE** | 素のb11870、ビルド/計測基盤 | VulkanとROCmを独立クリーンビルド。変更のない推論ソースを保存 | version/device、実モデル短文、計測証跡が正常 |
 | **S1 / COMMON-001** | オリジナル結合PLEとsplit PLE16ローダ | upstream未実装なら必須移植。**この段階だけIQ3オリジナルとPLE16変換版の両方を計測** | 原版/変換版のロード、同条件出力、32/64k動作 |
+| **条件付き / COMMON-005** | ROCm/HIP gathered K/V compact QSA | r3で256k MTP OFFのTG改善実績あり。b11870 HIPでは未充足。**S1後のROCm PLE16 128k実測で必要性を判断する**。旧patchの機械移植はしない | 実行条件を揃えてr5より大幅な長文TG低下が再現した場合のみ追加の移植判断。その他はS8後まで保留 |
 | **S2 / COMMON-003A** | ROCmFPx GGML型・GGUFローダ・CPUフォールバック | ROCmFP4モデル利用の前提。不要になった上流部分は除外 | 型/量子化の単体・ロード確認。未対応GPU型をCPUに黙って逃がさない |
 | **S2 / VULKAN-001A** | ROCmFPx Vulkan正確性 | 対応する演算・shader・pipelineを意味単位で移植 | 対象型の数値テスト、4k実モデル・GPU配置 |
 | **S2 / VULKAN-001B** | 整数dot MMVQ/MMQ・MUL_MAT_ID | `-1` expert indexと`block_a_to_shmem`変更に追従 | 5形式×幅1,3–8×通常/強制MMVQの**140/140**（想定）と64k実モデル |
@@ -40,10 +41,12 @@
 
 | 区分 | 対象 | 取扱い |
 | --- | --- | --- |
-| upstream充足の可能性 | HIP/CUDA FA同期 #30103、MTPチェックポイント/hidden restore #30141、Qwen4Exp関連変更、既存の旧COMMON-004/006、VULKAN-MOE-001 | **ソース監査のみ**。欠けた実際の不具合がなければ再移植しない |
-| 旧実験で効果不十分 | VULKAN-GR-001、r2 MTP-QSA、Stage-A単独、Target rewarmup | 移植しない |
-| 製品ソースに入れない | RGP/dispatchトレース、Draft KVパリティの強制checkpointなどの合成診断コード | レポートと外部解析ツールだけ残す |
-| 初回統合対象外 | COMMON-005深コンテキスト、QSA決定化argsortオプション、q8_0 K/V union、新s1/Strata/halogen/Gufo/project-maya/CONCAT/Expert分布/MASK可視化/RGP深掘り | 完成後の研究キューへ。初回統合の停止理由にしない |
+| **b11870で充足確認** | COMMON-004（persistent pooled-K）、COMMON-006（block-top-k）、VULKAN-MOE-001 | **移植検討対象外**。Qwen4Expの新しいpool管理・mask契約を維持する |
+| upstream差分の確認だけ | HIP/CUDA FA同期 #30103、MTP checkpoint/hidden restore #30141、その他Qwen4Exp変更 | 既に充足のものは移植しない。実不具合があった場合のみ再判定 |
+| **改善効果なし・代替あり** | VULKAN-GR-001、r2 MTP-QSA、r2 gather-stride、Target rewarmup #30511、Stage-A単独 | **移植検討対象外**。Stage-AはStage-Bに置換 |
+| 診断専用・常時不採用 | RGP/dispatchトレース、Draft KV強制checkpoint、argsort TOPK決定化 | 本番/速度測定ソースには混ぜない |
+| **初回統合対象外** | q8_0 KV union、ROCmFPx HIP専用kernel、ROCM-001、ROCM-PP-001、s1/Strata/Halogen/Gufo/project-maya/CONCAT/Expert分布/MASK可視化/RGP深掘り | 完成後の研究キュー。統合の停止理由にしない |
+| **条件付き保留** | COMMON-005 ROCm long-context compact QSA | 上記S1後の実測判定を満たす場合だけ独立検討。トリガーなしなら今回移植しない |
 
 ## 3. モデルと計測タイミングを固定
 
@@ -107,3 +110,43 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | Stage | Source / build | Gate result | Decision | Next |
 | --- | --- | --- | --- | --- |
 | S0準備 | r6新ブランチ、b11870 + ツール/ドキュメント初回コミット | ソース未改変、ビルド未実施 | 進行中 | Vulkan/ROCm clean build |
+
+
+## 6. 過去パッチの移植漏れ監査（2026-10-25追記）
+
+r1〜r5の採用・却下・実験記録とb11870実装を照合した一覧。**対象外の履歴は削除せずに残す**。本表は上のS0〜S8採否判断の補助であり、速度改善のない過去案を無条件に再試験する指示ではない。
+
+| ID / 系列 | r6判定 | 根拠・条件 |
+| --- | --- | --- |
+| COMMON-001 | **S1：移植** | split PLE16ローダ。IQ3原版との橋渡しを同一バイナリで実施 |
+| COMMON-002（旧一括MTP） | **S3：最小互換性のみ** | まずb11870標準MTPを試す。旧Agention output_hc_*、ratio-zero未使用pool guardで必要な部分のみ |
+| COMMON-003A / VULKAN-001A / VULKAN-001B | **S2：移植** | ROCmFPx量子化型・ロード・Vulkan MMQ/MMVQ/MUL_MAT_ID。HIP専用kernelは含めない |
+| COMMON-004 | **対象外：upstream実装済み** | qwen4exp.cppとllama-memory-hybrid-idxにpool K scatter/gather、new_pool_rep、dirty/stale状態管理あり |
+| **COMMON-005** | **条件付き保留：有効実績あり** | r3では256k ROCm・MTP OFF TGが11.68→17.37 tok/s（約48.7%増）。b11870 HIP sparse FAには同等のcompact gathered K/V経路がない。旧71行patchはrow/selection/mask意味が変わったため直接再適用不可。**S1完了後、PLE16 IQ3のROCm 128k MTP OFFでP-MODE/入力/条件を揃えたr5との比較においてTGが概ね10%以上低下し、原因が再現する場合**だけ別ブランチで互換・数値正確性を調査する。それ以外はS8後まで保留。必要時の256kは代表1runだけ |
+| COMMON-006 | **対象外：upstream実装済み** | b11870はblock-domainでggml_top_kし、pool IDとtailを選択。二重移植しない |
+| VULKAN-002 | **S4：候補** | f16 QSA grouped-union、同等upstream機能の監査後にopt-in判定 |
+| MTP-DENSE-001 / MTP-NOOP-001 | **S5：候補** | 各独立スイッチ・64/128k ABBAで効果確認 |
+| Stage-B / mtp_eh_proj flatten | **S6：候補** | Stage-Bとflatten独立採否。微差flattenは初期既定OFF |
+| VULKAN-MOE-001 | **対象外：upstream充足** | upstream #29936相当を確認 |
+| VULKAN-GR-001（GET_ROWS 128×4） | **対象外：速度改善なし** | 既往A/Bで改善を確認できなかった |
+| r2 MTP-QSA / gather-stride | **対象外：速度改善なし** | 既往実験のPP/速度に効果なし |
+| Target rewarmup #30511 | **対象外：速度改善なし** | 64k ABBAでPP改善なし |
+| Stage-A単独FA/FFN skip | **対象外：後継案に置換** | S6のStage-Bを評価 |
+| r1 upstream backport 13件、FA同期 #30103、MTP hidden restore #30141 | **原則対象外：上流充足** | 実バグが出た場合だけ不足箇所を確認 |
+| q8_0 KV union / ROCm QSA試作 / TOPK argsort決定化 | **初回対象外** | f16中心の本計画外、または速度/品質不確実 |
+| **TOOL-001 native llama-bench 実文書入力対応** | **S0後の計測ツール候補** | r5のnative llama-bench.cppには -f / --prompt-file、--prompt-slice head|head-tail、-c / --ctx-size があるがb11870にはない。r6にコピーしたMeasure-LlamaBench.ps1はそれらを使うため、**移植・互換性確認まで実文書のllama-bench実行を禁止**。S0はllama-cli、標準ランダムllama-benchは可 |
+| **DIAG-001 QSA union CSV統計** | **S4任意・速度測定OFF** | GGML_VK_QSA_UNION_STATS=1は診断時のみ。既存ログで経路活性化を確認できない場合だけ移植 |
+| RGP/dispatch trace、KV強制checkpoint | **初回対象外：診断専用** | コードへの常駐を避け外部ログ・旧レポートのみ保持 |
+
+参照資料：R5-LLAMA-BENCH-REAL-PROMPT-PORT-2026-10-09.md、R5-VULKAN002-UNION-STATS-IMPLEMENTATION-2026-10-09.md。判定変更時は旧判定を消さず、理由と実測runを追記する。
+
+## 7. S0クリーンビルドとbaseline実行の前提（2026-10-25追記）
+
+- r6ディレクトリは C:\llama-build\llama.cpp-evox2-windows-r6。r5 worktreeは固定のまま変更しない。
+- 最新ドキュメントをpullした後、upstreamの固定SHA 74bca3950054eed1795f525cb9cf06bfe796492d とr6 HEADとの差分を推論ソース（src,ggml,common,include,tools/llama-bench）で確認し、**推論ソース差分ゼロ**のままS0を始める。
+- tools/evox2/build/Build-Vulkan.ps1 のBuildDirを build-vulkan-r6-clean、Build-ROCm.ps1を build-rocm-r6-clean に**明示指定**して、新規configure・Release build・manifest・version/devices smokeを実行する。共有依存cacheの再利用は可。
+- ROCmはTheRock 10.0 SDK/実行時DLLを統一し、gfx1151、実際のMSVCバージョンをmanifestで検査。**-RunBackendTestは使わない**（WindowsでFLASH_ATTN_EXT網羅テストのwatchdogリスク）。
+- **計測前の4k短文**はIQ3原版・MTP OFFで両backend確認。計測マトリックス tools/evox2/benchmark/configs/qwen38-clean.psd1 はMTP OFF、f16 KV、-b 2048、-ub 1024、-tb 4、n-predict 1024、temp 0.2、top-p 0.8、ctx-checkpoints 0t、P-MODE/ADLX収集向け。
+- ローカル固有モデル/文書/binパスはGit管理外の tools/evox2/benchmark/configs/local.psd1 に記載。ひな形 local.clean.example.psd1 を参照。BuildKeysは CleanVulkan と CleanROCm、モデルキーは UnslothOriginal。
+- **baseline順：** 64k Vulkan → 64k ROCm → 128k Vulkan → 128k ROCm、各代表1run。Invoke-BenchmarkMatrix.ps1 の -OnlyCase と -OnlyBuild でrunを1つずつ選択。先に -PlanOnly で展開を確認し、256kを初期baselineに混ぜない。
+- P-MODE Performance、前後のGPU clock/温度、入力SHA/実token数、モデル版、build manifestを保存。異常時は次のlong-context runへ進む前に原因判断する。
