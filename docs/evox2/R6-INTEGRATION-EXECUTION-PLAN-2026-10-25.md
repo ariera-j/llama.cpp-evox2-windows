@@ -112,6 +112,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | **S0完了** | b11870推論ソース未変更、b11875/280a639f3・Vulkan/ROCm clean build | 4k smoke各1run＋64/128/256k各backend1runの全8run PASS、P-MODE正常、[S0 baseline](R6-CLEAN-BASELINE-VALIDATION-2026-10-25.md) | **PASS**（256kを事前合意で追加） | **S1 COMMON-001 PLE16移植** |
 | **S1コード移植** | [COMMON-001実装・計測手順](R6-COMMON001-PLE16-IMPLEMENTATION-2026-10-25.md)、`259a0b95`、独立 `r6/common001-ple16-20261025` | C++ 4ファイル、r5移植差分一致。Windowsのbuild・計測は未実施 | **実装済・実測待ち**（S1 PASS未判定） | Vulkan/ROCm別clean build → 4k×4条件 → 64k×4run → 128k split×2run |
 | **S1完了** | b11879 / `73324d6d`、[S1最終結果](R6-COMMON001-PLE16-IMPLEMENTATION-2026-10-25.md#s1完了実測2026-10-25追記) | Vulkan/ROCm build、4k 4run、64k 4run、128k split 2run全PASS。128k ROCm TG 17.55、r6 S0 17.50、r5 clean 17.13 tok/s | **PASS**。COMMON-005追加条件なし、保留継続。256k追加なし | **S2 COMMON-003A → VULKAN-001A/001B ROCmFPx** |
+| **S2コード移植** | `r6/rocmfpx-vulkan-20261025`、[S2実装・計測手順](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md) | r5の型/ローダ・Vulkan正確性・整数dot・140幅テストを移植。b11870のMMQ範囲チェック引数に対応し、追加の負expert IDテストを設置。ローカルC/C++構文チェックPASS、Windows build/実測未着手 | **実装済・実測待ち。S2 PASSとはしない** | Vulkan build → 数値テスト140+10件 → 4k/16k smoke → 64k IQ3/ROCmFP4 → 128k ROCmFP4。合格後のみS3へ進行 |
 
 
 ## 6. 過去パッチの移植漏れ監査（2026-10-25追記）

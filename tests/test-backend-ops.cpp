@@ -9984,6 +9984,17 @@ static const ggml_type other_types[] = {
     GGML_TYPE_BF16,
 };
 
+// Focused ROCmFPx Vulkan coverage for the downstream Stage-3 port.
+// Q2_0_ROCMFPX is intentionally excluded: COMMON-003A provides the core/CPU
+// format, but the historical Vulkan donor does not implement Q2.
+static const ggml_type rocmfpx_vulkan_types[] = {
+    GGML_TYPE_Q4_0_ROCMFP4,
+    GGML_TYPE_Q4_0_ROCMFP4_FAST,
+    GGML_TYPE_Q3_0_ROCMFPX,
+    GGML_TYPE_Q6_0_ROCMFPX,
+    GGML_TYPE_Q8_0_ROCMFPX,
+};
+
 #ifdef _MSC_VER
 // Workaround long compile time with msvc
 #pragma optimize("", off)
@@ -11099,6 +11110,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         test_cases.emplace_back(new test_mul_mat(type_a,    GGML_TYPE_F32, 16,  8, 16*256, { 1,  1}, {1, 1}));
     }
 
+    // ROCmFPx Stage-3 batch-width gate. n=1 is the control; n=3..8 covers the
+    // historical multi-column failure window. k=256 spans eight 32-value
+    // ROCmFPx blocks, so K_PER_ITER=32 and the FP3/FP6 dequant4 paths loop.
+    for (ggml_type type_a : rocmfpx_vulkan_types) {
+        for (int64_t n : {int64_t(1), int64_t(3), int64_t(4), int64_t(5), int64_t(6), int64_t(7), int64_t(8)}) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 64, n, 256, {1, 1}, {1, 1}));
+        }
+    }
+
     // Multi-column MMVQ coverage for the Q4_K weight-reuse path and a Q5_K control.
     for (ggml_type type_a : { GGML_TYPE_Q4_K, GGML_TYPE_Q5_K }) {
         for (int n = 1; n <= 8; ++n) {
@@ -11414,6 +11434,18 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         for (int64_t n : { 1, 2, 3, 4, 8, 9 }) {
             test_cases.emplace_back(new test_mul_mat_id_shared(type, n));
         }
+    }
+
+    // ROCmFPx Stage-3 MUL_MAT_ID batch-width gate. n_used == n_mats makes
+    // every token route to every expert, so each expert receives exactly n rows
+    // and the n=3..8 coverage is deterministic rather than RNG-dependent.
+    for (ggml_type type_a : rocmfpx_vulkan_types) {
+        for (int64_t n : {int64_t(1), int64_t(3), int64_t(4), int64_t(5), int64_t(6), int64_t(7), int64_t(8)}) {
+            test_cases.emplace_back(new test_mul_mat_id(type_a, GGML_TYPE_F32, 4, 4, false, 64, n, 256));
+        }
+
+        // b11870 can represent skipped experts with -1; check the masked path too.
+        test_cases.emplace_back(new test_mul_mat_id(type_a, GGML_TYPE_F32, 4, 4, false, 64, 4, 256, 0, false, true));
     }
 
     // gpt-oss issue with Vulkan mmq_id
