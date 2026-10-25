@@ -66,7 +66,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 
 | ゲート | 実施する計測 | 実施しないこと |
 | --- | --- | --- |
-| **G0 / S0 clean** | Vulkan・ROCm IQ3原版：4k smoke、固定64k PP/TG、128k代表1run（基本MTP OFF）。ビルド/モデル/入力のSHAと環境を記録 | 変換PLE16の無理な速度比較、IQ4/huihui/Gemma4長文 |
+| **G0 / S0 clean** | Vulkan・ROCm IQ3原版：4k smoke、固定64k/128k PP/TG各1run。**2026-10-25合意の例外として256k各1runも実施済み**。ビルド/入力SHA・P-MODE/ADLXを記録 | PLE16の無理な比較、IQ4/huihui/Gemma4長文、256kの反復探索 |
 | **G1 / S1 PLE16** | IQ3原版 vs splitを**同一S1バイナリで64k**（Vulkan/ROCm）、変換版128k代表。S0の原版との橋渡しを記録 | S1以降の原版の反復計測 |
 | **G2 / S2 ROCmFPx** | まず型・shader backend数値テスト、4k/16kロード、完全GPU配置。ROCmFP4 Vulkan 64/128k代表値 | correctness未達での長文性能主張、HIP向けの新kernel開発 |
 | **G3 / S3 MTP互換性** | IQ3 split・ROCmFP4の4k短文target+Draft、32/64k MTP ON、DraftMax=7短距離検証 | 互換性修正自体の高速化率の主張 |
@@ -76,7 +76,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | **G7 / S7 統合** | IQ3 split + ROCmFP4 Vulkanの32/64/128k実入力、MTP OFF/ON、DraftMax=2と短い7、1回の選択的256k安定性確認、MH-128K固定入力の正解基準 | 速度上昇率を各パッチの改善率の足し算で算出 |
 | **G8 / S8 完成後** | IQ4/huihui/Gemma4の別建て品質・速度とb10919フォールバック判定 | これらを前段パッチの毎回のベンチ対象に増やすこと |
 
-性能計測の固定入力は、過去の64k（約61,789 tokens）・128k（約126,253 tokens）の既存実文書系を優先し、**入力本文ハッシュ、実token数、n-predict、sampler、KV dtype、FA、MTP Draft/flagsを必ず併記**する。既存 `tools/evox2/benchmark` の計測ログ形式を使い、具体的なPSD1は各ゲート開始前にそのゲート用として固定する。256kは最終候補の安定性ゲートであり、各中間patchで繰り返さない。
+性能計測の固定入力は、過去の64k（約61,789 tokens）・128k（約126,253 tokens）の既存実文書系を優先し、**入力本文ハッシュ、実token数、n-predict、sampler、KV dtype、FA、MTP Draft/flagsを必ず併記**する。既存 `tools/evox2/benchmark` の計測ログ形式を使い、具体的なPSD1は各ゲート開始前にそのゲート用として固定する。256kは原則として最終候補の安定性ゲート。ただしS0未改変upstreamの基準点を残すためにユーザー合意で一度だけ前倒し計測し、完了した。**S1〜S6では再測しない。**
 
 ## 4. 速度採否のルール
 
@@ -109,7 +109,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 
 | Stage | Source / build | Gate result | Decision | Next |
 | --- | --- | --- | --- | --- |
-| S0準備 | r6新ブランチ、b11870 + ツール/ドキュメント初回コミット | ソース未改変、ビルド未実施 | 進行中 | Vulkan/ROCm clean build |
+| **S0完了** | b11870推論ソース未変更、b11875/280a639f3・Vulkan/ROCm clean build | 4k smoke各1run＋64/128/256k各backend1runの全8run PASS、P-MODE正常、[S0 baseline](R6-CLEAN-BASELINE-VALIDATION-2026-10-25.md) | **PASS**（256kを事前合意で追加） | **S1 COMMON-001 PLE16移植** |
 
 
 ## 6. 過去パッチの移植漏れ監査（2026-10-25追記）
@@ -150,3 +150,13 @@ r1〜r5の採用・却下・実験記録とb11870実装を照合した一覧。*
 - ローカル固有モデル/文書/binパスはGit管理外の tools/evox2/benchmark/configs/local.psd1 に記載。ひな形 local.clean.example.psd1 を参照。BuildKeysは CleanVulkan と CleanROCm、モデルキーは UnslothOriginal。
 - **baseline順：** 64k Vulkan → 64k ROCm → 128k Vulkan → 128k ROCm、各代表1run。Invoke-BenchmarkMatrix.ps1 の -OnlyCase と -OnlyBuild でrunを1つずつ選択。先に -PlanOnly で展開を確認し、256kを初期baselineに混ぜない。
 - P-MODE Performance、前後のGPU clock/温度、入力SHA/実token数、モデル版、build manifestを保存。異常時は次のlong-context runへ進む前に原因判断する。
+
+## 8. S0完了時の実測ゲート記録（2026-10-25）
+
+[S0 clean upstream検証・r5 clean比較の詳細](R6-CLEAN-BASELINE-VALIDATION-2026-10-25.md)を正本とする。Vulkan/ROCmともIQ3 Originalの4k smoke、64k/128k/256k計測が正常完走した。r6 b11875はb11870推論ソースから変更なし。
+
+- Vulkan PP：64k **339.72**、128k **268.60**、256k **228.89 tok/s**。r5 clean比 **+26.2% / +49.6% / +69.0%**。
+- ROCm PP：64k **405.24**、128k **303.66**、256k **200.59 tok/s**。r5 clean比 **+3.7% / +3.7% / +3.6%**。
+- Vulkan TG：**25.42 / 23.54 / 20.30**、ROCm TG：**21.86 / 17.50 / 12.55 tok/s**（64/128/256k順）。
+- **P-MODE Performance固定・ADLXの電力判定もPerformance-like**、警告なし。Vulkanはfused top-k mask無効警告、ROCmはfused有効。性能原因は未特定。
+- 256kは計画変更の1回限りの例外。**今後はS1のPLE16 64k原版/変換版＋128k変換版に集中し、新しい256k反復は行わない。** COMMON-005はS1後の条件付き判断に据え置く。
