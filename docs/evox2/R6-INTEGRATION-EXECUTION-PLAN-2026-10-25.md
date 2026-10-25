@@ -116,6 +116,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | **S2 Vulkanビルド確認** | b11882 / `70545f998`、`(vulkan-rocmfpx)evox2-build.json`（2026-10-25 18:55 JST） | `BuildIdentity=Verified`、source clean、Clang 20.1.8、Vulkan0 Radeon 8060S認識、`ggml-vulkan.dll`/`test-backend-ops.exe`生成、`llama-cli --version`/`--list-devices`成功 | **ビルドゲートPASS。数値/モデル推論は未判定** | 140+10数値テスト → 4k/16k ROCmFP4 smoke → 64/128k |
 | **S2 数値テスト完了** | b11882 / `70545f998`、[結果と条件](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md#evo-x2-numerical-correctness-gate-pass-2026-10-25) | Vulkan0で5形式×幅1/3～8のMUL_MAT・MUL_MAT_ID、normal/強制MMVQ各75件を全実行。追加した`-1` expert ID 10件含め**150/150 PASS**、失敗なし | **数値正確性ゲートPASS。S2全体のPASSは実モデル確認後** | 計画どおりROCmFP4 FAST PLE16の4k/16k smoke → 64k IQ3/ROCmFP4 → 128k ROCmFP4 |
 | **S2実モデル短文PASS** | b11882 / `70545f998`、[4k/16k smoke記録](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md#evo-x2-rocmfp4-fast-ple16-actual-model-smoke-pass-2026-10-25) | ROCmFP4 FAST PLE16両ctxで正常終了・`OK`生成、**49/49層Vulkanオフロード**、CPU model bufferなし、P-MODE Performance。各2生成tokenのため速度評価対象外 | **smoke PASS。S2全体は64/128k実測待ち** | 64k IQ3 PLE16 + ROCmFP4 FAST PLE16 → 結果確認 → 128k ROCmFP4 FAST PLE16。順序は固定 |
+| **S2 64k実文書PASS** | b11882 / `70545f998`、[64k測定記録](R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md#evo-x2-64k-real-document-measurement-pass-2026-10-25) | IQ3 PLE16 **343.56 PP/26.23 TG**、ROCmFP4 FAST PLE16 **351.27 PP/26.28 TG**。両run正常終了・49/49層GPU配置・P-MODE/ADLX整合PASS。IQ3のS1比PP **−0.28%** | **64k PASS。S2全体は128k実測待ち** | 計画固定のROCmFP4 FAST PLE16 Vulkan **128k 1run**。PASS後のみS3へ |
 
 ### 最終統合版のビルド対象（2026-10-25追加）
 

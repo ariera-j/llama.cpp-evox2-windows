@@ -4,7 +4,7 @@
 
 - **Base:** `r6/common001-ple16-20261025` at `39920946753e14b0e9bc43eba00e186441370ba3` (S1 PASS), with ggml-org/llama.cpp b11870 as its original upstream.
 - **Working branch:** `r6/rocmfpx-vulkan-20261025` (separate from S1 and r6 clean).
-- **State:** Windows Vulkan build and GPU shader compilation PASS, focused numerical gate **150/150 PASS**, and real ROCmFP4 FAST PLE16 **4k/16k smoke PASS**. The fixed **64k/128k real-model measurement gates are still pending**; do not mark S2 overall PASS yet.
+- **State:** Windows Vulkan build and GPU shader compilation PASS, focused numerical gate **150/150 PASS**, ROCmFP4 FAST PLE16 **4k/16k smoke PASS**, and the planned **64k IQ3/ROCmFP4 pair PASS**. The fixed **128k ROCmFP4 measurement remains pending**; do not mark S2 overall PASS yet.
 - **Donor:** `investigation/r5-rocmfpx-vulkan-20261020`. Reused tested commits `85ab8d79` (core), `202f4988` (correctness shaders), `8205db29` (integer dot), `fe36a4d3` (tests).
 - **Unchanged roadmap:** S2 then S3, without opportunistic performance changes. ROCmFP4-specific HIP kernels and forcing MMVQ for normal use are **not** included.
 
@@ -85,6 +85,32 @@ Both logs show Flash Attention enabled and successful response generation. The e
 **Limitations:** Only two tokens were generated in each short prompt. The reported PP/TG values (4k: 7.90/4.67; 16k: 45.63/23.97 tok/s) are *not* throughput baselines; model initialization/warmup dominates. ADLX reports `InsufficientSamples` for high-load P-MODE consistency because these are smoke runs; start/end mode is Performance. Meaningful speed and longer-output correctness remain for the already-planned long runs.
 
 **Decision:** S2 numerical correctness + actual-model **4k/16k load, full Vulkan placement and tiny generation gates PASS**. Next gate remains **64k IQ3 PLE16 regression control plus 64k ROCmFP4 FAST PLE16**, followed by **128k ROCmFP4 FAST PLE16** after reviewing the 64k result. No new 256k gate, MMVQ forcing, or patch-order change.
+
+### Evo-X2 64k real-document measurement: PASS (2026-10-25)
+
+User-provided archive `20261025-192456-512-cli-vulkan-b11882-ctx65536-2fd9fdb07ce1.zip` contains exactly the two fixed S2 64k matrix runs (`s2-iq3-ple16-control` and `s2-rocmfp4-fast-ple16`), both Vulkan b11882 / `70545f998`, MTP OFF, f16 KV, `-ngl 999`, `-ncmoe 0`, temperature 0.2, top-p 0.8, reasoning off, normal Vulkan MMVQ policy. The real-document input SHA-256 is **`2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`**, 61,789 tokens, identical to the S1 64k input.
+
+| Evidence | IQ3 PLE16 control | ROCmFP4 FAST PLE16 |
+| --- | ---: | ---: |
+| Run ID prefix | `20261025-192032-239` | `20261025-192456-512` |
+| `Status` / exit | `OK` / 0 | `OK` / 0 |
+| PP (tok/s) | **343.56** | **351.27** |
+| TG (tok/s) | 26.23 | 26.28 |
+| Generated tokens | 518 | 602 |
+| Duration (s) | 244.364 | 248.735 |
+| GPU layers / CPU model buffer | 49/49; **none** | 49/49; **none** |
+| Vulkan0 model buffer | 77657.05 MiB | 88645.69 MiB |
+| Vulkan0 memory breakdown `free` | 27826 MiB | 16837 MiB |
+| P-MODE start/end and ADLX power classification | Performance / Performance; consistent | Performance / Performance; consistent |
+| High-GPU-usage ADLX samples | 97 | 98 |
+| Mean GPU power in those samples | 116.3 W | 115.9 W |
+| Mean VRAM clock in those samples | 994.8 MHz | 999.5 MHz |
+
+Both models produced coherent Japanese technical summaries and have no error/crash, partial GPU placement, or sustained low-VRAM-clock evidence. The known Vulkan `fused top-k mask not supported, set to disabled` warning appeared in both, matching S1 behavior; it did not prevent the runs. Runtime artifact verification passed.
+
+**Comparisons (one run per r6 S2 model):** S1 IQ3 PLE16 Vulkan 64k PP/TG **344.51 / 26.51** versus S2 **343.56 / 26.23** (PP **−0.28%**, TG **−1.06%**): no material regression. S2 ROCmFP4 has PP **+2.24%** relative to S2 IQ3, with essentially tied TG. This resembles r5 Stage5 b11561 MTP-OFF 64k ABBA (**277.50 ROCmFP4 vs 272.29 IQ3**, +1.91%), but **r5→r6 absolute performance differences are not the isolated effect of this ROCmFPx patch**: upstream version and sampling/output limits differ (r5 temp 0/max 512 versus r6 temp 0.2/max 1024), and GPU state can vary. No superiority in output quality is inferred from the different outputs or generation lengths.
+
+**Decision:** S2 **64k dual-model real-document gate PASS**. The fixed remaining gate is **one 128k ROCmFP4 FAST PLE16 Vulkan run**; no new 64k repeats, 256k runs, or unrelated optimization work. If the 128k run passes model placement, coherent output, execution, and P-MODE/ADLX checks, complete S2 and proceed to the planned S3 MTP compatibility work.
 
 ## User-side build and validation sequence (Windows / Evo-X2)
 
