@@ -4,7 +4,7 @@
 
 - **Base:** `r6/common001-ple16-20261025` at `39920946753e14b0e9bc43eba00e186441370ba3` (S1 PASS), with ggml-org/llama.cpp b11870 as its original upstream.
 - **Working branch:** `r6/rocmfpx-vulkan-20261025` (separate from S1 and r6 clean).
-- **State:** port implemented, source consistency checks passed; **Windows Vulkan build, GPU shader compilation, numerical tests and real-model measurements are pending**. Do not mark S2 PASS before the Evo-X2 gates below.
+- **State:** Windows Vulkan build and GPU shader compilation PASS, focused numerical gate **150/150 PASS**, and real ROCmFP4 FAST PLE16 **4k/16k smoke PASS**. The fixed **64k/128k real-model measurement gates are still pending**; do not mark S2 overall PASS yet.
 - **Donor:** `investigation/r5-rocmfpx-vulkan-20261020`. Reused tested commits `85ab8d79` (core), `202f4988` (correctness shaders), `8205db29` (integer dot), `fe36a4d3` (tests).
 - **Unchanged roadmap:** S2 then S3, without opportunistic performance changes. ROCmFP4-specific HIP kernels and forcing MMVQ for normal use are **not** included.
 
@@ -60,6 +60,31 @@ User-provided PowerShell log `貼り付けたテキスト（1）(20261025-100712
 Each invocation ended with `Backend Vulkan0: OK`, `2/2 backends passed`, `OK`. The CPU backend's `Skipping` line is expected from the explicit `-b Vulkan0` filter; the Vulkan-versus-CPU reference numerical comparison was performed inside the test runner. The driver reports `int dot: 1`; no failures or unexpected skipped test cases appeared. The loop's `finally` block removes the forced-MMVQ environment variable afterward.
 
 **Decision:** S2 Vulkan **build and focused numerical correctness gates PASS**. No further numerical-test exploration or shader adjustment is warranted on this evidence. Next, execute the already-fixed 4k/16k ROCmFP4 FAST PLE16 model smoke, verify Vulkan placement, then the prescribed 64k and 128k model runs. **S2 overall remains pending real-model validation.**
+
+### Evo-X2 ROCmFP4 FAST PLE16 actual-model smoke: PASS (2026-10-25)
+
+User-provided archive `20261025-191205-491-cli-vulkan-b11882-ctx16384-1d0200287514.zip` includes the **4k** and **16k** `Measure-LlamaCli.ps1 -AllocationOnly` runs. Both used Vulkan b11882 / `70545f998`, `Qwen3.8-Flash-Next-ROCmFP4-FAST-v2-ple16.gguf` (`Q4_0_ROCMFP4_FAST`), no speculative draft (`--spec-type none`), f16 K/V, and Performance P-MODE.
+
+| Evidence | 4k | 16k |
+| --- | --- | --- |
+| Run / context | `20261025-191051-044` / 4096 | `20261025-191205-491` / 16384 |
+| `result.json` / exit | `OK`, 0 | `OK`, 0 |
+| Model type | `Q4_0_ROCMFP4_FAST` | Same |
+| GPU placement | `offloaded 49/49 layers to GPU` | Same |
+| Vulkan0 model buffer | 88645.69 MiB | 88645.69 MiB |
+| Vulkan_Host model buffer | 497.31 MiB | 497.31 MiB |
+| **CPU model buffer** | **Not present** | **Not present** |
+| Vulkan0 KV buffers | 96 + 24 MiB | 384 + 96 MiB |
+| Vulkan graph splits | 3 | 3 |
+| Generated output | `OK` (2 tokens) | `OK` (2 tokens) |
+| P-MODE | Performance (`RawValue=1`) | Same |
+| Runtime artifact verification | Verified | Verified |
+
+Both logs show Flash Attention enabled and successful response generation. The earlier incomplete-port symptom of a **~41.8 GiB CPU model buffer** is absent; model weights are fully GPU-offloaded. The log contains `resolve_fused_ops: fused top-k mask not supported, set to disabled`, an explicitly disabled optional fusion path, **not a fatal model-load/operation error**. Also `common_conte: the context does not support partial sequence removal` is informational in these successful runs.
+
+**Limitations:** Only two tokens were generated in each short prompt. The reported PP/TG values (4k: 7.90/4.67; 16k: 45.63/23.97 tok/s) are *not* throughput baselines; model initialization/warmup dominates. ADLX reports `InsufficientSamples` for high-load P-MODE consistency because these are smoke runs; start/end mode is Performance. Meaningful speed and longer-output correctness remain for the already-planned long runs.
+
+**Decision:** S2 numerical correctness + actual-model **4k/16k load, full Vulkan placement and tiny generation gates PASS**. Next gate remains **64k IQ3 PLE16 regression control plus 64k ROCmFP4 FAST PLE16**, followed by **128k ROCmFP4 FAST PLE16** after reviewing the 64k result. No new 256k gate, MMVQ forcing, or patch-order change.
 
 ## User-side build and validation sequence (Windows / Evo-X2)
 
