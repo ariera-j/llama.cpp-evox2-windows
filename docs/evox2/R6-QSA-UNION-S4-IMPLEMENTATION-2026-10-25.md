@@ -3,12 +3,12 @@
 - **Date:** 2026-10-25 JST
 - **Experimental branch:** `r6/vulkan-qsa-union-20261025`, forked from passing S3 `r6/mtp-compat-20261025` (`db27fcbaefa35e411bc9979f9fe0f6bdbae9bcab`).
 - **Base upstream:** fixed llama.cpp b11870 / `74bca3950054eed1795f525cb9cf06bfe796492d`. No upstream refresh in S4.
-- **Status:** source implementation prepared. **Windows Vulkan build, GPU correctness and same-binary PP/TG are NOT yet verified.** Keep S3 binaries untouched.
+- **Status (updated 2026-10-26): S4 PASS, candidate for S7.** Windows Vulkan build b11895, 4k fallback, 64k real-QSA activation, and the fixed 12/12 long-context OFF/ON runs completed successfully. **Default remains OFF** until combined S7 evaluation. Keep earlier S3 binaries untouched.
 - **Scope:** f16 K/V QSA prefill, Vulkan only. No ROCm source modifications, q8_0-KV expansion, union-stats CSV, RGP, MTP DENSE/NOOP, Stage-B, or 256k.
 
 ### First Windows build feedback and compile fix (2026-10-25)
 
-The first S4 Windows Clang 20.1.8/Ninja build stopped while compiling `ggml-vulkan.cpp` (build step 464/1114), before runtime testing. The two diagnostics at lines 8359 and 8387 were both caused by one local variable declared `const vk_pipeline sparse_compact`: upstream `ggml_pipeline_request_descriptor_sets()` and `ggml_vk_dispatch_pipeline()` require a mutable `vk_pipeline &`, so the const-qualified shared-pointer variable cannot bind to either. **Removed `const` from that local `vk_pipeline` variable only**; pipeline selection and contents are unchanged. This is a compile-compatibility correction, **not** a measured optimization or a completed build pass. Re-run the same build directory after pulling the fix; a new clean build directory is unnecessary for this source-only correction.
+The first S4 Windows Clang 20.1.8/Ninja build stopped while compiling `ggml-vulkan.cpp` (build step 464/1114), before runtime testing. The two diagnostics at lines 8359 and 8387 were both caused by one local variable declared `const vk_pipeline sparse_compact`: upstream `ggml_pipeline_request_descriptor_sets()` and `ggml_vk_dispatch_pipeline()` require a mutable `vk_pipeline &`, so the const-qualified shared-pointer variable cannot bind to either. **Removed `const` from that local `vk_pipeline` variable only**; pipeline selection and contents are unchanged. This is a compile-compatibility correction, **not** a measured optimization. The subsequent Windows build and all S4 runtime gates passed; see section 4.
 
 ## 1. Upstream source audit before port
 
@@ -132,4 +132,44 @@ After **64k PASS**, repeat those two commands with `-OnlyCase 128k`. After IQ3 A
 - **REJECT/STOP:** correctness regression, shape fallback on intended QSA, unexpectedly high GPU memory/driver failure or material 128k slowdown. The extra full-KV mask scan may erase old r5 benefits now that b11870 is faster; do not assume VULKAN-002 remains profitable.
 - **No 256k:** S0 baseline already captured it. Follow the S1–S6 restriction. Subsequent work stays S5 MTP-DENSE-001 → MTP-NOOP-001, then S6, unless this predefined gate fails.
 
-When returning logs, send build JSON first, then separate 4k/64k smoke logs. Only if activation and output are verified should the longer ABBA start. Record the full binary manifest, input/model identities, P-MODE/ADLX, `PP`, `TG`, elapsed PP+TG, and the literal activation/fallback lines in the stage record. **This document records instructions and source audit, not a completed runtime result.**
+The above is the reproducible original gate procedure. Actual results and the adoption decision follow.
+
+## 4. S4 Windows build and complete measurement results (2026-10-25/26 JST)
+
+**Build gate: PASS.** `(vulkan-qsa-union)evox2-build.json` records Vulkan b11895, clean and verified source at `7748be523b0a17211ff172a1265e7d3c2d8b04f5`, Windows Clang 20.1.8, Vulkan0 Radeon 8060S, and successful compilation of `ggml-vulkan.dll`. `llama-cli.exe` SHA-256 is `5aa3cafa03c1f2b150b257d531e4e61336a110e1df3e4ff1949cdf3cab158828`. All measurements below used this same executable, f16 K/V, MTP OFF, and `GGML_VK_QSA_UNION=0/1`; the FP4 entries describe **ROCmFP4 model quantization on the Vulkan backend**, not HIP execution.
+
+### Gate 4a: fallback, activation, and OFF comparison
+
+| Artifact | Gate | Result |
+| --- | --- | --- |
+| `20261025-233148-478-cli-vulkan-b11895-ctx4096-df781994ecd4.zip` | IQ3 4k ON | **PASS:** model 49/49 layers on GPU, normal `OK` output; `qsa-union fallback` is expected under the 32768-KV threshold. |
+| `20261025-233659-315-cli-vulkan-b11895-ctx65536-d58132dc5bb7.zip` | IQ3 64k ON | **PASS:** 61,789-token input; `qsa-union active (r6), source=mask-compact`, `group=64`, `Br=16`, `Bc=64`, `groups=16`, `capacity=32768`, `min_kv=32768`, `scratch=81801472 bytes`. |
+| `20261025-234453-012-cli-vulkan-b11895-ctx65536-a564b5d8b720.zip` | IQ3 64k OFF | **PASS:** no union activation, normal upstream path, 49/49 layers GPU. |
+
+The 64k ON and OFF smokes both exited normally, generated 32 tokens, and yielded the **same output SHA-256** `ea93621ee9301d0c3f3ca527e65ed77aa60f5b355869e96f3bc5133a6ab88055`. They are correctness/activation checks, not the speed-adoption runs. All three smokes recorded Performance P-MODE and ADLX metadata.
+
+### Gate 4b: fixed same-binary 64/128k A/B (12/12 PASS)
+
+The IQ3 runs are ordered ABBA (two observations per OFF/ON), while the ROCmFP4 FAST PLE16 runs are the fixed single OFF/ON pairs. PP and TG are in tokens/s. Arithmetic means are reported for IQ3; ROCmFP4 values are single observations, so do not infer run-to-run variance from them.
+
+| Model / context | OFF PP | ON PP | PP change | OFF TG | ON TG | TG change | Run status |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| IQ3 PLE16 / 64k | 344.80 | 364.41 | **+5.69%** | 26.58 | 26.50 | -0.30% | 4/4 PASS |
+| IQ3 PLE16 / 128k | 270.61 | 330.22 | **+22.03%** | 24.305 | 24.310 | +0.02% | 4/4 PASS |
+| ROCmFP4 FAST PLE16 / 64k | 351.86 | 373.40 | **+6.12%** | 26.35 | 26.35 | 0.00% | 2/2 PASS |
+| ROCmFP4 FAST PLE16 / 128k | 275.22 | 335.97 | **+22.07%** | 24.14 | 24.19 | +0.21% | 2/2 PASS |
+
+Source artifacts, in the same order:
+
+1. `20261025-235814-554-qwen38-r6-s4-qsa-union.zip` (IQ3 64k ABBA; 61,789 input tokens).
+2. `20261026-003758-077-qwen38-r6-s4-qsa-union.zip` (IQ3 128k ABBA; 126,253 input tokens).
+3. `20261026-011810-855-qwen38-r6-s4-qsa-union.zip` (ROCmFP4 64k A/B; 61,789 input tokens).
+4. `20261026-013005-955-qwen38-r6-s4-qsa-union.zip` (ROCmFP4 128k A/B; 126,253 input tokens).
+
+All 12 runs finished `Status=OK`, exit code 0, with all 49 model layers offloaded to Vulkan and Performance P-MODE / ADLX collection consistent. Both IQ3 ON contexts and FP4 ON contexts showed actual union activation; no GPU pipeline/driver errors, anomalous low-memory-clock mode, or broken Japanese output were observed. The 128k IQ3 B1 stopped at EOS after 448 tokens versus 512 on its peers; IQ3 64k A1 stopped at 453 versus 512; FP4 64k A1 stopped at 501 versus 512. The PP results are comparable because PP input is unchanged, but raw total runtime depends on generated-token count. Normalizing IQ3 128k to 512 output tokens gives approximately **487.6 s OFF vs 403.3 s ON**, or **84.2 s / 17.3%** shorter PP+TG. The FP4 128k pair each generated 512 tokens: **479.91 s OFF vs 396.91 s ON**, **83.0 s / 17.3%** faster overall.
+
+### S4 decision and continuation
+
+- **PASS / retain as opt-in S7 candidate:** strong, consistent 128k PP acceleration (~22%) and smaller but positive 64k PP acceleration (~6%) in both quantizations, with TG effectively unchanged. These results belong to the b11895 Vulkan S4 binary and should not be added to historical r5 gains.
+- **Do not change default:** `GGML_VK_QSA_UNION=0` or unset remains the known-good default; combined S7 determines whether to enable in normal operation. No 256k, stats pipeline, or RGP expansion was needed to make the S4 decision.
+- **Next as planned: S5 MTP-DENSE-001**, after auditing the current b11870 `llama_model::create_memory()` path for already-upstream behavior; then MTP-NOOP-001 independently. The S4 measurements used MTP OFF and do not establish combined MTP+union behavior.
