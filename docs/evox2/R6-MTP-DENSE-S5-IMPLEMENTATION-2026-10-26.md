@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-26 JST
 - **Branch:** `r6/mtp-dense-20261026`, based on the documented S4 `r6/vulkan-qsa-union-20261025` state. Frozen upstream b11870, without refreshing the upstream base.
-- **Status:** source and isolated tests prepared; **no Windows Vulkan/ROCm build, native model-state gate or actual MTP TG measurements have been completed on this r6 source**.
+- **Status (updated 2026-10-26):** Windows Vulkan b11898 build **PASS**, independent policy test **PASS** (user report). The first native model-state test stopped on an r6 test-harness API mismatch; a one-line **test-only** compatibility correction has been applied, but **the corrected Windows native test and all MTP TG measurements remain unverified**.
 - **Fixed order:** S5 MTP-DENSE-001 only. After a PASS, proceed to MTP-NOOP-001 on a separate branch; do not combine changes or add Stage-B/flatten yet. No 256k tests in S1-S6.
 
 ## 1. Audit against b11870 before porting
@@ -40,6 +40,23 @@ Changes scoped to S5:
 - These checks **do not** replace native Windows Clang build, GPU inference, saved-state regression or long-context A/B.
 
 ## 3. Windows build and acceptance gates (run in order)
+
+### First Windows feedback: build PASS, old test input ABI STOP, test-only correction
+
+User-supplied `(vulkan-mtp-dense)evox2-build.json` identifies **b11898**, commit `45322c0423a08bc1632cf8eee978352fff0691bd`, clean branch `r6/mtp-dense-20261026`, `BuildIdentity=Verified`, Clang20.1.8, Radeon8060S Vulkan0, and both test targets successfully built. `llama-cli.exe` SHA-256: `c5eb0ce90f89bfcaa61ef63570b04c719532a0e1555c96663ed90668c0875fa2`; `ggml-vulkan.dll` SHA-256: `2680fccd120afe145cdd29b37da7a344fae72fcff5ddec92d0cf94844949a3bf`. Version and device probes both exited 0. The `cl.exe` toolchain probe exit code 2 is due to invoking CL without a source filename, not an actual Clang build error.
+
+The user confirmed `test-mtp-indexer-policy.exe` **PASS**. The first `test-mtp-dense-indexer.exe` log (`貼り付けたテキスト（1）(20261026-020912).txt`) confirms **both policy decisions were correct** before its first Draft trace decode:
+
+```text
+create_memory: MTP dense indexer: requested=0 eligible=1 omitted=0 layer=48 ratio=0 reason=disabled
+create_memory: MTP dense indexer: requested=1 eligible=1 omitted=1 layer=48 ratio=0 reason=dense_single_block
+set_token_embd: embedding size mismatch, got 1 rows x 10240 = 10240, expected 2560 or 2560
+common/common.cpp:2262: get_sub_batch: failed to set the embedding of token 5328 at index 0
+```
+
+This is a **test-harness API mismatch**, not observed evidence of a DENSE cache failure. r5's model test used `common_batch::set_embd` to pass the 10240-wide MTP hidden vector, but b11870's `common_batch::set_embd` routes to `llama_batch_ext_set_embd_token` (expects the 2560-wide *token embedding*). Current upstream's actual MTP speculative decoder uses `common_batch::set_embd_state` to route the same hidden vector through `llama_batch_ext_set_embd_state` (`common/speculative.cpp`). The isolated S5 model test now likewise calls **`batch.set_embd_state`**, leaving every source inference/cache/policy path unchanged. Local C++17 syntax check after correction PASS.
+
+**Required retry:** pull the follow-up S5 commit, then rebuild **only `test-mtp-dense-indexer`** in the existing `build-vulkan-r6-mtp-dense` directory. Do not discard the known-good b11898 source/binaries or re-run broad backend tests. Run that native test again with the same main/Draft paths; do **not** advance to 4k smoke or long-context ABBA until the final model-state/rollback PASS is observed. Later changes, if any, must be separately identified in test manifests; the original b11898 build evidence stays recorded as historical.
 
 Keep S3 b11889 and S4 b11895 binaries untouched. After the S5 branch is published, update the **same r6 source checkout** and use new build directories:
 
