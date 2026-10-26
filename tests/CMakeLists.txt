@@ -341,6 +341,9 @@ llama_build_and_test(test-tiled-mulmat.cpp  LABEL "main behavior backend"  LINK 
 llama_build_and_test(test-mtp-indexer-policy.cpp LABEL behavior)
 # Requires explicit Qwen4Exp main and MTP draft GGUF paths.
 llama_build(test-mtp-dense-indexer.cpp)
+llama_build_and_test(test-qsa-noop-policy.cpp LABEL behavior)
+# Requires an explicit Qwen4Exp main GGUF path.
+llama_build(test-qsa-noop-invalidation.cpp)
 llama_build_and_test(test-model-load-cancel.cpp LABEL "model behavior")
 llama_build_and_test(test-autorelease.cpp       LABEL "model behavior")
 llama_build_and_test(test-backend-sampler.cpp   LABEL "model behavior backend")
