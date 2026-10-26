@@ -2,7 +2,7 @@
 
 - **Branch:** `r6/mtp-noop-20261026`, forked from `r6/mtp-dense-20261026` (`7c819cffb`, upstream baseline b11870).
 - **Scope:** target-QSA no-op invalidation only. No upstream refresh, Stage-B, flatten, ROCm/HIP change, Vulkan kernel change or 256k run.
-- **Source status:** implemented and locally syntax-checked; **Windows builds, model tests, real MTP smoke and long A/B remain pending**.
+- **Source status:** **Windows verification PASS (2026-10-26 JST)**. Vulkan and ROCm b11901 (`722a18926`) passed native policy/model-state tests, short MTP smoke and all **18/18 planned long-context runs**. See [final results](#windows-final-gates-and-s6-noop-closure-2026-10-26-jst). The switch remains opt-in/default OFF.
 - **Naming:** the frozen [r6 integration plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md) groups DENSE and NOOP within original S5, then Stage-B/flatten under original S6. This separate continuation branch is called **S6-NOOP** for the experiment sequence. Patch order is unchanged; Stage-B/flatten is the *next* distinct code task after NOOP gates.
 - **Prior result:** [S5 DENSE passed 18/18 long runs](R6-MTP-DENSE-S5-IMPLEMENTATION-2026-10-26.md#5-evo-x2-final-s5-results-and-closure-2026-10-26-jst). Its independently controlled optimization is held **ON** for both S6 comparison arms; the compiled default remains OFF.
 
@@ -127,3 +127,61 @@ Run one context at a time, reviewing results before proceeding. For Vulkan, a di
 ```
 
 ROCm already produces varying temp=0 text and acceptance even for same-switch repeated runs; report hashes and per-run acceptance, interpret same-binary paired TG as **observed** rather than bitwise-equivalent acceleration. STOP on new model load, state or output-quality regressions, GPU/P-MODE anomalies or crashes. No 256k expansion. After both backends pass, evaluate S6-NOOP as an independent opt-in S7 integration candidate; only then plan the Stage-B/flatten source work.
+
+## Windows final gates and S6-NOOP closure (2026-10-26 JST)
+
+### Verified source, builds and native correctness
+
+- Source and both executable manifests: clean `r6/mtp-noop-20261026`, commit **`722a189261d88102c481571cb5b8d4a0afcebeff`**, build **b11901**, `BuildIdentity.Status=Verified`. The ABBA matrix used the same binary per backend and varied only `LLAMA_QSA_SKIP_NOOP_INVALIDATION=0/1`; S5 DENSE was **ON in both arms**, QSA union OFF, and diagnostic trace OFF.
+- Vulkan: Windows Clang 20.1.8; ROCm: TheRock SDK **10.0.0** / `gfx1151`, Windows Clang 23.0.0. The ROCm `TheRockUnified` manifest reports the complete HIP/BLAS DLL closure and rocBLAS/hipBLASLt data copied with source/destination SHA-256 equality (`DllAndRuntimeDataHashesVerified`). `-RunBackendTest` was **not** used because of the known dangerous `FLASH_ATTN_EXT` test history.
+- `Test-R6MtpNoop.ps1 -RunModelTests` on **both** backends: source checks PASS, `test-qsa-noop-policy.exe` PASS, `test-qsa-noop-invalidation.exe` PASS, exit 0. Each model log has **524/524** target logit / NextN hidden comparisons with **NMSE=0, max_abs=0**. Full/partial state restore, accepted=0/1/2 rollback, actual trim, previous-stale preservation, shared/multisequence fallback and refused edits were exercised. Four `unexpectedly reached end of buffer` stderr lines are intentional invalid-state restore probes, not a failure.
+- Vulkan 4k smoke **6/6 PASS**: IQ3 OFF/ON and diagnostic OFF/ON, FP4 FAST OFF/ON. IQ3 and FP4 each preserved output hash and Draft acceptance between OFF/ON; target `eligible=1 enabled=0/1`, draft `enabled=0`, DENSE `omitted=1`. Traced eligible trims confirmed suppression on real no-op and preservation of real-removal marks. ROCm IQ3 4k smoke **2/2 PASS**, both with identical output hash and Draft **37/50** (74%). Speed is **not** inferred from these short runs.
+
+### Same-binary 64k/128k throughput results
+
+All figures are `llama-cli`, MTP ON, DraftMax=2, 512 generated tokens, `temp=0`, fixed input (64k: **61,789** prompt tokens; 128k: **126,253**). ABBA order is **A1 OFF / B1 ON / B2 ON / A2 OFF**. Means average the two runs per arm; FP4 FAST uses one OFF/ON pair only.
+
+| Backend / model | Context | OFF PP | ON PP | PP change | OFF TG | ON TG | TG change | Runs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Vulkan / IQ3 PLE16 | 64k | 318.470 | 318.360 | -0.03% | 34.145 | 35.170 | **+3.00%** | 4/4 OK (ABBA) |
+| Vulkan / IQ3 PLE16 | 128k | 247.825 | 247.710 | -0.05% | 29.265 | 31.075 | **+6.18%** | 4/4 OK (ABBA) |
+| Vulkan / ROCmFP4 FAST PLE16 | 64k | 325.580 | 324.160 | -0.44% | 35.540 | 36.610 | **+3.01%** | 2/2 OK (A/B) |
+| ROCm / IQ3 PLE16 | 64k | 377.560 | 376.765 | -0.21% | 28.065 | 28.850 | **+2.80%** | 4/4 OK (ABBA) |
+| ROCm / IQ3 PLE16 | 128k | 282.220 | 282.075 | -0.05% | 21.640 | 22.290 | **+3.00%** | 4/4 OK (ABBA) |
+
+**All 18/18 long runs finished `Status=OK` with Verified policy evidence**, `PModeStart=PModeFinish=Performance`, no P-MODE warnings and ADLX high-load power approximately **119–120 W**. High-load ROCm 64k GPU clocks averaged **2,830–2,841 MHz**, VRAM **992–994 MHz**; ROCm 128k GPU **2,853–2,860 MHz**, VRAM **992–994 MHz**. There was no restart, low-VRAM-clock regime or clock/power explanation for the ROCm TG dispersion. Target NOOP eligibility and OFF/ON activation were verified in every arm. **PP was effectively unchanged** except FP4 FAST's one-pair -0.44%.
+
+**Vulkan output equivalence:** For each IQ3 depth, all four generated-output SHA-256 values **and Draft accepted/generated counts were identical** between OFF and ON. IQ3 64k: `f973fb6cf66bf1d666d7342aca0f5ecdb46c866b94a42ab7c07bccbbce91dc27`, Draft **300/421**. IQ3 128k: `ca205b843adc01ef7e2e820b70834904eeddd51561b4ae18ae0257e563f72db9`, Draft **299/424**. FP4 FAST 64k: both outputs `e2d2401999f445adec384cf1e8b602ef3de37aeecf02e6a6f4b1cba5f4856e31`, Draft **293/436**. FP4's 2run result is supportive but has less repeated-run confidence than IQ3 ABBA. Its PP+TG time was ~0.41 s slower ON because of the small PP difference and long prompt; interpret TG and end-to-end latency separately.
+
+**ROCm nondeterministic-output limitation:** All four output hashes differ at both depths, including OFF/ON repetitions, consistent with pre-existing ROCm `temp=0` variability. Different generated text and acceptance confound a precise causal attribution of TG gain. The per-run evidence is retained rather than treating these as bitwise-matched trajectories:
+
+| Context | Run | TG (tok/s) | Draft accepted/generated | Acceptance |
+| --- | --- | ---: | ---: | ---: |
+| 64k | A1 OFF | 27.72 | 290/441 | 65.76% |
+| 64k | B1 ON | 29.07 | 298/425 | 70.12% |
+| 64k | B2 ON | 28.63 | 295/429 | 68.77% |
+| 64k | A2 OFF | 28.41 | 295/431 | 68.45% |
+| 128k | A1 OFF | 21.76 | 298/423 | 70.45% |
+| 128k | B1 ON | 22.06 | 292/435 | 67.13% |
+| 128k | B2 ON | 22.52 | 297/428 | 69.39% |
+| 128k | A2 OFF | 21.52 | 293/435 | 67.36% |
+
+At 64k, B1/A1 gains **+4.87%** TG but also has markedly higher Draft acceptance; B2/A2 gains only **+0.77%** with near-equal Draft **295/429 vs 295/431**. At 128k B1/B2 TG is **22.06/22.52** while acceptance is **67.13/69.39%**. However B1 still beats A1 (**+1.38% TG**) despite **lower** acceptance, and B2 beats A2 (**+4.65%**). Thus the observed ROCm +2.80/+3.00% is a consistent *directional same-binary improvement*, **not** proof of its exact isolated magnitude. Neither the S5 and S6 gain percentages nor cross-binary results should be blindly added.
+
+### Archived verification evidence (outside Git)
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `(vulkan-mtp-noop)evox2-build.json` | `54326a3d2e2fd0f40418cf8761c0d05fb8b83401cb1dc8c995e49b030adcb6db` |
+| `(rocm-noop)evox2-build.json` | `948b0eb574eae9a20bb9e03f1770bdb5632fa4ef47e24b6f66992732c310892b` |
+| `20261026-195255-255-qsa-noop-invalidation.zip` (Vulkan native) | `2feb05acb0a8c74a2964360b4305759f5b6c2d0722b73befabb8c665bded274a` |
+| `20261026-222919-224-qsa-noop-invalidation.zip` (ROCm native) | `56d9e43dd246fad9497bddbc1cf7176ea0679ca6dbc1f2edb83cd6a95111ad0c` |
+| `20261026-202757-822-cli-vulkan-b11901-ctx4096-f5a1b53e0eea.zip` (Vulkan short) | `698cb1e356e064d554f7d349a72f6a5acf7688c625f5921531d320826cf9685e` |
+| `20261026-224437-896-cli-rocm-b11901-ctx4096-5bf6e7877d3c.zip` (ROCm short) | `9e92e792ebb52074a7eb03d6a81fcf3a7eabbaab5177892f7fc1ce917a06f05a` |
+| `20261026-203844-191-qwen38-r6-s6-mtp-noop.zip` (Vulkan IQ3 64k) | `ea2e14da8369739a100bfa50cd39319f6958dafdb56f28dbfcd7c770de044866` |
+| `20261026-210303-010-qwen38-r6-s6-mtp-noop.zip` (Vulkan IQ3 128k) | `20fa48f92b119428426cbc27087219b75cb2fcd26212e998c8b17f9d2ded00f5` |
+| `20261026-220729-461-qwen38-r6-s6-mtp-noop.zip` (Vulkan FP4 FAST 64k) | `9cc9966a8520f58da1bf60e84ad7b59d30d84d042a1a1b0403f55428f397a3b9` |
+| `20261026-224956-703-qwen38-r6-s6-mtp-noop.zip` (ROCm IQ3 64k) | `cfc324e4a2a24b9577f56df8b6425f07965975453ecd6b1d44313e77127630bc` |
+| `20261026-231842-327-qwen38-r6-s6-mtp-noop.zip` (ROCm IQ3 128k) | `2f3138ce8773c9ac057d3b7be902e65bf1c6b3f7d8d1f5d924350d9b7257125e` |
+
+**Decision: bounded Windows S6-NOOP gate PASS; retain independently switchable NOOP as a candidate for S7/combined integration, with default OFF.** This is an incremental TG optimization above S5 DENSE, not a new default runtime setting. No 256k tests were required or run. Do not conflate this independently named S6-NOOP experiment with the frozen plan's original **S6 Stage-B/flatten** step, which is **still pending**; preserve separate ON/OFF gates and the accepted C/A/B sequence when beginning the next source port.
