@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-26 JST
 - **Branch:** `r6/mtp-dense-20261026`, based on the documented S4 `r6/vulkan-qsa-union-20261025` state. Frozen upstream b11870, without refreshing the upstream base.
-- **Status (updated 2026-10-26):** Windows Vulkan b11898 build **PASS**, independent policy test **PASS** (user report). The first native model-state test stopped on an r6 test-harness API mismatch; a one-line **test-only** compatibility correction has been applied, but **the corrected Windows native test and all MTP TG measurements remain unverified**.
+- **Status (updated 2026-10-26): S5 complete / PASS for the tested paths.** Corrected native model-state/rollback and policy tests passed. IQ3 Vulkan 64k/128k ABBA (8/8), IQ3 ROCm 64k/128k ABBA (8/8), and ROCmFP4 FAST Vulkan 64k A/B (2/2) passed. Default remains OFF pending combined-stage evaluation. The ROCm long-output variation and single-pair FP4 caveat are retained below.
 - **Fixed order:** S5 MTP-DENSE-001 only. After a PASS, proceed to MTP-NOOP-001 on a separate branch; do not combine changes or add Stage-B/flatten yet. No 256k tests in S1-S6.
 
 ## 1. Audit against b11870 before porting
@@ -128,3 +128,41 @@ Substitute `-OnlyCase 128k` only after 64k PASS. Record TG, PP, PP+TG, draft acc
 - **STOP:** nonzero model-state test, missing eligible startup evidence, bad GPU offload, collapsed output, MTP rollback mismatch, repeated crash or resource anomaly. Preserve logs and return to the independent next patch only after recording the decision.
 
 On closing S5 DENSE, update [r6 integration execution plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md). Next isolated stage is **MTP-NOOP-001**, independent from DENSE and without Stage-B/flatten; final combined optimization decisions belong to S7.
+
+## 5. Evo-X2 final S5 results and closure (2026-10-26 JST)
+
+### Native tests and exact binaries
+
+- The corrected Vulkan model/state test **PASS**: `MTP dense indexer: PASS (append, no-op, accept 0/1/2, full/partial restore, A/B logits and hidden)`. Full-state size OFF `15688` -> ON `12508` bytes, partial-state size `28` in both arms. One diagnostic comparing different ubatch partitions is non-gating and is not an OFF/ON regression. `test-mtp-indexer-policy.exe` also passed.
+- Vulkan binary: **b11898** / `45322c042`; `llama-cli.exe` SHA-256 `c5eb0ce90f89bfcaa61ef63570b04c719532a0e1555c96663ed90668c0875fa2`. Both main and Draft on Vulkan0: **49/49 + 50/50** layers. The test-only `set_embd_state` correction is separate from this executable's inference code.
+- ROCm binary: **b11899** / `b340173bb1`, `llama-cli.exe` SHA-256 `75c96af24317bb99c9211bd76131645ec54702f5c0d8f0db72a067f6e8dd240d`. Policy and model/state tests passed. Runtime artifact identity was `Verified`; TheRock **10.0** DLL/data provenance and GPU offload checked. No broad ROCm `FLASH_ATTN_EXT` backend test was executed.
+- Short real-MTP checks passed on both backends. FP4 FAST Vulkan 4k OFF/ON each exited zero with identical output fingerprint and **17/28 Draft tokens accepted (60.71%)**; the FP4 Draft's own ratio was **zero**, with `eligible=1 omitted=0` -> `eligible=1 omitted=1`. That makes the 64k FP4 comparison applicable, rather than a fail-closed ineligible test.
+
+### Fixed same-binary results
+
+All normal matrix runs used `MTP=ON`, `DraftMax=2`, f16 KV, `-b 2048 -ub 1024`, four threads, temp=0, seed=1234, 512 generated tokens, `--ignore-eos`, QSA union OFF, NOOP unset and Performance P-MODE. Only `LLAMA_MTP_SKIP_DENSE_INDEXER=0/1` changed in each paired matrix. IQ3 main/Draft used Unsloth PLE16/Q8_0; FP4 used Agention ROCmFP4 FAST v2 PLE16 and matching FAST Draft.
+
+| Backend/model | Input tokens | OFF PP | ON PP | PP change | OFF TG | ON TG | TG change | Runs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Vulkan / IQ3, 64k | 61,789 | 317.485 | 318.020 | +0.17% | 32.115 | 34.360 | **+6.99%** | 4/4 OK (ABBA) |
+| Vulkan / IQ3, 128k | 126,253 | 247.485 | 247.470 | -0.01% | 25.155 | 29.260 | **+16.32%** | 4/4 OK (ABBA) |
+| ROCm / IQ3, 64k | 61,789 | 376.900 | 376.655 | -0.07% | 25.865 | 28.335 | **+9.55%** | 4/4 OK (ABBA) |
+| ROCm / IQ3, 128k | 126,253 | 281.805 | 282.400 | +0.21% | 18.905 | 21.195 | **+12.11%** | 4/4 OK (ABBA) |
+| Vulkan / FP4 FAST, 64k | 61,789 | 324.470 | 323.990 | -0.15% | 33.030 | 35.510 | **+7.51%** | 2/2 OK (A/B) |
+
+The values for ABBA are two-run means per arm. **All 18 normal long-context executions completed**; the short 4k smoke runs and model tests are separate. `Status=OK`, `ExitCode=0`, runtime verification and policy markers (`requested=0 eligible=1 omitted=0 layer=48 ratio=0` versus `requested=1 eligible=1 omitted=1 layer=48 ratio=0`) passed. The 64k/128k Vulkan IQ3 traces have identical generated-output SHA-256 and Draft accepted/generated counts within each depth. FP4 FAST 64k A/B likewise has identical output SHA-256 `778bae9627e1dc4cadd30894bda7f5f497e99bff726aa4a420137a2ab266238f` and Draft **293/436** (67.20%) in both arms.
+
+**ROCm limitation:** All eight temperature-zero outputs differ, including both OFF repetitions and both ON repetitions. In particular, at 128k the ON B1/B2 TG is `20.30/22.09` tok/s with Draft acceptance `285/451` versus `299/422`; at 64k B1/B2 TG is `27.68/28.99`. Higher acceptance and fewer Draft generation calls are consistent with B2's advantage but do not prove that all B1/B2 variation is explained by acceptance. Nevertheless both ON repetitions exceed both OFF repetitions at both depths; the +9.55/+12.11% figures are **observed same-binary improvements**, not bitwise output-equivalence proofs.
+
+**GPU conditions:** All run starts/finishes reported P-MODE `Performance`; high-load ADLX classification was `Performance-like` without warnings. FP4 64k mean high-load GPU/VRAM clocks were OFF `2811.8/993.1` MHz and ON `2794.7/994.6` MHz, with board GPU power about `119.6/119.7` W. ON was not faster from a higher GPU clock. The FP4 result is only **one OFF/ON pair** and remains preliminary for statistical variance, but the identical trajectory and independent IQ3 results are sufficient for this bounded S5 gate. A known fused top-k mask CPU fallback warning appears in both FP4 arms and is not an ON-only regression.
+
+### Archived matrix inputs and decision
+
+| Run archive (kept outside Git) | SHA-256 |
+| --- | --- |
+| `20261026-112840-742-qwen38-r6-s5-mtp-dense.zip` (Vulkan IQ3 64k) | `7c15307574aa82a7d23e0bb6330fa5a0de313206f801366dc1864f043195f440` |
+| `20261026-115112-856-qwen38-r6-s5-mtp-dense.zip` (Vulkan IQ3 128k) | `0b913363809fe18952bdcc999f5e734b8c177981fd4c05079a80342b21ff9e42` |
+| `20261026-133313-360-qwen38-r6-s5-mtp-dense(1).zip` (ROCm IQ3 64k+128k) | `a132b4c15cda3999fcabae6aaba97c4f652603b380861c3c3a4692b58c634f64` |
+| `20261026-184926-574-qwen38-r6-s5-mtp-dense.zip` (Vulkan FP4 FAST 64k) | `3f72a31e592a801da34fedac43e4a7006955f0370f00debe2c7390443adf1743` |
+
+**Decision: PASS; retain the independently switchable MTP-DENSE candidate with default OFF.** No 256k expansion or reruns for S5. Next is a dedicated **MTP-NOOP-001** branch, preserving S5's DENSE option separately; this is the next work item, not an invitation to add Stage-B/flatten or change the frozen upstream.

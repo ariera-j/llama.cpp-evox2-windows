@@ -2,6 +2,8 @@
 
 > **r6 / b11870 active execution plan (2026-10-25):** [R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md) fixes patch order, prerequisites, per-stage performance gates, model scope and failure/defer rules. The r5 matrix below remains the prior validated patch inventory and historical evidence; old unqualified "next" wording no longer overrides the r6 plan.
 
+> **r6 S5 DENSE closure (2026-10-26):** [Final S5 evidence](R6-MTP-DENSE-S5-IMPLEMENTATION-2026-10-26.md#5-evo-x2-final-s5-results-and-closure-2026-10-26-jst) records native correctness PASS and 18/18 long runs: IQ3 Vulkan TG +6.99%/+16.32% (64k/128k), IQ3 ROCm +9.55%/+12.11% observed with inherent output variability, ROCmFP4 FAST Vulkan 64k +7.51%. All PP differences within 0.21%; DENSE remains opt-in/default OFF. Next: the separately toggleable MTP-NOOP-001 experiment, then Stage-B/flatten without reordering the pinned plan.
+
 ## Authoritative current r5 patch disposition — 2026-10-21
 
 **This section is the current integration decision table.** It supersedes dated “LATEST/NEXT” text below for planning, while all older sections remain as time-stamped experimental evidence.
