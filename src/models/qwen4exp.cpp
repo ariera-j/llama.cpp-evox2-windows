@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstdlib>
+#include <cstring>
 
 // bad metadata must be catchable: GGML_ASSERT aborts the whole process
 static void qwen4exp_require_nonzero(const llama_model_loader & ml, llm_kv kid, uint32_t value) {
@@ -593,6 +595,15 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     const int il = hparams.n_layer();
     const auto & layer = model.layers[il];
 
+    const char * kv_crop_env = std::getenv("LLAMA_MTP_DRAFT_PREFILL_KV_CROP");
+    const bool draft_prefill_kv_crop =
+        kv_crop_env && std::strcmp(kv_crop_env, "1") == 0 &&
+        n_outputs == 0 &&
+        cparams.embeddings_nextn && cparams.embeddings_nextn_masked &&
+        !cparams.training && !cparams.kv_unified &&
+        ubatch.n_seqs_unq == 1 &&
+        hparams.dsv4_compress_ratios[il] == 0;
+
     GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm && layer.nextn.hc_head_norm &&
             "MTP block missing, load the model with MTP enabled");
 
@@ -639,7 +650,7 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     }
 
     ggml_tensor * inp_pos     = build_inp_pos();
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    ggml_tensor * inp_out_ids = draft_prefill_kv_crop ? nullptr : build_inp_out_ids();
 
     ggml_tensor * h_norm = build_norm(ggml_reshape_3d(ctx0, h, n_embd, hc, n_tokens), layer.nextn.hnorm, nullptr, LLM_NORM_RMS, il);
     cb(h_norm, "mtp_hnorm", il);
@@ -653,6 +664,13 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
 
     ggml_tensor * inject = nullptr;
     ggml_tensor * cur = build_hc_mix(res_hc, layer.hc_attn_norm, layer.hc_attn_down, layer.hc_attn_up, layer.hc_attn_inject, &inject, il);
+
+    if (draft_prefill_kv_crop) {
+        GGML_ASSERT(inp_kpool == nullptr && "KV-only Draft requires dense MTP");
+        build_layer_attn_kv_only(inp_hyb->get_attn(), cur, inp_pos, sections, il);
+        return;
+    }
+
     cur    = build_layer_attn(inp_hyb->get_attn(), mctx_hyb, inp_kpool, cur, inp_pos, sections, il);
     res_hc = build_hc_combine(res_hc, cur, inject, il);
 
@@ -1002,6 +1020,47 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
     }
 
     return cur;
+}
+
+void llama_model_qwen4exp::graph::build_layer_attn_kv_only(
+        llm_graph_input_attn_kv * inp,
+        ggml_tensor *             cur,
+        ggml_tensor *             inp_pos,
+        int *                     sections,
+        int                       il) {
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+    GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
+    GGML_ASSERT(hparams.dsv4_compress_ratios[il] == 0 && "KV-only Draft requires a dense MTP layer");
+
+    ggml_tensor * k_cur = build_lora_mm(model.layers[il].wk, cur, model.layers[il].wk_s);
+    ggml_tensor * v_cur = build_lora_mm(model.layers[il].wv, cur, model.layers[il].wv_s);
+
+    k_cur = ggml_reshape_3d(ctx0, k_cur, n_embd_head, n_head_kv, n_tokens);
+    k_cur = build_norm(k_cur, model.layers[il].attn_k_norm, nullptr, LLM_NORM_RMS, il);
+    v_cur = ggml_reshape_3d(ctx0, v_cur, n_embd_head, n_head_kv, n_tokens);
+
+    k_cur = ggml_rope_multi(
+            ctx0, k_cur, inp_pos, nullptr,
+            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+            ext_factor, attn_factor, beta_fast, beta_slow);
+
+    if (inp->self_k_rot) {
+        k_cur = llama_mul_mat_hadamard(ctx0, k_cur, inp->self_k_rot);
+    }
+    if (inp->self_v_rot) {
+        v_cur = llama_mul_mat_hadamard(ctx0, v_cur, inp->self_v_rot);
+    }
+
+    ggml_build_forward_expand(gf, v_cur);
+    ggml_build_forward_expand(gf, k_cur);
+
+    const auto * mctx_cur = inp->mctx;
+    ggml_tensor * cache_write_k = mctx_cur->cpy_k(ctx0, k_cur, inp->get_k_idxs(), il);
+    ggml_tensor * cache_write_v = mctx_cur->cpy_v(ctx0, v_cur, inp->get_v_idxs(), il);
+    ggml_set_name(cache_write_k, "mtp_draft_cache_write_k");
+    ggml_set_name(cache_write_v, "mtp_draft_cache_write_v");
+    ggml_build_forward_expand(gf, cache_write_k);
+    ggml_build_forward_expand(gf, cache_write_v);
 }
 
 ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(

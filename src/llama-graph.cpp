@@ -1165,7 +1165,7 @@ void llm_graph_input_mem_hybrid::set_input(const llama_ubatch * ubatch) {
     mctx->get_attn()->set_input_v_idxs(inp_attn->self_v_idxs, ubatch);
 
     // leave the mask unallocated if all attention layers have their own (e.g. qwen4exp QSA)
-    if (inp_attn->self_kq_mask->buffer) {
+    if (inp_attn->self_kq_mask && inp_attn->self_kq_mask->buffer) {
         mctx->get_attn()->set_input_kq_mask(inp_attn->self_kq_mask, ubatch, cparams.causal_attn);
     }
 
