@@ -3,10 +3,10 @@
 ## Status and source lineage
 
 - **Branch:** `r6/mtp-stageb-20261027`, created from the completed S6-NOOP GitHub commit `02e44a240a975bbb3de689425ebf3185edded057` (original upstream baseline b11870).
-- **Scope:** Stage-B only. `mtp_eh_proj` flatten is **not ported**, and neither are the old Stage-A-only or KV snapshot diagnostics.
+- **Scope / stage:** S7-A Stage-B only (2026-10-27 corrected plan numbering). S7-B `mtp_eh_proj` flatten is **not ported**, and neither are the old Stage-A-only or KV snapshot diagnostics.
 - **Stage-B flag:** `LLAMA_MTP_DRAFT_PREFILL_KV_CROP=1` enables the new graph path; unset, `0`, or any other value uses the original full Draft graph. The default is **OFF**.
 - **Port reference:** r5 integration rehearsal `integration-check/r5-noop-rocmfpx-stageb-flatten-20261021`, specifically `ad7b40242` (mask), `dafa1b826` (prefill guard), `efddcd28a` (helper declaration), `9ee8a940b` (dedicated K/V graph). The r5 source-level coexistence check is documented in [R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md).
-- **Status:** local C++ syntax checks and source review PASS; **Windows build, real-model Stage-B activation, Draft K/V parity, output/acceptance/rollback and throughput remain unverified**. Do not call Stage-B PASS before native checks.
+- **Status:** local C++ syntax checks and source review PASS; **Windows Vulkan b11903 build/identity PASS**. Real-model Stage-B activation, Draft K/V parity, output/acceptance/rollback and throughput remain **unverified**. Do not call Stage-B PASS before native checks.
 
 ## Implementation boundaries
 
@@ -42,7 +42,19 @@ g++ -std=c++17 -fsyntax-only -Iinclude -Isrc -Iggml/include -Iggml/src -Icommon 
 git diff --check
 ```
 
-The scratch Linux environment lacks Windows PowerShell, the Vulkan SDK and the real GGUF models. The two new `.psd1` plans **must be parsed with Windows PowerShell** before native runs. No native build/smoke/throughput is claimed here.
+The scratch Linux environment lacks Windows PowerShell, the Vulkan SDK and the real GGUF models. The two new `.psd1` plans **must be parsed with Windows PowerShell** before native runs. The local source checks above alone do not establish Windows build, smoke or throughput; the independent Windows build evidence is recorded below.
+
+## Windows Vulkan build report - 2026-10-27 20:28 JST
+
+The uploaded `(vulkan-stageb)evox2-build.json` confirms the first Windows Vulkan build gate:
+
+- **Source/build:** branch `r6/mtp-stageb-20261027`, GitHub commit `c162ba762b63856b3315c489f0b912e09e743337`, both Source and BuildSource clean; `BuildIdentity.Status=Verified`.
+- **Executable:** Vulkan `llama-cli.exe` b11903 / `c162ba762` / Clang 20.1.8; `--version` exit0.
+- **Device:** `--list-devices` exit0 and Vulkan0 AMD Radeon 8060S, 114507 MiB reported. `ggml-vulkan.dll` created.
+- **Targets present:** `llama-cli`, `llama-server`, `llama-bench`, `test-backend-ops`, `test-mtp-indexer-policy`, `test-mtp-dense-indexer`, `test-qsa-noop-policy`, `test-qsa-noop-invalidation`.
+- **Limits:** the four native policy/state test binaries were **built, not yet run**. Stage-B path activation, output/KV equality, rollback and PP/TG have **no passing evidence yet**. The toolchain's `cl` probe exit2 (`D8003`, no source file supplied) does not indicate a failed Clang build.
+
+**Next:** complete the prior S5/S6 policy/state regression tests, then run the S7-A 4k IQ3 C/A smoke, followed by FP4 C/A smoke. Preserve the original b11903 executable for all same-binary comparisons.
 
 ## Windows test gate (one gate at a time)
 
@@ -90,7 +102,30 @@ foreach ($plan in $plans) {
                     'test-qsa-noop-policy', 'test-qsa-noop-invalidation')
 ```
 
-Check `evox2-build.json`, Vulkan/GPU offload and DLL hashes. The S5/S6 native tests are **regressions**, not a substitute for exercising the Stage-B graph. Run the test executables and the existing `Test-R6MtpNoop.ps1 -BuildKey StageBVulkan -ModelKey UnslothPle16 -RunModelTests` if available.
+Check `evox2-build.json`, Vulkan/GPU offload and DLL hashes. The uploaded b11903 report has passed this build check.
+
+**Gate 1b - mandatory S5/S6 native policy/state/rollback regressions before any smoke:**
+
+After adding `StageBVulkan` under `Builds` in `local.psd1`, execute from the repository root:
+
+```powershell
+$config = Import-PowerShellDataFile .\tools\evox2\benchmark\configs\local.psd1
+$bin = 'C:\llama-build\llama.cpp-evox2-windows-r6\build-vulkan-r6-stageb\bin\Release'
+$mainModel = $config.Models.UnslothPle16.Path
+$draftModel = $config.Models.UnslothMtp.Path
+
+# S5 DENSE: pure policy, then actual model/state/rollback parity.
+& (Join-Path $bin 'test-mtp-indexer-policy.exe')
+if ($LASTEXITCODE -ne 0) { throw 'S5 indexer policy failed' }
+& (Join-Path $bin 'test-mtp-dense-indexer.exe') -m $mainModel -md $draftModel -ngl 999
+if ($LASTEXITCODE -ne 0) { throw 'S5 model/state/rollback failed' }
+
+# S6 NOOP: source/plan checks, policy and actual model/state/rollback.
+& .\tools\evox2\tests\Test-R6MtpNoop.ps1 `
+    -BuildKey StageBVulkan -ModelKey UnslothPle16 -RunModelTests
+```
+
+Require `MTP indexer policy: PASS`, `MTP dense indexer: PASS (...)`, `QSA no-op policy: PASS`, and `QSA no-op invalidation: PASS (...)`. Retain the two S5 native test outputs and inspect the S6 wrapper's `evox2-logs/tests` JSON report; stop if any test fails. These are **regressions only**: passing them does **not** prove that the new S7-A Stage-B graph preserves K/V or rollback. Gate 2's real MTP OFF/ON smoke is still mandatory, and a dedicated K/V parity diagnostic is a separate follow-up if needed.
 
 **Gate 2 - Vulkan short OFF/ON, IQ3 first, then FP4:**
 
