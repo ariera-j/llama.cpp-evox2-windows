@@ -603,6 +603,9 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
         !cparams.training && !cparams.kv_unified &&
         ubatch.n_seqs_unq == 1 &&
         hparams.dsv4_compress_ratios[il] == 0;
+    const char * eh_flatten_env = std::getenv("LLAMA_MTP_EH_PROJ_FLATTEN");
+    const bool mtp_eh_proj_flatten =
+        draft_prefill_kv_crop && eh_flatten_env && std::strcmp(eh_flatten_env, "1") == 0;
 
     GGML_ASSERT(layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm && layer.nextn.hc_head_norm &&
             "MTP block missing, load the model with MTP enabled");
@@ -659,7 +662,15 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llama_model & model, const llm_
     e_norm = ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, e_norm, n_embd, 1, n_tokens), n_embd, hc, n_tokens, 1);
     cb(e_norm, "mtp_enorm", il);
 
-    ggml_tensor * res_hc = build_lora_mm(layer.nextn.eh_proj, ggml_concat(ctx0, e_norm, h_norm, 0)); // [n_embd, hc, n_tokens]
+    ggml_tensor * eh_in = ggml_concat(ctx0, e_norm, h_norm, 0);
+    ggml_tensor * res_hc;
+    if (mtp_eh_proj_flatten) {
+        eh_in = ggml_reshape_2d(ctx0, eh_in, 2*n_embd, hc*n_tokens);
+        res_hc = build_lora_mm(layer.nextn.eh_proj, eh_in);
+        res_hc = ggml_reshape_3d(ctx0, res_hc, n_embd, hc, n_tokens);
+    } else {
+        res_hc = build_lora_mm(layer.nextn.eh_proj, eh_in);
+    }
     cb(res_hc, "mtp_eh_proj", il);
 
     ggml_tensor * inject = nullptr;
