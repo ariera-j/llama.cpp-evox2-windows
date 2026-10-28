@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-**Status: PREPARED; no Gate 4 runs have been executed from this plan.** This gate follows G8-3 and isolates S7-A (Stage-B) and S7-B (flatten) on the final S8 Vulkan executable. It does **not** repeat all-flags-OFF versus all-flags-ON, which changes QSA union and produced differing output fingerprints in G8-3.
+**Status: EXECUTED; output/continuation gate PASS (14/14), numerical Draft K/V parity DEFER.** See the measured closure below. This gate follows G8-3 and isolates S7-A (Stage-B) and S7-B (flatten) on the final S8 Vulkan executable. It does **not** repeat all-flags-OFF versus all-flags-ON, which changes QSA union and produced differing output fingerprints in G8-3.
 
 The S8 combined Gate 3 evidence includes:
 
@@ -87,3 +87,59 @@ Small PP gains of flatten (~1-2% in S7) are within the range of run-to-run varia
 ROCm Stage-B/flatten is **not enabled in the supported ROCm profile**. The already prepared `qwen38-r6-s8-rocm-stageb-smoke.psd1` is optional and diagnostic-only; a successful short C/A/B there is not authorization to promote S7 flags on ROCm.
 
 After the Gate 4 verdict, G8-5 is **one** representative 256k IQ3 Vulkan all-ON stability run (not ROCm), followed by G8-6 runtime/server usability checks and S9 final-model tests.
+
+## G8-4 Windows measured closure - 2026-10-28 JST
+
+**Verdict: output/continuation PASS, 14/14.** This is **not** a numerical Draft K/V or rollback-state parity PASS. No new code was built for this gate, and no production-wide flag defaults change.
+
+### Evidence and provenance
+
+- Two user-supplied ZIP sets contain the 14 run directories: `20261028-191233-060-cli-vulkan-b11908-ctx4096-5eb2068574fc(1).zip` (IQ3 short 4/4) and `20261028-192546-568-cli-vulkan-b11908-ctx4096-0b4ece667f7a.zip` (FP4 short 4/4 plus IQ3/FP4 64k 6/6). Raw logs remain outside Git.
+- All runs report branch `r6/combined-20261028`, Git identity `d7a7dfa4ae8049ffb1e4fb38b409281622602698` (clean), Vulkan b11908 / source `b82243bf0`, Clang 20.1.8, `CombinedVulkan` **fixed** build directory. `llama-cli.exe` SHA256 is `bca8986ed712284d3305febed1fdb0f3e2b2b1a34f9c72f90ef4e74a6b5f9a4a`; all 14 report `RuntimeArtifactStatus=Verified` and identical runtime digest `ceb31061f39c4bc5dd1181c3f5eaa888623a5b0212f37b2e3d20d863e61e2bf3`.
+- All runs used 96GB UMA, f16 main/Draft KV, MTP ON/DraftMax=2, FA auto, `-ngl 999`, `-b 2048`, `-ub 1024`, `-t 4`, `-tb 4`, `--seed 1234`, `--temp 0`, no prompt cache and `--ctx-checkpoints 0t`. QSA union (`min_kv=32768`), DENSE and NOOP remained ON in every variant; only Stage-B/flatten changed.
+- Short: context allocation 4096, **actual input 163 tokens**, output 64. Real: context 65536, **actual input 61,789 tokens**, output 512. The real-input SHA256 is `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751` in both model cohorts.
+- All 14: `Status=OK`, `ExitCode=0`, `OutputFingerprintStatus=Captured`, no P-MODE change or warnings. Main 49/49 and Draft 50/50 layers offloaded to Vulkan. DENSE indexer omission and target QSA no-op invalidation decisions were `Verified`. `qsa-union active` appeared in all six 64k stderr logs. A 163-token short prompt does not test the union activation threshold.
+
+### Short 4k: C/A/B/D
+
+| Model | Variant | Stage-B | Flatten | PP tok/s | TG tok/s | Draft accepted/generated |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| IQ3 PLE16 | C | OFF | OFF | 274.75 | 36.44 | 35/54 |
+| IQ3 PLE16 | A | ON | OFF | 277.47 | 37.02 | 35/54 |
+| IQ3 PLE16 | B | ON | ON | 283.42 | 37.06 | 35/54 |
+| IQ3 PLE16 | D | OFF | ON | 275.93 | 36.92 | 35/54 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | C | OFF | OFF | 269.81 | 37.89 | 34/56 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | A | ON | OFF | 274.31 | 38.32 | 34/56 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | B | ON | ON | 278.63 | 38.38 | 34/56 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | D | OFF | ON | 271.80 | 38.03 | 34/56 |
+
+Each model's C/A/B/D normalized output SHA256 is identical; D=C output and acceptance prove short-path flatten inertness when Stage-B is OFF. Short ADLX had insufficient high-load samples for a power classification; authoritative WMI P-MODE stayed Performance at start and finish.
+
+### Real 64k: C/A/B
+
+| Model | Variant | Stage-B | Flatten | PP tok/s | TG tok/s | PP+TG time s | Draft accepted/generated |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| IQ3 PLE16 | C | OFF | OFF | 338.06 | 33.25 | 198.141 | 301/419 |
+| IQ3 PLE16 | A | ON | OFF | 352.50 | 33.92 | 190.353 | 301/419 |
+| IQ3 PLE16 | B | ON | ON | 357.28 | 33.95 | 187.995 | 301/419 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | C | OFF | OFF | 345.30 | 34.21 | 193.878 | 295/431 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | A | ON | OFF | 359.88 | 35.15 | 186.231 | 295/431 |
+| ROCmFP4 FAST v2 PLE16 (Vulkan) | B | ON | ON | 366.35 | 34.71 | 183.381 | 295/431 |
+
+Normalized output SHA256, unchanged within each cohort:
+
+| Cohort | SHA256 | MTP acceptance |
+| --- | --- | --- |
+| IQ3 4k C/A/B/D | `76d6eda48a5d9a928fa4138eed734aa407e82dce3bd33704210d11063a478482` | 35/54 (64.815%) |
+| FP4 4k C/A/B/D | `971347e2b1c2b46b65a73b0252c1cb52e14587df6644750cf89a3774fb9863bd` | 34/56 (60.714%) |
+| IQ3 64k C/A/B | `0bbeb2d882c2546566a91cf2bb14dd0ef293570aa30e19455827d04339020a03` | 301/419 (71.838%) |
+| FP4 64k C/A/B | `cd4fe1840edf62a14300f07b071e284b6b80c7e270c99d6bf5a6a3a0d95d059f` | 295/431 (68.445%) |
+
+All six 64k runs had direct Performance -> Performance P-MODE plus ADLX `Performance-like` power consistency, with no high-load P-MODE warning. Relative to C, A improved PP by **+4.27% IQ3 / +4.22% FP4**; B improved PP by **+5.69% / +6.10%** and PP+TG total time by **-5.12% / -5.41%**. These are **one ordered C/A/B pass per model**, descriptive results, not a repeatability or isolated-flatten speed verdict.
+
+### Confounder, limits and decision
+
+- The user saw a Windows Defender scan-results notification during the final FP4 64k **M002 = A** run (19:46:36-19:50:35 JST). System CPU sampling averaged **5.32%** in M002 versus **3.28%** (M001=C) and **3.48%** (M003=B). M002 ADLX high-load power averaged **115.5W** versus **116.2W/115.8W**, and its PP/TG did not exhibit an obvious gross stall. The monitor does not attribute CPU usage to Defender and cannot prove scanning or its causal impact. The measured B-vs-A PP gap (~1.80% FP4) could be overestimated if M002 was disturbed.
+- One run per 64k variant and ordered C/A/B timing cannot prove a 1-2% flatten increment or exclude temporal drift. Stage-B's ~4.2% PP trend is encouraging. A bounded repeatability comparison can be made separately if needed for performance promotion; it is **not** required to close this output-level gate.
+- `qsa-union active`, DENSE/NOOP eligibility and output/acceptance parity were observed, but the Stage-B/flatten environment settings alone do not constitute an independent per-graph execution trace. **The combined b11908 executable has no Draft K/V snapshot instrumentation.** G8-4 **numerical Draft K/V / serialized state / rollback parity remains DEFER**, not an inferred PASS. Keep S7 flags default OFF and any all-ON profile explicit/opt-in.
+- No new source patch, binary rebuild, ROCm Stage-B promotion, broad 256k stress or extra performance run is part of this closure. **Next: G8-5 selective stability**, one IQ3 Vulkan 256k MTP-ON all-ON run using the existing S8 plan, gated on prior 64k/128k correctness and power checks; then G8-6 and S9.
