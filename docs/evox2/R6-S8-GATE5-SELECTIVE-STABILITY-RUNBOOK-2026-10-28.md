@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-**Status: PREPARED; G8-5 has not been executed.** Run **one** representative Qwen3.8 IQ3 PLE16 **Vulkan 256k**, MTP ON, all five S8 performance switches ON. This is a **stability** gate, not a 256k throughput comparison or a repeated stress test. The existing [S8 256k plan](../../tools/evox2/benchmark/configs/qwen38-r6-s8-vulkan-256k.psd1) already defines one job and one variant; no new source code, build, or benchmark plan is needed.
+**Status: EXECUTED; G8-5 selective stability PASS (1/1).** The instructions below are retained for reproducibility; do not schedule a routine repeat. The run is one representative Qwen3.8 IQ3 PLE16 **Vulkan 256k**, MTP ON, all five S8 performance switches ON. This is a **stability** gate, not a 256k throughput comparison or a repeated stress test. The existing [S8 256k plan](../../tools/evox2/benchmark/configs/qwen38-r6-s8-vulkan-256k.psd1) defines one job and one variant; no new source code, build, or benchmark plan was needed.
 
 Prerequisites:
 
@@ -107,3 +107,30 @@ Collect the single matrix batch's `matrix-plan.json`, `matrix-runs.csv`, `matrix
 **G8-5 verdict:** PASS only on complete stable execution with adequate provenance and telemetry; DEFER for missing evidence/environmental/resource interference; FAIL for a verified functional defect. With only one run, do not claim 256k speedup, statistical stability, numerical Draft K/V equality, deterministic output parity, or production-wide default-ON approval.
 
 If a clear, reproducible failure category must be distinguished from transient environment interference, **at most one targeted follow-up run** is permitted after reviewing the first ZIP and restoring safe conditions. No bulk 256k repetition or opportunistic tuning. After a PASS, proceed to **G8-6 runtime/server usability**, then **S9 final-model validation**, keeping ROCm Stage-B/flatten and numerical K/V parity as separate DEFER items.
+
+## Windows measured result and G8-5 closure - 2026-10-28 JST
+
+**Verdict: PASS (1/1), no repeat required.** This is a successful single all-ON 256k stability run, not a same-binary speedup claim, a statistical repeatability result, or a numerical Draft K/V parity gate.
+
+### Input, build and condition identity
+
+- User-supplied raw ZIP: `20261028-201824-559-cli-vulkan-b11908-ctx262144-3eaea070692e.zip`, SHA256 `0ae127d6c600056c13b42d0fea746205648bf3a83f83e96e70651338ad626831`. Raw results remain outside Git.
+- The clean source-worktree identity was `r6/combined-20261028` at the previous documentation commit `9cfe8868bd864b2adee6224b0f3026bdcd45d801`; this is not the executable source commit. Actual binary remains **Vulkan b11908 / `b82243bf0` / Clang 20.1.8**, using `build-vulkan-r6-combined-fixed`, `llama-cli.exe` SHA256 `bca8986ed712284d3305febed1fdb0f3e2b2b1a34f9c72f90ef4e74a6b5f9a4a` and verified runtime digest `ceb31061f39c4bc5dd1181c3f5eaa888623a5b0212f37b2e3d20d863e61e2bf3` (same as G8-4).
+- Vulkan IQ3 PLE16 main / Unsloth Q8_0 MTP Draft, 96GB UMA, f16 main/Draft KV, FA auto, DraftMax=2, all five speed switches ON and union min-KV=32768. `ContextRequested=ContextActual=262144` and input file SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`, **255,181 actual prompt tokens**, `InputAtLeast80Percent=true`.
+
+### Results
+
+| Check | Measurement / evidence |
+| --- | --- |
+| Process | `Status=OK`, `ExitCode=0`, `RunException=null`; **512 generated tokens**, `truncated=0` and complete captured output fingerprint |
+| Timings | PP **301.30 tok/s** over **846.946 s**, TG **25.08 tok/s** over **20.377 s**; PP+TG **867.322 s**, wall duration **920.423 s** |
+| MTP | **298 accepted / 425 drafted (70.118%)**, coherent Japanese summary output, no observed continuation abort |
+| Output SHA256 | `37e41758e0930461f9cfb2176a945176a0f98bbc7c81640b5fbdfd528ceda807` (single run; no same-input output-pair parity claim) |
+| GPU paths | Vulkan main **49/49**, Draft **50/50** layers on GPU; `qsa-union active` at long context; DENSE indexer omission and target NOOP decision both `Verified`; no unexpected CPU-model execution evidence |
+| P-MODE | WMI start/finish **Performance -> Performance**, no warning. ADLX **422** high-load samples, mean **110.29 W**, `Performance-like`, `Consistent=true` |
+| GPU telemetry | High-load mean usage **98.79%**, mean core **2856.7 MHz**, mean VRAM clock **931.4 MHz**, mean temperature **76.6 C**, maximum temperature **85 C**. VRAM clock stayed around **924-928 MHz** in 3-15 min segments, with no sustained collapse |
+| Host/GPU memory | Minimum free physical RAM **22.643 GiB**; maximum process GPU Dedicated **91.582 GiB**, Shared **1.919 GiB**. No observed OOM, GPU reset or sustained disk-paging stall |
+
+The generated Japanese text reads as a coherent technical summary, although it ends at the configured 512-token cap and is not a separate semantic-accuracy assessment. The log reports `graph reallocs = 0 / 0` and `truncated=0`. During the monitored post-start interval, disk reads were low on average; a single short spike does not establish sustained paging. The observed VRAM clock is below the older S0 reference but steady after initial warm-up; P-MODE and ADLX power are consistent, so there is no evidence of a sustained low-power transition.
+
+**Decision:** G8-5 selective 256k Vulkan stability PASS. Do not run a second 256k sample merely to improve a throughput number. Do not compare its PP/TG causally with the earlier S0 original-layout, MTP-OFF build, and do not upgrade G8-4 numerical Draft K/V parity from DEFER. All five switches remain independent/default OFF in source, with the all-ON configuration an explicitly scoped Vulkan Qwen3.8 opt-in candidate. **Next: prepare G8-6 runtime/server usability and per-backend flag-decision freeze, then S9 final models.**
