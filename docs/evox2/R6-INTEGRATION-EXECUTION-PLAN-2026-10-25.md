@@ -7,6 +7,7 @@
 - **既存の根拠:** [r5パッチ管理表](PATCHES.md)、[r5統合計画](R5-INTEGRATION-PLAN-2026-10-21.md)、[ROCmFPx Vulkan検証](R5-ROCMFPX-VULKAN-PORT-PLAN-2026-10-20.md)、[Stage-B/flatten複合ソース検証](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md)。
 - **この文書の位置付け:** r6の初回統合に限り、実行順序、採否、モデル割当、性能計測の回数・タイミングは本書を優先。r5の既存文書・実測値は履歴と移植の根拠として保持する。
 - **2026-10-27 ステージ番号修正:** 初版ではDENSEとNOOPを両方S5、Stage-B/flattenをS6、COMBINEDをS7、FINAL MODELSをS8としていた。実施時にNOOPを独立したS6として確定・完走したため、**S5=DENSE、S6=NOOP、S7=Stage-B→flatten、S8=COMBINED、S9=FINAL MODELS**に統一する。パッチの実施順序、独立flag、テスト条件は変更しない。旧番号は履歴としてこの注記にのみ残す。
+- **2026-10-28 S7-B計測完了とS8詳細計画:** [S7-B実測まとめ](R6-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-27.md#s7-b-windows-vulkan-measured-closure---2026-10-28-jst)を記録。次は[**S8複合統合の実行計画**](R6-S8-COMBINED-INTEGRATION-PLAN-2026-10-28.md)を参照。元のS0-S9順序、b11870固定、S9を独立させる方針は維持する。新しいS8ブランチ/ビルドは現時点では未作成。
 
 ## 1. 固定する方針
 
@@ -138,6 +139,7 @@ S0でGemma4の長文速度を取らない。b11870で起動互換性が疑わし
 | **S7-A Stage-B単独ソース移植（2026-10-27）** | `r6/mtp-stageb-20261027`、[実装条件とWindowsゲート](R6-MTP-STAGEB-IMPLEMENTATION-2026-10-27.md)、[4k smoke](../../tools/evox2/benchmark/configs/qwen38-r6-stageb-smoke.psd1)、[64/128k ABBA](../../tools/evox2/benchmark/configs/qwen38-r6-stageb.psd1) | r5のDraft KV-only Stage-Bを現行Qwen4Expに移植。`LLAMA_MTP_DRAFT_PREFILL_KV_CROP=1`かつ無出力・masked NextN・単一seq・非training・非unified KV・ratio0のみ。Draft K/Vのprojection/norm/M-RoPE/cache書込rootを保存しFA・FFN・logitsを生成しない。DENSE/NOOP/union等の前段機能は維持し、flattenは未移植。ローカルg++構文検証PASS。 | **実装のみ。Windowsビルド・実モデル・KV一致・rollback・性能は未検証**。既定OFF、現時点で採用未判定 | Stage-B Vulkan新規buildと既存native回帰→IQ3/FP4の4k C/A smoke→Vulkan IQ3 64k→128k ABBA→FP4 Vulkan 64k→ROCm IQ3 4k/64k。停止条件を守り、**成功後に別コミットでflatten**。 |
 | **S7-A Stage-B Vulkanビルド確認（2026-10-27）** | `r6/mtp-stageb-20261027`、GitHub `c162ba762`、Windows Vulkan **b11903**。`(vulkan-stageb)evox2-build.json`（2026-10-27 20:28 JST） | `BuildIdentity=Verified`、source clean、Clang 20.1.8、Radeon 8060S Vulkan0。`llama-cli --version` / `--list-devices` exit0。`ggml-vulkan.dll` と MTP-indexer/DENSE/NOOPの既存テスト4本を生成。BuildSourceと実行バイナリはどちらも `c162ba762` | **VulkanビルドゲートPASS。テストEXEの実行、Stage-BのK/V/rollback、実モデル、速度は未判定** | 既存4本のpolicy/state回帰テスト→Vulkan IQ3の4k C/A smoke→FP4 4k C/A smoke。実モデルが正常なら64k→128k ABBAへ。 |
 | **S7-A Stage-B Vulkan実モデル完了（2026-10-27）** | `r6/mtp-stageb-20261027`、b11903/c162ba762、[ゲート結果・raw ZIP SHA](R6-MTP-STAGEB-IMPLEMENTATION-2026-10-27.md#s7-a-windows-vulkan-native-and-runtime-gate---2026-10-27) | 旧S5/S6 policy/state/rollback PASS（NOOP **524/524**、NMSE=0）、IQ3・FP4各4k smoke PASS、IQ3 Vulkan 64k/128k **ABBA各4run**＋FP4 FAST Vulkan 64k **A/B 2run**、計**10/10長文完走**。Stage-B ONのPP/TG増分はIQ3 64k **+4.65/+1.97%**、128k **+6.87/+2.94%**、FP4 64k **+4.74/+1.78%**。全条件で出力SHA・Draft受理数一致、P-MODE Performance／ADLX整合 | **VulkanゲートPASS、独立opt-in候補、既定OFF**。FP4は1組のみ、ROCmと独立K/V数値・活性FA診断は未完了。r5 128k退行は本コホートでは未再現。S8で採否最終化 | Stage-B専用ブランチに結果を記録し、その状態から**別ブランチS7-B flatten**を実装。Stage-B ON固定でflattenのみOFF/ON、C（Stage-BもOFF）は別controlとする。256kを追加しない。 |
+| **S7-B flatten Windows VulkanゲートPASS（2026-10-28）** | `r6/mtp-eh-proj-flatten-20261027`、b11906 / GitHub `3e377c238`、[全16run・raw ZIP SHAと留保事項](R6-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-27.md#s7-b-windows-vulkan-measured-closure---2026-10-28-jst) | S5/S6 native policy/state/rollback PASS（NOOP **524/524**）、4k IQ3/FP4 C/A/B **6/6**。Stage-B ON固定、flattenだけのOFF/ON：IQ3 Vulkan 64k **8run PP +1.58%、合計時間 -1.32%**、128k **4run PP +1.31%、合計 -1.24%**、FP4 FAST Vulkan 64k **4run PP +2.02%、合計 -1.59%**。**16/16長文PASS**、各コホートの出力SHA・Draft受理数完全一致、P-MODE Performance/ADLX正常。初回B1でIQ3/FP4各1回だけTG遅延約0.9秒、後続B2・再ABBAでは非再現 | **Vulkan S7-BゲートPASS、S8統合候補、既定OFF**。TG間欠変動、独立K/V数値同等性未確認、ROCm S7未検証を明記。性能増分の単純加算禁止 | **[S8複合統合計画](R6-S8-COMBINED-INTEGRATION-PLAN-2026-10-28.md)**に従い累積ソースから新ブランチ・新Vulkan/ROCmビルドを作り、同一binary全OFF/全ON、32/64/128k、選択256k、機能/状態ゲートを検証。S9最終モデルは別段階。 |
 
 ### 最終統合版のビルド対象（2026-10-25追加）
 
@@ -163,7 +165,7 @@ r1〜r5の採用・却下・実験記録とb11870実装を照合した一覧。*
 | COMMON-006 | **対象外：upstream実装済み** | b11870はblock-domainでggml_top_kし、pool IDとtailを選択。二重移植しない |
 | VULKAN-002 | **S4：候補** | f16 QSA grouped-union、同等upstream機能の監査後にopt-in判定 |
 | MTP-DENSE-001 / MTP-NOOP-001 | **S5 DENSE / S6 NOOP：各PASS、統合候補** | 各独立スイッチ・64/128k ABBAで効果確認済み。採用flagは個別判断 |
-| Stage-B / mtp_eh_proj flatten | **S7-A VulkanゲートPASS / S7-B移植準備** | Stage-BのIQ3 Vulkan 64k PP +4.65% / 128k +6.87%、FP4 64k +4.74%、すべて出力一致。ROCmとK/V数値確認は保留。flattenは独立flagで別ゲート、初期既定OFF |
+| Stage-B / mtp_eh_proj flatten | **S7-A / S7-BともVulkanゲートPASS、S8統合候補** | Stage-B IQ3 Vulkan 64k/128k PP +4.65/+6.87%、FP4 64k +4.74%。flatten独立ONはIQ3 64k/128k +1.58/+1.31%、FP4 64k +2.02%。各コホートの出力/受理数一致、16/16長文PASS。TGの間欠的低速run、ROCm S7と独立Draft K/V数値は未検証。独立flagで**既定OFF**、[S8詳細計画](R6-S8-COMBINED-INTEGRATION-PLAN-2026-10-28.md)に持ち越す |
 | VULKAN-MOE-001 | **対象外：upstream充足** | upstream #29936相当を確認 |
 | VULKAN-GR-001（GET_ROWS 128×4） | **対象外：速度改善なし** | 既往A/Bで改善を確認できなかった |
 | r2 MTP-QSA / gather-stride | **対象外：速度改善なし** | 既往実験のPP/速度に効果なし |
