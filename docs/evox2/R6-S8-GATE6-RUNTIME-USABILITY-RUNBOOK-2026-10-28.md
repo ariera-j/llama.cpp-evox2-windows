@@ -2,7 +2,7 @@
 
 ## Status, scope and order
 
-**Status: PREPARED / NOT EXECUTED.** G8-5 [Vulkan IQ3 256k selective stability](R6-S8-GATE5-SELECTIVE-STABILITY-RUNBOOK-2026-10-28.md#windows-measured-result-and-g8-5-closure---2026-10-28-jst) passed 1/1 on the fixed b11908 executable. **Do not repeat 256k for G8-6.** This gate checks practical `llama-server` behavior, independent executable/backend identity and tokenizer parity, then freezes a narrowly scoped S8 flag decision. No new optimization or source rebuild is planned.
+**Status: EXECUTED / G8-6 RUNTIME PASS (2026-10-28 JST).** The commands below are retained for reproducibility; the measured closure is appended at the end. G8-5 [Vulkan IQ3 256k selective stability](R6-S8-GATE5-SELECTIVE-STABILITY-RUNBOOK-2026-10-28.md#windows-measured-result-and-g8-5-closure---2026-10-28-jst) passed 1/1 on the fixed b11908 executable. **Do not repeat 256k for G8-6.** This gate checked practical `llama-server` behavior, independent executable/backend identity and tokenizer parity and froze the narrow S8 flag decision. No new optimization or source rebuild was performed.
 
 Run on **Windows Evo-X2 / 96GB UMA**, PowerShell, branch `r6/combined-20261028`, from `C:\llama-build\llama.cpp-evox2-windows-r6`. Run **one server at a time**; no other inference/benchmark process. Keep P-MODE **Performance**, watch ADLX/VRAM/free RAM and Defender scan activity. No background daemon, WAN listener, UI tool execution, unfiltered ROCm backend tests, or global flag changes. The b11908 binaries remain the measured subject even if documentation commits have advanced Git HEAD.
 
@@ -307,3 +307,31 @@ Get-FileHash -LiteralPath $archive -Algorithm SHA256
 ```
 
 The archive includes all three `g8-6-*-server.log` files and the evidence folders; verify that the two tokenizer ID comparisons are present. **Before sharing, inspect for local private paths and sensitive text** and omit or redact sensitive source passages. Send the small ZIP for review. **Only after the evidence is reviewed and the decision table frozen should S8 be designated a candidate for S9** (Unsloth IQ4, huihui IQ4XS and separately Gemma4 against b10919).
+
+## G8-6 Windows measured closure - 2026-10-28 JST
+
+**Verdict: PASS for the bounded G8-6 runtime/usability scope, with explicit server/backend and S7 caveats. No repeat requested.** User-supplied archive `g8-6-review-20261028-210806.zip`, **SHA256 `6d143104949649cf89b3ffa6fa11b4a848eab61a0d2aaf9829871712b0395f38`**, contains 19 entries: two manifests, separate EXE/DLL SHA inventories, EN/JA tokenizer IDs/counts, API JSONs and all three server logs. The ZIP stays outside Git. Logs are Windows PowerShell `Tee-Object` UTF-16LE; decode before searching text. A startup `NativeCommandError` line is PowerShell's representation of native stderr; requests subsequently succeeded and the servers shut down normally.
+
+### Provenance and tokenizer
+
+- Both manifests `BuildIdentity.Status=Verified`, clean pinned source `b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f`, b11908. Vulkan: Clang 20.1.8, `build-vulkan-r6-combined-fixed`; `llama-cli.exe` SHA256 `bca8986ed712284d3305febed1fdb0f3e2b2b1a34f9c72f90ef4e74a6b5f9a4a`, `llama-server.exe` `89b575891366cd5d697686c84ef78ff09127088a6330d86b64da73f6b73d3615`, `ggml-vulkan.dll` `c5c00dab8ec29b2becccd33cccee64b3221ce243a7ff7909ce8d3f73e9078d54`.
+- ROCm: TheRock SDK/runtime 10.0.0, AMD Clang 23.0.0, MSVC 14.44, `gfx1151`, `TheRockUnified`, `DllAndRuntimeDataHashesVerified`. `llama-cli.exe` SHA256 `1bbd4a5102b6181d8de92faf2d42e49f96ba2ad4b04b7c7f9e6aafc168d322b1`, `llama-server.exe` `9187ebec46825efc88a98644581ee6b856f30472b6a99671f95b237459ec9c82`, `ggml-hip.dll` `cb0c107b52d8a20a86a5b57b7db7b1cf64047be48302811cf593d3506e9a40ce`.
+- `llama-tokenize.exe`: Vulkan SHA256 `a85e803bf30c1385ddb35ed24dda8f4a732608050c59c2cad24a2d876cc9cea8`; ROCm SHA256 `0333a9c90825729866241510b9a2970f6bdbe733331a83c63eeb0c6953c56581`. EN: **9/9 same token IDs**; JA: **9/9 same token IDs** (exact arrays retained in ZIP). This verifies tokenizer equivalence, not long-document semantic equivalence.
+
+### Three server cases and one real document
+
+| Case | API and server evidence | Verdict |
+| --- | --- | --- |
+| Vulkan MTP OFF `vk-stock` | `/health status=ok`; 37 prompt + 39 generated, `finish_reason=stop`, `truncated=0`; main model loaded with no Draft | **PASS** |
+| Vulkan MTP ON `vk-mtp`, turn 1 | `/health status=ok`, Jinja response, 37+39 tokens, `truncated=0`; Draft **20 accepted / 38 drafted** | **PASS** |
+| Vulkan MTP ON `vk-mtp`, turn 2 | Real assistant turn retained: prompt usage 109, completion 83, `cached_tokens=76`, `finish_reason=stop`, `truncated=0`; Draft **49/66** | **PASS** short multi-turn |
+| Vulkan MTP ON real64 | Known `Inputs.'64k'` fixture SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`; Jinja prompt **61,842** + completion **128** = **61,970** total under `-c 65536`; `truncated=0`, `qsa-union active`; **76 accepted / 100 drafted** | **PASS long-input processing**, not quality/repeated speed |
+| ROCm MTP OFF `rocm-stock` | `/health status=ok`; 37+39, `finish_reason=stop`, `truncated=0`; separate ROCm b11908 server initialized and exited normally | **PASS** |
+
+For real64, server log reports **PP 358.29 tok/s** (172.601 s / 61,842), **TG 33.55 tok/s** (3.785 s / 128) and **total 176.387 s**. These are single API request timings, **not** comparable causal speedup to CLI G8-3/5. The response ended with `finish_reason=length` because of the intentionally fixed 128-token generation cap, **not context truncation**. It began a coherent document-grounded summary but said “6 items” despite the prompt's “3 points” request and did not finish its second item. Record as **semantic/format compliance DEFER to S9**, not a functional G8-6 failure. The Vulkan warning about unsupported *fused top-k mask* denotes a disabled fused optimization, not proof of full CPU-model fallback; server logs did not independently enumerate all 49/50 offloaded layers (CLI G8-5 placement evidence remains separate).
+
+**Archive naming correction:** the API pair `g8-6-api-vk-stock-20261028-210740/health.json` and `turn1.json` is actually the **ROCm MTP-OFF** request, despite the inherited `vk-stock` directory name. The user explicitly confirmed this mapping. The earlier `g8-6-api-vk-stock-20261028-205841` pair is Vulkan MTP OFF.
+
+**User's additional confirmations (2026-10-28 JST):** (1) the `21:07` result belongs to ROCm MTP OFF; (2) **P-MODE Performance throughout, no OOM, GPU reset or heavy Defender interference**; (3) all commands and five-flag settings were used **unchanged** from this runbook. ADLX/P-MODE per-sample CSVs and a separate server layer-offload summary were not in this 19-file ZIP, so do not claim independent telemetry averages or server 49/50 placement measurements. These bounded gaps do not require repeating the passed usability cases.
+
+**Decision freeze:** Vulkan IQ3 PLE16 S4 union / S5 DENSE / S6 NOOP are **PASS opt-in** in their tested eligibility scope, with source defaults OFF. Vulkan S7-A Stage-B and S7-B flatten remain **DEFER for a supported preset** (lab all-ON functional PASS, numerical Draft K/V parity unproven). ROCm IQ3 DENSE/NOOP retain **PASS opt-in for the measured CLI MTP-ON scope**; ROCm MTP-OFF server PASS, but ROCm MTP-ON *server* stays DEFER. Vulkan FP4 server and S9 IQ4/huihui/Gemma4 model-specific support remain DEFER. Retain old known-good binaries. **S8 verified b11908 artifacts may advance to S9 final-model testing; no general release/default-ON decision follows.**
