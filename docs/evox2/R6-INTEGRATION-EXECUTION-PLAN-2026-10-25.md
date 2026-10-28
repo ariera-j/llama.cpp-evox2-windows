@@ -7,7 +7,7 @@
 - **既存の根拠:** [r5パッチ管理表](PATCHES.md)、[r5統合計画](R5-INTEGRATION-PLAN-2026-10-21.md)、[ROCmFPx Vulkan検証](R5-ROCMFPX-VULKAN-PORT-PLAN-2026-10-20.md)、[Stage-B/flatten複合ソース検証](R5-NOOP-ROCMFPX-STAGEB-FLATTEN-INTEGRATION-CHECK-2026-10-21.md)。
 - **この文書の位置付け:** r6の初回統合に限り、実行順序、採否、モデル割当、性能計測の回数・タイミングは本書を優先。r5の既存文書・実測値は履歴と移植の根拠として保持する。
 - **2026-10-27 ステージ番号修正:** 初版ではDENSEとNOOPを両方S5、Stage-B/flattenをS6、COMBINEDをS7、FINAL MODELSをS8としていた。実施時にNOOPを独立したS6として確定・完走したため、**S5=DENSE、S6=NOOP、S7=Stage-B→flatten、S8=COMBINED、S9=FINAL MODELS**に統一する。パッチの実施順序、独立flag、テスト条件は変更しない。旧番号は履歴としてこの注記にのみ残す。
-- **2026-10-28 S7-B計測完了とS8詳細計画:** [S7-B実測まとめ](R6-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-27.md#s7-b-windows-vulkan-measured-closure---2026-10-28-jst)を記録。次は[**S8複合統合の実行計画**](R6-S8-COMBINED-INTEGRATION-PLAN-2026-10-28.md)を参照。元のS0-S9順序、b11870固定、S9を独立させる方針は維持する。新しいS8ブランチ/ビルドは現時点では未作成。
+- **2026-10-28 S7-B計測完了とS8詳細計画:** [S7-B実測まとめ](R6-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-27.md#s7-b-windows-vulkan-measured-closure---2026-10-28-jst)を記録。次は[**S8複合統合の実行計画・測定plan一覧**](R6-S8-COMBINED-INTEGRATION-PLAN-2026-10-28.md)を参照。元のS0-S9順序、b11870固定、S9を独立させる方針は維持する。S8ブランチ`r6/combined-20261028`に測定planを準備・記録済み。**S8の新Windowsビルドと実測は未実施**。
 
 ## 1. 固定する方針
 

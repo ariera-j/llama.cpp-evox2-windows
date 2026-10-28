@@ -5,8 +5,8 @@
 This is the **next-stage plan**, not a claim that S8 has been built or tested. The original [r6 execution plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md) remains authoritative for the pinned upstream and S0-S9 sequencing. S7-B evidence is closed in the [flatten record](R6-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-27.md#s7-b-windows-vulkan-measured-closure---2026-10-28-jst).
 
 - **Pinned upstream:** b11870 / `74bca3950054eed1795f525cb9cf06bfe796492d`. Do not refresh upstream during S8 except to resolve an independently reproduced blocking defect and with a separate decision.
-- **Source starting point:** GitHub branch `r6/mtp-eh-proj-flatten-20261027`, implementation commit `3e377c23827945a7f71bfc741bd03d1c97e7fe89` plus its S7-B evidence-only documentation commit. Its source tree is **cumulative**: S1-S7-B are already present. **Do not cherry-pick or re-implement the same patches.** Audit the ancestry and patch inventory, then create a dedicated `r6/combined-20261028` candidate branch only when execution is authorized.
-- **No source changes in this planning step.** No new optimization, shader, upstream replacement, RGP instrumentation or tool port is authorized by this plan alone. Create/commit any missing S8 `.psd1` measurement plans only when beginning S8.
+- **Source starting point:** GitHub branch `r6/mtp-eh-proj-flatten-20261027`, implementation commit `3e377c23827945a7f71bfc741bd03d1c97e7fe89` plus its S7-B evidence-only documentation commit `606227d3dc17481783207ca6dcd276be95dfc160`. Its source tree is **cumulative**: S1-S7-B are already present. **Do not cherry-pick or re-implement the same patches.**
+- **S8 preparation (2026-10-28):** The requested `r6/combined-20261028` **local worktree branch** was created from that S7-B source tree, and the five `.psd1` files below were added. **No S8 source optimization, new Windows build, measurement, commit or remote branch publication has occurred in this preparation step.** Recheck the GitHub parent SHA before eventual publication; local and GitHub history may have different commit IDs even if their source trees match.
 - **S8 deliverable:** one reproducible, build-identified Vulkan candidate plus a separately build-identified ROCm candidate, validated feature flags/presets, and PASS/DEFER decisions by model/backend. S9 (IQ4/huihui/Gemma4 and distribution) remains a separate gate.
 
 ## 1. Decision inventory from S0-S7
@@ -86,4 +86,66 @@ S8 completion requires:
 4. A short example **performance preset** with all explicit flags, and a stock/default-OFF command. Do not silently change global environment variables or overwrite the existing user's binaries.
 5. Hand off to the existing **S9 final models**: Unsloth IQ4 and huihui IQ4XS 4/16k, selected 64/128k and known text/search cases; Gemma4 31B/26B separately against operational b10919; vision/`mmproj` and server checks where applicable. Keep this outside S8's source patch acceptance.
 
-**Proposed next concrete action (not yet executed):** create the S8 branch from the verified GitHub S7-B documentation HEAD, add the short/long `.psd1` plans and gate checklist, then start G8-0/G8-1. No S8 branch, build or result is claimed in this document.
+## 6. Prepared matrix plan files and Windows execution order (2026-10-28)
+
+All five plans use the existing `Invoke-BenchmarkMatrix.ps1` schema without changing the runner. `CombinedVulkan` and `CombinedROCm` are new build keys, so **do not alias them to S7-B binaries**. Add the entries to ignored `tools/evox2/benchmark/configs/local.psd1` only after both fresh Windows builds exist:
+
+```powershell
+# Add these entries inside Builds (keep the previous b11903/b11906 mappings).
+CombinedVulkan = @{
+    BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r6\build-vulkan-r6-combined\bin\Release'
+    ExpectedBackend = 'Vulkan'
+}
+CombinedROCm = @{
+    BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r6\build-rocm-r6-combined\bin\Release'
+    ExpectedBackend = 'ROCm'
+}
+```
+
+Existing `Models.UnslothPle16`, `Models.UnslothMtp`, `Models.AgentionRocmFp4FastPle16`, `Models.AgentionRocmFp4FastMtp`, and `Inputs.'64k'/'128k'/'256k'` must resolve to the same known GGUF shards and input files as the S7 comparisons. The 4k/16k smoke uses `mtp-short.txt` (163 tokens): **16k names the context allocation, not a 16k-token prompt**. Keep `-PlanOnly` and `-OnlyJob` / `-OnlyCase` to avoid unintentionally launching every matrix row.
+
+Before building, check PowerShell data-file parsing on the Windows host (this Linux preparation environment does not have `pwsh`):
+
+```powershell
+Get-ChildItem .\tools\evox2\benchmark\configs\qwen38-r6-s8-*.psd1 | ForEach-Object {
+    $parsed = Import-PowerShellDataFile -LiteralPath $_.FullName
+    '{0}: schema={1}, jobs={2}' -f $_.Name, $parsed.SchemaVersion, @($parsed.Jobs).Count
+}
+```
+
+| Plan file | Gate / intended sequence | Scope and default stop |
+| --- | --- | --- |
+| [`qwen38-r6-s8-smoke.psd1`](../../tools/evox2/benchmark/configs/qwen38-r6-s8-smoke.psd1) | G8-2 | IQ3/FP4 Vulkan 4k/16k MTP-OFF, MTP-ON all-OFF, C Stage-B-OFF, D Stage-B-ON, E flatten-ON; separately, 32k real input A/B with 256 generated tokens; IQ3 ROCm 4k MTP-OFF/ON with DENSE+NOOP; short DraftMax=7 job. **Run 4k first**, then 16k/32k/DraftMax=7 only after checking the first gate. |
+| [`qwen38-r6-s8-vulkan-abba.psd1`](../../tools/evox2/benchmark/configs/qwen38-r6-s8-vulkan-abba.psd1) | G8-3 | Same-binary IQ3 Vulkan 64k ABBA -> 128k ABBA; FP4 Vulkan 64k ABBA -> 128k A/B. A = all five opt-in flags OFF, B = all ON with `GGML_VK_QSA_UNION_MIN_KV=32768`. |
+| [`qwen38-r6-s8-rocm-abba.psd1`](../../tools/evox2/benchmark/configs/qwen38-r6-s8-rocm-abba.psd1) | G8-3 | IQ3 ROCm 64k ABBA -> 128k ABBA, DENSE+NOOP only. Stage-B/flatten and Vulkan union remain OFF for both arms. |
+| [`qwen38-r6-s8-rocm-stageb-smoke.psd1`](../../tools/evox2/benchmark/configs/qwen38-r6-s8-rocm-stageb-smoke.psd1) | Optional G8-4 | Only after ROCm baseline/native/smoke gates: IQ3 4k C/A/B for Stage-B and flatten, DENSE+NOOP fixed ON. This is **not** a direct K/V parity test; no ROCm S7 promotion from smoke alone. |
+| [`qwen38-r6-s8-vulkan-256k.psd1`](../../tools/evox2/benchmark/configs/qwen38-r6-s8-vulkan-256k.psd1) | Optional G8-5 | A single IQ3 256k Vulkan all-ON stability run. **Run only after the prior 64/128k gates pass**; no automated 256k loop. |
+
+After fresh builds, source SHA / build manifest / P-MODE and native regressions pass, run from the repository root (PowerShell):
+
+```powershell
+$bench = '.\tools\evox2\benchmark'
+$smoke = "$bench\configs\qwen38-r6-s8-smoke.psd1"
+$vulkan = "$bench\configs\qwen38-r6-s8-vulkan-abba.psd1"
+$rocm = "$bench\configs\qwen38-r6-s8-rocm-abba.psd1"
+
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $smoke -OnlyJob s8-iq3-vulkan-smoke -OnlyCase 4k -PlanOnly
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $smoke -OnlyJob s8-iq3-vulkan-smoke -OnlyCase 4k -StopOnError
+# Check output, full GPU offload and Draft acceptance before the next job.
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $smoke -OnlyJob s8-fp4-vulkan-smoke -OnlyCase 4k -PlanOnly
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $smoke -OnlyJob s8-fp4-vulkan-smoke -OnlyCase 4k -StopOnError
+
+# Only after smoke and native gates; each long workload is selected explicitly.
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $vulkan -OnlyJob s8-iq3-vulkan-abba -OnlyCase 64k -PlanOnly
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $vulkan -OnlyJob s8-iq3-vulkan-abba -OnlyCase 64k -StopOnError
+# Check 64k output, per-run TG and P-MODE before selecting 128k.
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $vulkan -OnlyJob s8-iq3-vulkan-abba -OnlyCase 128k -PlanOnly
+
+# ROCm is a separate build and run sequence. Do not enable S7 here yet.
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $smoke -OnlyJob s8-iq3-rocm-smoke -OnlyCase 4k -PlanOnly
+& "$bench\Invoke-BenchmarkMatrix.ps1" -Plan $rocm -OnlyJob s8-iq3-rocm-abba -OnlyCase 64k -PlanOnly
+```
+
+Execute the remaining 16k, 32k real input, FP4 64/128k, ROCm 64/128k, short DraftMax=7 and optional G8-4/G8-5 **one gated job at a time**, only after reading the preceding results. The plans stop on any child error but do **not** automatically verify active QSA/Stage-B paths or independently prove Draft K/V parity. Inspect those in logs; if the evidence is missing, record DEFER rather than a PASS.
+
+**Next action:** build fresh `CombinedVulkan` and `CombinedROCm` binaries with `llama-tokenize` included, run the G8-1 native tests, populate the ignored local build keys, then execute the first `-PlanOnly`/4k smoke. No S8 runtime result is claimed yet.
