@@ -1,6 +1,6 @@
 # r6 S8 combined integration: fixed decisions and execution plan - 2026-10-28
 
-> **Measured update (2026-10-28 JST):** G8-4 Stage-B/flatten Vulkan output/continuation checks have completed **14/14 PASS** on the verified combined b11908 executable. See the [G8-4 results](R6-S8-GATE4-STAGEB-FLATTEN-RUNBOOK-2026-10-28.md#g8-4-windows-measured-closure---2026-10-28-jst) for C/A/B/D conditions, 64k measurements, possible Defender M002 confounder and the **numerical Draft K/V DEFER**. The preparation-status statements immediately below describe the original planning snapshot, not the current S8 execution state. **Next: G8-5 single 256k IQ3 Vulkan stability case, after rechecking the existing G8-3 128k gates; then G8-6 and S9.** No default flag promotion is implied.
+> **Measured update (2026-10-28 JST):** G8-4 Stage-B/flatten Vulkan output/continuation checks have completed **14/14 PASS** on the verified combined b11908 executable. See the [G8-4 results](R6-S8-GATE4-STAGEB-FLATTEN-RUNBOOK-2026-10-28.md#g8-4-windows-measured-closure---2026-10-28-jst) for C/A/B/D conditions, 64k measurements, possible Defender M002 confounder and the **numerical Draft K/V DEFER**. The preparation-status statements immediately below describe the original planning snapshot, not the current S8 execution state. **Next: [G8-5 single 256k IQ3 Vulkan stability case](R6-S8-GATE5-SELECTIVE-STABILITY-RUNBOOK-2026-10-28.md), after rechecking the existing G8-3 128k gates; then G8-6 and S9.** No default flag promotion is implied.
 
 ## Purpose, source baseline and scope
 
