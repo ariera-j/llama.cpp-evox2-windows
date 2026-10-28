@@ -1,5 +1,7 @@
 # R6/S8 combined integration candidate: result and S9 handoff - 2026-10-28
 
+> **S9 handoff procedure prepared (2026-10-28; not yet run):** [S9 Windows final-model gates](R6-S9-FINAL-MODELS-RUNBOOK-2026-10-28.md) and two filtered model smoke/long-input plans. This is a downstream testing handoff; the S8 b11908 evidence and flag freeze documented below are unchanged.
+
 ## Status and evidence boundary
 
 **S8 candidate integration gates G8-0 through G8-6 closed for their explicitly tested cases.** The [G8-6 runtime result](R6-S8-GATE6-RUNTIME-USABILITY-RUNBOOK-2026-10-28.md#g8-6-windows-measured-closure---2026-10-28-jst) and the user's three confirmations permit **S9 final-model testing**, but do **not** approve general distribution, all-flags-ON defaults, numerical Draft K/V parity, ROCm MTP-ON server or unseen model/quant paths. Follow the frozen [flag decision sheet](R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md).
