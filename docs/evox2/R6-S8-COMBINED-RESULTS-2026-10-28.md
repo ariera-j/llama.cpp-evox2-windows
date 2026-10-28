@@ -1,5 +1,7 @@
 # R6/S8 combined integration candidate: result and S9 handoff - 2026-10-28
 
+> **S9 measured downstream update (2026-10-29 JST):** [Qwen original IQ4 and huihui measured G9-0/1/2/3 results](R6-S9-QWEN-IQ4-RESULTS-2026-10-29.md) are recorded: 4/4 short, 3/3 real 64k/selected 128k and 3/3 bounded MH-128K A/B execution/score checks, with **original IQ4 A 12/12, huihui A 12/12, huihui B 11/12**. One original IQ4 B follow-up is requested before Gemma4 G9-4; G9-5 and public release are not approved. This does not change the S8 flag freeze or reopen the integration gates.
+
 > **S9 handoff procedure prepared (2026-10-28; not yet run):** [S9 Windows final-model gates](R6-S9-FINAL-MODELS-RUNBOOK-2026-10-28.md) and two filtered model smoke/long-input plans. This is a downstream testing handoff; the S8 b11908 evidence and flag freeze documented below are unchanged.
 
 ## Status and evidence boundary
