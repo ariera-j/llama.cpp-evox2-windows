@@ -46,7 +46,7 @@ Set-Location '.\evox2-vulkan-preview\llama.cpp-evox2-b11908-win-vulkan-preview-v
 | Vulkan QSA-union | f16 KVでの長文PP改善。`GGML_VK_QSA_UNION=1`、対象時に`GGML_VK_QSA_UNION_MIN_KV=32768` |
 | MTP DENSE / NOOP | 対象Qwen4Exp経路のDraft indexer省略とTarget invalidation抑止。Vulkan・ROCmで検証済み条件に限りopt-in |
 | Stage-B / flatten | Draft KV-only prefill / `mtp_eh_proj`最適化。数値的Draft K/V一致は**DEFER**、研究用途のopt-inのみ |
-| 計測・運用ツール | Vulkan/ROCm個別ビルド、TheRock依存管理、ADLX/P-MODE計測、SHA付きbenchmark plan |
+| 計測・運用ツール | Vulkan/ROCm個別ビルド、TheRock依存管理、ADLX/P-MODE計測、SHA付きbenchmark plan。[Vulkanビルド前検証](tools/evox2/build/README.md)と[Windowsバックグラウンド負荷の記録](tools/evox2/benchmark/BACKGROUND-ACTIVITY-MONITORING.md)を追加（Windows上の動作再確認は未実施） |
 
 適用条件は[フラグ別の判定表](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)を参照してください。全モデル・全バックエンドに自動的に有効な機能という意味ではありません。
 

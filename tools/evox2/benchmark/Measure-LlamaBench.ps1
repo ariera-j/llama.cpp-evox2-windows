@@ -485,6 +485,8 @@ if ($env:GGML_VK_QSA_UNION_STATS -eq '1') {
 }
 
 $Started = Get-Date
+# No sampling child is launched unless -ResourceMonitor is explicitly selected.
+$BackgroundAtStart = Get-Evox2BackgroundActivitySnapshot
 
 $Conditions = [ordered]@{
     SchemaVersion = 1
@@ -515,6 +517,7 @@ $Conditions = [ordered]@{
     }
 
     PModeAtStart = $PModeAtStart
+    BackgroundActivityAtStart = $BackgroundAtStart
 
     PModePolicy = [ordered]@{
         ProbeEnabled = -not [bool]$NoPModeProbe
@@ -748,6 +751,8 @@ try {
 }
 
 $Finished = Get-Date
+$BackgroundAtFinish = Get-Evox2BackgroundActivitySnapshot
+$BackgroundActivity = Compare-Evox2BackgroundActivitySnapshots -Before $BackgroundAtStart -After $BackgroundAtFinish
 
 $PModeAtFinish = Get-Evox2PModeMetadata -Disabled:$NoPModeProbe
 
@@ -909,6 +914,9 @@ foreach ($row in $NativeRows) {
         StdDevNanoseconds = $row.stddev_ns
         RepetitionSamples = $sampleCount
 
+        BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
+        BackgroundBusyNames = ($BackgroundActivity.BusyNames -join ';')
+        BackgroundCpuPercent = $BackgroundActivity.CpuPercentOfSystem
         ResourceSamples   = $resourceSampleCount
         AdlxSamples       = $adlxSampleCount
         PModeStart        = $PModeAtStart.Mode
@@ -964,6 +972,9 @@ if ($SummaryRows.Count -eq 0) {
             AvgNanoseconds    = $null
             StdDevNanoseconds = $null
             RepetitionSamples = 0
+            BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
+            BackgroundBusyNames = ($BackgroundActivity.BusyNames -join ';')
+            BackgroundCpuPercent = $BackgroundActivity.CpuPercentOfSystem
             ResourceSamples   = $resourceSampleCount
             AdlxSamples       = $adlxSampleCount
             PModeStart        = $PModeAtStart.Mode
@@ -1023,6 +1034,10 @@ $Result = [ordered]@{
     NativeRowCount = $NativeRows.Count
     NativeRows     = @($NativeRows)
 
+    BackgroundActivityAtStart = $BackgroundAtStart
+    BackgroundActivityAtFinish = $BackgroundAtFinish
+    BackgroundActivitySummary = $BackgroundActivity
+
     ResourceMonitorEnabled = [bool]$ResourceMonitor
     ResourceSampleCount    = $resourceSampleCount
     AdlxMonitorRequested   = $AdlxMonitorRequested
@@ -1057,6 +1072,9 @@ $SummaryRows | Export-Csv -LiteralPath $SummaryPath -NoTypeInformation -Encoding
 
 Write-Host ''
 Write-Host '================ llama-bench result ================'
+if ($BackgroundActivity.PossibleNoise) {
+    Write-Warning "Possible benchmark interference by background processes: $($BackgroundActivity.BusyNames -join ', ') (average CPU share $($BackgroundActivity.CpuPercentOfSystem)%); results are not filtered."
+}
 $SummaryRows |
     Format-Table Test, AvgTokensPerSec, StdDevTokensPerSec, BenchBackends, RepetitionSamples -AutoSize |
     Out-Host

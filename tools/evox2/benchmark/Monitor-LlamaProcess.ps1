@@ -17,6 +17,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Reuse the same lightweight process classification as the start/end snapshots.
+Import-Module (Join-Path $PSScriptRoot 'Evox2.Benchmark.psm1') -Force
+
 function ConvertTo-GiB {
     param([double]$Bytes)
     [math]::Round($Bytes / 1GB, 3)
@@ -111,6 +114,7 @@ $previousTimestamp = $null
 $sampleIndex = 0
 $warnedCounterFallback = $false
 $warnedInvalidGpuEngineCounter = $false
+$previousBackgroundSnapshot = $null
 
 while ($true) {
     $loopStart = Get-Date
@@ -235,6 +239,14 @@ while ($true) {
         $gpuEngineRejectedCount = 0
     }
 
+    # Record process presence and CPU-time deltas without touching services.
+    $backgroundNow = Get-Evox2BackgroundActivitySnapshot
+    $backgroundDelta = $null
+    if ($null -ne $previousBackgroundSnapshot) {
+        $backgroundDelta = Compare-Evox2BackgroundActivitySnapshots -Before $previousBackgroundSnapshot -After $backgroundNow
+    }
+    $previousBackgroundSnapshot = $backgroundNow
+
     $timestamp = Get-Date
     $actualIntervalSeconds = if ($previousTimestamp) {
         [math]::Round(($timestamp - $previousTimestamp).TotalSeconds, 3)
@@ -296,6 +308,14 @@ while ($true) {
         Disk_Percent                  = [math]::Round($diskPercent, 1)
         DiskRead_MiBps                = [math]::Round($diskReadBytesPerSec / 1MB, 2)
         DiskWrite_MiBps               = [math]::Round($diskWriteBytesPerSec / 1MB, 2)
+
+        BackgroundProbeStatus         = $backgroundNow.Status
+        BackgroundObservedNames       = (@($backgroundNow.Processes | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ';')
+        BackgroundActiveNames         = if ($backgroundDelta) { ($backgroundDelta.ActiveNames -join ';') } else { '' }
+        BackgroundBusyNames           = if ($backgroundDelta) { ($backgroundDelta.BusyNames -join ';') } else { '' }
+        BackgroundCpuDeltaSeconds     = if ($backgroundDelta) { $backgroundDelta.CpuDeltaSeconds } else { $null }
+        BackgroundCpuPercentOfSystem  = if ($backgroundDelta) { $backgroundDelta.CpuPercentOfSystem } else { $null }
+        BackgroundNoisePossible       = if ($backgroundDelta) { $backgroundDelta.PossibleNoise } else { $false }
     } | Export-Csv -LiteralPath $fullLogPath -Append -NoTypeInformation -Encoding UTF8
 
     $elapsedMilliseconds = ((Get-Date) - $loopStart).TotalMilliseconds

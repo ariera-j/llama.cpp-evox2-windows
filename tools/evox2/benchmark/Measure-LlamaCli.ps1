@@ -540,6 +540,8 @@ if (-not $NoPModeProbe) {
 }
 
 $Started = Get-Date
+# Low-impact observation in every run, including when -ResourceMonitor is OFF.
+$BackgroundAtStart = Get-Evox2BackgroundActivitySnapshot
 
 $Conditions = [ordered]@{
     SchemaVersion = 1
@@ -573,6 +575,7 @@ $Conditions = [ordered]@{
     }
 
     PModeAtStart = $PModeAtStart
+    BackgroundActivityAtStart = $BackgroundAtStart
 
     PModePolicy = [ordered]@{
         ProbeEnabled = -not [bool]$NoPModeProbe
@@ -799,6 +802,8 @@ try {
 }
 
 $Finished = Get-Date
+$BackgroundAtFinish = Get-Evox2BackgroundActivitySnapshot
+$BackgroundActivity = Compare-Evox2BackgroundActivitySnapshots -Before $BackgroundAtStart -After $BackgroundAtFinish
 
 $PModeAtFinish = Get-Evox2PModeMetadata -Disabled:$NoPModeProbe
 
@@ -1002,6 +1007,10 @@ $Result = [ordered]@{
 
     InputAtLeast80Percent       = $EnoughInput
 
+    BackgroundActivityAtStart    = $BackgroundAtStart
+    BackgroundActivityAtFinish   = $BackgroundAtFinish
+    BackgroundActivitySummary    = $BackgroundActivity
+
     ResourceMonitorEnabled      = [bool]$ResourceMonitor
     ResourceSampleCount         = $resourceSampleCount
     AdlxMonitorRequested        = $AdlxMonitorRequested
@@ -1067,6 +1076,9 @@ $Summary = [PSCustomObject]@{
     DenseIndexerOmitted  = $DenseIndexerEvidence.Omitted
     QsaNoopEvidence     = $QsaNoopEvidence.Status
     QsaNoopEnabled      = $QsaNoopEvidence.Enabled
+    BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
+    BackgroundBusyNames     = ($BackgroundActivity.BusyNames -join ';')
+    BackgroundCpuPercent    = $BackgroundActivity.CpuPercentOfSystem
     ResourceSamples     = $resourceSampleCount
     AdlxSamples         = $adlxSampleCount
     PModeStart          = $PModeAtStart.Mode
@@ -1135,6 +1147,9 @@ if (Test-Path -LiteralPath $StdOutPath -PathType Leaf) {
     }
 }
 
+if ($BackgroundActivity.PossibleNoise) {
+    Write-Warning "Possible benchmark interference by background processes: $($BackgroundActivity.BusyNames -join ', ') (average CPU share $($BackgroundActivity.CpuPercentOfSystem)%); run results remain recorded without filtering."
+}
 if ($AdlxMonitorRequested -and $adlxSampleCount -eq 0) {
     Write-Warning 'ADLX monitoring was requested, but gpu-metrics.csv contains no samples.'
 }

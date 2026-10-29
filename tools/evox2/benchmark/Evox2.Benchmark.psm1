@@ -834,6 +834,144 @@ function Get-Evox2LlamaBenchTestLabel {
     return $label
 }
 
+
+# Lightweight context for benchmark contamination analysis. This records
+# *observed* Windows update/Defender/indexer processes, not service health,
+# and never starts/stops/changes Windows services or Defender.
+function Get-Evox2BackgroundActivitySnapshot {
+    [CmdletBinding()]
+    param()
+
+    $candidates = @(
+        'MsMpEng', 'NisSrv', 'MpCmdRun',                    # Defender
+        'TiWorker', 'TrustedInstaller', 'MoUsoCoreWorker',  # Windows servicing/update
+        'UsoClient', 'wuauclt', 'WaaSMedicAgent', 'WindowsUpdateBox',
+        'SearchIndexer', 'SearchProtocolHost', 'SearchFilterHost',
+        'CompatTelRunner', 'dismhost', 'SetupHost'
+    )
+
+    $now = Get-Date
+    $items = @()
+    $probeError = $null
+
+    try {
+        $processes = @(Get-Process -ErrorAction Stop |
+            Where-Object { $_.ProcessName -in $candidates })
+        foreach ($proc in $processes) {
+            $cpuSeconds = $null
+            $startTime = $null
+            try {
+                if ($null -ne $proc.CPU) {
+                    $cpuSeconds = [math]::Round([double]$proc.CPU, 3)
+                }
+            } catch {}
+            try { $startTime = $proc.StartTime.ToUniversalTime().ToString('o') } catch {}
+
+            $category = switch -Regex ($proc.ProcessName) {
+                '^(MsMpEng|NisSrv|MpCmdRun)$' { 'Defender'; break }
+                '^(SearchIndexer|SearchProtocolHost|SearchFilterHost)$' { 'Indexer'; break }
+                default { 'WindowsMaintenance' }
+            }
+
+            $items += [PSCustomObject]@{
+                Name         = [string]$proc.ProcessName
+                Pid          = [int]$proc.Id
+                StartedUtc   = $startTime
+                CpuSeconds   = $cpuSeconds
+                Category     = $category
+            }
+        }
+    } catch {
+        $probeError = $_.Exception.Message
+    }
+
+    return [PSCustomObject]@{
+        TimestampUtc = $now.ToUniversalTime().ToString('o')
+        Status       = if ($probeError) { 'ProbeError' } else { 'Observed' }
+        Error        = $probeError
+        Processes    = @($items)
+    }
+}
+
+function Compare-Evox2BackgroundActivitySnapshots {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object]$Before,
+        [Parameter(Mandatory = $true)][object]$After
+    )
+
+    $t0 = [datetime]::Parse([string]$Before.TimestampUtc).ToUniversalTime()
+    $t1 = [datetime]::Parse([string]$After.TimestampUtc).ToUniversalTime()
+    $duration = [math]::Max(0.001, ($t1 - $t0).TotalSeconds)
+    $byKey = @{}
+    foreach ($p in @($Before.Processes)) {
+        if ($null -ne $p) {
+            $byKey["$($p.Pid):$($p.StartedUtc)"] = $p
+        }
+    }
+    $active = @()
+    $cpuTotal = 0.0
+    $cpuKnownCount = 0
+    foreach ($p in @($After.Processes)) {
+        if ($null -eq $p) { continue }
+        $key = "$($p.Pid):$($p.StartedUtc)"
+        if ($byKey.ContainsKey($key)) {
+            $prior = $byKey[$key]
+            if ($null -ne $p.CpuSeconds -and $null -ne $prior.CpuSeconds) {
+                $delta = [math]::Max(0.0, [double]$p.CpuSeconds - [double]$prior.CpuSeconds)
+                $cpuTotal += $delta
+                $cpuKnownCount++
+                if ($delta -gt 0) {
+                    $active += [PSCustomObject]@{
+                        Name = $p.Name; Pid = $p.Pid; CpuDeltaSeconds = [math]::Round($delta, 3)
+                    }
+                }
+            }
+        } else {
+            # A new or restarted process may have done work; do not subtract
+            # its lifetime CPU counter from zero without confirming start time.
+            $started = $null
+            try { $started = [datetime]::Parse([string]$p.StartedUtc).ToUniversalTime() } catch {}
+            if ($null -ne $started -and $started -ge $t0 -and $null -ne $p.CpuSeconds) {
+                $delta = [math]::Max(0.0, [double]$p.CpuSeconds)
+                $cpuTotal += $delta
+                $cpuKnownCount++
+                if ($delta -gt 0) {
+                    $active += [PSCustomObject]@{
+                        Name = $p.Name; Pid = $p.Pid; CpuDeltaSeconds = [math]::Round($delta, 3)
+                    }
+                }
+            }
+        }
+    }
+
+    $machineCpuPercent = 100.0 * $cpuTotal / ($duration * [math]::Max(1, [Environment]::ProcessorCount))
+    $busy = @($active | Where-Object { $_.CpuDeltaSeconds -gt 0 } |
+        Group-Object -Property Name | ForEach-Object {
+            [PSCustomObject]@{ Name = $_.Name; CpuDeltaSeconds =
+                [math]::Round(($_.Group | Measure-Object CpuDeltaSeconds -Sum).Sum, 3) }
+        } | Where-Object {
+            # An aggregate 0.5% of total CPU is a possible measurement disturbance,
+            # not conclusive attribution of benchmark speed changes.
+            (100.0 * $_.CpuDeltaSeconds / ($duration * [math]::Max(1, [Environment]::ProcessorCount))) -ge 0.5
+        } | Select-Object -ExpandProperty Name)
+
+    $names = @($After.Processes | ForEach-Object { $_.Name } | Sort-Object -Unique)
+
+    return [PSCustomObject]@{
+        Status             = if ($Before.Status -ne 'Observed' -or $After.Status -ne 'Observed') { 'Partial' } else { 'Observed' }
+        DurationSeconds    = [math]::Round($duration, 3)
+        ProcessNames       = $names
+        ActiveNames        = @($active | ForEach-Object { $_.Name } | Sort-Object -Unique)
+        BusyNames          = $busy
+        CpuKnownCount      = $cpuKnownCount
+        CpuDeltaSeconds    = [math]::Round($cpuTotal, 3)
+        CpuPercentOfSystem = [math]::Round($machineCpuPercent, 3)
+        PossibleNoise      = $busy.Count -gt 0
+        Caveat             = 'Only named processes observed at sample boundaries; short-lived processes may be missed. CPU time is not disk I/O or service-level attribution; no automatic exclusion.'
+    }
+}
+
 Export-ModuleMember -Function @(
     'Import-Evox2LocalConfig',
     'Get-Evox2RelevantEnvironment',
@@ -851,5 +989,7 @@ Export-ModuleMember -Function @(
     'Get-Evox2QsaNoopInvalidationEvidence',
     'ConvertFrom-Evox2LlamaCliResult',
     'ConvertFrom-Evox2LlamaBenchJson',
-    'Get-Evox2LlamaBenchTestLabel'
+    'Get-Evox2LlamaBenchTestLabel',
+    'Get-Evox2BackgroundActivitySnapshot',
+    'Compare-Evox2BackgroundActivitySnapshots'
 )

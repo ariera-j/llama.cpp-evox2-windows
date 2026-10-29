@@ -1,5 +1,8 @@
 # Windows Vulkan build
 
+> **2026-10-29 r6 post-tag tooling update:** `tools/evox2/build/Build-Vulkan.ps1` now auto-selects the known EVO-X2 Vulkan SDK (`C:\VulkanSDK\1.4.357.0`) and LLVM (`C:\Program Files\LLVM\bin`) when no explicit paths are supplied, while honoring the existing `VULKAN_SDK` environment. CMake is **strictly pinned to 4.3.1** for configure/build, and an unexpected version causes an early error. Run `.\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly` from repo root to validate without modifying build outputs. See [wrapper instructions](../../tools/evox2/build/README.md); older r5 baseline steps below are historical. No validated b11908 binaries were rebuilt.
+
+
 ## Scope
 
 This procedure builds the clean current-refresh Vulkan baseline on the Evo-X2.

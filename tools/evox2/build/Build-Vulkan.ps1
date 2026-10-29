@@ -17,6 +17,7 @@ param(
     [switch]$ConfigureOnly,
     [switch]$BuildOnly,
     [switch]$ManifestOnly,
+    [switch]$PreflightOnly,
 
     [switch]$SkipSmoke,
 
@@ -27,8 +28,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if (($ConfigureOnly -and $BuildOnly) -or
-    ($ManifestOnly -and ($ConfigureOnly -or $BuildOnly))) {
-    throw 'Use only one of -ConfigureOnly, -BuildOnly, or -ManifestOnly.'
+    ($ManifestOnly -and ($ConfigureOnly -or $BuildOnly -or $PreflightOnly)) -or
+    ($PreflightOnly -and ($ConfigureOnly -or $BuildOnly))) {
+    throw 'Use only one of -ConfigureOnly, -BuildOnly, -ManifestOnly, or -PreflightOnly.'
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -102,6 +104,18 @@ try {
         if ($clangCommand) {
             $LlvmBin = Split-Path -Parent $clangCommand.Source
         }
+    }
+
+    if ($PreflightOnly) {
+        if ([string]::IsNullOrWhiteSpace($env:VULKAN_SDK)) {
+            throw 'Vulkan SDK not resolved. Set VULKAN_SDK or pass -VulkanSdk.'
+        }
+        if ([string]::IsNullOrWhiteSpace($LlvmBin)) {
+            throw 'LLVM bin not found. Pass -LlvmBin to the LLVM clang/clang++ directory.'
+        }
+        Write-Host "PRE-FLIGHT PASS: CMake=$cmake VulkanSDK=$($env:VULKAN_SDK) LLVM=$LlvmBin"
+        Write-Host 'No CMake configure/build or manifest write performed.'
+        return
     }
 
     $sevenZipPath = $null

@@ -1,5 +1,26 @@
 # Evo-X2 build wrappers
 
+## 2026-10-29: r6 Vulkan toolchain fail-fast policy (post-tag tooling update)
+
+The verified r6 Vulkan executable and public experimental ZIP are **not rebuilt** by this documentation change. The wrapper on `main` now uses the following resolution rules **without requiring the two path arguments on this machine**:
+
+1. Vulkan SDK: explicit `-VulkanSdk` -> current `VULKAN_SDK` environment variable -> if present, `C:\VulkanSDK\1.4.357.0`. Fail before configure if none is available, or if the resolved directory does not exist.
+2. LLVM bin: explicit `-LlvmBin` -> if both clang executables are present, `C:\Program Files\LLVM\bin` -> otherwise `clang.exe` from PATH. Explicit directory paths are checked and continue to take precedence.
+3. CMake: **exact `4.3.1` required** by default for configure and build, including `-BuildOnly`; a mismatch stops before any configure or build. Use `-ExpectedCMakeVersion '4.3.2'` only after deliberately validating that version, or `-ExpectedCMakeVersion ''` to disable the version guard for an upgrade experiment. `-ManifestOnly` is exempt because it does not build.
+
+**Safe no-build smoke test** (requires CMake on PATH, no configure or files written):
+
+```powershell
+.\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly
+# Explicit overrides still work:
+.\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly `
+    -VulkanSdk 'C:\VulkanSDK\1.4.357.0' `
+    -LlvmBin 'C:\Program Files\LLVM\bin'
+```
+
+Actual build still requires the x64 VS tools environment, Ninja, 7-Zip and the normal dependency cache. The fallback paths are **environment-specific convenience defaults**, not portable assumptions for other PCs; pinning CMake is a reproducibility guard, not a guarantee that every dependency is compatible. Follow the [r6 source checkpoint](../../../docs/evox2/R6-INTEGRATED-PUBLIC-CHECKPOINT-2026-10-29.md) rather than interpreting the historical r4/r5 notes below as current release state.
+
+
 ## Current refresh
 
 Use new build directories in the new worktree and pass `-BuildDir .\build-vulkan-clean` / `.\build-rocm-clean` explicitly. Defaults in the carried scripts remain `build-vulkan-r4` / `build-rocm-r4`. The shared dependency cache can remain outside the worktree.

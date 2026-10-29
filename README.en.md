@@ -45,7 +45,7 @@ Check that `--list-devices` shows a `Vulkan0` device. A compatible AMD Vulkan dr
 | Vulkan QSA-union | Long-context prompt-processing optimization for f16 KV. Opt in with `GGML_VK_QSA_UNION=1`; tested eligibility includes `GGML_VK_QSA_UNION_MIN_KV=32768`. |
 | MTP DENSE / NOOP | Avoid unnecessary Draft indexing and Target invalidation on eligible Qwen4Exp paths. Opt-in only for validated model/backend conditions. |
 | Stage-B / flatten | Experimental Draft KV-only prefill and `mtp_eh_proj` flattening. **Numeric Draft K/V parity has not been established.** Lab-only opt-in, not a recommended default profile. |
-| Build and measurement tooling | Separate Vulkan/ROCm builds, TheRock runtime provenance, ADLX/P-MODE monitoring, reproducible benchmark plans and SHA-based records. |
+| Build and measurement tooling | Separate Vulkan/ROCm builds, TheRock runtime provenance, ADLX/P-MODE monitoring, benchmark plans and SHA-based records. Added [Vulkan preflight/CMake pin](tools/evox2/build/README.md) and [Windows background-activity evidence](tools/evox2/benchmark/BACKGROUND-ACTIVITY-MONITORING.md) (pending Windows rerun verification). |
 
 For backend-specific restrictions and the difference between tested and deferred flags, consult the [supported flag decision sheet](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md).
 
