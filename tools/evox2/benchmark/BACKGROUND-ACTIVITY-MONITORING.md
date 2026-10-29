@@ -17,6 +17,20 @@ When the existing **`-ResourceMonitor` switch** is used, `Monitor-LlamaProcess.p
 
 A process is **possibly interfering**, not proven causal, if one named process consumes at least **0.5% of total logical-machine CPU time** within an observation interval. The start/end summary is averaged over the whole run, so short bursts are easier to see in `resources.csv`. Existing total system CPU, paging and disk throughput columns remain useful to correlate apparent interference.
 
+## 2026-10-29 Windows retest finding and fix
+
+In a real VS2022 Native Tools PowerShell test, `Get-Process` listed `MsMpEng`, `NisSrv`, `SearchIndexer`, and `SearchProtocolHost`, but `CpuKnownCount=0` for the 3.096-second observation. The original comparator returned `PossibleNoise=False`, which was **not justified** because **none of the process CPU counters was readable**.
+
+The corrected snapshot tries `Win32_PerfRawData_PerfProc_Process` when `Get-Process.CPU` is null, using the cumulative raw CPU counter (100-nanosecond units) converted to seconds. It does not attempt service changes, kernel tracing, process termination, or heavy file scanning. The comparator records `CpuCoverage`, `CpuKnownCount`, `CpuComparedCount` and three-state `PossibleNoise`:
+
+- `True`: at least one named background process crossed the configured 0.5% of all-core CPU-time threshold.
+- `False`: CPU evidence was complete for the observed candidates, and none crossed the threshold; or no candidate processes were observed at either boundary (short-lived activity can still be missed).
+- **`$null` / blank CSV field**: unknown; counters inaccessible or incomplete. `Status=CpuUnavailable` (none) or `Status=PartialCoverage` (some) makes this explicit. This must **never** be interpreted as a quiet benchmark run.
+
+`Get-Evox2BackgroundActivitySnapshot` now includes `CpuSource` (`GetProcess` or `PerfProcRaw100ns`) and `CpuProbeError` for diagnostics. `summary.csv` also includes `BackgroundProbeStatus`, `BackgroundCpuCoverage`, `BackgroundCpuKnownCount` in addition to the earlier fields. `resources.csv` includes per-sample coverage fields; its first sample is intentionally `FirstSample` because a delta needs two observations. If CPU data remain unavailable, the wrapper **warns but does not change the inference run status**.
+
+To validate the zero-counter and busy/quiet interpretation without a model, run [Test-BackgroundActivityClassification.ps1](tests/Test-BackgroundActivityClassification.ps1) in Windows PowerShell 5.1. A Windows retest of the actual PerfProc fallback is still needed; protected processes can remain unreadable even with this fallback.
+
 ## Quick checks without inference
 
 From a Windows PowerShell 5.1 x64 session at repo root:
@@ -27,6 +41,8 @@ $a = Get-Evox2BackgroundActivitySnapshot
 Start-Sleep -Seconds 3
 $b = Get-Evox2BackgroundActivitySnapshot
 Compare-Evox2BackgroundActivitySnapshots -Before $a -After $b | Format-List
+$a.Processes | Select-Object Name, Pid, CpuSource, CpuSeconds | Format-Table
+$b.Processes | Select-Object Name, Pid, CpuSource, CpuSeconds | Format-Table
 ```
 
 For a real measurement, add `-ResourceMonitor` to the **same command** you already use for `Measure-LlamaCli.ps1` or `Measure-LlamaBench.ps1` (or via the existing matrix plan). You will then see the extra `resources.csv` columns alongside the existing ADLX and P-MODE evidence. No changes to model, inference environment variables or Windows services are needed.

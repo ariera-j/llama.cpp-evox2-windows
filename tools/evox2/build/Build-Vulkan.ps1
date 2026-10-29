@@ -11,6 +11,7 @@ param(
 
     [string]$LlvmBin = '',
     [string]$VulkanSdk = '',
+    [string]$CMakeExe = '',
     [string]$ExpectedCMakeVersion = '4.3.1',
     [string]$SevenZipBin = '',
     [string]$DependencyCacheRoot = '',
@@ -72,8 +73,17 @@ if ([string]::IsNullOrWhiteSpace($BuildDir)) {
 $BuildDir = Resolve-Evox2RepoPath -Path $BuildDir
 $BinDir = Join-Path $BuildDir "bin\$Configuration"
 
-$cmake = (Get-Command cmake -CommandType Application -ErrorAction Stop |
-    Select-Object -First 1).Source
+# VS2022 Developer shells can put their own cmake.exe ahead of the pinned one.
+# Allow an explicit executable selection without changing the process PATH.
+if (-not [string]::IsNullOrWhiteSpace($CMakeExe)) {
+    $cmake = Resolve-Evox2RepoPath -Path $CMakeExe
+    if (-not (Test-Path -LiteralPath $cmake -PathType Leaf)) {
+        throw "CMake executable not found: $cmake"
+    }
+} else {
+    $cmake = (Get-Command cmake -CommandType Application -ErrorAction Stop |
+        Select-Object -First 1).Source
+}
 
 # Reject an unexpected CMake before CMake configuration or build begins.
 # ManifestOnly intentionally bypasses this guard (metadata-only recovery).
@@ -82,15 +92,20 @@ if (-not $ManifestOnly -and -not [string]::IsNullOrWhiteSpace($ExpectedCMakeVers
     if ($LASTEXITCODE -ne 0) {
         throw "cmake --version failed: $cmake"
     }
-    $cmakeVersionMatch = [regex]::Match($cmakeVersionText, '(?m)^cmake version\s+(\d+\.\d+\.\d+)\s*$')
+    # Accept VS CMake's version suffix (for example: 3.31.6-msvc6)
+    # so a non-pinned build produces a VERSION MISMATCH, not a PARSE ERROR.
+    $cmakeVersionMatch = [regex]::Match(
+        $cmakeVersionText,
+        '(?m)^cmake version[ \t]+(\d+\.\d+\.\d+(?:-[^\s]+)?)'
+    )
     if (-not $cmakeVersionMatch.Success) {
         throw "Unable to determine CMake version: $cmakeVersionText"
     }
     $actualCMakeVersion = $cmakeVersionMatch.Groups[1].Value
     if ($actualCMakeVersion -ne $ExpectedCMakeVersion) {
-        throw "CMake version mismatch: expected $ExpectedCMakeVersion, got $actualCMakeVersion at $cmake. Use the pinned CMake or explicitly set -ExpectedCMakeVersion to a tested value ('' skips the guard)."
+        throw "CMake version mismatch: expected $ExpectedCMakeVersion, observed $actualCMakeVersion at $cmake. VS Native Tools may put its bundled CMake first on PATH. Check 'Get-Command cmake.exe -All', then pass -CMakeExe with the path of CMake $ExpectedCMakeVersion. Use -ExpectedCMakeVersion only for a deliberate version change."
     }
-    Write-Host "CMake version verified: $actualCMakeVersion"
+    Write-Host "CMake version verified: $actualCMakeVersion ($cmake)"
 }
 
 $savedPath = $env:PATH

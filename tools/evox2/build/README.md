@@ -8,6 +8,18 @@ The verified r6 Vulkan executable and public experimental ZIP are **not rebuilt*
 2. LLVM bin: explicit `-LlvmBin` -> if both clang executables are present, `C:\Program Files\LLVM\bin` -> otherwise `clang.exe` from PATH. Explicit directory paths are checked and continue to take precedence.
 3. CMake: **exact `4.3.1` required** by default for configure and build, including `-BuildOnly`; a mismatch stops before any configure or build. Use `-ExpectedCMakeVersion '4.3.2'` only after deliberately validating that version, or `-ExpectedCMakeVersion ''` to disable the version guard for an upgrade experiment. `-ManifestOnly` is exempt because it does not build.
 
+**VS2022 Native Tools finding (2026-10-29):** the first CMake on `PATH` was VS's `cmake version 3.31.6-msvc6`, not the tested `4.3.1`. The original parser misclassified this suffix as an unparseable version. It now correctly reports a **version mismatch including the selected executable path**. The wrapper also accepts `-CMakeExe` to point to the real 4.3.1 executable without modifying the VS shell's `PATH`:
+
+```powershell
+Get-Command cmake.exe -All | Select-Object Source
+# Confirm this file exists and reports version 4.3.1 before using it:
+& 'C:\Program Files\CMake\bin\cmake.exe' --version
+.\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly `
+    -CMakeExe 'C:\Program Files\CMake\bin\cmake.exe'
+```
+
+The `C:\Program Files\CMake\bin\cmake.exe` path is an **example**, not a claim that this installation exists on every machine. If that path is absent, use the actual 4.3.1 `cmake.exe` reported by your installation. Do not lower the expected version merely to silence the check.
+
 **Safe no-build smoke test** (requires CMake on PATH, no configure or files written):
 
 ```powershell

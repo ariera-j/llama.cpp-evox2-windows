@@ -914,7 +914,10 @@ foreach ($row in $NativeRows) {
         StdDevNanoseconds = $row.stddev_ns
         RepetitionSamples = $sampleCount
 
-        BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
+        BackgroundProbeStatus   = $BackgroundActivity.Status
+    BackgroundCpuCoverage   = $BackgroundActivity.CpuCoverage
+    BackgroundCpuKnownCount = $BackgroundActivity.CpuKnownCount
+    BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
         BackgroundBusyNames = ($BackgroundActivity.BusyNames -join ';')
         BackgroundCpuPercent = $BackgroundActivity.CpuPercentOfSystem
         ResourceSamples   = $resourceSampleCount
@@ -972,7 +975,10 @@ if ($SummaryRows.Count -eq 0) {
             AvgNanoseconds    = $null
             StdDevNanoseconds = $null
             RepetitionSamples = 0
-            BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
+            BackgroundProbeStatus   = $BackgroundActivity.Status
+    BackgroundCpuCoverage   = $BackgroundActivity.CpuCoverage
+    BackgroundCpuKnownCount = $BackgroundActivity.CpuKnownCount
+    BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
             BackgroundBusyNames = ($BackgroundActivity.BusyNames -join ';')
             BackgroundCpuPercent = $BackgroundActivity.CpuPercentOfSystem
             ResourceSamples   = $resourceSampleCount
@@ -1072,6 +1078,9 @@ $SummaryRows | Export-Csv -LiteralPath $SummaryPath -NoTypeInformation -Encoding
 
 Write-Host ''
 Write-Host '================ llama-bench result ================'
+if ($BackgroundActivity.Status -in @('CpuUnavailable', 'PartialCoverage', 'ProbeError')) {
+    Write-Warning "Background CPU monitoring is incomplete ($($BackgroundActivity.Status); comparable $($BackgroundActivity.CpuKnownCount)/$($BackgroundActivity.CpuComparedCount)). Do not treat a blank PossibleNoise value as proof of a quiet run."
+}
 if ($BackgroundActivity.PossibleNoise) {
     Write-Warning "Possible benchmark interference by background processes: $($BackgroundActivity.BusyNames -join ', ') (average CPU share $($BackgroundActivity.CpuPercentOfSystem)%); results are not filtered."
 }

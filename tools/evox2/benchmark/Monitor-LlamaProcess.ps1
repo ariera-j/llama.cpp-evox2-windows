@@ -310,12 +310,15 @@ while ($true) {
         DiskWrite_MiBps               = [math]::Round($diskWriteBytesPerSec / 1MB, 2)
 
         BackgroundProbeStatus         = $backgroundNow.Status
+        BackgroundCpuCoverage         = if ($backgroundDelta) { $backgroundDelta.CpuCoverage } else { 'FirstSample' }
+        BackgroundCpuComparedCount    = if ($backgroundDelta) { $backgroundDelta.CpuComparedCount } else { 0 }
+        BackgroundCpuKnownCount       = if ($backgroundDelta) { $backgroundDelta.CpuKnownCount } else { 0 }
         BackgroundObservedNames       = (@($backgroundNow.Processes | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ';')
         BackgroundActiveNames         = if ($backgroundDelta) { ($backgroundDelta.ActiveNames -join ';') } else { '' }
         BackgroundBusyNames           = if ($backgroundDelta) { ($backgroundDelta.BusyNames -join ';') } else { '' }
         BackgroundCpuDeltaSeconds     = if ($backgroundDelta) { $backgroundDelta.CpuDeltaSeconds } else { $null }
         BackgroundCpuPercentOfSystem  = if ($backgroundDelta) { $backgroundDelta.CpuPercentOfSystem } else { $null }
-        BackgroundNoisePossible       = if ($backgroundDelta) { $backgroundDelta.PossibleNoise } else { $false }
+        BackgroundNoisePossible       = if ($backgroundDelta) { $backgroundDelta.PossibleNoise } else { $null }
     } | Export-Csv -LiteralPath $fullLogPath -Append -NoTypeInformation -Encoding UTF8
 
     $elapsedMilliseconds = ((Get-Date) - $loopStart).TotalMilliseconds

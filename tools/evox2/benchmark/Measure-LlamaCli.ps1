@@ -1076,6 +1076,9 @@ $Summary = [PSCustomObject]@{
     DenseIndexerOmitted  = $DenseIndexerEvidence.Omitted
     QsaNoopEvidence     = $QsaNoopEvidence.Status
     QsaNoopEnabled      = $QsaNoopEvidence.Enabled
+    BackgroundProbeStatus   = $BackgroundActivity.Status
+    BackgroundCpuCoverage   = $BackgroundActivity.CpuCoverage
+    BackgroundCpuKnownCount = $BackgroundActivity.CpuKnownCount
     BackgroundNoisePossible = $BackgroundActivity.PossibleNoise
     BackgroundBusyNames     = ($BackgroundActivity.BusyNames -join ';')
     BackgroundCpuPercent    = $BackgroundActivity.CpuPercentOfSystem
@@ -1147,6 +1150,9 @@ if (Test-Path -LiteralPath $StdOutPath -PathType Leaf) {
     }
 }
 
+if ($BackgroundActivity.Status -in @('CpuUnavailable', 'PartialCoverage', 'ProbeError')) {
+    Write-Warning "Background CPU monitoring is incomplete ($($BackgroundActivity.Status); comparable $($BackgroundActivity.CpuKnownCount)/$($BackgroundActivity.CpuComparedCount)). Do not treat PossibleNoise=False/blank as a confirmed quiet run."
+}
 if ($BackgroundActivity.PossibleNoise) {
     Write-Warning "Possible benchmark interference by background processes: $($BackgroundActivity.BusyNames -join ', ') (average CPU share $($BackgroundActivity.CpuPercentOfSystem)%); run results remain recorded without filtering."
 }

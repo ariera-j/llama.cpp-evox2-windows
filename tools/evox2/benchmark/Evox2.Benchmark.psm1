@@ -843,8 +843,8 @@ function Get-Evox2BackgroundActivitySnapshot {
     param()
 
     $candidates = @(
-        'MsMpEng', 'NisSrv', 'MpCmdRun',                    # Defender
-        'TiWorker', 'TrustedInstaller', 'MoUsoCoreWorker',  # Windows servicing/update
+        'MsMpEng', 'NisSrv', 'MpCmdRun',
+        'TiWorker', 'TrustedInstaller', 'MoUsoCoreWorker',
         'UsoClient', 'wuauclt', 'WaaSMedicAgent', 'WindowsUpdateBox',
         'SearchIndexer', 'SearchProtocolHost', 'SearchFilterHost',
         'CompatTelRunner', 'dismhost', 'SetupHost'
@@ -853,18 +853,57 @@ function Get-Evox2BackgroundActivitySnapshot {
     $now = Get-Date
     $items = @()
     $probeError = $null
+    $cpuProbeError = $null
+    $cpuByPid = @{}
 
     try {
         $processes = @(Get-Process -ErrorAction Stop |
             Where-Object { $_.ProcessName -in $candidates })
+
+        # Some Defender/protected processes return null for Get-Process.CPU.
+        # The Windows raw PerfProc counter is cumulative process CPU time in
+        # 100-nanosecond units. Query it only if at least one CPU value
+        # is missing, so ordinary benchmarks retain minimal monitoring cost.
+        $needsPerfFallback = $false
+        foreach ($proc in $processes) {
+            try {
+                if ($null -eq $proc.CPU) { $needsPerfFallback = $true; break }
+            } catch {
+                $needsPerfFallback = $true
+                break
+            }
+        }
+        if ($needsPerfFallback) {
+            try {
+                $perfRows = @(Get-CimInstance -ClassName Win32_PerfRawData_PerfProc_Process -ErrorAction Stop)
+                foreach ($perf in $perfRows) {
+                    if ($null -eq $perf.IDProcess -or $null -eq $perf.PercentProcessorTime) {
+                        continue
+                    }
+                    $pidValue = [int]$perf.IDProcess
+                    if ($pidValue -gt 0) {
+                        $cpuByPid[$pidValue] = [double]$perf.PercentProcessorTime / 10000000.0
+                    }
+                }
+            } catch {
+                $cpuProbeError = $_.Exception.Message
+            }
+        }
+
         foreach ($proc in $processes) {
             $cpuSeconds = $null
+            $cpuSource = $null
             $startTime = $null
             try {
                 if ($null -ne $proc.CPU) {
                     $cpuSeconds = [math]::Round([double]$proc.CPU, 3)
+                    $cpuSource = 'GetProcess'
                 }
             } catch {}
+            if ($null -eq $cpuSeconds -and $cpuByPid.ContainsKey([int]$proc.Id)) {
+                $cpuSeconds = [math]::Round([double]$cpuByPid[[int]$proc.Id], 3)
+                $cpuSource = 'PerfProcRaw100ns'
+            }
             try { $startTime = $proc.StartTime.ToUniversalTime().ToString('o') } catch {}
 
             $category = switch -Regex ($proc.ProcessName) {
@@ -874,11 +913,12 @@ function Get-Evox2BackgroundActivitySnapshot {
             }
 
             $items += [PSCustomObject]@{
-                Name         = [string]$proc.ProcessName
-                Pid          = [int]$proc.Id
-                StartedUtc   = $startTime
-                CpuSeconds   = $cpuSeconds
-                Category     = $category
+                Name       = [string]$proc.ProcessName
+                Pid        = [int]$proc.Id
+                StartedUtc = $startTime
+                CpuSeconds = $cpuSeconds
+                CpuSource  = $cpuSource
+                Category   = $category
             }
         }
     } catch {
@@ -886,10 +926,11 @@ function Get-Evox2BackgroundActivitySnapshot {
     }
 
     return [PSCustomObject]@{
-        TimestampUtc = $now.ToUniversalTime().ToString('o')
-        Status       = if ($probeError) { 'ProbeError' } else { 'Observed' }
-        Error        = $probeError
-        Processes    = @($items)
+        TimestampUtc  = $now.ToUniversalTime().ToString('o')
+        Status        = if ($probeError) { 'ProbeError' } else { 'Observed' }
+        Error         = $probeError
+        CpuProbeError = $cpuProbeError
+        Processes     = @($items)
     }
 }
 
@@ -903,72 +944,123 @@ function Compare-Evox2BackgroundActivitySnapshots {
     $t0 = [datetime]::Parse([string]$Before.TimestampUtc).ToUniversalTime()
     $t1 = [datetime]::Parse([string]$After.TimestampUtc).ToUniversalTime()
     $duration = [math]::Max(0.001, ($t1 - $t0).TotalSeconds)
+    $beforeProcesses = @($Before.Processes | Where-Object { $null -ne $_ })
+    $afterProcesses = @($After.Processes | Where-Object { $null -ne $_ })
     $byKey = @{}
-    foreach ($p in @($Before.Processes)) {
-        if ($null -ne $p) {
-            $byKey["$($p.Pid):$($p.StartedUtc)"] = $p
-        }
+    foreach ($p in $beforeProcesses) {
+        # Include the name because protected processes may hide their start time.
+        $byKey["$($p.Name):$($p.Pid):$($p.StartedUtc)"] = $p
     }
+
     $active = @()
+    $missingNames = @()
     $cpuTotal = 0.0
     $cpuKnownCount = 0
-    foreach ($p in @($After.Processes)) {
-        if ($null -eq $p) { continue }
-        $key = "$($p.Pid):$($p.StartedUtc)"
+    $matchedBeforeKeys = @{}
+    foreach ($p in $afterProcesses) {
+        $key = "$($p.Name):$($p.Pid):$($p.StartedUtc)"
+        $delta = $null
         if ($byKey.ContainsKey($key)) {
+            $matchedBeforeKeys[$key] = $true
             $prior = $byKey[$key]
             if ($null -ne $p.CpuSeconds -and $null -ne $prior.CpuSeconds) {
-                $delta = [math]::Max(0.0, [double]$p.CpuSeconds - [double]$prior.CpuSeconds)
-                $cpuTotal += $delta
-                $cpuKnownCount++
-                if ($delta -gt 0) {
-                    $active += [PSCustomObject]@{
-                        Name = $p.Name; Pid = $p.Pid; CpuDeltaSeconds = [math]::Round($delta, 3)
-                    }
+                $difference = [double]$p.CpuSeconds - [double]$prior.CpuSeconds
+                # Never turn a decreasing counter (e.g., PID reuse) into a
+                # misleading zero-CPU claim.
+                if ($difference -ge 0) {
+                    $delta = $difference
                 }
             }
         } else {
-            # A new or restarted process may have done work; do not subtract
-            # its lifetime CPU counter from zero without confirming start time.
+            # Newly started process: its lifetime CPU time is usable only
+            # when the creation time is inside the measurement window.
             $started = $null
             try { $started = [datetime]::Parse([string]$p.StartedUtc).ToUniversalTime() } catch {}
-            if ($null -ne $started -and $started -ge $t0 -and $null -ne $p.CpuSeconds) {
+            if ($null -ne $started -and $started -ge $t0 -and
+                $started -le $t1 -and $null -ne $p.CpuSeconds) {
                 $delta = [math]::Max(0.0, [double]$p.CpuSeconds)
-                $cpuTotal += $delta
-                $cpuKnownCount++
-                if ($delta -gt 0) {
-                    $active += [PSCustomObject]@{
-                        Name = $p.Name; Pid = $p.Pid; CpuDeltaSeconds = [math]::Round($delta, 3)
-                    }
-                }
+            }
+        }
+
+        if ($null -eq $delta) {
+            $missingNames += [string]$p.Name
+            continue
+        }
+        $cpuTotal += [double]$delta
+        $cpuKnownCount++
+        if ($delta -gt 0) {
+            $active += [PSCustomObject]@{
+                Name = $p.Name; Pid = $p.Pid; CpuDeltaSeconds = [math]::Round($delta, 3)
             }
         }
     }
 
-    $machineCpuPercent = 100.0 * $cpuTotal / ($duration * [math]::Max(1, [Environment]::ProcessorCount))
-    $busy = @($active | Where-Object { $_.CpuDeltaSeconds -gt 0 } |
-        Group-Object -Property Name | ForEach-Object {
-            [PSCustomObject]@{ Name = $_.Name; CpuDeltaSeconds =
-                [math]::Round(($_.Group | Measure-Object CpuDeltaSeconds -Sum).Sum, 3) }
-        } | Where-Object {
-            # An aggregate 0.5% of total CPU is a possible measurement disturbance,
-            # not conclusive attribution of benchmark speed changes.
-            (100.0 * $_.CpuDeltaSeconds / ($duration * [math]::Max(1, [Environment]::ProcessorCount))) -ge 0.5
-        } | Select-Object -ExpandProperty Name)
+    $exitedCount = @($beforeProcesses | Where-Object {
+        -not $matchedBeforeKeys.ContainsKey("$($_.Name):$($_.Pid):$($_.StartedUtc)")
+    }).Count
+    $cpuCoverage = if ($beforeProcesses.Count -eq 0 -and $afterProcesses.Count -eq 0) {
+        'NoCandidates'
+    } elseif ($cpuKnownCount -eq 0) {
+        'None'
+    } elseif ($cpuKnownCount -eq $afterProcesses.Count -and $exitedCount -eq 0) {
+        'Complete'
+    } else {
+        'Partial'
+    }
 
-    $names = @($After.Processes | ForEach-Object { $_.Name } | Sort-Object -Unique)
+    $status = if ($Before.Status -ne 'Observed' -or $After.Status -ne 'Observed') {
+        'ProbeError'
+    } elseif ($cpuCoverage -eq 'NoCandidates') {
+        'NoCandidates'
+    } elseif ($cpuCoverage -eq 'None') {
+        'CpuUnavailable'
+    } elseif ($cpuCoverage -eq 'Partial') {
+        'PartialCoverage'
+    } else {
+        'Observed'
+    }
+
+    $logicalCores = [math]::Max(1, [Environment]::ProcessorCount)
+    $busy = @($active | Group-Object -Property Name | ForEach-Object {
+        [PSCustomObject]@{
+            Name = $_.Name
+            CpuDeltaSeconds = [math]::Round(($_.Group | Measure-Object CpuDeltaSeconds -Sum).Sum, 3)
+        }
+    } | Where-Object {
+        # 0.5% of aggregate logical-core time: a possible disturbance,
+        # not a causal explanation of a benchmark speed difference.
+        (100.0 * $_.CpuDeltaSeconds / ($duration * $logicalCores)) -ge 0.5
+    } | Select-Object -ExpandProperty Name)
+
+    # Three-valued result: true=activity observed, false=observed quiet,
+    # null=insufficient evidence. Never label zero readable CPU counters quiet.
+    $possibleNoise = if ($busy.Count -gt 0) {
+        $true
+    } elseif ($status -eq 'Observed' -or $status -eq 'NoCandidates') {
+        $false
+    } else {
+        $null
+    }
+    $cpuPercent = if ($cpuKnownCount -gt 0) {
+        [math]::Round((100.0 * $cpuTotal / ($duration * $logicalCores)), 3)
+    } else {
+        $null
+    }
 
     return [PSCustomObject]@{
-        Status             = if ($Before.Status -ne 'Observed' -or $After.Status -ne 'Observed') { 'Partial' } else { 'Observed' }
+        Status             = $status
+        CpuCoverage        = $cpuCoverage
         DurationSeconds    = [math]::Round($duration, 3)
-        ProcessNames       = $names
+        ProcessNames       = @($afterProcesses | ForEach-Object { $_.Name } | Sort-Object -Unique)
         ActiveNames        = @($active | ForEach-Object { $_.Name } | Sort-Object -Unique)
         BusyNames          = $busy
+        MissingCpuNames    = @($missingNames | Sort-Object -Unique)
         CpuKnownCount      = $cpuKnownCount
-        CpuDeltaSeconds    = [math]::Round($cpuTotal, 3)
-        CpuPercentOfSystem = [math]::Round($machineCpuPercent, 3)
-        PossibleNoise      = $busy.Count -gt 0
-        Caveat             = 'Only named processes observed at sample boundaries; short-lived processes may be missed. CPU time is not disk I/O or service-level attribution; no automatic exclusion.'
+        CpuComparedCount   = $afterProcesses.Count
+        CpuDeltaSeconds    = if ($cpuKnownCount -gt 0) { [math]::Round($cpuTotal, 3) } else { $null }
+        CpuPercentOfSystem = $cpuPercent
+        PossibleNoise      = $possibleNoise
+        Caveat             = 'Named-process sampling only; short-lived work, protected processes, disk activity and svchost-hosted Windows Update may be missed. Null PossibleNoise means unknown, not quiet; results are never automatically rejected.'
     }
 }
 
