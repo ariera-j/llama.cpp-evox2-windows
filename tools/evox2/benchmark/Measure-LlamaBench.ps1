@@ -244,6 +244,28 @@ if (-not $hasPromptWork -and -not $hasGenerationWork) {
     throw 'At least one prompt-processing or generation workload must be non-zero.'
 }
 
+# In b11908, llama-bench has no -c and computes n_ctx from
+# n_prompt + n_gen + n_depth per test. Keep older forks usable by
+# checking optional arguments against the ACTUAL executable's --help.
+# Never silently ignore -Context or reinterpret it as -fitc.
+if ($Context -gt 0 -or -not [string]::IsNullOrWhiteSpace($InputFile)) {
+    $benchHelp = Invoke-Evox2NativeCapture -FilePath $LlamaBench -ArgumentList @('--help')
+    if ($benchHelp.ExitCode -ne 0) {
+        throw "Unable to inspect llama-bench --help (exit code $($benchHelp.ExitCode)) for $LlamaBench."
+    }
+
+    if ($Context -gt 0 -and
+        $benchHelp.Text -notmatch '(?m)^\s*-c(?:\s|,)(?:\s*--(?:ctx-size|context))?') {
+        throw "This llama-bench does not support -c / -Context (requested $Context). In b11908 each test sizes n_ctx automatically from -p + -n + -d. Remove -Context from the wrapper invocation (or use -Context 0). Do not replace it with -fitc: that controls memory-fitting."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($InputFile) -and
+        ($benchHelp.Text -notmatch '(?m)^\s*-f(?:\s|,)' -or
+         $benchHelp.Text -notmatch '--prompt-slice')) {
+        throw 'This llama-bench does not support -f / --prompt-slice for real input files. b11908 supports random-token -p/-n/-d tests only; use the llama-cli wrapper for real-text measurements, or a deliberately compatible older bench build.'
+    }
+}
+
 Write-Host 'Detecting llama-bench executable, backend, Git, and system metadata...'
 $Identity = Get-Evox2LlamaIdentity `
     -Executable $LlamaBench `
@@ -362,6 +384,7 @@ $ConditionFingerprint = [ordered]@{
     Benchmark = [ordered]@{
         PromptTokens     = @($PromptTokens)
         Context          = $Context
+        ContextMode      = if ($Context -gt 0) { 'ExplicitLegacyFlag' } else { 'PerTestAuto' }
         PromptSlice      = if ($InputIdentity) { $PromptSlice } else { $null }
         GenerationTokens = @($GenerationTokens)
         Depths           = @($Depths)
@@ -392,15 +415,17 @@ $CommandLine = ConvertTo-Evox2CommandLine `
     -Arguments $LlamaArguments
 
 $maxPrompt = ($PromptTokens | Measure-Object -Maximum).Maximum
+$maxGeneration = ($GenerationTokens | Measure-Object -Maximum).Maximum
 $maxDepth = ($Depths | Measure-Object -Maximum).Maximum
+# The native bench runs separate PP and TG tests (unless -pg is requested).
+# This is the maximum *requested* n_ctx for directory labeling, not a
+# promise of the actual padded KV allocation.
 $ContextHint = if ($Context -gt 0) {
     $Context
 } else {
-    [Math]::Max([int]$maxPrompt, [int]$maxDepth)
+    [Math]::Max(1, [Math]::Max([int]$maxPrompt, [int]$maxGeneration) + [int]$maxDepth)
 }
-if ($ContextHint -lt 1) {
-    $ContextHint = 1
-}
+$ContextMode = if ($Context -gt 0) { 'ExplicitLegacyFlag' } else { 'PerTestAuto' }
 
 $Preview = [PSCustomObject]@{
     Tool              = 'llama-bench'
@@ -413,6 +438,8 @@ $Preview = [PSCustomObject]@{
     Input             = if ($InputIdentity) { $InputIdentity.Name } else { 'random-tokens' }
     PromptSlice       = if ($InputIdentity) { $PromptSlice } else { $null }
     Context           = $Context
+    ContextMode       = $ContextMode
+    MaxWorkloadContextHint = $ContextHint
     PromptTokens      = ($PromptTokens -join ',')
     GenerationTokens  = ($GenerationTokens -join ',')
     Depths            = ($Depths -join ',')
@@ -781,7 +808,7 @@ $HeaderLines = @(
     "MODELFILE: $ModelFile",
     "INPUT: $(if ($InputIdentity) { $InputFile } else { 'random-tokens' })",
     "PROMPT_SLICE: $(if ($InputIdentity) { $PromptSlice } else { '' })",
-    "CONTEXT: $Context",
+    "CONTEXT: $Context (mode=$ContextMode; max workload hint=$ContextHint)",
     "PROMPT_TOKENS: $($PromptTokens -join ',')",
     "GENERATION_TOKENS: $($GenerationTokens -join ',')",
     "DEPTHS: $($Depths -join ',')",
@@ -897,6 +924,8 @@ foreach ($row in $NativeRows) {
         InputSha256       = if ($InputIdentity) { $InputIdentity.Sha256 } else { $null }
         PromptSlice       = if ($InputIdentity) { $PromptSlice } else { $null }
         Context           = $Context
+        ContextMode       = $ContextMode
+        RequestedTestContext = ([int]$row.n_prompt + [int]$row.n_gen + [int]$row.n_depth)
         ModelType         = $row.model_type
         ModelSizeBytes    = $row.model_size
         ModelParams       = $row.model_n_params
@@ -1027,6 +1056,8 @@ $Result = [ordered]@{
     Requested = [ordered]@{
         PromptTokens     = @($PromptTokens)
         Context          = $Context
+        ContextMode      = $ContextMode
+        MaxWorkloadContextHint = $ContextHint
         InputFile        = if ($InputIdentity) { $InputFile } else { $null }
         InputSha256      = if ($InputIdentity) { $InputIdentity.Sha256 } else { $null }
         PromptSlice      = if ($InputIdentity) { $PromptSlice } else { $null }

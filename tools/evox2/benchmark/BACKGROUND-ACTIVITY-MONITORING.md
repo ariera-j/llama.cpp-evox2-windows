@@ -11,6 +11,8 @@ The EVO-X2 benchmark wrappers `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1
 
 Recognized process executables are from **Microsoft Defender** (`MsMpEng`, `NisSrv`, `MpCmdRun`), **Windows Update and maintenance** (`TiWorker`, `TrustedInstaller`, `MoUsoCoreWorker`, `UsoClient`, `wuauclt`, `WaaSMedicAgent`, `WindowsUpdateBox`, `dismhost`, `SetupHost`, `CompatTelRunner`) and **Windows Search indexing** (`SearchIndexer`, `SearchProtocolHost`, `SearchFilterHost`). The list intentionally does **not** equate idle Defender services or any generic `svchost.exe` with active background interference.
 
+> **b11908 CLI-compatibility note:** The initial 2026-10-29 monitor smoke benchmark failed **before any PP/TG work** because the older wrapper passed unsupported `llama-bench -c 4096`. This does **not** demonstrate a monitoring fault or throughput regression. The corrected test omits `-Context` and uses native per-test automatic context. See [b11908 llama-bench argument compatibility](LLAMA-BENCH-B11908-ARGUMENT-COMPATIBILITY.md) before repeating this smoke test.
+
 ## 2026-10-29 monitoring cadence reduction (post-tag)
 
 The Windows smoke check measured **9.468 s elapsed for a nominal 3 s sleep** across two background snapshots, suggesting the protected-process CPU counter fallback may be expensive. The original monitor called that snapshot **on every resource row**, potentially perturbing PP/TG. The revised design separates the two frequencies:
