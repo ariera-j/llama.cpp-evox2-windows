@@ -1,6 +1,6 @@
 # r5/r6 branch inventory and pre-release consolidation plan — 2026-10-29
 
-> **Status:** inventory verified against the GitHub branches API; **33 remote branches**. This is **non-destructive cleanup stage 1**: branch roles, SHA and retirement criteria have been frozen in docs; **no branch delete, rename, new tag, default-branch switch or README rewrite has occurred**. Subsequent tag/main/README work is explicitly reserved for a later request. Remote tips are dated observations and may advance as plans are committed.
+> **2026-10-29 branch-ancestry audit (after local plan push):** **33 remote branches**; combined HEAD advanced to `d46f188291fa0b67c948e54275e744992293121f` with S9 plans now tracked. **All 8 intermediate r6 branch tips are ancestors of this combined HEAD** (GitHub compare: ahead=0 for every branch). Among 14 r5 auxiliary branches, **13 have unique/diverged history** relative to the r5 pinned control; only `investigation/r5-adlx-gpu-monitor-20261015` is an ancestor of the r5 control. See verified comparisons below. A fail-closed local [stage-ref cleanup script](../../tools/evox2/git/Invoke-R6StageBranchCleanup.ps1) is prepared with dry-run default; **no remote refs have yet been deleted**, and tag, `main`, and README remain untouched.
 
 ## 1. Canonical references and preservation policy
 
@@ -9,9 +9,48 @@
 - **Current GitHub default branch:** `main` at `bddf73442c24545879c9acadc078ba5b2c3cb7d8`, identical in SHA to `r4/upstream-refresh-20261002`. **Do not move `main` until the agreed later step.**
 - All eight r6 intermediate branches are documented *historical stage checkpoints*. Their source/commit and test evidence is valuable to rollback and patch attribution. Do not presume they are ancestors of the combined candidate without a `git merge-base` check.
 - The 14 r5 isolated investigation/integration-check branches are not presumed merged into combined; preserve until their unique commits, branch-anchored documentation links, and retained binaries/measurements have been reviewed. **Branch renaming or deleting can break GitHub /blob/<branch>/ URLs**.
-- No destructive cleanup before the release tag, and no forced branch updates. A later deletion requires: immutable archival ref/tag if necessary; ancestry/unique-commit assessment; backlink audit; local `git worktree list`; and explicit selected branch names. Avoid blanket `git push --prune`.
+- No unreviewed destructive cleanup and no forced branch updates; the eight r6 stage refs have now been proven ancestors and may be removed via the guarded, explicit Windows workflow below, even before a public release tag, provided historic branch-based links have been reviewed. A later deletion requires: immutable archival ref/tag if necessary; ancestry/unique-commit assessment; backlink audit; local `git worktree list`; and explicit selected branch names. Avoid blanket `git push --prune`.
 
-## 2. Exact remote-branch inventory
+## 2. Verified ancestry and branch-retention decision (2026-10-29)
+
+GitHub `compare_commits(base=r6/combined-20261028, head=<intermediate>)` was run for each r6 stage ref **after** the Windows S9 plan push. All 8 returned `status=behind`, `ahead_by=0`. They can be removed as *redundant references* without losing the underlying source/commit history because all eight tips are ancestors of combined. They **must not** be deleted before considering any GitHub links that contain `/blob/<branch>/` or `/tree/<branch>/`; linked historical docs should prefer a stable SHA path.
+
+| Intermediate r6 stage | Tip SHA (unchanged since inventory) | Commits behind combined | Decision |
+| --- | --- | ---: | --- |
+| `r6/common001-ple16-20261025` | `39920946753e14b0e9bc43eba00e186441370ba3` | 44 | eligible for remote-ref cleanup |
+| `r6/rocmfpx-vulkan-20261025` | `739af71c117f463236bf33d1624a9438f945ccf2` | 38 | eligible |
+| `r6/mtp-compat-20261025` | `db27fcbaefa35e411bc9979f9fe0f6bdbae9bcab` | 32 | eligible |
+| `r6/vulkan-qsa-union-20261025` | `96b49ec8e3f92def0c68377191f326d25323b7c1` | 28 | eligible |
+| `r6/mtp-dense-20261026` | `8665c0c3b5ce26e7346818826de24677c77ba570` | 25 | eligible |
+| `r6/mtp-noop-20261026` | `02e44a240a975bbb3de689425ebf3185edded057` | 23 | eligible |
+| `r6/mtp-stageb-20261027` | `48fe00a0036867d94b2ae0721413a603100484d4` | 20 | eligible |
+| `r6/mtp-eh-proj-flatten-20261027` | `606227d3dc17481783207ca6dcd276be95dfc160` | 18 | eligible |
+
+**Protected r6 refs:** `r6/combined-20261028` is the current test/publication candidate. `r6/upstream-refresh-20261025` is the clean S0 baseline (ahead=0, behind=48) and must be retained even though merged. **Protected r5 ref:** `r5/upstream-refresh-20261009` is the historic clean baseline and source for r5 controls. **Protected current default:** `main` (still points to r4).
+
+GitHub `compare_commits(base=r5/upstream-refresh-20261009, head=<research>)` results:
+
+- `investigation/r5-adlx-gpu-monitor-20261015`: `behind`, ahead=0, behind=141; a potential later ref-cleanup candidate, **not included in the r6 deletion script**, since historical GitHub links and local use still need checking.
+- Remaining **13 r5 investigation/integration-check refs**: `diverged`, ahead=5–142; they retain commits not reachable from the r5 pinned control. **Do not delete or squash them**, and do not assume that the r6 rewrite preserves their experiment-specific instrumentation or documentation.
+
+### Safe r6 remote-branch cleanup command
+
+The GitHub connector used for documentation **does not expose a remote branch deletion operation**, so remote-ref deletion cannot be completed from this chat. The repository now includes [`tools/evox2/git/Invoke-R6StageBranchCleanup.ps1`](../../tools/evox2/git/Invoke-R6StageBranchCleanup.ps1), which is **dry-run by default**. On the Windows checkout:
+
+```powershell
+Set-Location 'C:\llama-build\llama.cpp-evox2-windows-r6'
+git pull --ff-only origin r6/combined-20261028
+.\tools\evox2\git\Invoke-R6StageBranchCleanup.ps1
+# Only after reviewing the dry-run and branch-based documentation links:
+.\tools\evox2\git\Invoke-R6StageBranchCleanup.ps1 -Execute
+```
+
+Before any push deletion, the script checks the exact repository remote, fetches refs without pruning, confirms each stage ref's full frozen SHA, verifies ancestry against current combined HEAD, and rejects refs checked out in other local worktrees. It deletes **only** the 8 named remote stage refs, uses a per-ref exact-SHA `--force-with-lease` to prevent deleting a branch that advanced, and otherwise fails closed. It neither deletes local branches/worktrees nor touches r5, main, r6/upstream, r6/combined, tags or GitHub settings. If a SHA moved or a worktree uses the branch, **stop and inspect instead of forcing**.
+
+**No GitHub remote branch deletion has been performed by this documentation update.** Status remains 33 remote branches until the Windows-side `-Execute` succeeds, after which it should be 25 if no other changes occurred. Link accessibility remains a separate concern: SHA-based history survives deletion, but branch-name URLs no longer resolve.
+
+
+## 3. Exact remote-branch inventory (snapshot before deletion)
 
 ### Current publication path / keep (2)
 
@@ -72,7 +111,7 @@
 | `test/qwen35-vulkan-2gib-guard` | `b686a49c3c77f2d061cdfc729ba9d94092fea3df` |
 
 
-## 3. Safe order: now vs next session
+## 4. Safe order: now vs next session
 
 **Now (stage 1, docs-first):** (1) keep current b11908 source and rollback binaries frozen; (2) record the measured 21-run gap fill + ROCm all-five CLI-only smoke and source-vs-docs HEAD distinction; (3) synchronize release/index/ROADMAP/PATCHES current-state pointers; (4) inventory and classify branches; (5) collect untracked local R6 S9 plan scripts in Git **without overwriting or reconstructing their private local contents**.
 
@@ -80,46 +119,21 @@
 
 **Future research branch:** start ROCm long-context PP/TG investigation on a *new isolated branch from frozen combined source*, leaving `r6/combined-20261028` and its measured binary untouched; see [measured priority](R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md). Do not mix the next experimental kernel with the release snapshot.
 
-## 4. Five untracked local S9 plans: source is on the Windows worktree, not on GitHub
+## 5. S9 measurement plans: Windows push verified (2026-10-29)
 
-User reported on `C:\llama-build\llama.cpp-evox2-windows-r6`, branch `r6/combined-20261028`, clean tracked files and precisely these **untracked** paths:
+The user confirmed the Windows checkout was clean after successful `git push`; GitHub currently points to `d46f188291fa0b67c948e54275e744992293121f`, commit title `test(evox2): archive S9 benchmark plans`. The formerly untracked files **all appear in the tracked Git tree** (three MH files may have been present in earlier GitHub history; do not claim all five were changed by that last commit). No further staging of those five files is requested.
 
-| Relative path | Evidence / purpose |
+| Tracked path | Purpose |
 | --- | --- |
-| `tools/evox2/benchmark/configs/qwen38-r6-s9-gapfill-overnight-20261029.psd1` | 21-run consecutive speed matrix |
-| `tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-a-minimal.psd1` | S9 MH-128K A candidate |
-| `tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-b-huihui-only.psd1` | S9 MH-128K B huihui |
-| `tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-b-iq4-only.psd1` | S9 MH-128K B original IQ4 |
-| `tools/evox2/benchmark/configs/qwen38-r6-s9-rocm-all5-on-manual-64k-20261029.psd1` | manual ROCm 64k/all-five flag compatibility smoke |
+| `tools/evox2/benchmark/configs/qwen38-r6-s9-gapfill-overnight-20261029.psd1` | 21-run speed gap-fill |
+| `tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-a-minimal.psd1` | MH A |
+| `tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-b-huihui-only.psd1` | MH B huihui |
+| `tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-b-iq4-only.psd1` | MH B original IQ4 |
+| `tools/evox2/benchmark/configs/qwen38-r6-s9-rocm-all5-on-manual-64k-20261029.psd1` | ROCm manual all-five CLI compatibility smoke |
 
-Their **actual local contents are not accessible through the GitHub API** because these are untracked Windows files; do not invent them or claim they have been committed. The three MH scripts were referenced by S9 runbook before being committed. Ensure no machine-specific secrets, private absolute paths or input text are embedded; prefer `local.psd1` keys and repo-relative references.
+The release source pin remains b11908 `b82243bf0`. The plan/docs commits do not imply a rebuilt inference binary.
 
-After fetching the docs commit and reviewing the actual PSD1 files locally, the Windows-side exact staging sequence is:
-
-```powershell
-Set-Location 'C:\llama-build\llama.cpp-evox2-windows-r6'
-git status --short --branch
-git pull --ff-only origin r6/combined-20261028
-$plans = @(
-  'tools/evox2/benchmark/configs/qwen38-r6-s9-gapfill-overnight-20261029.psd1'
-  'tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-a-minimal.psd1'
-  'tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-b-huihui-only.psd1'
-  'tools/evox2/benchmark/configs/qwen38-r6-s9-mh128k-seed20261026-b-iq4-only.psd1'
-  'tools/evox2/benchmark/configs/qwen38-r6-s9-rocm-all5-on-manual-64k-20261029.psd1'
-)
-foreach ($p in $plans) { if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { throw "Missing plan: $p" } }
-# Review the files for locally specific absolute paths, secrets and raw private input.
-git add -- $plans
-git diff --cached --check
-git diff --cached --stat
-git commit -m 'test(evox2): archive S9 gap-fill and MH-128K plans'
-git push origin r6/combined-20261028
-git status --short --branch
-```
-
-**Important:** the docs commit will advance the remote ref past the user's previously clean local checkout, so **pull --ff-only before committing**; these five untracked plan files are not touched by that fast-forward. Do **not** use `git clean -fd`, `git reset --hard`, `git add -A` or `git push --force` to tidy the tree.
-
-## 5. Deferred release/operational gates
+## 6. Deferred release/operational gates
 
 - G8-0–G8-6 / S9 Qwen original IQ4, huihui and Gemma4 text-only gates: complete within recorded bounded scopes.
 - G9-5 actual `llama-server` **router-mode** / llama.cpp WebUI / Open WebUI model switching: **deferred at user request** to a later hands-on check. ROCm MTP-ON server is still separately unvalidated.
