@@ -1,5 +1,8 @@
 # R6 S9 final-model Windows validation runbook - 2026-10-28
 
+> **2026-10-29 measured speed follow-up:** [21 unattended targeted speed runs + separate ROCm all-five ON 64k CLI smoke](R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md) all returned OK/exit0; this document provides the 4-column r5/r6/combined-off/combined-on PP/TG table and cross-backend ROCm long-context follow-up priority. This speed extension is **distinct** from the original G9-0–G9-4 compatibility/quality gate and is not G9-5 router-mode completion. No change to S8 opt-in flags, model-adoption policy or outstanding Draft K/V numerical parity.
+
+
 ## Status, authority and boundaries
 
 **Status update (2026-10-29 JST): G9-0/G9-1/G9-2 and bounded G9-3 completed PASS, including original IQ4 MH-B 12/12; bounded G9-4 Gemma4 31B/26B Vulkan `PASS candidate`; G9-5 PENDING/SELECTIVE.** The measured eleven IQ4 CLI ZIPs, hashes, telemetry and MH A/B per-question results are in the [S9 Qwen IQ4/huihui results](R6-S9-QWEN-IQ4-RESULTS-2026-10-29.md). Gemma4 4k/16k short QA, real 32k input/stability and retained b10919 31B real-32k regression screen are in the [G9-4 measured results](R6-S9-GEMMA4-G9-4-RESULTS-2026-10-29.md). The execution instructions below remain the original prepared procedure; the result does not authorize an automatic Gemma4 replacement, MTP, all-flags-ON profile, long-answer quality claim or untested server/vision release.

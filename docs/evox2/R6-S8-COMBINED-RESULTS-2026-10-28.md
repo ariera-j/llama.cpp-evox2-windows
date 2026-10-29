@@ -1,5 +1,8 @@
 # R6/S8 combined integration candidate: result and S9 handoff - 2026-10-28
 
+> **New downstream measured evidence (2026-10-29 JST):** [Consolidated S0→S9 PP/TG inventory, G8-3 six raw ZIP hashes and the 21-run gap-fill plus standalone ROCm all-five CLI smoke](R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md). The downstream speed results support the user's next **ROCm long-context PP+TG profiling priority**. This **does not reopen S8 gates or change the frozen S8 supported flags**: ROCm all-five ON was a **single CLI stability test only**, not numerical Draft K/V parity or router-mode PASS, and ROCm release defaults remain unpromoted.
+
+
 > **S9 measured downstream update (2026-10-29 JST):** [Qwen original IQ4 and huihui measured G9-0/1/2/3 results](R6-S9-QWEN-IQ4-RESULTS-2026-10-29.md) are recorded: 4/4 short, 3/3 real 64k/selected 128k and **4/4 bounded MH-128K A/B execution/score checks**, with **original IQ4 A/B both 12/12, huihui A 12/12, huihui B 11/12**. Original IQ4 B follow-up is now complete; proceed to independent Gemma4 G9-4 preflight. G9-5 and public release are not approved. This does not change the S8 flag freeze or reopen the integration gates.
 
 > **S9 handoff procedure prepared (2026-10-28; not yet run):** [S9 Windows final-model gates](R6-S9-FINAL-MODELS-RUNBOOK-2026-10-28.md) and two filtered model smoke/long-input plans. This is a downstream testing handoff; the S8 b11908 evidence and flag freeze documented below are unchanged.
