@@ -1,5 +1,8 @@
 # Evo-X2 upstream and integration policy
 
+> **2026-10-29 update: **R6 combined b11908 candidate is measured and source-frozen; public release/tag/default-branch switch remain pending.** S8 G8-0–G8-6 and S9 G9-0–G9-4 pass within documented limits; 21 additional speed runs + one ROCm all-five CLI smoke completed. Router-mode/G9-5 and ROCm MTP-ON server are **deliberately deferred**, S7 Draft K/V numerical parity is unverified and source defaults stay OFF. See [current branch inventory and publication preparation](R5-R6-BRANCH-INVENTORY-AND-PRE-RELEASE-CHECKLIST-2026-10-29.md), [consolidated measurements](R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md), and [frozen flag sheet](R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md). Earlier date-stamped "planned / not run" paragraphs are historical, not current status.** This document retains the original October 11 workflow policy; dated pre-integration statements below reflect the state **then**, and are superseded by the r6 candidate checkpoint in [INTEGRATED-RELEASES.md](INTEGRATED-RELEASES.md).
+
+
 **Decision date:** 2026-10-11 JST. **Status:** adopted as a documentation/workflow policy; **no integrated build, release branch, or tag exists yet**. The first integration checkpoint is planned for a convenient near-term stopping point, not a fixed deadline.
 
 ## Purpose and non-goals
