@@ -35,7 +35,7 @@ Set-Location '.\evox2-vulkan-preview\llama.cpp-evox2-b11908-win-vulkan-preview-v
 .\llama-server.exe --version
 ```
 
-`--list-devices`に`Vulkan0`が表示されることを確認してください。AMD Vulkan対応ドライバと必要なWindows/VC++ランタイムが必要です。**組み込みWebUIはビルド時に`LLAMA_BUILD_UI=OFF`で無効**ですが、CLIとAPIサーバーは同梱されています。VulkanのルーターモードとOpen WebUIからの3モデル切り替えは[35応答の限定テスト](docs/evox2/R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md)でPASSしています。ただし画像処理の正確性、長期安定性とROCmサーバーは未検証です。全5高速化フラグは**ソース既定でOFF**です。使用するモデル・backendごとの[フラグ検証範囲](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)と[Releaseの制限事項](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)を確認してください。
+`--list-devices`に`Vulkan0`が表示されることを確認してください。AMD Vulkan対応ドライバと必要なWindows/VC++ランタイムが必要です。**組み込みWebUIはビルド時に`LLAMA_BUILD_UI=OFF`で無効**ですが、CLIとAPIサーバーは同梱されています。VulkanのルーターモードとOpen WebUIからの3モデル切り替えは[35応答の限定テスト](docs/evox2/R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md)でPASSしています。ただし画像処理の正確性と長期安定性は未検証です。ROCmのルーターモードも[3モデル・16応答の限定テスト](docs/evox2/R6-S9-GATE5-ROCM-ROUTER-RESULTS-2026-10-29.md)でPASSしています（Web検索時の1件のコンテキスト超過は別）。ROCmバイナリは公開ZIPに含みません。全5高速化フラグは**ソース既定でOFF**です。使用するモデル・backendごとの[フラグ検証範囲](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)と[Releaseの制限事項](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)を確認してください。
 
 ## このforkの主な追加点
 
