@@ -12,7 +12,7 @@ param(
     [string]$LlvmBin = '',
     [string]$VulkanSdk = '',
     [string]$CMakeExe = '',
-    [string]$ExpectedCMakeVersion = '4.3.1',
+    [string]$ExpectedCMakeVersion = '3.31.6-msvc6',
     [string]$SevenZipBin = '',
     [string]$DependencyCacheRoot = '',
 
@@ -85,7 +85,9 @@ if (-not [string]::IsNullOrWhiteSpace($CMakeExe)) {
         Select-Object -First 1).Source
 }
 
-# Reject an unexpected CMake before CMake configuration or build begins.
+# G8-6 b11908 build manifests verify VS2022 CMake 3.31.6-msvc6 for
+# both Vulkan and ROCm. This is the r6 reproducibility pin, not the
+# older r3 reference (4.3.1). Reject mismatches before configure/build.
 # ManifestOnly intentionally bypasses this guard (metadata-only recovery).
 if (-not $ManifestOnly -and -not [string]::IsNullOrWhiteSpace($ExpectedCMakeVersion)) {
     $cmakeVersionText = (& $cmake --version | Out-String).Trim()
@@ -103,7 +105,7 @@ if (-not $ManifestOnly -and -not [string]::IsNullOrWhiteSpace($ExpectedCMakeVers
     }
     $actualCMakeVersion = $cmakeVersionMatch.Groups[1].Value
     if ($actualCMakeVersion -ne $ExpectedCMakeVersion) {
-        throw "CMake version mismatch: expected $ExpectedCMakeVersion, observed $actualCMakeVersion at $cmake. VS Native Tools may put its bundled CMake first on PATH. Check 'Get-Command cmake.exe -All', then pass -CMakeExe with the path of CMake $ExpectedCMakeVersion. Use -ExpectedCMakeVersion only for a deliberate version change."
+        throw "CMake version mismatch: expected $ExpectedCMakeVersion (verified r6 b11908), observed $actualCMakeVersion at $cmake. Select a matching cmake.exe using -CMakeExe or explicitly set -ExpectedCMakeVersion to a deliberately tested value."
     }
     Write-Host "CMake version verified: $actualCMakeVersion ($cmake)"
 }
@@ -359,8 +361,17 @@ try {
             -ArgumentList @('--list-devices')
     }
 
+    # Record the cmake.exe actually invoked (which can differ from PATH
+    # when -CMakeExe is supplied), not an unrelated cmake on PATH.
+    $selectedCMakeVersion = Invoke-Evox2NativeCapture -FilePath $cmake -ArgumentList @('--version')
+    $selectedCMakeIdentity = [PSCustomObject]@{
+        Name = 'cmake'
+        Path = $cmake
+        ExitCode = $selectedCMakeVersion.ExitCode
+        Text = $selectedCMakeVersion.Text
+    }
     $toolchain = [ordered]@{
-        CMake = Get-Evox2ToolIdentity -Name 'cmake'
+        CMake = $selectedCMakeIdentity
         Ninja = Get-Evox2ToolIdentity -Name 'ninja'
         Clang = Get-Evox2ToolIdentity -Name 'clang'
         ClangXX = Get-Evox2ToolIdentity -Name 'clang++'

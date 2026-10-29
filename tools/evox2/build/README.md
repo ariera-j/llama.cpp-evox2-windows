@@ -1,37 +1,45 @@
 # Evo-X2 build wrappers
 
-## 2026-10-29: r6 Vulkan toolchain fail-fast policy (post-tag tooling update)
+## 2026-10-29: confirmed r6 Vulkan toolchain pin (corrected after Windows preflight)
 
-The verified r6 Vulkan executable and public experimental ZIP are **not rebuilt** by this documentation change. The wrapper on `main` now uses the following resolution rules **without requiring the two path arguments on this machine**:
+**The measured b11908 Vulkan and ROCm builds both used VS2022 Build Tools CMake `3.31.6-msvc6`, *not* `4.3.1`.** The original `4.3.1` description came from the earlier **r3** Windows build guide. This was confirmed by inspecting the previously uploaded **G8-6 verification archive** (Vulkan and ROCm `evox2-build.json` manifests, both with verified build identities) plus the independent Vulkan manifest from 2026-10-28. The CMake executable path in all three manifests was:
 
-1. Vulkan SDK: explicit `-VulkanSdk` -> current `VULKAN_SDK` environment variable -> if present, `C:\VulkanSDK\1.4.357.0`. Fail before configure if none is available, or if the resolved directory does not exist.
-2. LLVM bin: explicit `-LlvmBin` -> if both clang executables are present, `C:\Program Files\LLVM\bin` -> otherwise `clang.exe` from PATH. Explicit directory paths are checked and continue to take precedence.
-3. CMake: **exact `4.3.1` required** by default for configure and build, including `-BuildOnly`; a mismatch stops before any configure or build. Use `-ExpectedCMakeVersion '4.3.2'` only after deliberately validating that version, or `-ExpectedCMakeVersion ''` to disable the version guard for an upgrade experiment. `-ManifestOnly` is exempt because it does not build.
+`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe`
 
-**VS2022 Native Tools finding (2026-10-29):** the first CMake on `PATH` was VS's `cmake version 3.31.6-msvc6`, not the tested `4.3.1`. The original parser misclassified this suffix as an unparseable version. It now correctly reports a **version mismatch including the selected executable path**. The wrapper also accepts `-CMakeExe` to point to the real 4.3.1 executable without modifying the VS shell's `PATH`:
+The wrapper's **default `-ExpectedCMakeVersion` is therefore `3.31.6-msvc6`**. This is a reproducibility guard for the tested r6 toolchain, **not** a claim that other CMake versions cannot compile llama.cpp. The checked-in source tag and prebuilt Vulkan release ZIP are unchanged.
 
-```powershell
-Get-Command cmake.exe -All | Select-Object Source
-# Confirm this file exists and reports version 4.3.1 before using it:
-& 'C:\Program Files\CMake\bin\cmake.exe' --version
-.\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly `
-    -CMakeExe 'C:\Program Files\CMake\bin\cmake.exe'
-```
+Resolution rules in `Build-Vulkan.ps1`:
 
-The `C:\Program Files\CMake\bin\cmake.exe` path is an **example**, not a claim that this installation exists on every machine. If that path is absent, use the actual 4.3.1 `cmake.exe` reported by your installation. Do not lower the expected version merely to silence the check.
+1. CMake: explicit `-CMakeExe` (full path) if supplied, otherwise first `cmake` on `PATH` (VS Native Tools normally resolves to the verified executable above). Check the full version including any suffix against `3.31.6-msvc6` before configure/build; fail with executable path on mismatch. `-ManifestOnly` is exempt. The build manifest now records the selected CMake executable even if `-CMakeExe` overrides `PATH`.
+2. Vulkan SDK: explicit `-VulkanSdk` > existing `VULKAN_SDK` environment > if present, `C:\VulkanSDK\1.4.357.0`.
+3. LLVM: explicit `-LlvmBin` > if available, `C:\Program Files\LLVM\bin` > else `clang.exe` on `PATH`. Explicit directories are validated.
 
-**Safe no-build smoke test** (requires CMake on PATH, no configure or files written):
+**No-build preflight** (repo root in x64 VS2022 Native Tools PowerShell):
 
 ```powershell
 .\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly
-# Explicit overrides still work:
-.\tools\evox2\build\Build-Vulkan.ps1 -PreflightOnly `
-    -VulkanSdk 'C:\VulkanSDK\1.4.357.0' `
-    -LlvmBin 'C:\Program Files\LLVM\bin'
 ```
 
-Actual build still requires the x64 VS tools environment, Ninja, 7-Zip and the normal dependency cache. The fallback paths are **environment-specific convenience defaults**, not portable assumptions for other PCs; pinning CMake is a reproducibility guard, not a guarantee that every dependency is compatible. Follow the [r6 source checkpoint](../../../docs/evox2/R6-INTEGRATED-PUBLIC-CHECKPOINT-2026-10-29.md) rather than interpreting the historical r4/r5 notes below as current release state.
+Expected:
 
+```text
+CMake version verified: 3.31.6-msvc6 (C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\...\cmake.exe)
+Auto-selected Vulkan SDK: C:\VulkanSDK\1.4.357.0
+Auto-selected LLVM: C:\Program Files\LLVM\bin
+PRE-FLIGHT PASS: ...
+```
+
+If a different CMake appears after updates or in another shell, inspect `Get-Command cmake.exe -All | Select-Object -ExpandProperty Source` and use `-CMakeExe` to choose an installed matching binary. `-ExpectedCMakeVersion` can be explicitly overridden for a deliberately tested future version, or set to `''` to disable this single guard in an investigation; neither option proves a new build equivalent to the frozen b11908 baseline.
+
+For provenance inspection on Windows:
+
+```powershell
+$manifest = Get-Content '.\build-vulkan-r6-combined-fixed\bin\Release\evox2-build.json' -Raw |
+    ConvertFrom-Json
+$manifest.Toolchain.CMake | Format-List Name,Path,ExitCode,Text
+```
+
+The older paragraphs below preserve historical r4/r5 examples and are not instructions to replace the verified r6 CMake. The build still needs Ninja, the VS x64 compiler environment, 7-Zip and the dependency cache; this toolchain check does not compile anything.
 
 ## Current refresh
 
