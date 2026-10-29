@@ -11,6 +11,32 @@
 
 [Upstream README](README.upstream.md) · [ビルド方法](tools/evox2/build/README.md) · [速度計測全文](docs/evox2/R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md) · [パッチ一覧](docs/evox2/PATCHES.md) · [統合版記録](docs/evox2/INTEGRATED-RELEASES.md)
 
+## Vulkan版ビルド済みバイナリ（実験用Pre-release）
+
+**[GitHub Release: Evo-X2 r6 b11908 Vulkan Experimental Preview](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)**
+
+- **[Windows Vulkan ZIP（約34.1 MiB）](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/download/evox2-integrated-2026-10-29/llama.cpp-evox2-b11908-win-vulkan-preview-v2.zip)** · [ZIPのSHA256ファイル](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/download/evox2-integrated-2026-10-29/llama.cpp-evox2-b11908-win-vulkan-preview-v2.zip.sha256)
+- 対象：**Windows x64 / Vulkan**。実機検証環境はWindows 11、GMKtec NucBox EVO-X2、AMD Radeon 8060S（gfx1151）。**ROCm/HIP版は含みません**。
+- 同梱：`llama-cli.exe`、`llama-server.exe`、`llama-bench.exe`、`llama-tokenize.exe`、Vulkan/CPUバックエンドのDLL、ライセンス通知とハッシュ一覧。**GGUFモデル・MTP Draftモデルは含みません**。
+- バイナリは実測済み**b11908**（ビルド時のソースコミット`b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f`）。公開タグ`evox2-integrated-2026-10-29`は文書を含む**ソースチェックポイント**で、バイナリのビルド時コミットとは別です。
+
+ダウンロード後は新しいフォルダへ展開し、**既存のllama.cppのEXE/DLLと混在させないでください**。PowerShellで同じフォルダにZIPを保存した場合の確認例：
+
+```powershell
+$zip = '.\llama.cpp-evox2-b11908-win-vulkan-preview-v2.zip'
+$expected = '8e68dd4de9f5eccdf454ba33705a9da18ad252fecb4ed55144915c24d56775b6'
+$actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'ZIP SHA256 mismatch' }
+
+Expand-Archive -LiteralPath $zip -DestinationPath '.\evox2-vulkan-preview'
+Set-Location '.\evox2-vulkan-preview\llama.cpp-evox2-b11908-win-vulkan-preview-v2'
+.\llama-cli.exe --version
+.\llama-cli.exe --list-devices
+.\llama-server.exe --version
+```
+
+`--list-devices`に`Vulkan0`が表示されることを確認してください。AMD Vulkan対応ドライバと必要なWindows/VC++ランタイムが必要です。**組み込みWebUIはビルド時に`LLAMA_BUILD_UI=OFF`で無効**ですが、CLIとAPIサーバーは同梱されています。ルーターモードやOpen WebUIからのモデル切り替えは**未検証**です。全5高速化フラグは**ソース既定でOFF**です。使用するモデル・backendごとの[フラグ検証範囲](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)と[Releaseの制限事項](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)を確認してください。
+
 ## このforkの主な追加点
 
 | 機能 | 内容・適用範囲 |
@@ -54,7 +80,7 @@ GGUF・MTP Draftモデルは付属しません。詳細は[S9 Qwen/Gemma検証](
 
 ## ビルド・使い方
 
-本forkの独自コードを使うには**このリポジトリからビルド**してください。upstreamの公式インストーラーや公式バイナリには本fork独自のパッチは含まれません。
+本forkの独自コードは、上記の**検証済みVulkan実験用バイナリ**を利用するか、**このリポジトリからソースビルド**して使えます。ROCm版など公開ZIPにない構成はソースビルドしてください。upstream公式インストーラー・公式バイナリには本fork独自のパッチは含まれません。
 
 - [Windows Vulkan](docs/evox2/BUILD-VULKAN-WINDOWS.md) / [Windows ROCm](docs/evox2/BUILD-ROCM-WINDOWS.md) ビルド手順
 - [Evo-X2 PowerShellビルド・計測ツール](tools/evox2/build/README.md)、[ベンチマークplan一覧](tools/evox2/benchmark/configs/)

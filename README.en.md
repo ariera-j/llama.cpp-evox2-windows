@@ -10,6 +10,32 @@ Based on [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp), this fork 
 
 [Build instructions](tools/evox2/build/README.md) · [Full benchmark inventory](docs/evox2/R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md) · [Patch registry](docs/evox2/PATCHES.md) · [Integration checkpoint records](docs/evox2/INTEGRATED-RELEASES.md)
 
+## Prebuilt Windows Vulkan binary (experimental Pre-release)
+
+**[GitHub Release: Evo-X2 r6 b11908 Vulkan Experimental Preview](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)**
+
+- **[Windows Vulkan ZIP (~34.1 MiB)](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/download/evox2-integrated-2026-10-29/llama.cpp-evox2-b11908-win-vulkan-preview-v2.zip)** · [ZIP SHA256 checksum file](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/download/evox2-integrated-2026-10-29/llama.cpp-evox2-b11908-win-vulkan-preview-v2.zip.sha256)
+- Platform: **Windows x64 / Vulkan**. Tested on Windows 11 with a GMKtec NucBox EVO-X2 and AMD Radeon 8060S (gfx1151). **No ROCm/HIP binaries are included**.
+- Contents: `llama-cli.exe`, `llama-server.exe`, `llama-bench.exe`, `llama-tokenize.exe`, Vulkan/CPU backend DLLs, license notices and checksum files. **GGUF model weights and MTP Draft sidecars are not included.**
+- The executable build is **b11908**, measured source commit `b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f`. The annotated `evox2-integrated-2026-10-29` tag is a **source checkpoint** containing later documentation; it does not mean the binary was rebuilt from the tagged documentation commit.
+
+Extract to a **new standalone directory**, without mixing EXEs/DLLs from another llama.cpp build. In PowerShell, assuming the ZIP is in the current directory:
+
+```powershell
+$zip = '.\llama.cpp-evox2-b11908-win-vulkan-preview-v2.zip'
+$expected = '8e68dd4de9f5eccdf454ba33705a9da18ad252fecb4ed55144915c24d56775b6'
+$actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'ZIP SHA256 mismatch' }
+
+Expand-Archive -LiteralPath $zip -DestinationPath '.\evox2-vulkan-preview'
+Set-Location '.\evox2-vulkan-preview\llama.cpp-evox2-b11908-win-vulkan-preview-v2'
+.\llama-cli.exe --version
+.\llama-cli.exe --list-devices
+.\llama-server.exe --version
+```
+
+Check that `--list-devices` shows a `Vulkan0` device. A compatible AMD Vulkan driver and required Windows/VC++ runtimes are needed. **The built-in WebUI is not included** (`LLAMA_BUILD_UI=OFF` at build time); the CLI and API server are included. **Router-mode and model switching through Open WebUI have not been validated.** All five optional speed flags default to **OFF**. Consult the [flag decision sheet](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md) and [Release limitations](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29) before changing per-process settings.
+
 ## What this fork adds
 
 | Feature | Purpose and validation scope |
@@ -55,7 +81,7 @@ No GGUF model weights or Draft sidecars are included. See the [S9 model runbook]
 
 ## Building and running
 
-To use this fork's patches, **build from this repository**. The official upstream llama.cpp installer and binaries do not include these downstream changes.
+To use this fork's patches, either download the **verified experimental Vulkan ZIP** above or **build from this repository**. Build from source for ROCm and configurations not included in the preview ZIP. Official upstream llama.cpp installers and binaries do not contain these downstream patches.
 
 - [Windows Vulkan build guide](docs/evox2/BUILD-VULKAN-WINDOWS.md)
 - [Windows ROCm build guide](docs/evox2/BUILD-ROCM-WINDOWS.md)
