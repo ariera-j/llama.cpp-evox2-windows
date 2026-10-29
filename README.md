@@ -1,134 +1,97 @@
-# llama.cpp
+# llama.cpp Evo-X2 Windows fork
 
-![llama](https://raw.githubusercontent.com/ggml-org/llama.brand/refs/heads/master/cover/llama-cpp/cover-llama-cpp-dark.svg)
+**Windows 11 / GMKtec NucBox EVO-X2 / AMD Radeon 8060S (gfx1151) 向けのローカルLLM推論・高速化研究用forkです。**  
+[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)をベースに、Qwen3.8-Flash-NextのPLE16、Vulkan/ROCm、長コンテキスト推論、MTP（speculative decoding）を検証しています。
 
-<div align="center">
+> **2026-10-29 r6統合チェックポイント（b11908ベース）**：S8・S9の限定した検証範囲をWindows実機で完走。**汎用の安定版・全環境への性能保証ではありません。** 速度最適化5フラグはソース既定ですべてOFF。ルーターモードと数値的Draft K/V一致は未検証です。
 
-<b>LLM inference in C/C++</b>
+**English:** Research-focused downstream llama.cpp fork for Radeon 8060S (gfx1151) on Windows 11. Covers Qwen3.8-Flash-Next PLE16, long-context Vulkan/ROCm and MTP optimizations. Results are hardware- and configuration-specific; this is **not** an official upstream build.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/ggml-org/llama.cpp?filter=v*&color=brightgreen)](https://github.com/ggml-org/llama.cpp/releases?q=tag:v0)
-[![Nightly](https://img.shields.io/github/v/release/ggml-org/llama.cpp?label=nightly&filter=b*&color=orange)](https://github.com/ggml-org/llama.cpp/releases?q=b)
-[![Server](https://img.shields.io/github/actions/workflow/status/ggml-org/llama.cpp/server.yml?label=Server)](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml)
-[![Docker](https://img.shields.io/github/actions/workflow/status/ggml-org/llama.cpp/docker.yml?label=Docker)](https://github.com/ggml-org/llama.cpp/actions/workflows/docker.yml)
-[![Winget](https://img.shields.io/github/actions/workflow/status/ggml-org/llama.cpp/winget.yml?label=Winget)](https://github.com/ggml-org/llama.cpp/actions/workflows/winget.yml)
+[Upstream README](README.upstream.md) · [ビルド方法](tools/evox2/build/README.md) · [速度計測全文](docs/evox2/R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md) · [パッチ一覧](docs/evox2/PATCHES.md) · [統合版記録](docs/evox2/INTEGRATED-RELEASES.md)
 
-[ggml](https://github.com/ggml-org/ggml) / [ops](https://github.com/ggml-org/llama.cpp/blob/master/docs/ops.md) / [maintainer PRs](https://github.com/ggml-org/llama.cpp/issues?q=is%3Apr%20is%3Aopen%20draft%3AFalse%20(author%3Argerganov%20OR%20author%3AKitaitiMakoto%20OR%20author%3Adanbev%20OR%20author%3Aaldehir%20OR%20author%3Amax-krasnyansky%20OR%20author%3ACISC%20OR%20author%3Aggerganov%20OR%20author%3Aam17an%20OR%20author%3Ajhen0409%20OR%20author%3Abartowski1182%20OR%20author%3Anikwen%20OR%20author%3Ahipudding%20OR%20author%3Aravi9%20OR%20author%3AServeurpersoCom%20OR%20author%3Apwilkin%20OR%20author%3Areeselevine%20OR%20author%3Angxson%20OR%20author%3Ajeffbolznv%20OR%20author%3Amarty1885%20OR%20author%3A0cc4m%20OR%20author%3ATitaniumtown%20OR%20author%3Aangt%20OR%20author%3AIMbackK%20OR%20author%3Aarthw%20OR%20author%3AJohannesGaessler%20OR%20author%3AORippler%20OR%20author%3Aruixiang63%20OR%20author%3Axctan%20OR%20author%3Aallozaur%20OR%20author%3Ayomaytk%20OR%20author%3Aaendk%20OR%20author%3Awine99%20OR%20author%3Agaugarg-nv%20OR%20author%3Ataronaeo%20OR%20author%3Aforforever73%20OR%20author%3Alhez%20OR%20author%3Anetrunnereve%20OR%20author%3Afairydreaming)%20sort%3Aupdated-desc) / [dev stats](https://github.com/ggml-org/llama.cpp-dev) / [lib llama API](https://github.com/ggml-org/llama.cpp/issues/9289) / [llama-server REST API](https://github.com/ggml-org/llama.cpp/issues/9291)
+## このforkの主な追加点
 
-</div>
-
-## Quick start
-
-A few options to get `llama.cpp` installed on your machine:
-
-```bash
-# curl
-curl -LsSf https://llama.app/install.sh | sh
-
-# powershell
-irm https://llama.app/install.ps1 | iex
-```
-
-- Visit https://llama.app and follow the instructions
-- Run with Docker - see our [Docker documentation](docs/docker.md)
-- Download pre-built binaries from the [releases page](https://github.com/ggml-org/llama.cpp/releases)
-- Build from source by cloning this repository - check out [our build guide](docs/build.md)
-
-Once installed:
-
-```sh
-# Download and run a model directly from Hugging Face
-llama cli -hf ggml-org/Qwen3.5-0.8B-GGUF
-
-# Launch OpenAI-compatible API server
-llama serve -hf ggml-org/Qwen3.5-0.8B-GGUF
-```
-
-<table align="center">
-    <tr>
-        <td align="center" width=50%>
-            <img width="1310" height="888" alt="VLM session with `llama cli`" src="https://github.com/user-attachments/assets/88726b48-1713-48aa-a525-95a02e78afc4" />
-            <i>VLM session with <b>llama cli</b></i>
-        </td>
-        <td align="center">
-            <img width="1392" height="958" alt="Built-in web UI against `llama serve` running Qwen 3.6" src="https://github.com/user-attachments/assets/b402f972-2e32-4def-8771-8d849f08cf2e" />
-            <i>Built-in web UI against <b>llama serve</b></i>
-        </td>
-    </tr>
-<table>
-
-## Description
-
-The main goal of `llama.cpp` is to enable LLM (and VLM) inference with minimal setup and state-of-the-art performance on
-a wide range of hardware - locally and in the cloud.
-
-- Plain C/C++ implementation without any dependencies
-- Apple silicon is a first-class citizen - optimized via ARM NEON, Accelerate and Metal frameworks
-- AVX, AVX2, AVX512 and AMX support for x86 architectures
-- RVV, ZVFH, ZFH, ZICBOP and ZIHINTPAUSE support for RISC-V architectures
-- 1.5-bit, 2-bit, 3-bit, 4-bit, 5-bit, 6-bit, and 8-bit integer quantization for faster inference and reduced memory use
-- Custom CUDA kernels for running LLMs on NVIDIA GPUs (support for AMD GPUs via HIP and Moore Threads GPUs via MUSA)
-- Vulkan and SYCL backend support
-- CPU+GPU hybrid inference to partially accelerate models larger than the total VRAM capacity
-
-The `llama.cpp` project is build on top of the [ggml](https://github.com/ggml-org/ggml) library.
-
-## Supported backends
-
-| Backend | Target devices |
+| 機能 | 内容・適用範囲 |
 | --- | --- |
-| [BLAS](docs/build.md#blas-build) | All |
-| [BLIS](docs/backend/BLIS.md) | All |
-| [CANN](docs/build.md#cann) | Ascend NPU |
-| [CUDA](docs/build.md#cuda) | Nvidia GPU |
-| [HIP](docs/build.md#hip) | AMD GPU |
-| [Hexagon](docs/backend/snapdragon/README.md) | Snapdragon |
-| [IBM zDNN](docs/backend/zDNN.md) | IBM Z & LinuxONE |
-| [MUSA](docs/build.md#musa) | Moore Threads GPU |
-| [Metal](docs/build.md#metal-build) | Apple Silicon |
-| [OpenCL](docs/backend/OPENCL.md) | Adreno GPU |
-| [OpenVINO [In Progress]](docs/backend/OPENVINO.md) | Intel CPUs, GPUs, and NPUs |
-| [RPC](https://github.com/ggml-org/llama.cpp/tree/master/tools/rpc) | All |
-| [SYCL](docs/backend/SYCL.md) | Intel GPU |
-| [VirtGPU](docs/backend/VirtGPU.md) | VirtGPU APIR |
-| [Vulkan](docs/build.md#vulkan) | GPU |
-| [WebGPU](docs/build.md#webgpu) | All |
-| [ZenDNN](docs/build.md#zendnn) | AMD CPU |
+| PLE16 / GGUF | Unsloth Qwen3.8-Flash-Nextの分割PLE16への互換対応（COMMON-001）。[変換・検証](tools/evox2/model/README.md) |
+| ROCmFP4 / Vulkan | Agention ROCmFP4 FAST PLE16の形式とVulkan GPU演算への対応。**ROCm HIPでのFP4 GPU kernel対応ではありません** |
+| Vulkan QSA-union | f16 KVでの長文PP改善。`GGML_VK_QSA_UNION=1`、対象時に`GGML_VK_QSA_UNION_MIN_KV=32768` |
+| MTP DENSE / NOOP | 対象Qwen4Exp経路のDraft indexer省略とTarget invalidation抑止。Vulkan・ROCmで検証済み条件に限りopt-in |
+| Stage-B / flatten | Draft KV-only prefill / `mtp_eh_proj`最適化。数値的Draft K/V一致は**DEFER**、研究用途のopt-inのみ |
+| 計測・運用ツール | Vulkan/ROCm個別ビルド、TheRock依存管理、ADLX/P-MODE計測、SHA付きbenchmark plan |
 
-## Documentation
+適用条件は[フラグ別の判定表](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)を参照してください。全モデル・全バックエンドに自動的に有効な機能という意味ではありません。
 
-#### Tools
+## 速度計測例：Qwen3.8-Flash-Next
 
-- [cli](tools/cli/README.md)
-- [completion](tools/completion/README.md)
-- [server](tools/server/README.md)
-- [GBNF grammars](grammars/README.md)
+PP=prompt processing、TG=token generation。単位はいずれも**tokens/s**です。
 
-#### Development
+| Backend | 実入力 | r6 upstream PP / TG | r6統合版 PP / TG |
+| --- | ---: | ---: | ---: |
+| Vulkan | 64k | 339.72 / 25.42 | **358.29 / 33.90** |
+| Vulkan | 128k | 268.60 / 23.54 | **322.98 / 30.49** |
+| Vulkan | 256k | 228.89 / 20.30 | **301.30 / 25.08** |
+| ROCm | 64k | 405.24 / 21.86 | **371.43 / 28.63** |
+| ROCm | 128k | 303.66 / 17.50 | **282.24 / 22.64** |
+| ROCm | 256k | 200.59 / 12.55 | **184.79 / 15.04** |
 
-- [How to build](docs/build.md)
-- [Running on Docker](docs/docker.md)
-- [Build on Android](docs/android.md)
-- [Multi-GPU usage](docs/multi-gpu.md)
-- [Performance troubleshooting](docs/development/token_generation_performance_tips.md)
-- [GGML tips & tricks](https://github.com/ggml-org/llama.cpp/wiki/GGML-Tips-&-Tricks)
-- [XCFramework](docs/xcframework.md)
-- [Completions](docs/completions.md)
-- [Models](docs/models.md)
-- [Release process](docs/release.md)
+**比較条件・注意：** NucBox EVO-X2 / Radeon 8060S / Windows 11 / UMA 96 GiB / Performance P-MODE、f16 KV、全層GPU配置、実文書入力64k=**61,789**、128k=**126,253**、256k=**255,181**トークン。r6 upstreamはb11875（upstream b11870と推論ソース同一）、**IQ3 Original joined-PLE・MTP OFF**。統合版はb11908（実測ソースSHA `b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f`）、**IQ3 split PLE16・MTP ON**。統合版Vulkanは**5フラグONの実験構成**、ROCmは**DENSE+NOOPの2フラグON**。モデルレイアウトもMTPも異なる**運用構成比較**であり、**同一条件のパッチ単独改善率ではありません**。256kは代表的な単発値です。
 
-## Contributing
+同一バイナリ内のON/OFF実測、追加21run、全5フラグONのROCm短期安定性確認、アーカイブSHAは[詳細記録](docs/evox2/R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md)を参照。次の高速化優先課題は**ROCmの128k～256kでのPPとTG**です。
 
-- Contributors can open PRs
-- Collaborators will be invited based on contributions
-- Maintainers can push to branches in the `llama.cpp` repo and merge PRs into the `master` branch
-- Any help with managing issues, PRs and projects is very appreciated!
-- Read the [CONTRIBUTING.md](CONTRIBUTING.md) for more information
+## 動作確認したモデルと範囲
 
-## Acknowledgements
+| モデル | 対象backend・確認内容 |
+| --- | --- |
+| Unsloth Qwen3.8 UD-IQ3_XXS Original / PLE16 | Vulkan・ROCm CLI、MTP OFF/ON、64/128/256k実入力。Vulkan MTP ONの通常`llama-server`短文・多段対話・64kを別途確認 |
+| Agention ROCmFP4 FAST PLE16 | **Vulkan**で4k/16kおよび64/128k実文書とMTPの限定検証 |
+| Unsloth / huihui UD-IQ4_XS PLE16 | **Vulkan**で4k/16k起動、64k・選択的128k、MH-128Kの限定的検索回帰 |
+| Gemma4 31B QAT Q4_0 / 26B A4B QAT | **Vulkan**で4k/16kと実32k文書。旧b10919バイナリをフォールバックとして保全 |
 
-- [yhirose/cpp-httplib](https://github.com/yhirose/cpp-httplib) - Single-header HTTP server, used by `llama-server` - MIT license
-- [nothings/stb](https://github.com/nothings/stb) - Single-header image format decoder, used by multimodal subsystem - Public domain
-- [nlohmann/json](https://github.com/nlohmann/json) - Single-header JSON library, used by various tools/examples - MIT License
-- [mackron/miniaudio](https://github.com/mackron/miniaudio) - Single-header audio format decoder, used by multimodal subsystem - Public domain
-- [sheredom/subprocess.h](https://github.com/sheredom/subprocess.h) - Single-header process launching solution for C and C++ - Public domain
+GGUF・MTP Draftモデルは付属しません。詳細は[S9 Qwen/Gemma検証](docs/evox2/R6-S9-FINAL-MODELS-RUNBOOK-2026-10-28.md)・[Gemma4の限定判定](docs/evox2/R6-S9-GEMMA4-G9-4-RESULTS-2026-10-29.md)を参照してください。
+
+## ビルド・使い方
+
+本forkの独自コードを使うには**このリポジトリからビルド**してください。upstreamの公式インストーラーや公式バイナリには本fork独自のパッチは含まれません。
+
+- [Windows Vulkan](docs/evox2/BUILD-VULKAN-WINDOWS.md) / [Windows ROCm](docs/evox2/BUILD-ROCM-WINDOWS.md) ビルド手順
+- [Evo-X2 PowerShellビルド・計測ツール](tools/evox2/build/README.md)、[ベンチマークplan一覧](tools/evox2/benchmark/configs/)
+- [PLE16モデル変換](tools/evox2/model/README.md)、[実運用フラグの判定](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)
+
+速度フラグは**バックエンドごとにプロセス単位で明示**し、`setx`による常時設定は避けてください。以下は研究用の全5フラグONではなく、実測に基づく**保守的なopt-in候補**の例です。
+
+**Vulkan IQ3 PLE16 / f16 KV / 対象MTPパス:**
+
+```powershell
+$env:GGML_VK_QSA_UNION = '1'
+$env:GGML_VK_QSA_UNION_MIN_KV = '32768'
+$env:LLAMA_MTP_SKIP_DENSE_INDEXER = '1'
+$env:LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'
+$env:LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'
+$env:LLAMA_MTP_EH_PROJ_FLATTEN = '0'
+```
+
+**ROCm IQ3 PLE16 / MTP ON（CLI確認済み・server未確認）:**
+
+```powershell
+$env:GGML_VK_QSA_UNION = '0'
+$env:LLAMA_MTP_SKIP_DENSE_INDEXER = '1'
+$env:LLAMA_QSA_SKIP_NOOP_INVALIDATION = '1'
+$env:LLAMA_MTP_DRAFT_PREFILL_KV_CROP = '0'
+$env:LLAMA_MTP_EH_PROJ_FLATTEN = '0'
+```
+
+起動引数・GGUF/Draftの指定例は[G8-6 llama-server手順](docs/evox2/R6-S8-GATE6-RUNTIME-USABILITY-RUNBOOK-2026-10-28.md)を参照。**ソースの既定値は5スイッチ全OFF**です。
+
+## 未検証事項・注意点
+
+- `llama-server`の**router mode / 組み込みWebUI / Open WebUIからのモデル切り替えは今後実施**。既存の通常server動作確認とは別。
+- ROCmの**MTP ON `llama-server`**は未確認。ROCm CLI MTP ONおよびサーバーMTP OFFはそれぞれ確認済み。
+- Stage-B/flattenの数値的Draft K/V一致、汎用の全5フラグON既定プロファイルは**未承認**。
+- ROCmでは同一seedでも出力に揺らぎがある。Gemma4のVision・長文回答完結性・64k以上は本checkpointの承認範囲外。
+- Windows/gfx1151で問題のあった広範囲の`FLASH_ATTN_EXT` backendテストは実行しない。
+- このforkの速度結果を、別のハードウェア、量子化、入力文書へそのまま一般化しない。
+
+## Upstream・ライセンス
+
+このリポジトリは[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)の**非公式fork**です。[元のREADME](README.upstream.md)は同じルートに保存しており、最新の一般向けllama.cpp説明はupstreamを参照してください。独自パッチの検証結果はupstream公式の保証ではありません。[MIT License](LICENSE)。モデルの使用・配布は各提供元の条件を確認してください。
