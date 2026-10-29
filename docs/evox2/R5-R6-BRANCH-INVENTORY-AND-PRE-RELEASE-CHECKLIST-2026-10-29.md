@@ -1,5 +1,7 @@
 # r5/r6 branch inventory and pre-release consolidation plan — 2026-10-29
 
+> **2026-10-29 r5 research-ref naming update:** The r6 stage-ref cleanup is user-confirmed complete (**25 remotes after removal**). Two old-name ROCm QSA investigation branches have **new r5-prefixed aliases with identical SHA**, producing **27 remote branches during transition**; delete the two old-name refs locally only after reviewing branch-based URLs. No other r5 research names or test branches change. After old-name deletion, **25 remote branches** are expected. The release tag, default branch and README remain unchanged.
+
 > **2026-10-29 branch-ancestry audit (after local plan push):** **33 remote branches**; combined HEAD advanced to `d46f188291fa0b67c948e54275e744992293121f` with S9 plans now tracked. **All 8 intermediate r6 branch tips are ancestors of this combined HEAD** (GitHub compare: ahead=0 for every branch). Among 14 r5 auxiliary branches, **13 have unique/diverged history** relative to the r5 pinned control; only `investigation/r5-adlx-gpu-monitor-20261015` is an ancestor of the r5 control. See verified comparisons below. A fail-closed local [stage-ref cleanup script](../../tools/evox2/git/Invoke-R6StageBranchCleanup.ps1) is prepared with dry-run default; **no remote refs have yet been deleted**, and tag, `main`, and README remain untouched.
 
 ## 1. Canonical references and preservation policy
@@ -79,7 +81,7 @@ Before any push deletion, the script checks the exact repository remote, fetches
 | `r6/rocmfpx-vulkan-20261025` | `739af71c117f463236bf33d1624a9438f945ccf2` |
 | `r6/vulkan-qsa-union-20261025` | `96b49ec8e3f92def0c68377191f326d25323b7c1` |
 
-### R5 isolated implementation and integration-check branches / historical review before deletion (14)
+### R5 isolated implementation / integration-check branches and renamed ROCm QSA research refs (16 after two aliases)
 
 | Branch | Remote tip SHA (2026-10-29) |
 | --- | --- |
@@ -97,19 +99,60 @@ Before any push deletion, the script checks the exact repository remote, fetches
 | `investigation/r5-mtp-rollback-diagnostic-20261019` | `33175c2bdfafc82a7ce91d2a68f982ab8bd33353` |
 | `investigation/r5-rocmfpx-vulkan-20261020` | `ceb558b2acb0be388863f6d8c4c15e92193f5c0c` |
 | `investigation/r5-vulkan-off-fa-dispatch-20261010` | `65ed1285c3d6429b4d63c75fba7a87d7f627ac50` |
+| `investigation/r5-rocm-qsa-argsort-topk-20261022` | `16c983edaf5d53666a8a3680df198fb5f920e0c6` |
+| `investigation/r5-rocm-qsa-topk-baseline-20261022` | `264b839235837cac296c8ce0a8ea14cc62d566f8` |
 
-### Older research/misc / out of this cleanup scope (7)
+### Older research/misc / out of this cleanup scope (5 after alias move)
 
 | Branch | Remote tip SHA (2026-10-29) |
 | --- | --- |
-| `investigation/rocm-qsa-argsort-topk-20261022` | `16c983edaf5d53666a8a3680df198fb5f920e0c6` |
-| `investigation/rocm-qsa-topk-baseline-20261022` | `264b839235837cac296c8ce0a8ea14cc62d566f8` |
 | `r2/legacy` | `23c316fb5af67da74e614af4a7453fba9ae46189` |
 | `r3/upstream-first` | `0a93fcbb8e5bcf51b331275c4f4b142d822168d6` |
 | `r4/upstream-refresh-20261002` | `bddf73442c24545879c9acadc078ba5b2c3cb7d8` |
 | `test/mtp-qsa-prototype` | `dbf1ec0f869f271e86d770aa24f0a5c992e38e47` |
 | `test/qwen35-vulkan-2gib-guard` | `b686a49c3c77f2d061cdfc729ba9d94092fea3df` |
 
+
+### Old-name → new-name ref mapping (temporary GitHub aliases)
+
+| Old remote ref (delete once ready) | New preserved ref | Verified SHA |
+| --- | --- | --- |
+| `investigation/rocm-qsa-argsort-topk-20261022` | `investigation/r5-rocm-qsa-argsort-topk-20261022` | `16c983edaf5d53666a8a3680df198fb5f920e0c6` |
+| `investigation/rocm-qsa-topk-baseline-20261022` | `investigation/r5-rocm-qsa-topk-baseline-20261022` | `264b839235837cac296c8ce0a8ea14cc62d566f8` |
+
+The two new refs point to the **same commits**, with no source code modification. The old branch names also appear in the historical version of [R5 ROCm QSA output-repeatability research](R5-ROCM-QSA-REPEATABILITY-2026-10-22.md), now updated to the new names. If external Qiita/blog links explicitly use old branch names, those URLs must be updated or retained as aliases. The `test/mtp-qsa-prototype` and `test/qwen35-vulkan-2gib-guard` branches belong to earlier experiments and **do not** receive `r5-` labels.
+
+**Windows-side exact-SHA-safe deletion (only the two old-name remote refs):**
+
+```powershell
+Set-Location 'C:\llama-build\llama.cpp-evox2-windows-r6'
+git fetch origin
+
+# Verify old and new names point to identical commits, with no updates since the audit.
+$renamePairs = @(
+    @('investigation/rocm-qsa-argsort-topk-20261022', 'investigation/r5-rocm-qsa-argsort-topk-20261022', '16c983edaf5d53666a8a3680df198fb5f920e0c6')
+    @('investigation/rocm-qsa-topk-baseline-20261022', 'investigation/r5-rocm-qsa-topk-baseline-20261022', '264b839235837cac296c8ce0a8ea14cc62d566f8')
+)
+foreach ($p in $renamePairs) {
+    $old = [string]$p[0]; $new = [string]$p[1]; $expected = [string]$p[2]
+    $oldActual = git ls-remote origin ("refs/heads/" + $old)
+    $newActual = git ls-remote origin ("refs/heads/" + $new)
+    if ($LASTEXITCODE -ne 0 -or -not $oldActual -or -not $newActual) { throw "Missing branch: $old / $new" }
+    $oldSha = ($oldActual -split '\s+')[0]
+    $newSha = ($newActual -split '\s+')[0]
+    if ($oldSha -ne $expected -or $newSha -ne $expected) {
+        throw "Tip mismatch: $old / $new; stop without deletion"
+    }
+    Write-Host "Verified: $old => $new ($expected)"
+}
+
+# After confirming GitHub /blob/<old-branch>/ links are no longer required:
+git push --force-with-lease=refs/heads/investigation/rocm-qsa-argsort-topk-20261022:16c983edaf5d53666a8a3680df198fb5f920e0c6 origin :refs/heads/investigation/rocm-qsa-argsort-topk-20261022
+git push --force-with-lease=refs/heads/investigation/rocm-qsa-topk-baseline-20261022:264b839235837cac296c8ce0a8ea14cc62d566f8 origin :refs/heads/investigation/rocm-qsa-topk-baseline-20261022
+
+git fetch --prune origin
+git branch -r
+```
 
 ## 4. Safe order: now vs next session
 
