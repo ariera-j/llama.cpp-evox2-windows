@@ -1,6 +1,6 @@
 # Windows benchmark background-activity evidence (post-tag tooling, 2026-10-29)
 
-**Status: code staged on main, Windows execution not yet re-validated.** The r6 b11908 executable and immutable public source tag are unchanged.
+**Status: Windows live-run functional validation PASS (bounded), 2026-10-29.** The 2-second resource / 15-second background cadence and successful llama-bench execution are verified. One 4.89-second heavy probe delayed a resource row; no claim of zero measurement overhead. The immutable b11908 executable and public source tag are unchanged.
 
 The EVO-X2 benchmark wrappers `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1` now record two **lightweight, no-extra-process** snapshots automatically for each non-dry-run measurement:
 
@@ -12,6 +12,17 @@ The EVO-X2 benchmark wrappers `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1
 Recognized process executables are from **Microsoft Defender** (`MsMpEng`, `NisSrv`, `MpCmdRun`), **Windows Update and maintenance** (`TiWorker`, `TrustedInstaller`, `MoUsoCoreWorker`, `UsoClient`, `wuauclt`, `WaaSMedicAgent`, `WindowsUpdateBox`, `dismhost`, `SetupHost`, `CompatTelRunner`) and **Windows Search indexing** (`SearchIndexer`, `SearchProtocolHost`, `SearchFilterHost`). The list intentionally does **not** equate idle Defender services or any generic `svchost.exe` with active background interference.
 
 > **b11908 CLI-compatibility note:** The initial 2026-10-29 monitor smoke benchmark failed **before any PP/TG work** because the older wrapper passed unsupported `llama-bench -c 4096`. This does **not** demonstrate a monitoring fault or throughput regression. The corrected test omits `-Context` and uses native per-test automatic context. See [b11908 llama-bench argument compatibility](LLAMA-BENCH-B11908-ARGUMENT-COMPATIBILITY.md) before repeating this smoke test.
+
+## 2026-10-29 Windows live-run validation — bounded PASS
+
+- Original user-supplied run ZIP: `20261029-234938-110-bench-vulkan-b11908-ctx1024-8f87d4db6047.zip`, **SHA256 `ab870e682b9fdd84379ae6e8084a2de07aa24541bbfde298543518c525c1fd10`**, 24,711 bytes. Evidence inspected from `conditions.json`, `result.json`, `llama-bench.json`, `resources.csv`, `summary.csv`, `stderr.log` and monitor logs; raw ZIP not committed (user-local model paths).
+- Environment: Windows 11 / EVO-X2 Radeon 8060S, Vulkan **b11908** (`b82243bf0`), Unsloth Qwen3.8 Flash Next UD-IQ3_XXS PLE16, **random tokens**. `-p 512 -n 1024 -d 0 -r 4` with `ContextMode=PerTestAuto`. `-ResourceMonitor -ResourceIntervalSeconds 2 -BackgroundIntervalSeconds 15 -NoAdlxMonitor`. No forced `-c`; this was the successful retry after the earlier argument incompatibility.
+- **Benchmark completed normally:** `Status=OK`, exit code **0**, 2 native test rows, duration **196.1 s**. PP 512 = **550.178 tokens/s ±1.835**; TG 1024 = **29.423 tokens/s ±0.056** (native means ± standard deviations, 4 repetitions each). These are smoke measurements, **not** a controlled overhead A/B comparison. P-MODE **Performance** at both boundaries.
+- **Cadence regression validator PASS:** 95 resource rows, **11 actual background probes**, 84 skipped; expected 15-second minimum. Median resource-row interval **2.008 s**. Consecutive background probe timestamps were generally **16.06–16.13 s** apart, with one interval **20.037 s** after an expensive probe. First probe was deferred.
+- **Probe overhead observable:** background probe duration median **85.5 ms**, maximum **4,887.6 ms** at sample **64** (23:51:48 local). That resource row's total collection took **5,963 ms**; the following resource interval reached **5.970 s** at sample **65**. Resource sampling then returned to approximately 2 s. This demonstrates that rare slow CIM activity still perturbs monitoring cadence; minimizing probe frequency **does not eliminate** its potential effect on inference.
+- **Process coverage complete:** `MsMpEng`, `NisSrv`, `SearchIndexer` present and comparable at start/end; `CpuKnownCount=3`, `CpuCoverage=Complete`, aggregate **4.672 CPU seconds**, **0.074% of total logical CPU time** over the run, `PossibleNoise=False` under the configured 0.5%-per-process threshold. Ten in-run comparisons also returned False; the first in-run probe has no earlier snapshot and therefore has no comparison.
+- **Browser launch during run (user-reported):** System used RAM rose from roughly **7.25 GiB to over 8 GiB around 23:51:40**; some later total CPU utilization samples exceeded **20%**. The monitor does **not** attribute browser process CPU, and the user did not provide a precise browser-launch timestamp. Correlation is plausible but browser causality and any effect on PP/TG cannot be established. GPU model load also drives large initial disk reads; do not attribute those reads to the browser.
+- Resource-monitor stdout/stderr logs are empty (no monitor errors). This **closes the post-tag monitoring functional verification** only. Repeat with and without the resource monitor under matched model/P-MODE/driver conditions if attributing benchmark throughput overhead, and consider `-BackgroundIntervalSeconds 30` or `60` for high-precision long-context A/B work.
 
 ## 2026-10-29 monitoring cadence reduction (post-tag)
 
@@ -51,7 +62,7 @@ To validate a produced `resources.csv` without running another inference, execut
     -CsvPath 'C:\path\to\a\completed\run\resources.csv'
 ```
 
-The verifier checks skipped rows, sampling time fields and minimum spacing, and reports the largest actual resource-row gap and the most expensive background probe. **Windows live-runtime execution of the new monitor remains pending**; the script changes have only been inspected statically in this update.
+The verifier checks skipped rows, sampling time fields and minimum spacing, and reports the largest actual resource-row gap and the most expensive background probe. **Historical note (before the live run above):** this statement described the code-only status before successful Windows revalidation.
 
 A process is **possibly interfering**, not proven causal, if one named process consumes at least **0.5% of total logical-machine CPU time** within an observation interval. Because periodic snapshots are now sparser, short spikes and short-lived processes are **more likely to be missed** than with 2-second sampling. Existing system CPU, paging and disk throughput counters remain useful for correlation.
 
@@ -68,7 +79,7 @@ The corrected snapshot tries `Win32_PerfRawData_PerfProc_Process` when `Get-Proc
 
 `Get-Evox2BackgroundActivitySnapshot` now includes `CpuSource` (`GetProcess` or `PerfProcRaw100ns`) and `CpuProbeError` for diagnostics. `summary.csv` also includes `BackgroundProbeStatus`, `BackgroundCpuCoverage`, `BackgroundCpuKnownCount` in addition to the earlier fields. `resources.csv` includes per-sample coverage fields; its first sample is intentionally `FirstSample` because a delta needs two observations. If CPU data remain unavailable, the wrapper **warns but does not change the inference run status**.
 
-To validate the zero-counter and busy/quiet interpretation without a model, run [Test-BackgroundActivityClassification.ps1](tests/Test-BackgroundActivityClassification.ps1) in Windows PowerShell 5.1. A Windows retest of the actual PerfProc fallback is still needed; protected processes can remain unreadable even with this fallback.
+To validate the zero-counter and busy/quiet interpretation without a model, run [Test-BackgroundActivityClassification.ps1](tests/Test-BackgroundActivityClassification.ps1) in Windows PowerShell 5.1. **Live test update:** PerfProc fallback succeeded for all three protected/indexer process readings in this run. Other Windows configurations can still yield unreadable counters, correctly marked unknown.
 
 ## Quick checks without inference
 
