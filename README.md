@@ -5,7 +5,7 @@
 **Windows 11 / GMKtec NucBox EVO-X2 / AMD Radeon 8060S (gfx1151) 向けのローカルLLM推論・高速化研究用forkです。**  
 [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)をベースに、Qwen3.8-Flash-NextのPLE16、Vulkan/ROCm、長コンテキスト推論、MTP（speculative decoding）を検証しています。
 
-> **2026-10-29 r6統合チェックポイント（b11908ベース）**：S8・S9の限定した検証範囲をWindows実機で完走。**汎用の安定版・全環境への性能保証ではありません。** 速度最適化5フラグはソース既定ですべてOFF。ルーターモードと数値的Draft K/V一致は未検証です。
+> **2026-10-29 r6統合チェックポイント（b11908ベース）**：S8・S9の限定した検証範囲をWindows実機で完走。**汎用の安定版・全環境への性能保証ではありません。** 速度最適化5フラグはソース既定ですべてOFF。Vulkanルーターモードは後追いの3モデル／35応答テストで限定PASS、数値的Draft K/V一致は未検証です。
 
 **English:** Research-focused downstream llama.cpp fork for Radeon 8060S (gfx1151) on Windows 11. Covers Qwen3.8-Flash-Next PLE16, long-context Vulkan/ROCm and MTP optimizations. Results are hardware- and configuration-specific; this is **not** an official upstream build. [Read the full English version](README.en.md).
 
@@ -35,7 +35,7 @@ Set-Location '.\evox2-vulkan-preview\llama.cpp-evox2-b11908-win-vulkan-preview-v
 .\llama-server.exe --version
 ```
 
-`--list-devices`に`Vulkan0`が表示されることを確認してください。AMD Vulkan対応ドライバと必要なWindows/VC++ランタイムが必要です。**組み込みWebUIはビルド時に`LLAMA_BUILD_UI=OFF`で無効**ですが、CLIとAPIサーバーは同梱されています。ルーターモードやOpen WebUIからのモデル切り替えは**未検証**です。全5高速化フラグは**ソース既定でOFF**です。使用するモデル・backendごとの[フラグ検証範囲](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)と[Releaseの制限事項](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)を確認してください。
+`--list-devices`に`Vulkan0`が表示されることを確認してください。AMD Vulkan対応ドライバと必要なWindows/VC++ランタイムが必要です。**組み込みWebUIはビルド時に`LLAMA_BUILD_UI=OFF`で無効**ですが、CLIとAPIサーバーは同梱されています。VulkanのルーターモードとOpen WebUIからの3モデル切り替えは[35応答の限定テスト](docs/evox2/R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md)でPASSしています。ただし画像処理の正確性、長期安定性とROCmサーバーは未検証です。全5高速化フラグは**ソース既定でOFF**です。使用するモデル・backendごとの[フラグ検証範囲](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md)と[Releaseの制限事項](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29)を確認してください。
 
 ## このforkの主な追加点
 
@@ -113,7 +113,7 @@ $env:LLAMA_MTP_EH_PROJ_FLATTEN = '0'
 
 ## 未検証事項・注意点
 
-- `llama-server`の**router mode / 組み込みWebUI / Open WebUIからのモデル切り替えは今後実施**。既存の通常server動作確認とは別。
+- Vulkan `llama-server`の**router mode + Open WebUI**はGemma4 31B／26B／Qwen3.8 IQ3 PLE16を切り替えて**35/35応答が完了、限定PASS**。[G9-5実測記録](docs/evox2/R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md)。**組み込みWebUIはビルド時OFF、Qwen画像時の位置警告24件と長期メモリ解放は未検証**。
 - ROCmの**MTP ON `llama-server`**は未確認。ROCm CLI MTP ONおよびサーバーMTP OFFはそれぞれ確認済み。
 - Stage-B/flattenの数値的Draft K/V一致、汎用の全5フラグON既定プロファイルは**未承認**。
 - ROCmでは同一seedでも出力に揺らぎがある。Gemma4のVision・長文回答完結性・64k以上は本checkpointの承認範囲外。

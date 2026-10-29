@@ -1,5 +1,7 @@
 # r6 / b11908 Evo-X2 integrated source checkpoint — 2026-10-29
 
+> **Post-tag G9-5 evidence (2026-10-29):** [Vulkan b11908 router / Open WebUI switch test](R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md) is now **bounded PASS** (three models, 17+9+9=35 finished MTP-ON requests, normal serial child exits). Qwen image requests logged 24 positional warnings; image correctness, ROCm server, built-in WebUI and long-term GPU memory recovery remain **DEFER**. This is **new runtime evidence added to main**, not a change to the immutable source tag or tested binary hash. Older pre-test "router pending" lines below remain as the release-date historical snapshot.
+
 > **Documentation update after the immutable tag:** [English README](../../README.en.md) was added to `main` *after* the 2026-10-29 tag was created. The tagged source checkpoint stays unchanged. For the latest bilingual project description use `main`; for reproducing the original tag use the tag and the measured b11908 source provenance below.
 
 **Published annotated source tag:** [`evox2-integrated-2026-10-29`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/evox2-integrated-2026-10-29), pointing to publication commit `4479767e5fc7fcf1cd3705c91a321b3d410a06e7` (GitHub tag-object SHA `8bc6b1802807238243d275e9cde1e453a294117c`). This is a **source checkpoint with bounded validation**, not an assertion of full router-mode/server/vision compatibility or a new upstream release.
@@ -7,7 +9,7 @@
 ## What was integrated
 
 - Upstream inference base: b11870, `74bca3950054eed1795f525cb9cf06bfe796492d`.
-- Verified compiled implementation source: b11908, `b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f`. All subsequent Git commits changing docs, benchmark plans and README **did not rebuild/revalidate inference binaries**. The eventual public tag will have the same inference source tree for the validated paths, plus newer documentation.
+- Verified compiled implementation source: b11908, `b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f`. All subsequent Git commits changing docs, benchmark plans and README **did not rebuild/revalidate inference binaries**. The published source tag retains the same validated inference implementation; subsequent main documentation commits include the later router result.
 - Hardware: GMKtec NucBox EVO-X2 / Radeon 8060S (gfx1151), Windows 11, UMA 96 GiB; ROCm TheRock SDK/runtime 10.0.0 staged separately from the Vulkan build.
 - Included compatible functions: PLE16 loader, ROCmFP4 FAST PLE16 Vulkan quant/shader ops, MTP Draft compatibility. Five independent opt-in speed flags: Vulkan QSA-union (f16 KV), common MTP DENSE, NOOP, Stage-B, flatten. All five **default OFF in source**.
 - Selected test models: Qwen3.8 IQ3 Original/PLE16, Agention ROCmFP4 FAST PLE16 (Vulkan), Unsloth and huihui IQ4_XS PLE16 (Vulkan), Gemma4 31B and 26B A4B (Vulkan). Weights and sidecar models are not distributed.

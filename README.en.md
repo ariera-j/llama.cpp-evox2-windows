@@ -6,7 +6,7 @@ Based on [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp), this fork 
 
 **[日本語版 README](README.md)** · [Original upstream README](README.upstream.md) · [Source checkpoint tag](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/evox2-integrated-2026-10-29)
 
-> **r6 integration checkpoint, October 29, 2026 (based on llama.cpp b11908).** Bounded S8/S9 checks were completed on the Windows machine described below. This is a research and reproducibility checkpoint, **not a universally supported stable distribution or a performance guarantee**. All five optional speed switches default to **OFF** in the source. Router-mode model switching and numeric Draft K/V state parity remain unverified.
+> **r6 integration checkpoint, October 29, 2026 (based on llama.cpp b11908).** Bounded S8/S9 checks were completed on the Windows machine described below. This is a research and reproducibility checkpoint, **not a universally supported stable distribution or a performance guarantee**. All five optional speed switches default to **OFF** in the source. A subsequent Vulkan router / Open WebUI 3-model test passed within its 35-response scope; numeric Draft K/V state parity remains unverified.
 
 [Build instructions](tools/evox2/build/README.md) · [Full benchmark inventory](docs/evox2/R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md) · [Patch registry](docs/evox2/PATCHES.md) · [Integration checkpoint records](docs/evox2/INTEGRATED-RELEASES.md)
 
@@ -34,7 +34,7 @@ Set-Location '.\evox2-vulkan-preview\llama.cpp-evox2-b11908-win-vulkan-preview-v
 .\llama-server.exe --version
 ```
 
-Check that `--list-devices` shows a `Vulkan0` device. A compatible AMD Vulkan driver and required Windows/VC++ runtimes are needed. **The built-in WebUI is not included** (`LLAMA_BUILD_UI=OFF` at build time); the CLI and API server are included. **Router-mode and model switching through Open WebUI have not been validated.** All five optional speed flags default to **OFF**. Consult the [flag decision sheet](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md) and [Release limitations](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29) before changing per-process settings.
+Check that `--list-devices` shows a `Vulkan0` device. A compatible AMD Vulkan driver and required Windows/VC++ runtimes are needed. **The built-in WebUI is not included** (`LLAMA_BUILD_UI=OFF` at build time); the CLI and API server are included. **Vulkan router mode and switching three models through Open WebUI passed a bounded [35-response test](docs/evox2/R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md).** Image correctness, long-term stability and ROCm server remain unvalidated. All five optional speed flags default to **OFF**. Consult the [flag decision sheet](docs/evox2/R6-S8-SUPPORTED-FLAG-PROFILES-2026-10-28.md) and [Release limitations](https://github.com/ariera-j/llama.cpp-evox2-windows/releases/tag/evox2-integrated-2026-10-29) before changing per-process settings.
 
 ## What this fork adds
 
@@ -115,7 +115,7 @@ See the [G8-6 server runbook](docs/evox2/R6-S8-GATE6-RUNTIME-USABILITY-RUNBOOK-2
 
 ## Known limitations and deferred checks
 
-- **`llama-server` router mode**, built-in WebUI and Open WebUI model switching are **not yet validated**, and will be checked separately. Traditional server smoke tests do not imply router-mode support.
+- **Vulkan `llama-server` router mode with Open WebUI:** scoped PASS for Gemma4 31B, Gemma4 26B and Qwen3.8 IQ3 PLE16 (**35/35 responses completed**), including serial child unload/load. [G9-5 report](docs/evox2/R6-S9-GATE5-ROUTER-OPENWEBUI-RESULTS-2026-10-29.md). Built-in WebUI was disabled at build time; Qwen image-position warnings (24) and long-term GPU/UMA memory recovery remain open.
 - **ROCm MTP-ON `llama-server`** is untested. ROCm MTP-ON CLI and ROCm MTP-OFF server tests passed separately.
 - **Numeric Draft K/V state parity** for Stage-B/flatten is pending. All-five-flag-on is not approved as a universal preset.
 - ROCm generation can vary even with the same seed. Gemma4 vision/projector, complete long-answer generation and contexts beyond the tested scope are not approved.
