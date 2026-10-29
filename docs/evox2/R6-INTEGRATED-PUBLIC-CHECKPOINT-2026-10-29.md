@@ -1,6 +1,8 @@
 # r6 / b11908 Evo-X2 integrated source checkpoint — 2026-10-29
 
-**Proposed public tag:** `evox2-integrated-2026-10-29` (annotated tag to be created at the final `main` publication commit). This is a **source checkpoint with bounded validation**, not an assertion of full router-mode/server/vision compatibility or a new upstream release.
+> **Documentation update after the immutable tag:** [English README](../../README.en.md) was added to `main` *after* the 2026-10-29 tag was created. The tagged source checkpoint stays unchanged. For the latest bilingual project description use `main`; for reproducing the original tag use the tag and the measured b11908 source provenance below.
+
+**Published annotated source tag:** [`evox2-integrated-2026-10-29`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/evox2-integrated-2026-10-29), pointing to publication commit `4479767e5fc7fcf1cd3705c91a321b3d410a06e7` (GitHub tag-object SHA `8bc6b1802807238243d275e9cde1e453a294117c`). This is a **source checkpoint with bounded validation**, not an assertion of full router-mode/server/vision compatibility or a new upstream release.
 
 ## What was integrated
 

@@ -1,11 +1,13 @@
 # llama.cpp Evo-X2 Windows fork
 
+**Language / 言語:** 日本語（このページ） · **[English README](README.en.md)**
+
 **Windows 11 / GMKtec NucBox EVO-X2 / AMD Radeon 8060S (gfx1151) 向けのローカルLLM推論・高速化研究用forkです。**  
 [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)をベースに、Qwen3.8-Flash-NextのPLE16、Vulkan/ROCm、長コンテキスト推論、MTP（speculative decoding）を検証しています。
 
 > **2026-10-29 r6統合チェックポイント（b11908ベース）**：S8・S9の限定した検証範囲をWindows実機で完走。**汎用の安定版・全環境への性能保証ではありません。** 速度最適化5フラグはソース既定ですべてOFF。ルーターモードと数値的Draft K/V一致は未検証です。
 
-**English:** Research-focused downstream llama.cpp fork for Radeon 8060S (gfx1151) on Windows 11. Covers Qwen3.8-Flash-Next PLE16, long-context Vulkan/ROCm and MTP optimizations. Results are hardware- and configuration-specific; this is **not** an official upstream build.
+**English:** Research-focused downstream llama.cpp fork for Radeon 8060S (gfx1151) on Windows 11. Covers Qwen3.8-Flash-Next PLE16, long-context Vulkan/ROCm and MTP optimizations. Results are hardware- and configuration-specific; this is **not** an official upstream build. [Read the full English version](README.en.md).
 
 [Upstream README](README.upstream.md) · [ビルド方法](tools/evox2/build/README.md) · [速度計測全文](docs/evox2/R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md) · [パッチ一覧](docs/evox2/PATCHES.md) · [統合版記録](docs/evox2/INTEGRATED-RELEASES.md)
 
