@@ -1,4 +1,25 @@
-# r4 clean baseline and validation record
+# Current refresh baseline and historical validation record
+
+## r5 clean baseline (2026-10-09)
+
+Source identity is in [CURRENT-REFRESH.json](CURRENT-REFRESH.json). r5 is pinned at `de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b` and carries documentation/tooling from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. The inference/build source matches the pinned upstream base (the actual clean build/measurement checkout is `6763689b2c33af6132589f01c46a78ac397baf95`). Vulkan and ROCm builds/backend tests were reported successful; original-model allocation and all six 64k/128k/256k real-input runs have now passed with verified b11517 runtime identities (2026-10-09). Full conditions, Windows 26H2 upgrade, raw-archive identities, results and historical comparison limits: [R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md).
+
+Use [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md), the current build guides and `tools/evox2/benchmark/configs/qwen38-clean.psd1`. Start with Original joined-PLE layout, MTP OFF and f16 KV. Historical r4 results below are preserved as comparison evidence and are not r5 measurements.
+
+Recorded r5 single-run real-input results (Original/MTP OFF/f16, manual UMA 96GB):
+
+| Backend | Context | Prompt tokens | Generated tokens | PP tok/s | TG tok/s |
+|---|---:|---:|---:|---:|---:|
+| Vulkan | 64k | 61,789 | 609 | 269.24 | 25.31 |
+| ROCm | 64k | 61,789 | 586 | 390.73 | 21.18 |
+| Vulkan | 128k | 126,253 | 639 | 179.51 | 23.67 |
+| ROCm | 128k | 126,253 | 616 | 292.69 | 17.13 |
+| Vulkan | 256k | 255,181 | 470 | 135.41 | 20.02 |
+| ROCm | 256k | 255,181 | 612 | 193.64 | 12.37 |
+
+The preserved **r4 clean** executables (b11372 / `94b877457`) have now been replayed on the same Windows 26H2 system at 64k: Vulkan PP/TG **248.18 / 25.12**, ROCm **370.95 / 21.12** tok/s; both OK/exit0. Historical pre-update r4 64k PP was **248.38 / 369.72** and r5 26H2 PP **269.24 / 390.73**. The 26H2 same-OS r4→r5 PP difference is **+8.49% Vulkan / +5.33% ROCm**; TG deltas are small and uncontrolled. Archived r4 runtime identity remains `Unverified` despite verified executable SHA/exit0. See the [full r5 report](R5-CLEAN-BASELINE-VALIDATION-2026-10-09.md#same-windows-r4-clean-control-2026-10-09-64k-only). 128k/256k r4 replays remain deferred.\n\nWindows was updated after the old r4 measurements and before r5 to **Windows 11 Pro 26H2 / 26300.9550**, most recent reported KB **KB5121794** (installed 2026-10-08). This is a material comparison confound; a same-OS r4 binary rerun is planned. The full report preserves hashes, metadata and comparisons. No r4 patch is part of this clean baseline.
+
+## Preserved r4 clean baseline
 
 Snapshot: 2026-10-03. Windows builds and original-model 64k/128k/256k real-input runs completed on both backends. The clean baseline is preserved below; subsequent COMMON-001 validation is recorded separately in the post-baseline section.
 

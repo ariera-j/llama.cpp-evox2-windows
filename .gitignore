@@ -158,3 +158,7 @@ AGENTS.local.md
 
 /evox2-logs/
 /tools/evox2/benchmark/configs/local.psd1
+
+# Evo-X2 machine-specific benchmark configurations (examples stay versioned)
+/tools/evox2/benchmark/configs/local.*.psd1
+!/tools/evox2/benchmark/configs/local.*.example.psd1

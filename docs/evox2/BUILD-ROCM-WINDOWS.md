@@ -2,13 +2,13 @@
 
 ## Scope
 
-This procedure builds the clean r4 ROCm baseline on the Evo-X2 using the ROCm 10.0 / TheRock Python distribution.
+This procedure builds the clean current-refresh ROCm baseline on the Evo-X2 using the ROCm 10.0 / TheRock Python distribution.
 
 Baseline source:
 
 ```text
-pinned upstream: bed0a856606ee4a24a164066f73d2379447033f5
-branch: r4/upstream-refresh-20261002
+pinned upstream: de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b
+branch: r5/upstream-refresh-20261009
 ```
 
 GPU target:
@@ -17,8 +17,7 @@ GPU target:
 gfx1151
 ```
 
-The procedure is carried forward from the validated r3 toolchain. The r4 build
-and runtime checks have not yet been executed on the Evo-X2.
+The procedure is carried from the previously used r4 tooling and r3 toolchain. r5 Windows build/runtime validation remains pending; see [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md).
 
 ## Previously tested toolchain (r3)
 
@@ -52,17 +51,16 @@ This is recorded as an observed compatibility result for this machine and toolch
 ## Build wrapper (recommended for the existing environment)
 
 Open the VS2022 x64 Native Tools PowerShell shell and activate the existing
-TheRock environment. Do not recreate a working venv just for r4.
+TheRock environment. Do not recreate a working venv just for this refresh.
 
 ```powershell
 & C:\TheRock\build\.venv\Scripts\Activate.ps1
-.\tools\evox2\build\Build-ROCm.ps1 -Parallel 4 -RunBackendTest
+.\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-clean -Parallel 4
 ```
 
-The default directory is `build-rocm-r4`. Use a fresh directory for the first
-r4 build. The wrapper configures and builds HIP/tools, copies runtime DLLs,
-runs identity/device smoke checks and the requested FLASH_ATTN_EXT test, and
-writes `evox2-build.json`. Model loading is a separate check.
+Pass `-BuildDir .\build-rocm-clean` explicitly; the imported wrapper's default remains `build-rocm-r4`. Use a fresh directory for the first refresh build. The wrapper configures and builds HIP/tools, stages the unified TheRock runtime, runs identity/device smoke checks and writes `evox2-build.json`. Model loading is a separate check.
+
+> **gfx1151 / Windows warning (2026-10-22): do not use the broad `-RunBackendTest` / full `FLASH_ATTN_EXT` sweep as a routine build gate.** A current test case with DKQ=64 plus logit-softcap passed the higher-level support check but reaches a HIP kernel path that intentionally executes `NO_DEVICE_CODE` / trap. During the observed run this produced an unspecified HIP launch failure and was followed by Windows `LiveKernelEvent 141` with `WATCHDOG-20261022-0244.dmp`, while the display/RDP path became unresponsive. Direct causality from the kernel trap to the watchdog dump is strongly correlated but not proven by dump analysis. Use targeted backend-op tests for the feature under investigation instead.
 
 ## Create the ROCm environment (only if not already installed)
 
@@ -141,7 +139,7 @@ Clang 23.0.0
 From the repository root:
 
 ```powershell
-cmake -S . -B .\build-rocm-r4 -G "Ninja Multi-Config" `
+cmake -S . -B .\build-rocm-clean -G "Ninja Multi-Config" `
   "-DCMAKE_PREFIX_PATH=$RocmPath" `
   -DGGML_BACKEND_DL=ON `
   -DGGML_NATIVE=OFF `
@@ -170,13 +168,13 @@ Notes:
 ## Build the HIP backend first
 
 ```powershell
-cmake --build .\build-rocm-r4 `
+cmake --build .\build-rocm-clean `
   --config Release `
   --parallel 4 `
   --target ggml-hip
 ```
 
-Historical r3 build output ended with (r4 step counts may differ):
+Historical r3 build output ended with (current-refresh step counts may differ):
 
 ```text
 [155/155] Linking CXX shared module bin\Release\ggml-hip.dll
@@ -185,7 +183,7 @@ Historical r3 build output ended with (r4 step counts may differ):
 ## Build the user-facing tools
 
 ```powershell
-cmake --build .\build-rocm-r4 `
+cmake --build .\build-rocm-clean `
   --config Release `
   --parallel 4 `
   --target llama-cli llama-server llama-bench test-backend-ops
@@ -194,7 +192,7 @@ cmake --build .\build-rocm-r4 `
 Expected binary directory:
 
 ```text
-build-rocm-r4\bin\Release
+build-rocm-clean\bin\Release
 ```
 
 ## Copy the ROCm runtime DLLs beside the executables
@@ -210,7 +208,7 @@ ROCm0: AMD Radeon(TM) 8060S Graphics (0 MiB, 0 MiB free)
 Copy the ROCm 10.0 runtime DLLs:
 
 ```powershell
-$Bin = Join-Path $PWD 'build-rocm-r4\bin\Release'
+$Bin = Join-Path $PWD 'build-rocm-clean\bin\Release'
 $RocmBin = (rocm-sdk path --bin).Trim()
 
 @(
@@ -228,7 +226,7 @@ After the copy:
 & "$Bin\llama-cli.exe" --list-devices
 ```
 
-Historical r3 result (verify again for r4):
+Historical r3 result (verify again for this refresh):
 
 ```text
 Available devices:
@@ -261,18 +259,36 @@ After installation and `rocm-sdk init`, the rocBLAS data is placed under an arch
 
 A top-level `TensileLibrary.dat` is not required by the current per-architecture layout.
 
-## Backend test
+## Backend tests
+
+Do **not** run the entire `FLASH_ATTN_EXT` matrix as a routine Windows/gfx1151 post-build check on the current r5/TheRock 10.0 setup.
+
+The 2026-10-22 investigation found a support/dispatch mismatch for a DKQ=64 + logit-softcap case:
+
+- the test is accepted by the higher-level support path;
+- `fattn-mma-f16.cuh` rejects that combination and enters `NO_DEVICE_CODE` / GPU trap;
+- the process then reports an unspecified HIP launch failure;
+- Windows later recorded `LiveKernelEvent 141` and `WATCHDOG-20261022-0244.dmp` for the same 02:44 incident;
+- the machine's display/RDP path remained unusable until a manual reboot.
+
+Kernel-Power 41 after reboot had `BugcheckCode=0` and `WHEABootErrorCount=0`, so this was not a normal BSOD/WHEA crash. The exact causal chain has not been proven with WinDbg, but the full FA sweep is not considered a safe generic build gate on this machine until the support-check mismatch is fixed.
+
+Use focused tests instead. Example from the QSA determinism investigation:
 
 ```powershell
-& "$Bin\test-backend-ops.exe" test -b ROCm0 -o FLASH_ATTN_EXT
+& "$Bin\test-backend-ops.exe" test -b ROCm0 -o ARGSORT
 ```
 
-Historical r3 result (verify again for r4):
+That focused gfx1151 ROCm ARGSORT suite passed all supported cases (74/74). For other changes, select only the relevant operator/case set rather than running the whole FA matrix.
+
+Historical r3 full-FA result:
 
 ```text
 3982/3982 tests passed
 Backend ROCm0: OK
 ```
+
+Keep that historical result as provenance only; do not interpret it as proof that the current full matrix is safe on the newer source/runtime combination.
 
 ## Model smoke test
 
@@ -299,7 +315,7 @@ After configuring `local.psd1`, also check the requested 64k allocation:
 
 ```powershell
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
-  -BuildKey R4ROCm -ModelKey UnslothOriginal `
+  -BuildKey CleanROCm -ModelKey UnslothOriginal `
   -Context 65536 -FlashAttn auto -AllocationOnly -ResourceMonitor
 ```
 
@@ -317,11 +333,11 @@ Clang 23 emits many warnings in this Windows ROCm build. The high count is domin
 -Wdeprecated-declarations
 ```
 
-The clean r4 baseline does not modify source code merely to suppress these warnings.
+The clean current-refresh baseline does not modify source code merely to suppress these warnings.
 
 ## Historical r3 64k result
 
-The r4 result is pending in [BASELINE.md](BASELINE.md). The following accepted
+The current-refresh result is pending in [BASELINE.md](BASELINE.md). The following accepted
 result belongs to [R3-BASELINE.md](R3-BASELINE.md).
 
 Accepted self-built b11247 ROCm baseline:

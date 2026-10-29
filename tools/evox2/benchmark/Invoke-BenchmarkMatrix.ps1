@@ -243,6 +243,38 @@ function Get-Evox2MatrixWorkloadLabel {
     return "p=$p n=$n d=$d r=$r"
 }
 
+function Get-Evox2ScriptParameterNames {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        $Path,
+        [ref]$tokens,
+        [ref]$parseErrors
+    )
+
+    if ($null -ne $parseErrors -and $parseErrors.Count -gt 0) {
+        $details = @($parseErrors | ForEach-Object { $_.Message }) -join '; '
+        throw "Failed to parse benchmark script parameter block: $Path :: $details"
+    }
+
+    if ($null -eq $ast.ParamBlock) {
+        throw "Benchmark script has no param block: $Path"
+    }
+
+    return @(
+        $ast.ParamBlock.Parameters |
+            ForEach-Object { $_.Name.VariablePath.UserPath } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Select-Object -Unique
+    )
+}
+
 function Assert-Evox2KnownParameters {
     param(
         [string]$ToolName,
@@ -310,12 +342,22 @@ function ConvertTo-Evox2MatrixResultRow {
             BenchTest         = $null
             PromptTokens      = $ChildRow.PromptTokens
             GenerationTokens  = $ChildRow.GeneratedTokens
+            OutputFingerprintSha256 = $ChildRow.OutputFingerprintSha256
+            OutputFingerprintBytes  = $ChildRow.OutputFingerprintBytes
+            OutputFingerprintStatus = $ChildRow.OutputFingerprintStatus
             Depth             = $null
             AvgTokensPerSec   = $null
             StdDevTokensPerSec = $null
             RepetitionSamples = $null
 
             ResourceSamples   = $ChildRow.ResourceSamples
+            AdlxSamples       = $ChildRow.AdlxSamples
+            PModeStart        = $ChildRow.PModeStart
+            PModeFinish       = $ChildRow.PModeFinish
+            PModeChanged      = $ChildRow.PModeChanged
+            AdlxHighLoadPowerW = $ChildRow.AdlxHighLoadPowerW
+            AdlxPowerClass    = $ChildRow.AdlxPowerClass
+            PModeWarningCount = $ChildRow.PModeWarningCount
             ChildRunDirectory = $ChildRow.RunDirectory
         }
     }
@@ -347,12 +389,22 @@ function ConvertTo-Evox2MatrixResultRow {
         BenchTest         = $ChildRow.Test
         PromptTokens      = $ChildRow.PromptTokens
         GenerationTokens  = $ChildRow.GenerationTokens
+        OutputFingerprintSha256 = $null
+        OutputFingerprintBytes  = $null
+        OutputFingerprintStatus = $null
         Depth             = $ChildRow.Depth
         AvgTokensPerSec   = $ChildRow.AvgTokensPerSec
         StdDevTokensPerSec = $ChildRow.StdDevTokensPerSec
         RepetitionSamples = $ChildRow.RepetitionSamples
 
         ResourceSamples   = $ChildRow.ResourceSamples
+        AdlxSamples       = $ChildRow.AdlxSamples
+        PModeStart        = $ChildRow.PModeStart
+        PModeFinish       = $ChildRow.PModeFinish
+        PModeChanged      = $ChildRow.PModeChanged
+        AdlxHighLoadPowerW = $ChildRow.AdlxHighLoadPowerW
+        AdlxPowerClass    = $ChildRow.AdlxPowerClass
+        PModeWarningCount = $ChildRow.PModeWarningCount
         ChildRunDirectory = $ChildRow.RunDirectory
     }
 }
@@ -436,10 +488,12 @@ if ($Jobs.Count -eq 0) {
     throw 'Matrix plan contains no Jobs.'
 }
 
-$cliCommand = Get-Command -Name $measureCli
-$benchCommand = Get-Command -Name $measureBench
-$validCliParameters = @($cliCommand.Parameters.Keys)
-$validBenchParameters = @($benchCommand.Parameters.Keys)
+# Do not use Get-Command ExternalScriptInfo.Parameters here. On Windows
+# PowerShell 5.1 it can expose an incomplete parameter dictionary for scripts
+# addressed by path (observed missing ExtraArgs and GpuLayers). Parse the
+# script AST directly so matrix validation follows the actual param blocks.
+$validCliParameters = @(Get-Evox2ScriptParameterNames -Path $measureCli)
+$validBenchParameters = @(Get-Evox2ScriptParameterNames -Path $measureBench)
 
 $expanded = @()
 $seenPlanKeys = @{}

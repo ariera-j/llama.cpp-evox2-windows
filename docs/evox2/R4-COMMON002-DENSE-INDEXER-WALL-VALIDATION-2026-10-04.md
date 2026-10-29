@@ -182,4 +182,3 @@ Related:
 [short validation](R4-COMMON002-DENSE-INDEXER-SHORT-VALIDATION-2026-10-04.md),
 [earlier wall baseline](R4-COMMON002-WALL-DIAGNOSTICS-2026-10-04.md),
 [roadmap](ROADMAP.md).
-

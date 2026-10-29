@@ -141,36 +141,34 @@ static void restore(llama_context * ctx, const std::vector<uint8_t> & s, llama_s
 }
 static bool remove(llama_context * ctx,int p0,int p1) { return llama_memory_seq_rm(llama_get_memory(ctx),0,p0,p1); }
 
-static void check_diagnostics(const std::string & text) {
+static void check_trace(const std::string & text) {
+    // Small opt-in action proof instead of r4's MTP-wide diagnostics.
     bool suppressed = false, pending = false, real_edit = false;
     std::istringstream lines(text);
     for (std::string line; std::getline(lines, line);) {
-        if (line.find("mtp_diag ") == std::string::npos) { continue; }
+        if (line.find("QSA no-op trim:") == std::string::npos) { continue; }
         std::map<std::string, std::string> fields;
         std::istringstream words(line);
         for (std::string word; words >> word;) {
             const auto eq = word.find('=');
             if (eq != std::string::npos) { fields[word.substr(0, eq)] = word.substr(eq + 1); }
         }
-        if (fields["kind"] != "end" || fields["event"] != "seq_rm" || !fields.count("idx_cells_before")) { continue; }
-        const auto before = std::stoll(fields.at("idx_cells_before"));
-        const auto after = std::stoll(fields.at("idx_cells_after"));
-        if (fields.at("noop_suppressed") == "1") {
-            require(before == after && fields.at("noop_observed") == "1" && fields.at("stale_marked") == "0",
-                    "Suppressed removal changed membership or marked stale");
-            require(fields.at("stale_before") == fields.at("stale_after"), "Suppressed removal lost pending stale");
+        if (fields["enabled"] != "1" || fields["inspected"] != "1") { continue; }
+        const auto before = std::stoll(fields.at("before"));
+        const auto after = std::stoll(fields.at("after"));
+        const auto stale_before = std::stoll(fields.at("stale_before"));
+        const auto stale_after = std::stoll(fields.at("stale_after"));
+        if (fields.at("suppressed") == "1") {
+            require(before == after && fields.at("marked") == "0", "Suppression changed membership or marked stale");
+            require(stale_before == stale_after, "Suppression cleared pending stale");
             suppressed |= before > 0;
-            if (fields.at("pending_stale_preserved") == "1") {
-                require(std::stoll(fields.at("stale_before")) != std::numeric_limits<llama_pos>::max(), "False pending-stale evidence");
-                pending = true;
-            }
+            if (stale_before != std::numeric_limits<llama_pos>::max()) { pending = true; }
         } else if (before > after) {
-            require(fields.at("stale_marked") == "1", "Real removal did not mark stale");
+            require(fields.at("marked") == "1", "Real suffix removal did not mark stale");
             real_edit = true;
         }
     }
-    require(suppressed && pending && real_edit, "Missing real target suppression/pending-stale/real-edit evidence");
-    require(text.find("event=layout") != std::string::npos, "Actual QSA layout path absent");
+    require(suppressed && pending && real_edit, "Missing target suppression/pending-stale/real-edit proof");
 }
 int main(int argc,char **argv) {
     try {
@@ -181,8 +179,10 @@ int main(int argc,char **argv) {
             if(key=="-m") main_path=argv[i]; else if(key=="-ngl") ngl=std::stoi(argv[i]); else throw std::runtime_error("Unknown option");
         }
         require(!main_path.empty(),"Missing main model");
-        env_guard e1("LLAMA_QSA_SKIP_NOOP_INVALIDATION"),e2("LLAMA_MTP_DIAG"),e3("LLAMA_MTP_SKIP_DENSE_INDEXER");
-        set_env("LLAMA_MTP_DIAG","wall");set_env("LLAMA_MTP_SKIP_DENSE_INDEXER","1");
+        env_guard e1("LLAMA_QSA_SKIP_NOOP_INVALIDATION"), e2("LLAMA_MTP_DIAG"),
+                  e3("LLAMA_MTP_SKIP_DENSE_INDEXER"), e4("LLAMA_QSA_NOOP_TRACE");
+        set_env("LLAMA_MTP_DIAG","off");set_env("LLAMA_MTP_SKIP_DENSE_INDEXER","1");
+        set_env("LLAMA_QSA_NOOP_TRACE","1");
         backend_guard backend; log_capture log;
         auto mp=llama_model_default_params();mp.n_gpu_layers=ngl;mp.load_mtp=false;
         llama_model_ptr model(llama_model_load_from_file(main_path.c_str(),mp));require(bool(model),"Cannot load target model");
@@ -233,7 +233,7 @@ int main(int argc,char **argv) {
                 }
             }
             if(seqs==1) {
-                check_diagnostics(log.get());
+                check_trace(log.get());
             } else {
                 // Real shared-prefix/copy/keep fallback, with the feature ineligible.
                 clear(a.get());clear(b.get());decode(a.get(),0,32);decode(b.get(),0,32);

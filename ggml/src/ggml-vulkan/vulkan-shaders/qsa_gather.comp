@@ -3,7 +3,9 @@
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 
-// Gather each KV head once and retain the mask for each query in the group.
+// Adapted from the r5 VULKAN-002 gather shader (MIT).
+// Gather each KV head once and retain the finite-mask selection for every
+// query in a group. KV rows beyond the union are zero/negative-infinity padded.
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) readonly buffer K { uint data_k[]; };
@@ -50,4 +52,3 @@ void main() {
         data_mc[tid * kv + row] = valid ? data_m[(p.batch_off + tid) * p.mask_stride + src] : float16_t(uintBitsToFloat(0xff800000));
     }
 }
-

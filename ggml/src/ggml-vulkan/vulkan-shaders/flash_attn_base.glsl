@@ -26,7 +26,8 @@ const bool LOGIT_SOFTCAP   = (Flags & 4) != 0;
 const bool OLD_AMD_WINDOWS = (Flags & 8) != 0;
 // Sparse: gather binding-7 indices instead of scanning [0,KV); p.split_kv = n_kv_max.
 const bool USE_SPARSE      = (Flags & 16) != 0;
-// Union mode uses binding 7 for a rounded count, never sparse row indices.
+// Grouped-union mode uses binding 7 for the dynamically rounded KV count,
+// not for sparse row indices. Keep bit 16 clear when using this mode.
 const bool DYNAMIC_KV      = (Flags & 32) != 0;
 
 // Round up head sizes to a multiple of 16, for coopmat1/coopmat2 paths

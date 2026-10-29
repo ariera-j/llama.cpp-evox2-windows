@@ -1,5 +1,20 @@
 # Evo-X2 Windows tooling
 
+> **2026-10-24 PLE16 model preparation:** [`model/README.md`](model/README.md) documents the r5-local, r2-derived Python converter, r3-derived PowerShell wrapper, preflight mode, verification and large-model safety checks. No inference or benchmark runtime code changed; run converted GGUFs using COMMON-001-capable binaries.
+
+
+## Current refresh entry point
+
+Build and measurement utilities are imported from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Use the [current handoff](../../docs/evox2/R5-REFRESH-2026-10-09.md), [refresh procedure](../../docs/evox2/UPSTREAM-REFRESH.md) and current build guides.
+
+Use explicit `-BuildDir .\build-vulkan-clean` / `.\build-rocm-clean`, the generic `benchmark/configs/qwen38-clean.psd1`, and `local.clean.example.psd1` copied to ignored `local.psd1`. Correct the new binary/model/input paths; leave `LogRoot` empty for worktree-local logs. The wrappers retain their historical default directory names.
+
+Imported r4 native diagnostics and test fixtures need matching native-source support and are not current-refresh baseline tests. New Windows builds, PowerShell runtime compatibility and inference measurements are pending. Real-prompt llama-bench and union statistics remain on their separate investigation branches.
+
+## Imported r4 tooling reference
+
+The detailed reference below is preserved from r4. Its r4 build keys, dated results and experiment commands refer to that source generation. Use the current entry points above for the clean baseline.
+
 This directory contains downstream build and benchmark utilities for the Evo-X2 Windows work.
 
 The tools are designed around one rule:

@@ -3,7 +3,10 @@
 #extension GL_KHR_shader_subgroup_arithmetic : require
 #extension GL_KHR_shader_subgroup_basic : require
 
-// Adapted from LynxPDA/llama.cpp flash_attn_union.comp at 1f4e25789 (MIT).
+// Adapted from LynxPDA/llama.cpp flash_attn_union.comp at 1f4e25789 (MIT),
+// via the r5 VULKAN-002 implementation.
+// r6 supplies per-query selected cell indices from the upstream finite-mask
+// compactor, preserving either upstream fused or unfused selection graphs.
 // Reuse a 16 KiB bitmap across index ranges; do not truncate high KV positions.
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -92,4 +95,3 @@ void main() {
         data_count[3] = p.n_kv;
     }
 }
-

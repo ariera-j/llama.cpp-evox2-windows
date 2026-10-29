@@ -245,4 +245,3 @@ Sources:
 「ROCm GDN/CONCAT prefill」「GDN producer fusion」
 「MTP + prompt lookup」「draft head計算量削減」「penalty有効時のsampler」の5系統。
 既存QSA/PLE/matvecの項目は、上記のPR・適用条件で具体化する。
-

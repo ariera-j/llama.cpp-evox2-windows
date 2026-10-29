@@ -83,6 +83,18 @@ param(
     [ValidateRange(1, 60)]
     [int]$ResourceIntervalSeconds = 2,
 
+    [switch]$NoAdlxMonitor,
+
+    [ValidateRange(100, 60000)]
+    [int]$AdlxIntervalMs = 2000,
+
+    [ValidateRange(0, 64)]
+    [int]$AdlxGpuIndex = 0,
+
+    [string]$AdlxMonitorExe = '',
+
+    [switch]$NoPModeProbe,
+
     [ValidateRange(5, 300)]
     [int]$ProgressIntervalSeconds = 15,
 
@@ -123,6 +135,23 @@ Import-Module $benchmarkModule -Force
 Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
+
+$AdlxMonitorRequested = -not [bool]$NoAdlxMonitor
+if ([string]::IsNullOrWhiteSpace($AdlxMonitorExe)) {
+    $AdlxMonitorExe = Join-Path $toolsRoot 'adlx-gpu-monitor\build\bin\evox2-adlx-gpu-monitor.exe'
+}
+$AdlxMonitorExe = [IO.Path]::GetFullPath($AdlxMonitorExe)
+$AdlxMonitorAvailable = Test-Path -LiteralPath $AdlxMonitorExe -PathType Leaf
+$AdlxMonitorIdentity = $null
+$AdlxMonitorIdentityError = $null
+if ($AdlxMonitorAvailable) {
+    try {
+        $AdlxMonitorExe = (Resolve-Path -LiteralPath $AdlxMonitorExe).Path
+        $AdlxMonitorIdentity = Get-Evox2FileIdentity -Path $AdlxMonitorExe -Sha256
+    } catch {
+        $AdlxMonitorIdentityError = $_.Exception.Message
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($LocalConfig)) {
     $LocalConfig = Join-Path $benchmarkDir 'configs\local.psd1'
@@ -457,6 +486,9 @@ $Preview = [PSCustomObject]@{
     MTP               = [bool]$Mtp
     UmaLabel          = $UmaLabel
     ResourceMonitor   = [bool]$ResourceMonitor
+    AdlxMonitor       = $AdlxMonitorRequested
+    AdlxAvailable     = $AdlxMonitorAvailable
+    PModeProbe        = -not [bool]$NoPModeProbe
     ConditionId       = $ConditionId
     GitCommit         = $Identity.Git.Commit
     GitDirty          = $Identity.Git.Dirty
@@ -490,9 +522,22 @@ $SummaryPath = Join-Path $RunDirectory 'summary.csv'
 $StdOutPath = Join-Path $RunDirectory 'stdout.log'
 $StdErrPath = Join-Path $RunDirectory 'stderr.log'
 $OutputPath = Join-Path $RunDirectory 'output.log'
+$NormalizedStdOutPath = Join-Path $RunDirectory 'stdout.normalized.log'
 $ResourcePath = Join-Path $RunDirectory 'resources.csv'
 $MonitorStdOutPath = Join-Path $RunDirectory 'resource-monitor.stdout.log'
 $MonitorStdErrPath = Join-Path $RunDirectory 'resource-monitor.stderr.log'
+$GpuMetricsPath = Join-Path $RunDirectory 'gpu-metrics.csv'
+$AdlxStdOutPath = Join-Path $RunDirectory 'adlx-monitor.stdout.log'
+$AdlxStdErrPath = Join-Path $RunDirectory 'adlx-monitor.stderr.log'
+
+$PModeAtStart = Get-Evox2PModeMetadata -Disabled:$NoPModeProbe
+if (-not $NoPModeProbe) {
+    if (-not $PModeAtStart.ProbeSucceeded) {
+        Write-Warning "P-MODE start probe failed; state is Unknown. $($PModeAtStart.Error)"
+    } elseif ([string]$PModeAtStart.Mode -ne 'Performance') {
+        Write-Warning "P-MODE at start is $($PModeAtStart.Mode); expected Performance for performance comparisons."
+    }
+}
 
 $Started = Get-Date
 
@@ -527,6 +572,27 @@ $Conditions = [ordered]@{
         IntervalSeconds = if ($ResourceMonitor) { $ResourceIntervalSeconds } else { $null }
     }
 
+    PModeAtStart = $PModeAtStart
+
+    PModePolicy = [ordered]@{
+        ProbeEnabled = -not [bool]$NoPModeProbe
+        ExpectedMode = 'Performance'
+        ProbeSource  = 'IP3-WMI-method2'
+        FailOpen     = $true
+    }
+
+    AdlxGpuMonitor = [ordered]@{
+        Requested       = $AdlxMonitorRequested
+        Available       = $AdlxMonitorAvailable
+        IntervalMs      = $AdlxIntervalMs
+        GpuIndex        = $AdlxGpuIndex
+        ExecutablePath  = $AdlxMonitorExe
+        Executable      = $AdlxMonitorIdentity
+        IdentityError   = $AdlxMonitorIdentityError
+        OutputFile      = $GpuMetricsPath
+        FailOpen        = $true
+    }
+
     ExecutableIdentity = $Identity.Executable
     DeviceIdentity     = $Identity.Device
     RuntimeArtifacts   = $Identity.RuntimeArtifacts
@@ -552,6 +618,11 @@ $argumentLine = (
 $process = $null
 $processHandle = [IntPtr]::Zero
 $monitorProcess = $null
+$adlxMonitorProcess = $null
+$adlxMonitorHandle = [IntPtr]::Zero
+$adlxMonitorStarted = $false
+$adlxMonitorStartError = $null
+$adlxMonitorExitCode = $null
 $ExitCode = $null
 $ExitCodeSource = 'unavailable'
 $runException = $null
@@ -574,6 +645,31 @@ try {
     # Force .NET to open and retain a process handle while the child is alive.
     # This gives us a reliable native fallback for the exit code later.
     $processHandle = $process.Handle
+
+    if ($AdlxMonitorRequested) {
+        if (-not $AdlxMonitorAvailable) {
+            $adlxMonitorStartError = "ADLX GPU monitor executable not found: $AdlxMonitorExe"
+            Write-Warning "$adlxMonitorStartError; continuing without ADLX telemetry."
+        } else {
+            try {
+                $adlxMonitorProcess = Start-Evox2AdlxGpuMonitor `
+                    -Executable $AdlxMonitorExe `
+                    -OutputPath $GpuMetricsPath `
+                    -StdOutPath $AdlxStdOutPath `
+                    -StdErrPath $AdlxStdErrPath `
+                    -TargetProcessId $process.Id `
+                    -IntervalMs $AdlxIntervalMs `
+                    -GpuIndex $AdlxGpuIndex
+
+                $adlxMonitorHandle = $adlxMonitorProcess.Handle
+                $adlxMonitorStarted = $true
+                Write-Host "ADLX GPU monitor PID: $($adlxMonitorProcess.Id)"
+            } catch {
+                $adlxMonitorStartError = $_.Exception.Message
+                Write-Warning "ADLX GPU monitor could not be started: $adlxMonitorStartError"
+            }
+        }
+    }
 
     if ($ResourceMonitor) {
         $monitorScript = Join-Path $benchmarkDir 'Monitor-LlamaProcess.ps1'
@@ -656,6 +752,41 @@ try {
     $runException = $_.Exception.ToString()
     Write-Warning "Run exception: $($_.Exception.Message)"
 } finally {
+    if ($null -ne $adlxMonitorProcess) {
+        try {
+            $adlxWaitMilliseconds = [math]::Max(5000, $AdlxIntervalMs + 3000)
+            if (-not $adlxMonitorProcess.HasExited) {
+                if (-not $adlxMonitorProcess.WaitForExit($adlxWaitMilliseconds)) {
+                    if ([string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
+                        $adlxMonitorStartError = 'ADLX monitor did not stop after the target process exited; forced termination was used.'
+                    }
+                    Stop-Process -Id $adlxMonitorProcess.Id -Force -ErrorAction SilentlyContinue
+                    [void]$adlxMonitorProcess.WaitForExit(2000)
+                }
+            }
+            $adlxMonitorProcess.Refresh()
+            if ($adlxMonitorProcess.HasExited) {
+                try {
+                    $managedAdlxExitCode = $adlxMonitorProcess.ExitCode
+                    if ($null -ne $managedAdlxExitCode -and "$managedAdlxExitCode" -ne '') {
+                        $adlxMonitorExitCode = [uint32]$managedAdlxExitCode
+                    }
+                } catch {}
+
+                if ($null -eq $adlxMonitorExitCode -and $adlxMonitorHandle -ne [IntPtr]::Zero) {
+                    [uint32]$nativeAdlxExitCode = 0
+                    $nativeAdlxOk = [Evox2NativeProcess]::GetExitCodeProcess(
+                        $adlxMonitorHandle,
+                        [ref]$nativeAdlxExitCode
+                    )
+                    if ($nativeAdlxOk) {
+                        $adlxMonitorExitCode = $nativeAdlxExitCode
+                    }
+                }
+            }
+        } catch {}
+    }
+
     if ($null -ne $monitorProcess) {
         try {
             if (-not $monitorProcess.HasExited) {
@@ -668,6 +799,13 @@ try {
 }
 
 $Finished = Get-Date
+
+$PModeAtFinish = Get-Evox2PModeMetadata -Disabled:$NoPModeProbe
+
+$DisplayEnvironmentAtFinish = $null
+try {
+    $DisplayEnvironmentAtFinish = (Get-Evox2SystemMetadata).DisplayEnvironment
+} catch {}
 
 $HeaderLines = @(
     'Evo-X2 llama-cli measurement',
@@ -695,10 +833,38 @@ Write-Evox2CombinedLog `
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $CombinedText = [IO.File]::ReadAllText($OutputPath, $Utf8NoBom)
 $Parsed = ConvertFrom-Evox2LlamaCliResult -Text $CombinedText
+
+$StdOutSha256 = $null
+$OutputFingerprintSha256 = $null
+$OutputFingerprintBytes = $null
+$OutputFingerprintStatus = 'StdOutMissing'
+if (Test-Path -LiteralPath $StdOutPath -PathType Leaf) {
+    $StdOutSha256 = (Get-FileHash -LiteralPath $StdOutPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $rawStdOut = [IO.File]::ReadAllText($StdOutPath, $Utf8NoBom)
+    $normalizedLines = @(
+        [regex]::Split($rawStdOut, "\r?\n") |
+            Where-Object {
+                $_ -notmatch '^\[\s*Prompt:\s*[\d.]+\s*t/s\s*\|\s*Generation:\s*[\d.]+\s*t/s\s*\]\s*$'
+            }
+    )
+    $normalizedStdOut = $normalizedLines -join "`n"
+    [IO.File]::WriteAllText($NormalizedStdOutPath, $normalizedStdOut, $Utf8NoBom)
+    $fingerprintIdentity = Get-Evox2FileIdentity -Path $NormalizedStdOutPath -Sha256
+    $OutputFingerprintSha256 = $fingerprintIdentity.Sha256
+    $OutputFingerprintBytes = $fingerprintIdentity.LengthBytes
+    $OutputFingerprintStatus = 'Captured'
+}
 $DenseIndexerEvidence = Get-Evox2MtpDenseIndexerEvidence -Text $CombinedText `
     -Setting $env:LLAMA_MTP_SKIP_DENSE_INDEXER -Mtp ([bool]$Mtp)
 $QsaNoopEvidence = Get-Evox2QsaNoopInvalidationEvidence -Text $CombinedText `
     -Setting $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION
+# The QSA no-op invalidation decision is specific to qwen4exp.
+# Other architectures, such as gemma4, do not emit this diagnostic.
+# Keep a missing/unknown architecture fail-closed if validation was requested.
+if (-not [string]::IsNullOrWhiteSpace($Parsed.ModelArchitecture) -and
+    $Parsed.ModelArchitecture -ne 'qwen4exp') {
+    $QsaNoopEvidence.Status = 'NotApplicable'
+}
 
 $EnoughInput = $false
 if (-not $AllocationOnly -and $null -ne $Parsed.PromptTokens) {
@@ -721,12 +887,19 @@ $Status = if ($null -ne $runException) {
     'OK'
 }
 
+$NoDisplayPromptActive = @($LlamaArguments) -contains '--no-display-prompt'
+if ($Status -eq 'OK' -and $NoDisplayPromptActive -and $OutputFingerprintStatus -ne 'Captured') {
+    $Status = 'CHECK_OUTPUT_FINGERPRINT'
+}
+
 $resourceSampleCount = 0
+$adlxSampleCount = 0
 if ($Status -eq 'OK' -and $Mtp -and $env:LLAMA_MTP_SKIP_DENSE_INDEXER -in @('0', '1') -and
     $DenseIndexerEvidence.Status -ne 'Verified') {
     $Status = 'CANDIDATE_EVIDENCE_' + $DenseIndexerEvidence.Status.ToUpperInvariant()
 }
-if ($Status -eq 'OK' -and $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION -in @('0', '1') -and
+if ($Status -eq 'OK' -and $QsaNoopEvidence.Status -ne 'NotApplicable' -and
+    $env:LLAMA_QSA_SKIP_NOOP_INVALIDATION -in @('0', '1') -and
     $QsaNoopEvidence.Status -ne 'Verified') {
     $Status = 'QSA_NOOP_EVIDENCE_' + $QsaNoopEvidence.Status.ToUpperInvariant()
 }
@@ -734,6 +907,36 @@ if (Test-Path -LiteralPath $ResourcePath -PathType Leaf) {
     try {
         $resourceSampleCount = @(Import-Csv -LiteralPath $ResourcePath).Count
     } catch {}
+}
+
+if (Test-Path -LiteralPath $GpuMetricsPath -PathType Leaf) {
+    try {
+        $adlxSampleCount = @(Import-Csv -LiteralPath $GpuMetricsPath).Count
+    } catch {}
+}
+
+$AdlxPModeConsistency = Get-Evox2AdlxPModeConsistency `
+    -CsvPath $GpuMetricsPath `
+    -PModeAtStart $PModeAtStart `
+    -PModeAtFinish $PModeAtFinish
+$PModeWarnings = @(
+    Get-Evox2PModeWarnings `
+        -PModeAtStart $PModeAtStart `
+        -PModeAtFinish $PModeAtFinish `
+        -AdlxConsistency $AdlxPModeConsistency `
+        -ExpectedMode 'Performance'
+)
+$PModeChanged = if ($PModeAtStart.ProbeSucceeded -and $PModeAtFinish.ProbeSucceeded) {
+    [string]$PModeAtStart.Mode -ne [string]$PModeAtFinish.Mode
+} else {
+    $null
+}
+
+if ($adlxMonitorStarted -and
+    $null -ne $adlxMonitorExitCode -and
+    $adlxMonitorExitCode -ne 0 -and
+    [string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
+    $adlxMonitorStartError = "ADLX GPU monitor exited with code $adlxMonitorExitCode."
 }
 
 $Result = [ordered]@{
@@ -781,6 +984,11 @@ $Result = [ordered]@{
     TotalMilliseconds          = $Parsed.TotalMilliseconds
     TotalTokens                = $Parsed.TotalTokens
 
+    StdOutSha256               = $StdOutSha256
+    OutputFingerprintSha256    = $OutputFingerprintSha256
+    OutputFingerprintBytes     = $OutputFingerprintBytes
+    OutputFingerprintStatus    = $OutputFingerprintStatus
+
     DraftAcceptance            = $Parsed.DraftAcceptance
     DraftAccepted              = $Parsed.DraftAccepted
     DraftGenerated             = $Parsed.DraftGenerated
@@ -796,6 +1004,17 @@ $Result = [ordered]@{
 
     ResourceMonitorEnabled      = [bool]$ResourceMonitor
     ResourceSampleCount         = $resourceSampleCount
+    AdlxMonitorRequested        = $AdlxMonitorRequested
+    AdlxMonitorStarted          = $adlxMonitorStarted
+    AdlxMonitorExitCode         = $adlxMonitorExitCode
+    AdlxMonitorError            = $adlxMonitorStartError
+    AdlxSampleCount             = $adlxSampleCount
+    PModeAtStart                = $PModeAtStart
+    PModeAtFinish               = $PModeAtFinish
+    PModeChanged                = $PModeChanged
+    PModeWarnings               = @($PModeWarnings)
+    AdlxPModeConsistency        = $AdlxPModeConsistency
+    DisplayEnvironmentAtFinish  = $DisplayEnvironmentAtFinish
 
     Files = [ordered]@{
         Conditions = $ConditionsPath
@@ -803,8 +1022,12 @@ $Result = [ordered]@{
         Summary    = $SummaryPath
         Output     = $OutputPath
         StdOut     = $StdOutPath
+        NormalizedStdOut = if (Test-Path -LiteralPath $NormalizedStdOutPath -PathType Leaf) { $NormalizedStdOutPath } else { $null }
         StdErr     = $StdErrPath
         Resources  = if (Test-Path -LiteralPath $ResourcePath) { $ResourcePath } else { $null }
+        GpuMetrics = if (Test-Path -LiteralPath $GpuMetricsPath) { $GpuMetricsPath } else { $null }
+        AdlxStdOut = if (Test-Path -LiteralPath $AdlxStdOutPath) { $AdlxStdOutPath } else { $null }
+        AdlxStdErr = if (Test-Path -LiteralPath $AdlxStdErrPath) { $AdlxStdErrPath } else { $null }
     }
 
     MemoryBreakdownLines = $Parsed.MemoryBreakdownLines
@@ -834,6 +1057,10 @@ $Summary = [PSCustomObject]@{
     PP                  = $Parsed.PromptTokensPerSecond
     GeneratedTokens     = $Parsed.GeneratedTokens
     TG                  = $Parsed.GenerationTokensPerSecond
+    StdOutSha256        = $StdOutSha256
+    OutputFingerprintSha256 = $OutputFingerprintSha256
+    OutputFingerprintBytes  = $OutputFingerprintBytes
+    OutputFingerprintStatus = $OutputFingerprintStatus
     MTP                 = [bool]$Mtp
     DraftAcceptance     = $Parsed.DraftAcceptance
     DenseIndexerEvidence = $DenseIndexerEvidence.Status
@@ -841,6 +1068,13 @@ $Summary = [PSCustomObject]@{
     QsaNoopEvidence     = $QsaNoopEvidence.Status
     QsaNoopEnabled      = $QsaNoopEvidence.Enabled
     ResourceSamples     = $resourceSampleCount
+    AdlxSamples         = $adlxSampleCount
+    PModeStart          = $PModeAtStart.Mode
+    PModeFinish         = $PModeAtFinish.Mode
+    PModeChanged        = $PModeChanged
+    AdlxHighLoadPowerW  = $AdlxPModeConsistency.AverageGpuPowerW
+    AdlxPowerClass      = $AdlxPModeConsistency.PowerClass
+    PModeWarningCount   = $PModeWarnings.Count
     DurationMinutes     = [math]::Round(($Finished - $Started).TotalMinutes, 3)
     RunDirectory        = $RunDirectory
 }
@@ -872,8 +1106,22 @@ Write-Host "conditions.json : $ConditionsPath"
 Write-Host "result.json     : $ResultPath"
 Write-Host "summary.csv     : $SummaryPath"
 Write-Host "output.log      : $OutputPath"
+if (Test-Path -LiteralPath $NormalizedStdOutPath -PathType Leaf) {
+    Write-Host "stdout.norm.log : $NormalizedStdOutPath"
+    Write-Host "output SHA256   : $OutputFingerprintSha256"
+}
 if ($ResourceMonitor) {
     Write-Host "resources.csv   : $ResourcePath"
+}
+if ($adlxSampleCount -gt 0) {
+    Write-Host "gpu-metrics.csv : $GpuMetricsPath"
+}
+Write-Host "PModeStart      : $($PModeAtStart.Mode) [$($PModeAtStart.Transport)]"
+Write-Host "PModeFinish     : $($PModeAtFinish.Mode) [$($PModeAtFinish.Transport)]"
+if ($null -ne $AdlxPModeConsistency.AverageGpuPowerW) {
+    Write-Host "ADLXPowerClass  : $($AdlxPModeConsistency.PowerClass) ($($AdlxPModeConsistency.AverageGpuPowerW) W)"
+} else {
+    Write-Host "ADLXPowerClass  : $($AdlxPModeConsistency.PowerClass)"
 }
 Write-Host '========================================'
 Write-Host ''
@@ -885,6 +1133,16 @@ if (Test-Path -LiteralPath $StdOutPath -PathType Leaf) {
         [Console]::WriteLine($stdoutText)
         Write-Host '================================================'
     }
+}
+
+if ($AdlxMonitorRequested -and $adlxSampleCount -eq 0) {
+    Write-Warning 'ADLX monitoring was requested, but gpu-metrics.csv contains no samples.'
+}
+if (-not [string]::IsNullOrWhiteSpace($adlxMonitorStartError)) {
+    Write-Warning "ADLX telemetry: $adlxMonitorStartError"
+}
+foreach ($warning in $PModeWarnings) {
+    Write-Warning "P-MODE consistency: $warning"
 }
 
 if (-not $AllocationOnly -and -not $EnoughInput) {

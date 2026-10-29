@@ -2,17 +2,16 @@
 
 ## Scope
 
-This procedure builds the clean r4 Vulkan baseline on the Evo-X2.
+This procedure builds the clean current-refresh Vulkan baseline on the Evo-X2.
 
 Baseline source:
 
 ```text
-pinned upstream: bed0a856606ee4a24a164066f73d2379447033f5
-branch: r4/upstream-refresh-20261002
+pinned upstream: de7fa0a3c6a2e1b4cd9f22eb8d6bf5b12dbdb63b
+branch: r5/upstream-refresh-20261009
 ```
 
-The procedure is carried forward from the validated r3 toolchain. The r4 build
-and runtime checks have not yet been executed on the Evo-X2.
+The procedure is carried from the previously used r4 tooling and r3 toolchain. r5 Windows build/runtime validation remains pending; see [R5-REFRESH-2026-10-09.md](R5-REFRESH-2026-10-09.md).
 
 ## Previously tested toolchain (r3)
 
@@ -59,17 +58,17 @@ not already on `PATH`, add its installation directory before running CMake.
 
 ## Build wrapper (recommended)
 
-From the r4 repository root in the prepared Native Tools PowerShell shell:
+From the current-refresh repository root in the prepared Native Tools PowerShell shell:
 
 ```powershell
 .\tools\evox2\build\Build-Vulkan.ps1 `
+  -BuildDir .\build-vulkan-clean `
   -VulkanSdk C:\VulkanSDK\1.4.357.0 `
   -LlvmBin 'C:\Program Files\LLVM\bin' `
   -Parallel 4
 ```
 
-The default build directory is `build-vulkan-r4`. Use a new directory for the
-first r4 build. The wrapper records build provenance and runs identity/device
+Pass `-BuildDir .\build-vulkan-clean` explicitly; the imported wrapper's default remains `build-vulkan-r4`. Use a new directory for the first refresh build. The wrapper records build provenance and runs identity/device
 smoke checks; it does not run model-load or backend-ops validation.
 
 ## Configure (manual alternative)
@@ -77,7 +76,7 @@ smoke checks; it does not run model-load or backend-ops validation.
 From the repository root:
 
 ```powershell
-cmake -S . -B .\build-vulkan-r4 -G "Ninja Multi-Config" `
+cmake -S . -B .\build-vulkan-clean -G "Ninja Multi-Config" `
   "-DCMAKE_TOOLCHAIN_FILE=$PWD\cmake\x64-windows-llvm.cmake" `
   -DGGML_VULKAN=ON `
   -DGGML_NATIVE=OFF `
@@ -99,7 +98,7 @@ If dependency caches are used, keep them outside the source tree or in explicitl
 ## Build
 
 ```powershell
-cmake --build .\build-vulkan-r4 `
+cmake --build .\build-vulkan-clean `
   --config Release `
   --parallel 4 `
   --target llama-cli llama-server llama-bench test-backend-ops
@@ -108,13 +107,13 @@ cmake --build .\build-vulkan-r4 `
 Expected binary directory:
 
 ```text
-build-vulkan-r4\bin\Release
+build-vulkan-clean\bin\Release
 ```
 
 ## Smoke checks
 
 ```powershell
-$Bin = Join-Path $PWD 'build-vulkan-r4\bin\Release'
+$Bin = Join-Path $PWD 'build-vulkan-clean\bin\Release'
 
 & "$Bin\llama-cli.exe" --version
 & "$Bin\llama-cli.exe" --list-devices
@@ -128,7 +127,7 @@ Confirm that the Radeon 8060S appears as the Vulkan device and that the build id
 & "$Bin\test-backend-ops.exe" test -b Vulkan0 -o FLASH_ATTN_EXT
 
 .\tools\evox2\benchmark\Measure-LlamaCli.ps1 `
-  -BuildKey R4Vulkan -ModelKey UnslothOriginal `
+  -BuildKey CleanVulkan -ModelKey UnslothOriginal `
   -Context 65536 -FlashAttn auto -AllocationOnly -ResourceMonitor
 ```
 
@@ -140,7 +139,7 @@ it verifies allocation and real execution rather than long-context throughput.
 
 Use the workload defined in [BENCHMARKING.md](BENCHMARKING.md) and compare against [BASELINE.md](BASELINE.md).
 
-The r4 results are pending. The historical clean r3 b11247 Vulkan baseline is:
+The current-refresh results are pending. The historical clean r3 b11247 Vulkan baseline is:
 
 ```text
 PP: 265.10 tok/s

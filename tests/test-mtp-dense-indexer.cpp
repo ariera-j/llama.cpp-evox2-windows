@@ -159,7 +159,7 @@ static output decode(llama_context * ctx, const trace & input, int first, int co
     common_batch batch(ctx);
     for (int i = first; i < first + count; ++i) {
         const int slot = batch.add(input.tokens[i], i, 0, true);
-        require(batch.set_embd(slot, {input.hidden[i].data(), 1, input.hidden[i].size()}), "Cannot pair MTP input");
+        require(batch.set_embd_state(slot, {input.hidden[i].data(), 1, input.hidden[i].size()}), "Cannot pair MTP input");
     }
     require(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0, stage + ": MTP decode failed");
     check_positions(ctx, first + count - 1, stage);

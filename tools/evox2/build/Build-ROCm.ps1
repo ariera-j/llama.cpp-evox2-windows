@@ -12,6 +12,11 @@ param(
     [string]$RocmPath = '',
     [string]$RocmBin = '',
     [string]$RocmCmakePath = '',
+
+    # Reproducibility guard for the current Windows ROCm line. Pass an empty
+    # string only when deliberately validating another TheRock SDK version.
+    [string]$ExpectedRocmSdkVersion = '10.0.0',
+
     [string]$DependencyCacheRoot = '',
 
     [string]$AmdGpuTarget = 'gfx1151',
@@ -24,7 +29,8 @@ param(
     [switch]$SkipSmoke,
     [switch]$RunBackendTest,
 
-    [string[]]$ExtraCMakeArgs = @()
+    [string[]]$ExtraCMakeArgs = @(),
+    [string[]]$ExtraTargets = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -120,6 +126,28 @@ if (-not $ManifestOnly -and
     -not $BuildOnly -and
     [string]::IsNullOrWhiteSpace($RocmPath)) {
     throw 'ROCm SDK root could not be resolved. Activate the TheRock venv or pass -RocmPath.'
+}
+
+$rocmSdkVersionObserved = $null
+$rocmSdkCommand = Get-Command rocm-sdk -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($rocmSdkCommand) {
+    $rocmSdkVersionCapture = Invoke-Evox2NativeCapture -FilePath $rocmSdkCommand.Source -ArgumentList @('version')
+    if ($rocmSdkVersionCapture.ExitCode -eq 0) {
+        $versionMatch = [regex]::Match($rocmSdkVersionCapture.Text, '\b\d+\.\d+\.\d+\b')
+        if ($versionMatch.Success) {
+            $rocmSdkVersionObserved = $versionMatch.Value
+        }
+    }
+}
+
+if (-not $ManifestOnly -and
+    -not [string]::IsNullOrWhiteSpace($ExpectedRocmSdkVersion)) {
+    if ([string]::IsNullOrWhiteSpace($rocmSdkVersionObserved)) {
+        throw "Unable to determine TheRock ROCm SDK version; expected $ExpectedRocmSdkVersion. Activate the intended TheRock venv or pass -ExpectedRocmSdkVersion ''."
+    }
+    if ($rocmSdkVersionObserved -ne $ExpectedRocmSdkVersion) {
+        throw "TheRock ROCm SDK version mismatch: expected $ExpectedRocmSdkVersion, observed $rocmSdkVersionObserved. Use the pinned SDK or explicitly override -ExpectedRocmSdkVersion."
+    }
 }
 
 $environmentNames = @(
@@ -223,12 +251,8 @@ try {
         'llama-cli',
         'llama-server',
         'llama-bench',
-        'test-backend-ops',
-        'test-mtp-indexer-policy',
-        'test-mtp-dense-indexer',
-        'test-qsa-noop-policy',
-        'test-qsa-noop-invalidation'
-    )
+        'test-backend-ops'
+    ) + $ExtraTargets
 
     $configureRecord = [ordered]@{
         Executed  = $false
@@ -314,34 +338,156 @@ try {
         throw "llama-cli.exe not found after build: $llamaCli"
     }
 
+    function Get-Evox2RuntimeTreeIdentity {
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$Path
+        )
+
+        $root = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+            throw "ROCm runtime data directory not found: $root"
+        }
+
+        $files = @(Get-ChildItem -LiteralPath $root -File -Recurse | Sort-Object FullName)
+        if ($files.Count -eq 0) {
+            throw "ROCm runtime data directory is empty: $root"
+        }
+
+        $rows = @()
+        [int64]$totalBytes = 0
+        foreach ($file in $files) {
+            $relative = $file.FullName.Substring($root.Length).TrimStart('\')
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $rows += ('{0}|{1}|{2}' -f $relative, $file.Length, $hash)
+            $totalBytes += $file.Length
+        }
+
+        $digestText = $rows -join "`n"
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            $digestBytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($digestText))
+            $digest = -join ($digestBytes | ForEach-Object { $_.ToString('x2') })
+        } finally {
+            $sha.Dispose()
+        }
+
+        return [ordered]@{
+            Path = $root
+            FileCount = $files.Count
+            TotalBytes = $totalBytes
+            DigestSha256 = $digest
+        }
+    }
+
     $runtimeDllRecords = @()
+    $runtimeDataRecords = @()
     $runtimeDllNames = @(
         'amdhip64_7.dll',
         'rocm_kpack.dll',
-        'amd_comgr.dll'
+        'amd_comgr.dll',
+        'hipblas.dll',
+        'rocblas.dll',
+        'rocsolver.dll',
+        'libhipblaslt.dll',
+        'origami.dll'
     )
+    $runtimeDataTreeNames = @(
+        'rocblas',
+        'hipblaslt'
+    )
+    $legacyRuntimeDllNames = @(
+        'hipblaslt.dll'
+    )
+    $legacyRuntimeFilesRemoved = @()
 
-    if (-not $ManifestOnly -and
+    $runtimeStagingRequested = (-not $ManifestOnly -and
         -not $SkipRuntimeDllCopy -and
-        -not [string]::IsNullOrWhiteSpace($RocmBin)) {
-        Write-Host 'Copying ROCm runtime DLLs beside the executables...'
+        -not [string]::IsNullOrWhiteSpace($RocmBin))
+
+    $runtimePolicy = [ordered]@{
+        Mode = if ($runtimeStagingRequested) { 'TheRockUnifiedPending' } elseif ($ManifestOnly) { 'ObservedOnly' } else { 'ExternalRuntimeUnverified' }
+        EffectiveFrom = '2026-10-21'
+        ExpectedSdkVersion = $ExpectedRocmSdkVersion
+        ObservedSdkVersion = $rocmSdkVersionObserved
+        SourceBin = $RocmBin
+        AmdGpuTarget = $AmdGpuTarget
+        StagingPerformed = $false
+        Verification = 'NotStagedByThisInvocation'
+        HistoricalNote = 'ROCm builds produced before 2026-10-21 by this script staged only HIP core DLLs; Windows PATH could therefore supply the BLAS stack from another ROCm/HIP installation (observed from C:\Program Files\AMD\ROCm\7.2\bin on the b11521 investigation build).'
+        CurrentNote = 'With runtime staging enabled, copy the complete TheRock HIP/BLAS DLL closure plus rocBLAS and hipBLASLt architecture data beside the executables.'
+    }
+
+    if ($runtimeStagingRequested) {
+        Write-Host 'Copying unified TheRock ROCm runtime beside the executables...'
+
+        foreach ($name in $legacyRuntimeDllNames) {
+            $legacy = Join-Path $BinDir $name
+            if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+                Remove-Item -LiteralPath $legacy -Force
+                $legacyRuntimeFilesRemoved += $name
+            }
+        }
 
         foreach ($name in $runtimeDllNames) {
             $source = Join-Path $RocmBin $name
             $destination = Join-Path $BinDir $name
 
             if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-                throw "Required ROCm runtime DLL not found: $source"
+                throw "Required TheRock ROCm runtime DLL not found: $source"
             }
 
             Copy-Item -LiteralPath $source -Destination $destination -Force
 
+            $sourceIdentity = Get-Evox2FileIdentity -Path $source -Sha256
+            $destinationIdentity = Get-Evox2FileIdentity -Path $destination -Sha256
+            if ($sourceIdentity.Sha256 -ne $destinationIdentity.Sha256) {
+                throw "ROCm runtime DLL copy verification failed: $name"
+            }
+
             $runtimeDllRecords += [ordered]@{
                 Name = $name
-                Source = Get-Evox2FileIdentity -Path $source -Sha256
-                Destination = Get-Evox2FileIdentity -Path $destination -Sha256
+                Source = $sourceIdentity
+                Destination = $destinationIdentity
             }
         }
+
+        foreach ($name in $runtimeDataTreeNames) {
+            $source = Join-Path $RocmBin $name
+            $destination = Join-Path $BinDir $name
+
+            if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+                throw "Required TheRock ROCm runtime data tree not found: $source"
+            }
+
+            if (Test-Path -LiteralPath $destination) {
+                Remove-Item -LiteralPath $destination -Recurse -Force
+            }
+            Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+
+            $sourceIdentity = Get-Evox2RuntimeTreeIdentity -Path $source
+            $destinationIdentity = Get-Evox2RuntimeTreeIdentity -Path $destination
+            if ($sourceIdentity.DigestSha256 -ne $destinationIdentity.DigestSha256) {
+                throw "ROCm runtime data copy verification failed: $name"
+            }
+
+            $targetDataPath = Join-Path $destination ("library\{0}" -f $AmdGpuTarget)
+            if (-not (Test-Path -LiteralPath $targetDataPath -PathType Container)) {
+                throw "ROCm runtime data for target $AmdGpuTarget not found after staging: $targetDataPath"
+            }
+
+            $runtimeDataRecords += [ordered]@{
+                Name = $name
+                Target = $AmdGpuTarget
+                Source = $sourceIdentity
+                Destination = $destinationIdentity
+                TargetDataPath = $targetDataPath
+            }
+        }
+
+        $runtimePolicy.Mode = 'TheRockUnified'
+        $runtimePolicy.StagingPerformed = $true
+        $runtimePolicy.Verification = 'DllAndRuntimeDataHashesVerified'
     } else {
         foreach ($name in $runtimeDllNames) {
             $destination = Join-Path $BinDir $name
@@ -350,6 +496,19 @@ try {
                     Name = $name
                     Source = $null
                     Destination = Get-Evox2FileIdentity -Path $destination -Sha256
+                }
+            }
+        }
+
+        foreach ($name in $runtimeDataTreeNames) {
+            $destination = Join-Path $BinDir $name
+            if (Test-Path -LiteralPath $destination -PathType Container) {
+                $runtimeDataRecords += [ordered]@{
+                    Name = $name
+                    Target = $AmdGpuTarget
+                    Source = $null
+                    Destination = Get-Evox2RuntimeTreeIdentity -Path $destination
+                    TargetDataPath = Join-Path $destination ("library\{0}" -f $AmdGpuTarget)
                 }
             }
         }
@@ -412,8 +571,11 @@ try {
 
     $runtime = [ordered]@{
         DependencyCache = $dependencyCache.Record
+        RuntimePolicy = $runtimePolicy
         RuntimeDllCopySkipped = [bool]$SkipRuntimeDllCopy
         RuntimeDlls = @($runtimeDllRecords)
+        RuntimeDataTrees = @($runtimeDataRecords)
+        LegacyRuntimeFilesRemoved = @($legacyRuntimeFilesRemoved)
         Environment = [ordered]@{
             HIP_PATH = $env:HIP_PATH
             ROCM_PATH = $env:ROCM_PATH
