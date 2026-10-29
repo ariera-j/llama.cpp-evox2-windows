@@ -11,11 +11,48 @@ The EVO-X2 benchmark wrappers `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1
 
 Recognized process executables are from **Microsoft Defender** (`MsMpEng`, `NisSrv`, `MpCmdRun`), **Windows Update and maintenance** (`TiWorker`, `TrustedInstaller`, `MoUsoCoreWorker`, `UsoClient`, `wuauclt`, `WaaSMedicAgent`, `WindowsUpdateBox`, `dismhost`, `SetupHost`, `CompatTelRunner`) and **Windows Search indexing** (`SearchIndexer`, `SearchProtocolHost`, `SearchFilterHost`). The list intentionally does **not** equate idle Defender services or any generic `svchost.exe` with active background interference.
 
-When the existing **`-ResourceMonitor` switch** is used, `Monitor-LlamaProcess.ps1` additionally samples process presence and CPU-time deltas at `-ResourceIntervalSeconds` (default 2s) and writes these columns to **`resources.csv`**:
+## 2026-10-29 monitoring cadence reduction (post-tag)
 
-`BackgroundProbeStatus`, `BackgroundObservedNames`, `BackgroundActiveNames`, `BackgroundBusyNames`, `BackgroundCpuDeltaSeconds`, `BackgroundCpuPercentOfSystem`, `BackgroundNoisePossible`.
+The Windows smoke check measured **9.468 s elapsed for a nominal 3 s sleep** across two background snapshots, suggesting the protected-process CPU counter fallback may be expensive. The original monitor called that snapshot **on every resource row**, potentially perturbing PP/TG. The revised design separates the two frequencies:
 
-A process is **possibly interfering**, not proven causal, if one named process consumes at least **0.5% of total logical-machine CPU time** within an observation interval. The start/end summary is averaged over the whole run, so short bursts are easier to see in `resources.csv`. Existing total system CPU, paging and disk throughput columns remain useful to correlate apparent interference.
+| Probe | Default | Trigger |
+| --- | --- | --- |
+| Existing GPU/system CPU, paging, RAM and disk resource counters | **2 s** (unchanged) | `-ResourceMonitor -ResourceIntervalSeconds 2` |
+| Defender / Windows servicing / Search named-process CPU snapshot (including the PerfProc CIM fallback when needed) | **15 s** (new default) | `-BackgroundIntervalSeconds 15` |
+| Before/after named-process snapshots | Once at run start and once after inference | Always captured by `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1`, even without `-ResourceMonitor` |
+
+**Cadence semantics:** the resource-monitor subprocess delays its *first* heavy named-process snapshot until at least 15 seconds after the monitor starts. Further snapshots are scheduled 15 seconds **after the previous probe completes**, not every N resource rows, so an unexpectedly slow CIM call does not cause repeated catch-up probes. A short inference can therefore have **zero** in-run named-process samples; its start/end summary still exists. In-run CPU deltas require **two** samples (normally at about 15 s and 30+ s of resource-monitor time).
+
+When a heavy snapshot is taken, `resources.csv` includes only that row's named-process status and CPU deltas. Other rows have **`BackgroundSampleTaken=False`, `BackgroundProbeStatus=NotSampled` and blank CPU activity fields**; these rows are *not* evidence that the system was quiet. The first snapshot records `BackgroundCpuCoverage=FirstSample` and no delta. Additional fields:
+
+- `BackgroundIntervalSeconds`: configured minimum delay, default 15.
+- `BackgroundSampleCount`, `BackgroundSampleTaken`, `BackgroundSampleTimestampUtc`: distinguish real snapshots from skipped rows.
+- `BackgroundSampleIntervalSecondsActual`: measured time between the last two snapshot timestamps.
+- `BackgroundCollectionMilliseconds`: wall-clock duration of **this expensive named-process probe**; blank when skipped.
+- Existing `SampleIntervalSecondsActual` and `CounterCollectionMilliseconds` still describe the **overall** resource loop, which may exceed 2 s on rows where an expensive probe is performed.
+- `BackgroundCpuCoverage`, `BackgroundCpuComparedCount`, `BackgroundCpuKnownCount`, `BackgroundObservedNames`, `BackgroundActiveNames`, `BackgroundBusyNames`, `BackgroundCpuDeltaSeconds`, `BackgroundCpuPercentOfSystem`, `BackgroundNoisePossible` remain present but only carry evidence when a snapshot or valid delta exists.
+
+Example with the existing CLI/bench wrappers:
+
+```powershell
+# Add these parameters to an existing Measure-LlamaCli.ps1 or
+# Measure-LlamaBench.ps1 invocation; no model flags need to change.
+-ResourceMonitor -ResourceIntervalSeconds 2 -BackgroundIntervalSeconds 15
+```
+
+The same interval is passed automatically to `Monitor-LlamaProcess.ps1`, and `conditions.json.ResourceMonitor.BackgroundIntervalSeconds` and the wrapper's preview record it for reproducibility. The ordinary resource `Timestamp` is captured **before** the potentially slow background probe, so timestamped CPU/GPU/disk counters continue to refer to when those counters were collected, rather than the end of the WMI request. To reduce overhead further for a strict A/B experiment, use a larger interval (e.g. 30 or 60 seconds) **consistently in both test arms**, or omit `-ResourceMonitor` (start/end snapshots still run outside inference). This is sampling rather than asynchronous tracing: **a heavy probe can still delay a particular 2-second row**. Use `BackgroundCollectionMilliseconds` and `SampleIntervalSecondsActual` to quantify it, rather than assuming monitoring has no cost.
+
+To validate a produced `resources.csv` without running another inference, execute:
+
+```powershell
+.\tools\evox2\benchmark\tests\Test-ResourceMonitorCadence.ps1 `
+    -CsvPath 'C:\path\to\a\completed\run\resources.csv'
+```
+
+The verifier checks skipped rows, sampling time fields and minimum spacing, and reports the largest actual resource-row gap and the most expensive background probe. **Windows live-runtime execution of the new monitor remains pending**; the script changes have only been inspected statically in this update.
+
+A process is **possibly interfering**, not proven causal, if one named process consumes at least **0.5% of total logical-machine CPU time** within an observation interval. Because periodic snapshots are now sparser, short spikes and short-lived processes are **more likely to be missed** than with 2-second sampling. Existing system CPU, paging and disk throughput counters remain useful for correlation.
+
 
 ## 2026-10-29 Windows retest finding and fix
 

@@ -12,7 +12,12 @@ param(
     [string]$RunId = '',
 
     [ValidateRange(1, 60)]
-    [int]$IntervalSeconds = 2
+    [int]$IntervalSeconds = 2,
+
+    # Expensive per-process CPU fallback (PerfProc CIM) is decoupled
+    # from the high-frequency GPU/memory/disk resource samples.
+    [ValidateRange(10, 300)]
+    [int]$BackgroundIntervalSeconds = 15
 )
 
 $ErrorActionPreference = 'Stop'
@@ -115,6 +120,8 @@ $sampleIndex = 0
 $warnedCounterFallback = $false
 $warnedInvalidGpuEngineCounter = $false
 $previousBackgroundSnapshot = $null
+$backgroundSampleCount = 0
+$nextBackgroundSampleAt = (Get-Date).AddSeconds($BackgroundIntervalSeconds)
 
 while ($true) {
     $loopStart = Get-Date
@@ -239,14 +246,9 @@ while ($true) {
         $gpuEngineRejectedCount = 0
     }
 
-    # Record process presence and CPU-time deltas without touching services.
-    $backgroundNow = Get-Evox2BackgroundActivitySnapshot
-    $backgroundDelta = $null
-    if ($null -ne $previousBackgroundSnapshot) {
-        $backgroundDelta = Compare-Evox2BackgroundActivitySnapshots -Before $previousBackgroundSnapshot -After $backgroundNow
-    }
-    $previousBackgroundSnapshot = $backgroundNow
-
+    # The resource-counter timestamp is taken BEFORE optional slow WMI
+    # collection so it describes the CPU/GPU/disk counter observation, not
+    # the completion of the separate named-process activity snapshot.
     $timestamp = Get-Date
     $actualIntervalSeconds = if ($previousTimestamp) {
         [math]::Round(($timestamp - $previousTimestamp).TotalSeconds, 3)
@@ -255,6 +257,41 @@ while ($true) {
     }
     $previousTimestamp = $timestamp
     $sampleIndex++
+
+    # The optional named-process CPU fallback may take several seconds on
+    # protected Windows processes (PerfProc CIM). Do NOT invoke it on each
+    # 2-second resource sample. Defer the first probe until the configured
+    # interval and schedule subsequent probes relative to their COMPLETION,
+    # preventing back-to-back probes when acquisition takes longer.
+    #
+    # Start/end snapshots in Measure-LlamaCli / Measure-LlamaBench remain
+    # outside inference execution, including on runs shorter than this period.
+    $backgroundSampleTaken = $false
+    $backgroundNow = $null
+    $backgroundDelta = $null
+    $backgroundCollectionMilliseconds = $null
+    $backgroundSampleIntervalSecondsActual = $null
+
+    if ((Get-Date) -ge $nextBackgroundSampleAt) {
+        $backgroundSampleTaken = $true
+        $backgroundStopwatch = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            $backgroundNow = Get-Evox2BackgroundActivitySnapshot
+            if ($null -ne $previousBackgroundSnapshot) {
+                $backgroundDelta = Compare-Evox2BackgroundActivitySnapshots `
+                    -Before $previousBackgroundSnapshot -After $backgroundNow
+                $backgroundSampleIntervalSecondsActual = $backgroundDelta.DurationSeconds
+            }
+            $previousBackgroundSnapshot = $backgroundNow
+            $backgroundSampleCount++
+        } catch {
+            Write-Warning "Background activity probe failed: $($_.Exception.Message)"
+        } finally {
+            $backgroundStopwatch.Stop()
+            $backgroundCollectionMilliseconds = [math]::Round($backgroundStopwatch.Elapsed.TotalMilliseconds, 1)
+            $nextBackgroundSampleAt = (Get-Date).AddSeconds($BackgroundIntervalSeconds)
+        }
+    }
 
     $usedRamGiB = [math]::Round(
         ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB,
@@ -309,11 +346,17 @@ while ($true) {
         DiskRead_MiBps                = [math]::Round($diskReadBytesPerSec / 1MB, 2)
         DiskWrite_MiBps               = [math]::Round($diskWriteBytesPerSec / 1MB, 2)
 
-        BackgroundProbeStatus         = $backgroundNow.Status
-        BackgroundCpuCoverage         = if ($backgroundDelta) { $backgroundDelta.CpuCoverage } else { 'FirstSample' }
-        BackgroundCpuComparedCount    = if ($backgroundDelta) { $backgroundDelta.CpuComparedCount } else { 0 }
-        BackgroundCpuKnownCount       = if ($backgroundDelta) { $backgroundDelta.CpuKnownCount } else { 0 }
-        BackgroundObservedNames       = (@($backgroundNow.Processes | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ';')
+        BackgroundIntervalSeconds     = $BackgroundIntervalSeconds
+        BackgroundSampleTaken         = $backgroundSampleTaken
+        BackgroundSampleCount         = $backgroundSampleCount
+        BackgroundSampleTimestampUtc  = if ($backgroundNow) { $backgroundNow.TimestampUtc } else { '' }
+        BackgroundSampleIntervalSecondsActual = $backgroundSampleIntervalSecondsActual
+        BackgroundCollectionMilliseconds = $backgroundCollectionMilliseconds
+        BackgroundProbeStatus         = if ($backgroundNow) { $backgroundNow.Status } elseif ($backgroundSampleTaken) { 'ProbeError' } else { 'NotSampled' }
+        BackgroundCpuCoverage         = if ($backgroundDelta) { $backgroundDelta.CpuCoverage } elseif ($backgroundNow) { 'FirstSample' } else { 'NotSampled' }
+        BackgroundCpuComparedCount    = if ($backgroundDelta) { $backgroundDelta.CpuComparedCount } else { $null }
+        BackgroundCpuKnownCount       = if ($backgroundDelta) { $backgroundDelta.CpuKnownCount } else { $null }
+        BackgroundObservedNames       = if ($backgroundNow) { (@($backgroundNow.Processes | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ';') } else { '' }
         BackgroundActiveNames         = if ($backgroundDelta) { ($backgroundDelta.ActiveNames -join ';') } else { '' }
         BackgroundBusyNames           = if ($backgroundDelta) { ($backgroundDelta.BusyNames -join ';') } else { '' }
         BackgroundCpuDeltaSeconds     = if ($backgroundDelta) { $backgroundDelta.CpuDeltaSeconds } else { $null }

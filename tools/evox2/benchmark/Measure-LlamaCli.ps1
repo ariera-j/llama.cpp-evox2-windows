@@ -83,6 +83,10 @@ param(
     [ValidateRange(1, 60)]
     [int]$ResourceIntervalSeconds = 2,
 
+    # Named-process/Defender CPU snapshots are intentionally much less frequent.
+    [ValidateRange(10, 300)]
+    [int]$BackgroundIntervalSeconds = 15,
+
     [switch]$NoAdlxMonitor,
 
     [ValidateRange(100, 60000)]
@@ -486,6 +490,7 @@ $Preview = [PSCustomObject]@{
     MTP               = [bool]$Mtp
     UmaLabel          = $UmaLabel
     ResourceMonitor   = [bool]$ResourceMonitor
+    BackgroundIntervalSeconds = if ($ResourceMonitor) { $BackgroundIntervalSeconds } else { $null }
     AdlxMonitor       = $AdlxMonitorRequested
     AdlxAvailable     = $AdlxMonitorAvailable
     PModeProbe        = -not [bool]$NoPModeProbe
@@ -572,6 +577,7 @@ $Conditions = [ordered]@{
     ResourceMonitor = [ordered]@{
         Enabled         = [bool]$ResourceMonitor
         IntervalSeconds = if ($ResourceMonitor) { $ResourceIntervalSeconds } else { $null }
+        BackgroundIntervalSeconds = if ($ResourceMonitor) { $BackgroundIntervalSeconds } else { $null }
     }
 
     PModeAtStart = $PModeAtStart
@@ -685,7 +691,8 @@ try {
             '-TargetProcessId', "$($process.Id)",
             '-LogPath', $ResourcePath,
             '-RunId', $RunId,
-            '-IntervalSeconds', "$ResourceIntervalSeconds"
+            '-IntervalSeconds', "$ResourceIntervalSeconds",
+            '-BackgroundIntervalSeconds', "$BackgroundIntervalSeconds"
         )
 
         $monitorArgumentLine = (
