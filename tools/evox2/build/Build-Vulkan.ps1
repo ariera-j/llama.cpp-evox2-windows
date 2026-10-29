@@ -11,6 +11,7 @@ param(
 
     [string]$LlvmBin = '',
     [string]$VulkanSdk = '',
+    [string]$ExpectedCMakeVersion = '4.3.1',
     [string]$SevenZipBin = '',
     [string]$DependencyCacheRoot = '',
 
@@ -74,14 +75,55 @@ $BinDir = Join-Path $BuildDir "bin\$Configuration"
 $cmake = (Get-Command cmake -CommandType Application -ErrorAction Stop |
     Select-Object -First 1).Source
 
+# Reject an unexpected CMake before CMake configuration or build begins.
+# ManifestOnly intentionally bypasses this guard (metadata-only recovery).
+if (-not $ManifestOnly -and -not [string]::IsNullOrWhiteSpace($ExpectedCMakeVersion)) {
+    $cmakeVersionText = (& $cmake --version | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "cmake --version failed: $cmake"
+    }
+    $cmakeVersionMatch = [regex]::Match($cmakeVersionText, '(?m)^cmake version\s+(\d+\.\d+\.\d+)\s*$')
+    if (-not $cmakeVersionMatch.Success) {
+        throw "Unable to determine CMake version: $cmakeVersionText"
+    }
+    $actualCMakeVersion = $cmakeVersionMatch.Groups[1].Value
+    if ($actualCMakeVersion -ne $ExpectedCMakeVersion) {
+        throw "CMake version mismatch: expected $ExpectedCMakeVersion, got $actualCMakeVersion at $cmake. Use the pinned CMake or explicitly set -ExpectedCMakeVersion to a tested value ('' skips the guard)."
+    }
+    Write-Host "CMake version verified: $actualCMakeVersion"
+}
+
 $savedPath = $env:PATH
 $savedVulkanSdk = $env:VULKAN_SDK
 
 try {
+    # Explicit -VulkanSdk > VULKAN_SDK environment > known local fallback.
+    if ([string]::IsNullOrWhiteSpace($VulkanSdk) -and
+        [string]::IsNullOrWhiteSpace($env:VULKAN_SDK)) {
+        $candidate = 'C:\VulkanSDK\1.4.357.0'
+        if (Test-Path -LiteralPath $candidate -PathType Container) {
+            $VulkanSdk = $candidate
+            Write-Host "Auto-selected Vulkan SDK: $VulkanSdk"
+        }
+    }
     if (-not [string]::IsNullOrWhiteSpace($VulkanSdk)) {
         $env:VULKAN_SDK = Resolve-Evox2RepoPath -Path $VulkanSdk
     } elseif (-not [string]::IsNullOrWhiteSpace($env:VULKAN_SDK)) {
         $VulkanSdk = $env:VULKAN_SDK
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:VULKAN_SDK) -and
+        -not (Test-Path -LiteralPath $env:VULKAN_SDK -PathType Container)) {
+        throw "VULKAN_SDK directory does not exist: $($env:VULKAN_SDK)"
+    }
+
+    # Prefer the known LLVM directory over an arbitrary clang on PATH.
+    if ([string]::IsNullOrWhiteSpace($LlvmBin)) {
+        $candidate = 'C:\Program Files\LLVM\bin'
+        if ((Test-Path -LiteralPath (Join-Path $candidate 'clang.exe') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'clang++.exe') -PathType Leaf)) {
+            $LlvmBin = $candidate
+            Write-Host "Auto-selected LLVM: $LlvmBin"
+        }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($LlvmBin)) {
