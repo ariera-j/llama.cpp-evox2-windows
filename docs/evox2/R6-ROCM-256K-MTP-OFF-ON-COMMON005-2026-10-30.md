@@ -86,3 +86,47 @@ Why: r3 COMMON-005 historically improved ROCm 256k TG **11.68 → 17.37 tok/s (+
 5. **Safety:** do not launch the broad ROCm `FLASH_ATTN_EXT` backend suite or `Build-ROCm.ps1 -RunBackendTest` on gfx1151 because of prior Windows WATCHDOG/Kernel-Power risk; use targeted tests only. No implementation, rebuild, new automation, source tag, release asset or default flag change is authorized by this research note.
 
 This 2026-10-30 plan supersedes the **MTP-ON-first wording only** in the 2026-10-29 research priority; it does not revise the original 2026-10-29 measurement inventory, the S8/S9 acceptance decisions, the Vulkan release scope or older history.
+
+## 5. Additional three-run pre-COMMON-005 baseline (2026-10-30)
+
+**Measured PASS: all 3/3 runs Status=OK, ExitCode=0.** No new COMMON-005 patch. Source ZIP `20261030-103033-553-cli-rocm-b11908-ctx262144-ff02ad956445.zip`, **SHA256 `c8c923d0a2e4225316a99c3f5fd243605bc65503b6bb620c1a48aea34638b033`**. Archive contains three distinct run folders and their result/condition/output/telemetry files. Raw ZIP and user-local paths are not committed. Executed the [main preflight plan](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-common005-preflight-20261030.psd1).
+
+**Comparable hardware/software:** Windows EVO-X2 / gfx1151, 96GiB UMA setting, Performance P-MODE, TheRock 10.0 ROCm, unchanged integrated b11908 (`b82243bf0`), executable SHA256 `1bbd4a5102b6181d8de92faf2d42e49f96ba2ad4b04b7c7f9e6aafc168d322b1`, runtime artifact digest `e110ec316834fc92e80e0b7460d60431793a1a3a579e22968e153d0991a073f7` / Verified. Qwen3.8 Flash Next Unsloth IQ3 PLE16 GGUF (same file size/mtime; full model SHA not calculated), MTP OFF, f16 K/V, FA auto, batch 2048 / ubatch 1024, threads 4+4, full GPU offload, 512 output tokens, temp0, seed1234, no prompt cache, no context checkpoints. All optional tuning flags OFF.
+
+| Run directory (prefix) | ctx | Actual prompt tokens | Resource monitor | PP tok/s | TG tok/s | PP eval ms | TG eval ms |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| `20261030-095644-852` | 128k | 126,253 | ON (2s/15s) | **302.49** | **17.35** | 417,379.76 | 29,453.77 |
+| `20261030-100623-127` | 256k | 255,181 | OFF | **199.01** | **12.69** | 1,282,228.06 | 40,281.54 |
+| `20261030-103033-553` | 256k | 255,181 | ON (2s/15s) | **198.93** | **12.65** | 1,282,739.89 | 40,384.26 |
+
+128k input `nlp-survey-ch3-d15-b1.txt` SHA256 `182d14a0ca0a8da3659da6bfc2203a68efd96bbb52a26a4bc41dcd24b10da466`; 256k input `nlp-survey-ch3-d31-b1.txt` SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`. Both inputs generated precisely 512 tokens without truncation.
+
+**Stability:** the earlier `2 256k MTP-OFF measured **198.95 / 12.66**; the two new runs measured **199.01 / 12.69** and **198.93 / 12.65** (PP / TG). All three 256k runs cluster in **PP 198.93–199.01** and **TG 12.65–12.69**, mean **198.96 / 12.67**. This is a useful baseline, not a paired ABBA patch-effect estimate. New monitor ON versus OFF is approximately **−0.04% PP / −0.32% TG**. ADLX GPU monitoring and start/end background-process snapshots remain enabled when `ResourceMonitor=False`, so the pair does not isolate all monitoring overhead.
+
+**Monitoring:** 128k monitor ON had 248 resource rows, 250 ADLX rows, 31 heavy named-process samples; **9/31 in-run samples were classified busy**, chiefly `MsMpEng` and briefly `TiWorker`. The start/end background summary says `PossibleNoise=False` because its boundary aggregation is complete and below threshold; it **does not negate the nine intermittent in-run alerts**. The 128k result compared to the older b11908 **300.44 / 17.61** is +0.68% PP / −1.48% TG; do not attribute the TG difference to inference implementation without accounting for background activity.
+
+256k monitor OFF: **0 resource rows, 686 ADLX samples**, high-load ADLX power 116.821W. 256k monitor ON: **681 resource rows, 687 ADLX samples, 85 background probes**, no busy probes; median heavy probe 58.5ms, max **4,937.4ms** (one >1s), resource sample interval max about **6.02s**. The probe delayed telemetry cadence, not demonstrated GPU inference by 4.94s. GPU high-load mean power **117.056W**. 128k high-load mean **119.543W**; all three had P-MODE **Performance** start/end and matching Performance-like ADLX classification. Logs show RDP remote session; retain display/clock context when comparing future runs.
+
+**Final no-patch controls:** 64k **402.61 PP / 21.80 TG** (earlier), 128k **302.49 / 17.35** (new; intermittent background activity caveat), 256k **198.96 / 12.67** (mean of three same-day MTP-OFF runs; report individual values when drawing conclusions). **No further r6 integrated-binary baseline throughput runs are required before targeted RGP.**
+
+## 6. Restart checkpoint — 2026-11-02 (Monday) afternoon JST
+
+User is away until Monday afternoon. **Next action: create an isolated research branch from current `main` and resume from RGP; do not begin source changes or extensive inference tests before the user resumes.**
+
+- Proposed branch **`research/rocm-qsa-gather-20261030`**, to be **created at restart**, not yet created as part of this documentation update.
+- Preserve frozen b11908 ROCm executable/runtime and public tag as control. New `main` benchmark scripts/documentation are not a new source binary.
+- First obtain a narrow 128k **MTP OFF** steady-TG RGP/HIP capture. Identify and time full-context `flash_attn_tile`, QSA select/index, mask expansion / `k_get_rows` and relevant GPU work. Compare the old r3 COMMON-005 profiling signature; only repeat at 256k if needed.
+- Introduce opt-in RGP trace flags/markers on the **research branch only** if required; separate profiled timings from ordinary PP/TG benchmarks. After profiling, audit new QSA index/mask contracts and consider default-OFF COMMON-005 single-token gather for MTP OFF, preserving correctness and fallback.
+- Avoid the unsafe broad Windows gfx1151 ROCm `FLASH_ATTN_EXT` test and blanket `Build-ROCm.ps1 -RunBackendTest`. Any native test is targeted.
+- Evaluate MTP OFF against the **contemporary 256k MTP ON ~14.80–15.04 TG** only after controlled patched-binary ON/OFF comparison, maintaining MTP-OFF PP/correctness, then decide ROCm-only operating preference. No released defaults or engine code changed today.
+
+## 7. Post-COMMON-005 work queue — priority explicitly undecided
+
+Once COMMON-005 profiling and implementation/adoption decision finishes, **choose the next workstream based on the situation at that time**; no strict ordering, automation or large matrix is authorized now.
+
+1. **Port r5 real-input `llama-bench` support (TOOL-001) into r6/main.** r5's bench wrapper used native `-f <input-file>`; b11908 native `llama-bench` lacks `-f` and `-c`, and the modern PowerShell wrapper correctly refuses those options. Port or adapt the **native feature and wrapper semantics**, not just the PowerShell script; validate real-text prompt loading/token counts, maintain backward compatibility and compare real vs random input fairly.
+2. **Finish empirical non-speed research:** QSA actual mask / selected-token pattern visualization for different real inputs versus random text, MoE expert-selection distribution versus input genre, and any outstanding targeted RGP or model-behavior experiments. These are observations, not automatically performance patches.
+3. **Investigate alternative inference engines and forks:** assess what actually runs on EVO-X2/Windows/gfx1151 with Qwen3.8 Flash Next, including then-current Strata/Gufo and other candidates. Compare model format, correctness, throughput and integration/maintenance costs.
+4. **Prioritize another speed optimization** if new upstream, community forks or observed bottlenecks justify it: re-evaluate HIP attention/QSA, GDN, MoE/dispatch and previously documented candidates against the current stable implementation.
+
+**Do not lock the post-COMMON-005 order now.** Reassess on completion using then-current upstream/engine developments, research interest, time, compatibility/stability, evidence quality and opportunity cost. This checkpoint is documentation only.
