@@ -714,9 +714,56 @@ try {
 
     $nextProgress = (Get-Date).AddSeconds($ProgressIntervalSeconds)
 
+    # RGP capture cue: inspect only the final 8 KiB of the redirected stderr,
+    # once per second, and report the FIRST SSE text delta exactly once.
+    # This is opt-in and inactive for ordinary performance benchmarks.
+    # It is a host-side SSE reception event, NOT a GPU dispatch timestamp.
+    $rgpTraceCueEnabled = $env:LLAMA_EVOX2_RGP_SSE_TRACE -eq '1'
+    $rgpTraceCueReported = $false
+    $nextRgpTraceProbe = Get-Date
+
     while (-not $process.HasExited) {
         Start-Sleep -Milliseconds 500
         $process.Refresh()
+
+        if ($rgpTraceCueEnabled -and -not $rgpTraceCueReported -and
+                (Get-Date) -ge $nextRgpTraceProbe) {
+            $nextRgpTraceProbe = (Get-Date).AddSeconds(1)
+            try {
+                if ([IO.File]::Exists($StdErrPath)) {
+                    # The child's Start-Process redirect may still hold the file.
+                    # Share reads/writes; never read the entire (possibly huge) log.
+                    $traceStream = [IO.File]::Open(
+                        $StdErrPath,
+                        [IO.FileMode]::Open,
+                        [IO.FileAccess]::Read,
+                        [IO.FileShare]::ReadWrite
+                    )
+                    try {
+                        $traceBuffer = New-Object byte[] 8192
+                        $tailBytes = [int][Math]::Min($traceStream.Length, $traceBuffer.Length)
+                        if ($tailBytes -gt 0) {
+                            [void]$traceStream.Seek(-$tailBytes, [IO.SeekOrigin]::End)
+                            $readBytes = $traceStream.Read($traceBuffer, 0, $tailBytes)
+                            $tailText = [Text.Encoding]::UTF8.GetString($traceBuffer, 0, $readBytes)
+                            if ($tailText -match '(?m)^evox2_rgp_sse_v1 event=first_text_delta elapsed_ms=([0-9]+)') {
+                                $rgpTraceCueReported = $true
+                                $firstTextMs = [long]$Matches[1]
+                                Write-Host (
+                                    'TG START (first SSE text, host +{0:N1} min): capture RGP now. PID {1}' -f
+                                    ($firstTextMs / 60000.0), $process.Id
+                                )
+                            }
+                        }
+                    } finally {
+                        $traceStream.Dispose()
+                    }
+                }
+            } catch {
+                # Profiling assistance is best-effort; never stop a model run
+                # because the child had its redirected log temporarily locked.
+            }
+        }
 
         if ((Get-Date) -ge $nextProgress) {
             $elapsed = (Get-Date) - $Started

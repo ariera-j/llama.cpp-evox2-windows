@@ -151,3 +151,15 @@ User ZIP `20261103-000255-742-cli-rocm-b12013-ctx262144-e98d3c9afac4.zip` (SHA25
 | 256k | 12.665 | 19.760 | **+56.02%** | ABBA mean |
 
 **Decision:** 256k speed/activation/basic-output/stability gate **PASS**. The b12013 research prototype delivers context-dependent TG gains while preserving PP within observed variability, and at 256k its ~19.76 TG exceeds the **historical, differently configured** contemporary MTP-ON 14.80–15.04 TG; do not call that a controlled MTP-ON/OFF A/B. Keep `QWEN4EXP_QSA_GATHER` **default OFF** until further targeted output correctness and adoption review. No third 256k repeat required now. Optional narrow postpatch RGP comparison if identifying residual GPU bottlenecks or explaining the deferred CPU-bound capture B becomes important; no broad HIP FA suite and no upstream upgrade. Main and published b11908 are unchanged.
+
+## RGP capture start cue (added 2026-11-03; no binary rebuild)
+
+The benchmark's `Measure-LlamaCli.ps1` now prints **one host-side onset line** when `LLAMA_EVOX2_RGP_SSE_TRACE=1` and the saved `stderr.log` receives `evox2_rgp_sse_v1 event=first_text_delta`:
+
+```text
+TG START (first SSE text, host +7.0 min): capture RGP now. PID 17760
+```
+
+The script reads **only the final 8 KiB of stderr at most once per second**, exclusively under the opt-in RGP flag, using read/write file sharing, then **stops reading altogether after the first cue**. Standard unprofiled benchmarks do not probe stderr. Existing periodic `Running... PID ..., elapsed ... min` lines remain. Reading a bounded tail is **not the same as streaming the entire stderr log live**. The cue is delivered no more than ~1s after host receipt under normal circumstances; it is **not a GPU timestamp**. If it does not appear (file permissions, buffering, or unexpected log format), the ordinary run remains unaffected; manual log checks remain possible.
+
+Use the single-run plan `qwen38-r6-rocm-common005-rgp-on-128k-20261103.psd1`, existing `R6RocmCommon005` b12013 binary, `-PlanOnly` then one normal invocation. `git pull --ff-only` fetches the PowerShell-only update; **no ROCm rebuild**. RGP 1024 dispatch relative capture should occur during steady TG after this cue. Do not open a full real-time `Get-Content -Wait` view unless troubleshooting. Do not infer the 29% unprofiled TG gain from profiled CLI stopwatch time. Submit .rgp, profiler overview/events and result ZIP for A/B comparison with previous 128k Gather OFF.

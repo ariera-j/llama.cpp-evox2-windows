@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "models" / "qwen4exp.cpp"
 HEADER = ROOT / "src" / "models" / "models.h"
 BENCH_MODULE = ROOT / "tools" / "evox2" / "benchmark" / "Evox2.Benchmark.psm1"
+CLI_RUNNER = ROOT / "tools" / "evox2" / "benchmark" / "Measure-LlamaCli.ps1"
 PLAN = ROOT / "tools" / "evox2" / "benchmark" / "configs" / "qwen38-r6-rocm-common005-gather-20261102.psd1"
 
 
@@ -68,6 +69,16 @@ class TestQsaCommon005(unittest.TestCase):
 
     def test_mask_half_precision_exact(self):
         self.assertEqual(struct.unpack('e', struct.pack('e', -65504.0))[0], -65504.0)
+
+    def test_rgp_host_first_text_cue_only_when_opted_in(self):
+        txt = CLI_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$rgpTraceCueEnabled = $env:LLAMA_EVOX2_RGP_SSE_TRACE -eq '1'", txt)
+        self.assertIn('New-Object byte[] 8192', txt)
+        self.assertIn('evox2_rgp_sse_v1 event=first_text_delta', txt)
+        self.assertIn('$rgpTraceCueReported = $true', txt)
+        self.assertIn('capture RGP now', txt)
+        self.assertIn('Running... PID', txt)
+        self.assertIn('catch {', txt)
 
     def test_provenance_records_gather_flag(self):
         txt = BENCH_MODULE.read_text(encoding="utf-8")

@@ -7,8 +7,9 @@
     # Use previously verified b12013 R6RocmCommon005 (NOT R6RocmQsaRgp
     # and NOT stable b11908). Keep the original OFF RGP plan unchanged.
     # SSE text-delta cues are host timestamps, NOT GPU dispatch markers.
-    # Do NOT tail stderr.log live. After output begins, capture steady TG
-    # with the same RGP mode as before (relative 1024 dispatches).
+    # Measure-LlamaCli.ps1 now prints one TG START line (first text SSE cue)
+    # to the benchmark console. Do NOT tail stderr.log live. After TG START,
+    # capture steady TG with the same relative 1024-dispatch RGP mode.
     # This run is diagnostic, NOT a regular PP/TG performance baseline.
     # NEVER run unsafe broad HIP FLASH_ATTN_EXT backend tests.
     Settings = @{
