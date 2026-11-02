@@ -172,3 +172,55 @@ Every run used **the same 111,166 prompt tokens**, 239 generated answer tokens, 
 - Historical b11592 Vulkan seed 20261025 IQ3 A/B was **12/12, 11/12**; new ROCm OFF is **11/12, 11/12**. That backend/build difference is **not** evidence of a Gather effect. Original IQ4 Vulkan and the new ROCm both scored **12/12 A/B**.
 
 **Gate decision:** **PASS** seed20261025 basic quality parity screening for IQ3 and original IQ4, with the Q03 IQ3 variation explicitly preserved. Gather still **source default OFF**; no broader production approval. **Next:** run the same frozen **seed20261026** 8-case `-OnlyCase seed20261026 -StopOnError` cohort and independently score it with that seed's manifest. This verifies another content/position configuration and may reveal IQ3's prior borderline cases. If an ON-only repeatable regression emerges, perform targeted paired repeat at the exact question order/seed before attributing it to Gather. The deferred RGP CPU-bound gap and ROCmFP4 backend support question remain separate topics.
+
+## 2026-11-03 — MH-128K seed 20261026: 8-run quality evidence and IQ4-B Q08 targeted-repeat HOLD
+
+**Evidence provided:** eight complete leaf folders in `20261103-041033-319-cli-rocm-b12013-ctx131072-11fc8f31cba3.zip`, SHA256 `398e3717c322f1ebddae99db84a3c822d68c5c5158fec2a84ff46e94c8c2f215`; original user scorer `common005-details2.json` SHA256 `fbf9c1d77ad0eb1f964e5f6aa973ad0b8ff244f58880d37c05e67fc51f44a2f9`, `common005-scores2.csv` SHA256 `f038b338fed2481a7b08886c5fca3b5d30c3ce4fa899cfdb84fbc38bec784783`. JSON independent oracle returned `VALID`, seed `20261026`, **1137 records**, token count verified, frozen input hashes A `3df86efedd7e3fbc1f71226392fbcf076f68a0a9b3135647087f3340040275e3` and B `694edd15bb2f762a530b437800f67d3dc84eb085be17429e828e060a4fd69ef4`. Every `conditions.json` matches the appropriate A/B SHA; each run processed **111,148 prompt tokens** in 131072 context, **no truncation**.
+
+| Order / RunId prefix | Model | Q-order | Gather | Main /12 | PP tok/s | TG tok/s | Gen tokens | Notable |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| 1 `031008-455` | IQ3 XXS | A | OFF | **12** | 286.45 | 18.46 | 250 | all correct |
+| 2 `032022-668` | IQ3 XXS | A | ON | **12** | 283.38 | 23.31 | 250 | all correct |
+| 3 `032929-742` | IQ3 XXS | B | ON | **12** | 287.43 | 23.27 | 250 | all correct |
+| 4 `033755-299` | IQ3 XXS | B | OFF | **12** | 284.27 | 18.71 | 250 | all correct |
+| 5 `034706-284` | original IQ4 XS | A | OFF | **12** | 313.38 | 17.67 | 250 | all correct |
+| 6 `035455-682` | original IQ4 XS | A | ON | **12** | 313.76 | 21.77 | 250 | all correct |
+| 7 `040241-364` | original IQ4 XS | B | ON | **11** | 313.43 | 21.77 | 251 | **Q08 near_link_decoy** |
+| 8 `041033-319` | original IQ4 XS | B | OFF | **12** | 313.97 | 17.68 | 250 | all correct |
+
+- **Only failure: IQ4 seed20261026 B / Gather ON / Q08 (H, two-hop).** Expected `Q08=VAL-7FEC0BE34E44`, observed `Q08=VAL-379D05DD15C1`, independent scorer classification **`near_link_decoy`** (one-character-near `link_code`, target role-compatible). This classification identifies a possible answer pathway, **not proof** of which intermediate inference step failed. In the identical B prompt with Gather OFF, Q08 was correct. Q08 also correct in IQ4 A OFF/ON. The incorrect run generated **251** vs the otherwise consistent **250** tokens.
+- **Output stability:** the four IQ3 runs (including A and B, OFF and ON) have **the same normalized stdout byte SHA256** `4463a9bc16f71697f63bee44ec6f04805aa95fe9bef9b08dc150180c4c60d622`. IQ4 A OFF / A ON / B OFF all share normalized SHA256 `edf7e5a6dd7614aa91063d22a8d1ecceb7717bd3118f07e2a30d33f1524ba375`; IQ4 B ON has unique SHA256 `5ae41fdec40435e185af8befeef92155eb352e4f152a878695b1e029a96e4d34`. **One ON-only difference is a regression *signal* but not causal proof** given fixed-seed ROCm QSA output nondeterminism, and the absence of an ON/OFF repeated same-cell sample.
+- All **8/8** `Status=OK, ExitCode=0, RuntimeArtifactStatus=Verified`, binary `b12013/f29592d6a`, `llama-cli` executable SHA256 `4aa6dd0c1fd47baba0b0861be7b89c7cca4ad39c266f090f9bd04d9ddb81a628`, same verified ROCm runtime digest as seed20261025. Each ON stderr has one `qwen4exp_common005_v1 graph_built=compact n_kv=131072 n_sel=2051`, OFF has none. 49/49 GPU layers, single sequence, F16 KV, MTP OFF. All Q13/Q14 correct, `format_compliant=true`, and no extraction warnings/issues.
+- All start/end **Performance** P-MODE, ADLX classification consistent (high GPU-load mean power **117.281–119.458 W**), temperatures max **81–83 °C**; no evident clock collapse or fatal GPU error. IQ3 high-load average VRAM clock varies **921.81–933.32 MHz** and below-900 sample count 9–26; original IQ4 average **960.41–965.93 MHz**, below-900 0–1. Named background monitor indicates `PartialCoverage/PossibleNoise=null` for IQ3 A OFF only, `Observed/PossibleNoise=false` for the other seven; these probes do not rule out transient OS activity.
+
+**Seed20261026 speed summary, quality-run side observation (two runs per arm, not dedicated repeated performance ABBA):**
+
+| Model | PP OFF mean | PP ON mean | TG OFF mean | TG ON mean | ON TG change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IQ3 XXS | 285.360 | 285.405 | 18.585 | 23.290 | **+25.32%** |
+| original IQ4 XS | **313.675** | **313.595** | 17.675 | 21.770 | **+23.17%** |
+
+IQ4 PP exceeds IQ3 by about **+9.92%** in the matched OFF condition (313.675 vs 285.360), matching seed20261025's IQ4 PP advantage. Relative quantized kernel/matrix-multiplication efficiency and somewhat higher VRAM clock are **possible contributors, not proven causal mechanisms**. PP OFF vs ON is near-equal, and Gather applies to decode.
+
+### Combined two-seed 16-run correctness (distinct question sets but A/B correlated)
+
+| Model | Gather OFF (2 seeds × A/B) | Gather ON (2 seeds × A/B) |
+| --- | ---: | ---: |
+| Unsloth IQ3 | **46/48** | **47/48** |
+| Original Unsloth IQ4 | **48/48** | **47/48** |
+| **Both models** | **94/96** | **94/96** |
+
+- Seed20261025 had IQ3 Q03 source-decoy error in three arms (IQ3 A OFF, B OFF and B ON); IQ3 A ON was correct. Seed20261026 IQ3 **all 4 runs exactly correct**. These do not imply a Gather quality improvement.
+- Seed20261025 original IQ4 **4/4 runs 12/12**, seed20261026 **3/4 runs 12/12**, only `IQ4-B ON` missed Q08. This does not establish a systematic Gather regression; nor does the **94/96 vs 94/96** aggregate prove numerical parity.
+
+**Decision: overall bounded ROCm quality screen completed, but COMMON-005 normal-use Gather-ON promotion remains HOLD pending targeted repeat.** Do **not** rerun the entire 16-case set or modify the patch on a single miss. Narrow follow-up for precisely the original IQ4 `seed20261026` Q-order **B** (A/B here means question order; separate from Gather flag):
+
+```powershell
+$plan = '.\tools\evox2\benchmark\configs\qwen38-r6-common005-mh128k-quality-20261103.psd1'
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan $plan -OnlyJob mh-IQ4-B -OnlyCase seed20261026 -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 `
+  -Plan $plan -OnlyJob mh-IQ4-B -OnlyCase seed20261026 -StopOnError
+```
+
+This yields **two new runs**, Gather **ON then OFF** using the exact same model, input SHA and executable. Score with `common005` seed20261026 manifest. If ON correct, interpret the original miss as **non-reproducible in the first repeat**, not conclusive random noise or mathematical parity. If ON misses Q08 again, or OFF also misses, run **one more identical 2-run matched pair**, then compare per-question error distributions. Do not label Gather causally harmful merely because it correlates with the first one or two errors under ROCm QSA top-k non-determinism; systematic ON-only mistakes over repetitions warrant numerical-path diagnostics. Preserve default OFF until this review. Broad 256k repeat and new RGP are not needed now.
