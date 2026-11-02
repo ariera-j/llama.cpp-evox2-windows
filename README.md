@@ -1,5 +1,8 @@
 # llama.cpp Evo-X2 Windows fork
 
+> **2026-11-03 COMMON-005ソース統合：** r6向けQSA選択K/V Gatherを実験機能として取り込みました（`QWEN4EXP_QSA_GATHER=1`で有効、**既定OFF**）。EVO-X2／ROCm／Qwen3.8 Flash Next／MTP OFFの64k・128k・256k ABBAでTG **+12.7%／+28.9%／+56.0%**、PPはおおむね維持。128kのRGPでもCompact Attentionを確認しました。**回答品質の追加比較、MTP ON・Vulkanでの有効化は未検証です。** ソースに統合しただけで、公開済みの**b11908 Vulkan ZIP／タグは変更していません**。詳細：[COMMON-005検証記録](docs/evox2/R6-COMMON005-IMPLEMENTATION-2026-11-02.md)。
+
+
 **Language / 言語:** 日本語（このページ） · **[English README](README.en.md)**
 
 **Windows 11 / GMKtec NucBox EVO-X2 / AMD Radeon 8060S (gfx1151) 向けのローカルLLM推論・高速化研究用forkです。**  

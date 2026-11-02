@@ -1,11 +1,11 @@
 # COMMON-005 r6 ROCm selected-K/V gather prototype — 2026-11-02
 
-**Status: SOURCE IMPLEMENTED ON RESEARCH BRANCH; NOT BUILT OR TESTED ON WINDOWS.** This is not an accepted performance improvement and is not a production/default profile. CPU-bound RGP B follow-up is recorded in [the RGP log](R6-COMMON005-RGP-2026-11-02.md).
+**Status (2026-11-03): native Windows ROCm b12013 build and 4k–256k smoke/ABBA tests PASS; 128k postpatch RGP PASS. Source integrated into main, still opt-in/default OFF.** This is not approval for production/default-ON use, nor proof of numerical/answer-quality equivalence. Prior pre-implementation paragraphs below are preserved as dated planning history. CPU-bound RGP B follow-up is recorded in [the RGP log](R6-COMMON005-RGP-2026-11-02.md).
 
 ## Scope and source changes
 
-- On this research branch, `Evox2.Benchmark.psm1` includes `QWEN4EXP_` in `Get-Evox2RelevantEnvironment`. This is required: otherwise Gather ON/OFF can share a condition fingerprint even when the matrix variant differs. Check `conditions.json` now includes `QWEN4EXP_QSA_GATHER=0/1` as applicable.
-- Branch `research/rocm-qsa-gather-20261030`, derived from r6-based `main`; no upstream update, public tag or published stable b11908 build changed.
+- `Evox2.Benchmark.psm1` includes `QWEN4EXP_` in `Get-Evox2RelevantEnvironment`. This is required: otherwise Gather ON/OFF can share a condition fingerprint even when the matrix variant differs. Check `conditions.json` now includes `QWEN4EXP_QSA_GATHER=0/1` as applicable.
+- Originally implemented/measured in branch `research/rocm-qsa-gather-20261030`, based on the existing r6 `main`; now source-integrated into `main` (2026-11-03) without upstream update, release/tag change, published b11908 binary rebuild, or opt-in default change.
 - `src/models/qwen4exp.cpp` and `src/models/models.h`: opt-in `QWEN4EXP_QSA_GATHER=1` **only**, with default OFF (unset, `0`, or any other value => OFF).
 - Narrow graph eligibility: `cparams.flash_attn`, one token, exactly one sequence, `n_kv / 4 >= n_sel`, `n_kv <= 2^24`, valid single-stream original KQ mask, F16 K/V and contiguous full-head-per-cell cache layout.
 - First time a compact graph is **built**, opt-in mode emits one flushed stderr record `qwen4exp_common005_v1 graph_built=compact n_kv=... n_sel=...`. Verify this exists in `output.log`/`stderr.log` for the 32k ON gate; its absence means Gather eligibility was not demonstrated. This graph-build cue is **not proof of GPU dispatch/execution** and is never emitted in OFF mode.

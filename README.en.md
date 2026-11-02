@@ -1,5 +1,8 @@
 # llama.cpp Evo-X2 Windows fork
 
+> **November 3, 2026 — COMMON-005 source integration:** An experimental QSA selected K/V Gather path is available via `QWEN4EXP_QSA_GATHER=1` (**default OFF**). On EVO-X2 / ROCm / Qwen3.8 Flash Next / MTP OFF, 64k/128k/256k matched ABBA tests showed **+12.7%/+28.9%/+56.0% TG**, with PP broadly unchanged; 128k RGP confirmed shorter compact attention. **Additional answer-quality, MTP-ON and Vulkan-active-path checks are pending.** This is a source-only change: the previously published **b11908 Vulkan ZIP and tag are unchanged**. [Measured COMMON-005 report](docs/evox2/R6-COMMON005-IMPLEMENTATION-2026-11-02.md).
+
+
 **A research fork for local LLM inference and performance experiments on Windows 11, GMKtec NucBox EVO-X2, and AMD Radeon 8060S (gfx1151).**
 
 Based on [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp), this fork investigates Qwen3.8-Flash-Next PLE16 compatibility, long-context Vulkan and ROCm inference, and MTP (speculative decoding) optimizations.
