@@ -10,6 +10,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -360,6 +364,25 @@ bool cli_context::generate_completion(generated_content & content_out, cli_timin
 
     bool stream_error = false;
 
+    // Host-side RGP capture cue. This does not annotate GPU dispatches, count
+    // tokens, or change server execution; it only timestamps received text.
+    // Explicit opt-in: all other values, including an unset variable, are OFF.
+    const char * rgp_env = std::getenv("LLAMA_EVOX2_RGP_SSE_TRACE");
+    const bool rgp_trace = rgp_env && std::string(rgp_env) == "1";
+    const auto rgp_start = std::chrono::steady_clock::now();
+    uint64_t rgp_text_deltas = 0;
+    const auto rgp_event = [&](const char * event) {
+        if (!rgp_trace) {
+            return;
+        }
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - rgp_start).count();
+        std::fprintf(stderr, "evox2_rgp_sse_v1 event=%s elapsed_ms=%lld text_deltas=%llu\n",
+            event, static_cast<long long>(ms), static_cast<unsigned long long>(rgp_text_deltas));
+        std::fflush(stderr);
+    };
+    rgp_event("request_start");
+
     ui::assistant_turn a;
 
     std::string err = client.post_sse("/v1/chat/completions", body.dump(), should_stop, [&](const std::string & payload) {
@@ -385,9 +408,11 @@ bool cli_context::generate_completion(generated_content & content_out, cli_timin
             return;
         }
         const auto & delta = choice.at("delta");
+        bool has_text_delta = false;
         if (delta.contains("reasoning_content") && delta.at("reasoning_content").is_string()) {
             const std::string text = delta.at("reasoning_content").get<std::string>();
             if (!text.empty()) {
+                has_text_delta = true;
                 content_out.reasoning += text;
                 a.push(ui::ASSISTANT_DISPLAY_MODE_REASONING, text);
             }
@@ -395,11 +420,21 @@ bool cli_context::generate_completion(generated_content & content_out, cli_timin
         if (delta.contains("content") && delta.at("content").is_string()) {
             const std::string text = delta.at("content").get<std::string>();
             if (!text.empty()) {
+                has_text_delta = true;
                 content_out.content += text;
                 a.push(ui::ASSISTANT_DISPLAY_MODE_CONTENT, text);
             }
         }
+        if (rgp_trace && has_text_delta) {
+            ++rgp_text_deltas;
+            if (rgp_text_deltas == 1) {
+                rgp_event("first_text_delta");
+            } else if (rgp_text_deltas % 32 == 0) {
+                rgp_event("text_progress");
+            }
+        }
     });
+    rgp_event(err.empty() && !stream_error ? "stream_end" : "stream_error");
 
     cli_context::interrupted().store(false);
 
