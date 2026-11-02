@@ -163,3 +163,49 @@ TG START (first SSE text, host +7.0 min): capture RGP now. PID 17760
 The script reads **only the final 8 KiB of stderr at most once per second**, exclusively under the opt-in RGP flag, using read/write file sharing, then **stops reading altogether after the first cue**. Standard unprofiled benchmarks do not probe stderr. Existing periodic `Running... PID ..., elapsed ... min` lines remain. Reading a bounded tail is **not the same as streaming the entire stderr log live**. The cue is delivered no more than ~1s after host receipt under normal circumstances; it is **not a GPU timestamp**. If it does not appear (file permissions, buffering, or unexpected log format), the ordinary run remains unaffected; manual log checks remain possible.
 
 Use the single-run plan `qwen38-r6-rocm-common005-rgp-on-128k-20261103.psd1`, existing `R6RocmCommon005` b12013 binary, `-PlanOnly` then one normal invocation. `git pull --ff-only` fetches the PowerShell-only update; **no ROCm rebuild**. RGP 1024 dispatch relative capture should occur during steady TG after this cue. Do not open a full real-time `Get-Content -Wait` view unless troubleshooting. Do not infer the 29% unprofiled TG gain from profiled CLI stopwatch time. Submit .rgp, profiler overview/events and result ZIP for A/B comparison with previous 128k Gather OFF.
+
+## Post-patch 128k RGP validation — 2026-11-03
+
+**Result: GPU-side compact Attention confirmed; GPU idle gap still exists in one of two captures.** Source unchanged; b12013 `f29592d6a`; normal controlled ABBA remains the performance benchmark. User supplied 2 RGP captures in **one** 128k Gather ON diagnostic run and screenshots. User artifacts (not checked into Git):
+
+| File | Bytes | SHA256 |
+| --- | ---: | --- |
+| `llama-cli-20261103-005325955.rgp` (A, GPU bound) | 43,395,393 | `d6457e77630994cc752bda7082bc8bf37421522cf4b530c602cbcf9e710460d2` |
+| `llama-cli-20261103-005331682.rgp` (B, CPU bound) | 45,530,201 | `7258e96d31fd87fbb431e9d4795978a8e95d2d2e3e469fce9f1fa56fd20a5078` |
+| `20261103-004526-851-cli-rocm-b12013-ctx131072-6877c8a1dc30.zip` | 47,219 | `15eb5e99604aac2ef9e781d9a3aebb9a29c192debb091a894a88a1e6e3380926` |
+
+Both `.rgp` binaries have `AMD_RDF` (v3) container header; GPU event durations below are **read from user RGP GUI screenshots**, not full machine-parsed dispatch listings. Do not present per-event times as kernel-total statistics.
+
+### Controlled-length Attention before and after Gather (single events)
+
+| Kernel / observation | 128k prepatch, Gather OFF, 2026-11-02 | 128k postpatch, Gather ON, 2026-11-03 |
+| --- | ---: | ---: |
+| `flash_attn_tile<256,256,1,4,false>` (full-KV) | **1,490.759 us**, original RGP A | no longer the selected QSA path |
+| `flash_attn_tile<256,256,2,1,false>` (compact-KV) | not in prior selected QSA event | **40.714 us** in A event 565; **40.682 us** in B event 917 |
+| Attention runtime reduction per sampled event | | **~97.27%**, **~36.6x shorter** than prepatch sampled full-KV event; different launch template and workload length |
+| Existing `k_get_rows_float<half,float>` before indexer | **405.008 us** in prepatch A | **407.568 us** in postpatch A event 499; **403.423 us** in B event 851 |
+| `lightning_indexer_kernel_vec` | ~124.728 us prepatch A | **121.704 us** A event 503, **132.925 us** B event 855 |
+| Extra `k_get_rows_float<half,float>` near compact-KV creation | not present as compact KV read | **~36.210 and 36.126 us** A events 553/557; **~35.562 and 35.123 us** B events 905/909 |
+| Copy/convert `cpy_scalar` near compact KV read | not in old masked FA path | **~58.405 and 56.847 us** A events 555/559; **~58.253 and 56.735 us** B events 907/911; inspect precise backend node mapping before attributing all time solely to K/V cast |
+| Other representative compute | `mul_mat_vec_q<type14>` ~2.846 ms in earlier prepatch B | **2,849.442 us** B event 1017; same general scale, not improved by QSA Gather |
+
+The existing ~0.4 ms pooled key `get_rows` remains unchanged. New compact K/V `get_rows` calls and conversion/copy events cost tens of microseconds each and are **newly prominent** after FA is shortened; these can be investigated if another optimization pass is warranted. Do not add every sampled event 12x and call it end-to-end proven savings; the captures cover only 1,024 dispatches and kernels have different mixes. Also, the postpatch FA template has different launch dimensions and occupancy; **no instruction-level optimization has been demonstrated**.
+
+### Profile summary and CPU-bound gap
+
+| Metric | Prepatch RGP A | Prepatch RGP B | Postpatch RGP A | Postpatch RGP B |
+| --- | ---: | ---: | ---: | ---: |
+| Profile duration | 18,966.790 us | 30,863.455 us | **14,397.195 us** | **22,400.565 us** |
+| GPU idle reported | **2.22%** | **15.34%** | **2.38%** | **14.29%** |
+| RGP local classification | GPU bound | CPU bound | **GPU bound** | **CPU bound** |
+
+Postpatch B shows a conspicuous interval with no Compute queue 0 work while brief Compute queue 1 / Copy queue activity persists. **This is not necessarily a full-GPU idle interval**. The appearance and capture-specific RGP classification are comparable to the **prepatch** B case; **not evidence of a Gather-specific queue regression**. Percentages are valid **only over their respective capture windows**, not the full TG run. A 1,024-dispatch capture may contain a different kernel mix after source changes; do **not** treat profile duration 18.97→14.40 ms as directly comparable speedup.
+
+**Next-step status for CPU bound:** remain deferred / investigate separately if required using host-submit/GPU queue correlation; this RGP set does **not** establish its cause. Do not launch additional GPU-profiling runs solely to reproduce it now.
+
+### Run ZIP confirmation
+
+- b12013 / commit `f29592d6a`, `Status=OK, ExitCode=0`; 126,253 prompt tokens, 512 generated, F16 KV, MTP OFF, `RuntimeArtifactStatus=Verified`, 128k.
+- PP **300.63 tok/s**, TG **21.98 tok/s** under RGP diagnostics; normal **unprofiled** 128k ABBA ON mean is **22.715 tok/s**. The difference does not isolate profiling overhead because runs differ. Avoid using this one diagnostic TG number as the official gain.
+- `qwen4exp_common005_v1 graph_built=compact n_kv=131072 n_sel=2051` present exactly once. Opt-in host SSE cue `first_text_delta elapsed_ms=420309`, `stream_end elapsed_ms=443571`, `text_deltas=510`; SSE deltas are not generated tokens or GPU timestamps. Run stayed Performance P-MODE, ADLX Performance-like **119.254 W** under high GPU load, `PModeChanged=False`.
+- **Decision:** RGP verification **PASS** for intended shorter QSA FA kernel and preservation of pre-indexer cost. Experimental opt-in remains **default OFF** until targeted quality/numerical-parity review. 256k ABBA +56.02% TG still stands. Investigate backend conversion/gather overhead only if pursuing further speed; queue idle investigation is distinct and deferred. No new compile/branch merge/default flip in this documentation step.
