@@ -50,15 +50,15 @@
     }
 
     Jobs = @(
-        # The ONLY short preflight: confirm ROCmFP4 loads, emits valid
+        # The ONLY short preflight: confirm original Unsloth IQ4_XS PLE16 loads on ROCm, emits valid
         # 32k answers and activates Gather on the ON arm.
         @{
-            Name = 'mh-fp4-gather-preflight'
+            Name = 'mh-iq4-gather-preflight'
             Tool = 'cli'
             BuildKeys = @('R6RocmCommon005')
-            ModelKeys = @('AgentionRocmFp4FastPle16')
+            ModelKeys = @('Qwen38Iq4XsPle16')
             Cases = @(
-                @{ Name = 'fp4-32k'; Parameters = @{ Context = 32768; InputKey = '32k'; GenerationTokens = 64 } }
+                @{ Name = 'iq4-32k'; Parameters = @{ Context = 32768; InputKey = '32k'; GenerationTokens = 64 } }
             )
             Variants = @(
                 @{ Name = 'gather-off'; Environment = @{ QWEN4EXP_QSA_GATHER = '0' } }
@@ -97,10 +97,10 @@
             )
         }
         @{
-            Name = 'mh-FP4-A'
+            Name = 'mh-IQ4-A'
             Tool = 'cli'
             BuildKeys = @('R6RocmCommon005')
-            ModelKeys = @('AgentionRocmFp4FastPle16')
+            ModelKeys = @('Qwen38Iq4XsPle16')
             Cases = @(
                 @{ Name = 'seed20261025'; Parameters = @{ Context = 131072; InputKey = 'MH128K_S20261025_A' } }
                 @{ Name = 'seed20261026'; Parameters = @{ Context = 131072; InputKey = 'MH128K_S20261026_A' } }
@@ -111,10 +111,10 @@
             )
         }
         @{
-            Name = 'mh-FP4-B'
+            Name = 'mh-IQ4-B'
             Tool = 'cli'
             BuildKeys = @('R6RocmCommon005')
-            ModelKeys = @('AgentionRocmFp4FastPle16')
+            ModelKeys = @('Qwen38Iq4XsPle16')
             Cases = @(
                 @{ Name = 'seed20261025'; Parameters = @{ Context = 131072; InputKey = 'MH128K_S20261025_B' } }
                 @{ Name = 'seed20261026'; Parameters = @{ Context = 131072; InputKey = 'MH128K_S20261026_B' } }

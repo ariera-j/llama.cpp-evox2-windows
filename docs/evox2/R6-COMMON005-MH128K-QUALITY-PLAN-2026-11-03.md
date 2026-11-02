@@ -1,6 +1,8 @@
 # r6 COMMON-005 — ROCm MH-128K quality parity runbook (2026-11-03)
 
-**Purpose:** Compare opt-in Gather OFF vs ON for the **same** Unsloth IQ3 PLE16 and Agention ROCmFP4 FAST v2 PLE16 weights, using historical MH-128K two-hop A/B question orders. Evaluate correctness, **not** PP/TG speed. Quality is *not yet certified*. No source flag defaults or release tags change.
+**Purpose:** Compare opt-in Gather OFF vs ON for the **same** Unsloth IQ3 PLE16 and **original Unsloth UD-IQ4_XS PLE16** weights, using historical MH-128K two-hop A/B question orders. Evaluate correctness, **not** PP/TG speed. Quality is *not yet certified*. No source flag defaults or release tags change.
+
+> **2026-11-03 scope correction:** the initial plan used Agention ROCmFP4 FAST v2, but that format's availability in the current b12013 ROCm binary is **not confirmed**. This runbook and plan now target **original Unsloth UD-IQ4_XS PLE16**, which was previously 12/12 on both MH question orders for both historical seeds under Vulkan. This change is about test feasibility and clean comparisons; it does **not** establish that the current ROCm binary lacks FP4 support.
 
 ## Historical baseline: not a ROCm comparison
 
@@ -9,7 +11,7 @@ The canonical experiment kit and previous observations live in [evox2-llm-experi
 | Model | Seed 20261025 A/B | Seed 20261026 A/B |
 | --- | --- | --- |
 | Unsloth IQ3 PLE16 | 12/12, 11/12 | 11/12, 11/12 |
-| Agention ROCmFP4 FAST v2 PLE16 | 12/12, 12/12 | 12/12, 12/12 |
+| Original Unsloth UD-IQ4_XS PLE16 | 12/12, 12/12 | 12/12, 12/12 |
 
 No matched **ROCm** MH-128K baseline is present in the reviewed repositories. The new ROCm **Gather OFF** arm establishes that baseline. Do not attribute Vulkan-vs-ROCm response differences to Gather. A/B = question-order ascending/descending, NOT OFF/ON. These are the **same** 12 underlying questions plus local controls Q13 (two-hop) and Q14 (direct); A/B are not independent data samples.
 
@@ -19,7 +21,7 @@ For each seed: `2 models × 2 question orders × 2 Gather settings = 8 runs`. Bo
 
 The *original* full prompts and manifests are **not committed** to GitHub, only the deterministic generator and reduced smoke fixtures. Do NOT use `tests/example-data`, arbitrary recreated prompts, or `--no-tokenize` manifests for claims comparing against 2026-10-25 Vulkan results.
 
-Use the original Windows archive of **each** of these 8 source artifacts (four per seed): `mh128k_s20261025_{A,B}.prompt.txt`, `mh128k_s20261025.manifest.json` and corresponding `20261026` files. Manifest files hold the matching expected SHA256 of the A/B inputs. The original calibration used 1,136 records for seed 20261025 and 1,137 for seed 20261026, but **record counts alone do not prove identity**; compare SHA256. If the archives are missing, regenerate separately with the original generator/version, all five original GGUF tokenizer paths, and verify manifest/input hashes against the historic run if available; otherwise label it a **new dataset** and do not quote the historic scores as matched baselines.
+Use the original Windows archives of **six source artifacts (three per seed)**: `mh128k_s20261025_{A,B}.prompt.txt`, `mh128k_s20261025.manifest.json` and corresponding `20261026` files. Manifest files hold the matching expected SHA256 of the A/B inputs. The original calibration used 1,136 records for seed 20261025 and 1,137 for seed 20261026, but **record counts alone do not prove identity**; compare SHA256. If the archives are missing, regenerate separately with the original generator/version, all five original GGUF tokenizer paths, and verify manifest/input hashes against the historic run if available; otherwise label it a **new dataset** and do not quote the historic scores as matched baselines.
 
 PowerShell example (edit the paths):
 
@@ -49,9 +51,9 @@ R6RocmCommon005 = @{
 }
 ```
 
-(Keep the existing verified b12013 build directory and manifest; if the entry already exists, don't duplicate it.)
+(Keep the existing verified b12013 build directory and manifest; if the entry already exists, don't duplicate it.) **Original IQ4 in ROCm is not established by earlier Vulkan tests.** The 2026-10-29 r6 S9 Vulkan record lists the original IQ4 PLE16 as 93,682,576,992 bytes (~87.25 GiB), SHA256 `BA65BD1E3631DA5FC99764686C05D68DB45FEAF22A36C2C5F824F9255DAC614A`, and about 93.339 GiB GPU committed during a 128k Vulkan run. Given the EVO-X2 96 GiB UMA, the ROCm backend's allocations may differ; **successful 32k alone does not guarantee 128k will fit**. Use the exact original GGUF, do not substitute Huihui and do not treat an out-of-memory condition as a Gather correctness regression.
 
-In `Models`, verify the existing `UnslothPle16` and `AgentionRocmFp4FastPle16` are the **same frozen historical model weights** used in the 2026-10-25 study. If your local keys differ, add aliases for these exact names with `Path` pointing to those GGUFs; **do not silently substitute a newer FP4 variant or PLE16 layout**.
+In `Models`, verify the existing `UnslothPle16` and `Qwen38Iq4XsPle16` are the **same frozen historical model weights** used in the 2026-10-25 study. If your local keys differ, add aliases for these exact names with `Path` pointing to the **original Unsloth IQ4, not Huihui abliterated IQ4**, and the historical IQ3 GGUF. Verify model paths / hashes; **do not silently substitute another quantization or model derivative**.
 
 In `Inputs`:
 
@@ -75,8 +77,8 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r6-common005-mh128k-quality-2026
 $matrix = '.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1'
 & $matrix -Plan $plan -PlanOnly
 
-# 0) Required ROCmFP4 Gather activation smoke, 32k, 64 generated
-& $matrix -Plan $plan -OnlyJob mh-fp4-gather-preflight -StopOnError
+# 0) Required original-IQ4 ROCm Gather activation smoke, 32k, 64 generated
+& $matrix -Plan $plan -OnlyJob mh-iq4-gather-preflight -StopOnError
 
 # 1) Confirm all OFF and ON results are usable, then FIRST seed only:
 & $matrix -Plan $plan -OnlyCase seed20261025 -StopOnError
@@ -85,9 +87,9 @@ $matrix = '.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1'
 & $matrix -Plan $plan -OnlyCase seed20261026 -StopOnError
 ```
 
-The 32k preflight is **2 runs**, FP4 Gather OFF/ON; require `Status=OK, ExitCode=0`, plausible answer, and the ON-only stderr cue `qwen4exp_common005_v1 graph_built=compact n_kv=32768 n_sel=2051`. If FP4 does not activate, fails, asserts or produces invalid output, STOP; don't assume IQ3's eligibility proves FP4.
+The 32k preflight is **2 runs**, original IQ4 Gather OFF/ON; require `Status=OK, ExitCode=0`, plausible answer, and the ON-only stderr cue `qwen4exp_common005_v1 graph_built=compact n_kv=32768 n_sel=2051`. If original IQ4 does not load, cannot allocate ROCm memory, fails, asserts, or produces invalid output, STOP; don't assume IQ3's eligibility proves IQ4.
 
-For every seed, the **eight** 128k tasks are IQ3-A OFF→ON; IQ3-B ON→OFF; FP4-A OFF→ON; FP4-B ON→OFF (counterbalances the arm order without confusing A/B question order). The batch runner uses independent processes, no prompt cache, cooldown 45s. Each ON 128k run should produce `graph_built=compact n_kv=131072 n_sel=2051`. If the plan produces anything other than 8 runs for `-OnlyCase seed20261025`, do NOT run it; review the PlanOnly summary.
+For every seed, the **eight** 128k tasks are IQ3-A OFF→ON; IQ3-B ON→OFF; IQ4-A OFF→ON; IQ4-B ON→OFF (counterbalances the arm order without confusing A/B question order). The batch runner uses independent processes, no prompt cache, cooldown 45s. Each ON 128k run should produce `graph_built=compact n_kv=131072 n_sel=2051`. If the plan produces anything other than 8 runs for `-OnlyCase seed20261025`, do NOT run it; review the PlanOnly summary.
 
 During the first two quality runs, check all 14 answer lines and `GeneratedTokens`. If `-n 512` truncates the 14 answers, do **not** score partial output; revise the plan to raise the cap **identically for all arms/models/seeds**, and rerun affected cohort. More output tokens may change historical comparability; record the change. **Do not use `--ignore-eos` for this task**.
 
@@ -116,4 +118,4 @@ Record for every model×seed×question order×Gather arm:
 
 ## Final artifacts
 
-Keep original input manifests/hashes, per-run ZIPs or leaf run dirs, scorer CSV/JSON, sample wrong-Q explanations, conditions.json and telemetry. Initial request to share back: 32k FP4 2-run log + seed20261025 first 8-run matrix ZIP and scorer results. After a gate review decide whether to run seed20261026 or any targeted repeat. Preserve [main COMMON-005 implementation record](R6-COMMON005-IMPLEMENTATION-2026-11-02.md), published b11908 checkpoint and separate deferred CPU-bound RGP investigation.
+Keep original input manifests/hashes, per-run ZIPs or leaf run dirs, scorer CSV/JSON, sample wrong-Q explanations, conditions.json and telemetry. Initial request to share back: 32k original IQ4 2-run log + seed20261025 first 8-run matrix ZIP and scorer results. After a gate review decide whether to run seed20261026 or any targeted repeat. Preserve [main COMMON-005 implementation record](R6-COMMON005-IMPLEMENTATION-2026-11-02.md), published b11908 checkpoint and separate deferred CPU-bound RGP investigation.
