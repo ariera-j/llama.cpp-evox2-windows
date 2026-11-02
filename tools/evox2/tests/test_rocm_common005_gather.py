@@ -13,6 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "models" / "qwen4exp.cpp"
 HEADER = ROOT / "src" / "models" / "models.h"
+BENCH_MODULE = ROOT / "tools" / "evox2" / "benchmark" / "Evox2.Benchmark.psm1"
 PLAN = ROOT / "tools" / "evox2" / "benchmark" / "configs" / "qwen38-r6-rocm-common005-gather-20261102.psd1"
 
 
@@ -67,6 +68,10 @@ class TestQsaCommon005(unittest.TestCase):
 
     def test_mask_half_precision_exact(self):
         self.assertEqual(struct.unpack('e', struct.pack('e', -65504.0))[0], -65504.0)
+
+    def test_provenance_records_gather_flag(self):
+        txt = BENCH_MODULE.read_text(encoding="utf-8")
+        self.assertIn("QWEN4EXP_", txt)
 
     def test_plan_never_reuses_published_binary_or_unsafe_backend_suite(self):
         txt = PLAN.read_text(encoding="utf-8")

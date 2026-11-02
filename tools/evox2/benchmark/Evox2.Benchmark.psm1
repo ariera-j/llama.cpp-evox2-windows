@@ -32,7 +32,7 @@ function Get-Evox2RelevantEnvironment {
     param()
 
     $result = [ordered]@{}
-    $pattern = '^(GGML_|LLAMA_|HIP_|ROCM_|HSA_|ROCBLAS_|VULKAN_|AMD_)'
+    $pattern = '^(GGML_|LLAMA_|HIP_|ROCM_|HSA_|ROCBLAS_|VULKAN_|AMD_|QWEN4EXP_)'
 
     foreach ($item in @(Get-ChildItem Env: | Where-Object { $_.Name -match $pattern } | Sort-Object Name)) {
         $result[$item.Name] = $item.Value

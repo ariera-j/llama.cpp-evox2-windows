@@ -4,6 +4,7 @@
 
 ## Scope and source changes
 
+- On this research branch, `Evox2.Benchmark.psm1` includes `QWEN4EXP_` in `Get-Evox2RelevantEnvironment`. This is required: otherwise Gather ON/OFF can share a condition fingerprint even when the matrix variant differs. Check `conditions.json` now includes `QWEN4EXP_QSA_GATHER=0/1` as applicable.
 - Branch `research/rocm-qsa-gather-20261030`, derived from r6-based `main`; no upstream update, public tag or published stable b11908 build changed.
 - `src/models/qwen4exp.cpp` and `src/models/models.h`: opt-in `QWEN4EXP_QSA_GATHER=1` **only**, with default OFF (unset, `0`, or any other value => OFF).
 - Narrow graph eligibility: `cparams.flash_attn`, one token, exactly one sequence, `n_kv / 4 >= n_sel`, `n_kv <= 2^24`, valid single-stream original KQ mask, F16 K/V and contiguous full-head-per-cell cache layout.
