@@ -8,6 +8,16 @@
 #include <cstdlib>
 #include <cstring>
 
+// COMMON-005 r6: experimental opt-in only. Keep all published profiles on
+// the existing full-KV QSA path unless explicitly enabled by the research plan.
+static bool qwen4exp_qsa_gather_opt_in() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("QWEN4EXP_QSA_GATHER");
+        return env && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
 // bad metadata must be catchable: GGML_ASSERT aborts the whole process
 static void qwen4exp_require_nonzero(const llama_model_loader & ml, llm_kv kid, uint32_t value) {
     if (value == 0) {
@@ -836,6 +846,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
         ggml_tensor *                           cur,
         ggml_tensor *                           inp_pos,
         ggml_tensor *                           kq_mask,
+        ggml_tensor **                          gather_idx,
         int *                                   sections,
         int                                     il) {
     const llama_kv_cache_context * mctx_idx = mctx_hyb->get_idx();
@@ -904,6 +915,52 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
     const int64_t n_top_pool = std::min<int64_t>(n_pool, hparams.indexer_top_k / kpool);
     ggml_tensor * top_k = ggml_top_k(ctx0, score, n_top_pool); // [n_top_pool, n_tokens], unordered
     cb(top_k, "indexer_top_k", il);
+
+    // COMMON-005 r6: return a compact [n_sel] mask and safe selected row indices.
+    // This bypasses full-size TOP_K_MASK/SET_ROWS when gather is active.
+    // The selected pool indices and tail use n_kv as a sentinel. Invisible
+    // pools can also be selected when n_pool < top_k capacity.
+    if (gather_idx) {
+        GGML_ASSERT(*gather_idx == nullptr);
+        const int64_t n_kv = inp_kpool->n_kv;
+
+        ggml_tensor * sel_idx = ggml_get_rows(ctx0, inp_kpool->pool_idxs,
+                ggml_reshape_1d(ctx0, top_k, n_top_pool*n_tokens));
+        sel_idx = ggml_reshape_2d(ctx0, sel_idx, kpool*n_top_pool, n_tokens);
+        sel_idx = ggml_concat(ctx0, sel_idx, inp_kpool->tail_idxs, 0);
+        GGML_ASSERT(sel_idx->ne[0] == inp_kpool->n_sel);
+
+        // Visible pool scores are rectified sums >= 0; non-visible scores
+        // are -infinity. Tail cells are valid exactly when idx < n_kv.
+        ggml_tensor * top_score = ggml_get_rows(ctx0,
+                ggml_reshape_3d(ctx0, score, 1, n_pool, n_tokens), top_k);
+        ggml_tensor * live_pool = ggml_clamp(ctx0,
+                ggml_scale_bias(ctx0, top_score, 1.0f, 1.0f), 0.0f, 1.0f);
+        live_pool = ggml_reshape_2d(ctx0,
+                ggml_repeat_4d(ctx0, live_pool, kpool, n_top_pool, n_tokens, 1),
+                kpool*n_top_pool, n_tokens);
+        ggml_tensor * live_tail = ggml_clamp(ctx0,
+                ggml_scale_bias(ctx0, ggml_cast(ctx0, inp_kpool->tail_idxs, GGML_TYPE_F32),
+                    -1.0f, (float) n_kv), 0.0f, 1.0f);
+        ggml_tensor * live = ggml_concat(ctx0, live_pool, live_tail, 0); // 1=selected and valid, 0=invalid
+
+        // Never feed the out-of-bounds n_kv sentinel (or invisible pool
+        // indices) into GET_ROWS. At <=2^24 cells, I32->F32->I32 is exact.
+        ggml_tensor * safe = ggml_mul(ctx0,
+                ggml_cast(ctx0, sel_idx, GGML_TYPE_F32), live);
+        *gather_idx = ggml_reshape_1d(ctx0,
+                ggml_cast(ctx0, safe, GGML_TYPE_I32), inp_kpool->n_sel);
+        cb(*gather_idx, "qsa_gather_safe_idx", il);
+
+        // -65504 is the smallest finite F16 value: sufficiently negative
+        // to exclude invalid rows from softmax without 0 * infinity NaNs.
+        // All live selected positions get exactly zero additive bias.
+        ggml_tensor * mask = ggml_cast(ctx0,
+                ggml_scale_bias(ctx0, live, 65504.0f, -65504.0f), GGML_TYPE_F16);
+        mask = ggml_reshape_4d(ctx0, mask, inp_kpool->n_sel, 1, 1, 1);
+        cb(mask, "qsa_gather_mask", il);
+        return mask;
+    }
 
     // keep the cells of the live picked pools and the tail, -inf elsewhere
     // all retained cells are in the token's sequence, so the kq_mask is not needed
@@ -980,6 +1037,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
         ggml_tensor *             k_cur,
         ggml_tensor *             v_cur,
         ggml_tensor *             sel,
+        ggml_tensor *             gather_idx,
         int64_t                   n_sel,
         float                     kq_scale,
         int                       il) {
@@ -1012,15 +1070,51 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
         ggml_build_forward_expand(gf, mctx_cur->cpy_v(ctx0, v_cur, v_idxs, il));
     }
 
-    // the selection replaces the kq_mask and has the same shape
-    // it is not allocated without dense layers reading the kq_mask
-    const ggml_tensor * kq_mask = inp->get_kq_mask();
-    GGML_ASSERT(ggml_are_same_shape(sel, kq_mask));
-    cb(sel, "kq_mask_qsa", il);
-
     ggml_tensor * q = q_cur;
     ggml_tensor * k = mctx_cur->get_k(ctx0, il);
     ggml_tensor * v = mctx_cur->get_v(ctx0, il);
+
+    if (gather_idx) {
+        // Only f16 single-stream cache layouts enter this path; see the
+        // eligibility guard in build_layer_attn. Each cache cell is a row
+        // holding all KV heads. GET_ROWS returns contiguous F32 values,
+        // which build_attn_mha casts back to F16 for Flash Attention.
+        const int64_t hd_k = k->ne[0];
+        const int64_t hd_v = v->ne[0];
+        const int64_t n_h_kv = k->ne[1];
+        const int64_t n_kv = k->ne[2];
+        GGML_ASSERT(k->type == GGML_TYPE_F16 && v->type == GGML_TYPE_F16);
+        GGML_ASSERT(k->ne[3] == 1 && v->ne[3] == 1 && v->ne[1] == n_h_kv && v->ne[2] == n_kv);
+        GGML_ASSERT(k->nb[2] == ggml_row_size(k->type, hd_k*n_h_kv));
+        GGML_ASSERT(v->nb[2] == ggml_row_size(v->type, hd_v*n_h_kv));
+        GGML_ASSERT(gather_idx->type == GGML_TYPE_I32 && gather_idx->ne[0] == n_sel);
+        GGML_ASSERT(sel->type == GGML_TYPE_F16 && sel->ne[0] == n_sel && sel->ne[1] == 1);
+
+        ggml_tensor * k_cells = ggml_view_3d(ctx0, k, hd_k*n_h_kv, n_kv, 1,
+                k->nb[2], k->nb[3], 0);
+        ggml_tensor * v_cells = ggml_view_3d(ctx0, v, hd_v*n_h_kv, n_kv, 1,
+                v->nb[2], v->nb[3], 0);
+
+        ggml_tensor * k_sel = ggml_reshape_4d(ctx0,
+                ggml_get_rows(ctx0, k_cells, gather_idx), hd_k, n_h_kv, n_sel, 1);
+        ggml_tensor * v_sel = ggml_reshape_4d(ctx0,
+                ggml_get_rows(ctx0, v_cells, gather_idx), hd_v, n_h_kv, n_sel, 1);
+        cb(k_sel, "qsa_k_gathered", il);
+        cb(v_sel, "qsa_v_gathered", il);
+
+        ggml_tensor * cur = build_attn_mha(q, k_sel, v_sel, nullptr, sel,
+                nullptr, nullptr, 0, kq_scale, il);
+        cb(cur, "kqv_out", il);
+        if (inp->self_v_rot) {
+            cur = llama_mul_mat_hadamard(ctx0, cur, inp->self_v_rot);
+        }
+        return cur;
+    }
+
+    // Fallback: attention scans the full KV cache using the QSA mask.
+    const ggml_tensor * kq_mask = inp->get_kq_mask();
+    GGML_ASSERT(ggml_are_same_shape(sel, kq_mask));
+    cb(sel, "kq_mask_qsa", il);
 
     ggml_tensor * cur = build_attn_mha(q, k, v, nullptr, sel, nullptr, nullptr, n_sel, kq_scale, il);
     cb(cur, "kqv_out", il);
@@ -1088,7 +1182,29 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
     // indexer reads the same block input as q/k/v; no cache or no ratio means dense
     const bool qsa = inp_kpool != nullptr && hparams.dsv4_compress_ratios[il] > 0;
 
-    ggml_tensor * sel = qsa ? build_qsa_sel(mctx_hyb, inp_kpool, cur, inp_pos, inp->get_kq_mask(), sections, il) : nullptr;
+    // COMMON-005 r6: opt in only for single-token, single-sequence, long
+    // context decode with a contiguous F16 KV cache. Never change prefill,
+    // non-FA, batched, quantized-KV or unsupported stream layouts.
+    bool use_gather = false;
+    if (qsa && qwen4exp_qsa_gather_opt_in() && cparams.flash_attn &&
+        n_tokens == 1 && ubatch.n_seqs == 1 && ubatch.n_seqs_unq == 1 &&
+        inp_kpool->n_sel > 0 && inp_kpool->n_kv <= (1u << 24) &&
+        inp_kpool->n_kv / 4 >= inp_kpool->n_sel) {
+        const ggml_tensor * mask = inp->get_kq_mask();
+        const ggml_tensor * kc = inp->mctx->get_k(ctx0, il);
+        const ggml_tensor * vc = inp->mctx->get_v(ctx0, il);
+        use_gather = mask && mask->type == GGML_TYPE_F16 &&
+            mask->ne[0] == inp_kpool->n_kv &&
+            mask->ne[1] == 1 && mask->ne[2] == 1 && mask->ne[3] == 1 &&
+            kc->type == GGML_TYPE_F16 && vc->type == GGML_TYPE_F16 &&
+            kc->ne[2] == inp_kpool->n_kv && vc->ne[2] == inp_kpool->n_kv &&
+            kc->ne[3] == 1 && vc->ne[3] == 1 && kc->ne[1] == vc->ne[1] &&
+            kc->nb[2] == ggml_row_size(kc->type, kc->ne[0]*kc->ne[1]) &&
+            vc->nb[2] == ggml_row_size(vc->type, vc->ne[0]*vc->ne[1]);
+    }
+    ggml_tensor * gather_idx = nullptr;
+    ggml_tensor * sel = qsa ? build_qsa_sel(mctx_hyb, inp_kpool, cur, inp_pos,
+            inp->get_kq_mask(), use_gather ? &gather_idx : nullptr, sections, il) : nullptr;
 
     // Qwen3Next uses a single Q projection that outputs query + gate
     ggml_tensor * Qcur_full = build_lora_mm(model.layers[il].wq, cur, model.layers[il].wq_s); // [ (n_embd_head * 2) * n_head, n_tokens ]
@@ -1141,7 +1257,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(
     const float kq_scale = hparams.f_attention_scale == 0.0f ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
 
     if (sel) {
-        cur = build_attn_qsa(inp, Qcur, Kcur, Vcur, sel, inp_kpool->n_sel, kq_scale, il);
+        cur = build_attn_qsa(inp, Qcur, Kcur, Vcur, sel, gather_idx, inp_kpool->n_sel, kq_scale, il);
     } else {
         cur = build_attn(inp,
                     nullptr, nullptr, nullptr,
