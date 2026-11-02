@@ -18,7 +18,7 @@ class TestRocmRgpCue(unittest.TestCase):
         self.assertIn('if (!rgp_trace)', text)
         self.assertIn('rgp_event("first_text_delta")', text)
         self.assertIn('rgp_event("text_progress")', text)
-        self.assertIn('rgp_event("stream_end"', text)
+        self.assertIn('rgp_event(err.empty() && !stream_error ? "stream_end" : "stream_error")', text)
         self.assertIn('std::fflush(stderr);', text)
 
     def test_bounded_profile_plan(self):
