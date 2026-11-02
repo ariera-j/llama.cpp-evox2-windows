@@ -224,3 +224,30 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r6-common005-mh128k-quality-2026
 ```
 
 This yields **two new runs**, Gather **ON then OFF** using the exact same model, input SHA and executable. Score with `common005` seed20261026 manifest. If ON correct, interpret the original miss as **non-reproducible in the first repeat**, not conclusive random noise or mathematical parity. If ON misses Q08 again, or OFF also misses, run **one more identical 2-run matched pair**, then compare per-question error distributions. Do not label Gather causally harmful merely because it correlates with the first one or two errors under ROCm QSA top-k non-determinism; systematic ON-only mistakes over repetitions warrant numerical-path diagnostics. Preserve default OFF until this review. Broad 256k repeat and new RGP are not needed now.
+
+## 2026-11-03 — IQ4-B seed20261026 exact paired repeat: Q08 miss NOT reproduced
+
+**Targeted follow-up after the one IQ4 ON-only Q08 miss:** user supplied `20261103-082223-580-cli-rocm-b12013-ctx131072-11fc8f31cba3.zip` (SHA256 `72273a92b21d495fef954e40885c1ea96570e49a9badfc59e13064e3d83d8933`), `common005-details3.json` (SHA256 `b0097b89d314fb8d947021253a0510cfaa6767a981fdab39f4e2a67431bfcef2`) and `common005-scores3.csv` (SHA256 `fafb3b2527eddedfcac169a44b1ab277df500c1957af827c59102e25c0e3fc52`). Scorer `validation.status=VALID` for frozen 1137-record MH-128K seed `20261026`, Q-order B SHA256 `694edd15bb2f762a530b437800f67d3dc84eb085be17429e828e060a4fd69ef4`; independent archive contents/conditions inspected.
+
+| Chronological run | Model / Q-order / Gather | Primary score | PP tok/s | TG tok/s | Generated | Normalized output SHA256 |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `20261103-081434-330` | Original IQ4 / B / **ON** | **12/12**, Q08 correct | 313.55 | 21.73 | 250 | `edf7e5a6dd7614aa91063d22a8d1ecceb7717bd3118f07e2a30d33f1524ba375` |
+| `20261103-082223-580` | Original IQ4 / B / **OFF** | **12/12**, Q08 correct | 313.65 | 17.70 | 250 | `edf7e5a6dd7614aa91063d22a8d1ecceb7717bd3118f07e2a30d33f1524ba375` |
+
+**Exact answer-parity observation:** the two retry normalized outputs are **byte-identical** (1774 bytes) and identical to the three original-IQ4 all-correct outputs from seed20261026. The original first-run **B ON Q08 near-link miss** had distinct full-answer bytes and 251 generated tokens; it **did not recur** in the first matching same-seed paired repeat. This does **not** prove it was random nondeterminism, exclude a rare ON-specific issue, or establish logits/numeric parity.
+
+**Condition / activation checks:** both `Status=OK`, `ExitCode=0`, `RuntimeArtifactStatus=Verified`, b12013 / `f29592d6a`, same IQ4 GGUF path; 111,148 prompt tokens, 131072 context, generated 250, `truncated=0`, no scorer issues, E/M/H each 4/4, local Q13/Q14 correct and format compliant. ON alone logged `qwen4exp_common005_v1 graph_built=compact n_kv=131072 n_sel=2051`; OFF did not. Both P-MODE Performance start/end and ADLX present; 205 monitor samples each, high-load mean GPU clock ~2892.12 (ON) vs 2889.22 MHz (OFF), high-load VRAM clock ~963.07 vs 963.50 MHz, GPU temp max 83 vs 85 °C, no serious reported run issues. No RGP or extra speed ABBA was necessary to judge this answer-quality repeat.
+
+**Bounded quality conclusion after 18 total 128k MH runs (16 full + two targeted repeats):**
+
+| Model | OFF primary correct | ON primary correct |
+| --- | ---: | ---: |
+| Unsloth IQ3 | 46/48 | 47/48 |
+| Original Unsloth IQ4 | **60/60** | **59/60** |
+| Total (non-independent A/B questions) | **106/108** | **106/108** |
+
+These are *response instances*, not independent statistical questions: original IQ4 ON has a **single non-reproduced Q08 error**, IQ3 has repeated seed20261025 Q03 source-decoy error with variability among flags. No repeated systematic **ON-only** regression demonstrated in this limited comparison. The historical Vulkan b11592 reference was a different backend/build. QSA ROCm output reproducibility remains unresolved, so **quality equivalence or improved reasoning is not proven by matched aggregate scores**.
+
+**Decision: targeted quality follow-up COMPLETE; 128k ROCm IQ3/IQ4 MTP-OFF Gather ON has a bounded quality-screen PASS for explicit opt-in exploratory/daily testing.** Keep `QWEN4EXP_QSA_GATHER` **default OFF in source**, preserve fallback and published b11908 tag. It is reasonable to trial `=1` **only with these observed hardware/model/context/backend/MTP conditions** with easy rollback `=0`. Do **not** auto-enable it generally; no MTP-ON/Vulkan-active-path/256k full-answer quality test or numerical parity validation exists. If future use shows consistent ON-only factual differences or repeats of Q08, reopen targeted repeated tests and numerical QSA path investigation.
+
+**Deferred separate performance research:** old Vulkan b11592 MH-128K model quantization/PP comparisons show original IQ4 ~0.7% ahead of IQ3, Huihui and ROCmFP4 within ~1–1.3% ahead; present ROCm b12013 original IQ4 ~9–10% ahead of IQ3. Not explained causally by clocks or GGUF size alone. User wants a **separate later** r6 updated-optimizations quantization-by-model speed comparison; keep it distinct from this finished Gather quality gate. Other pending priorities include r5 TOOL-001 real-input llama-bench port, mask/MoE route checks and alternative engines.
