@@ -4,6 +4,8 @@
 #include "llama-memory-recurrent.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cstdio>
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
@@ -1089,6 +1091,16 @@ ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa(
         GGML_ASSERT(v->nb[2] == ggml_row_size(v->type, hd_v*n_h_kv));
         GGML_ASSERT(gather_idx->type == GGML_TYPE_I32 && gather_idx->ne[0] == n_sel);
         GGML_ASSERT(sel->type == GGML_TYPE_F16 && sel->ne[0] == n_sel && sel->ne[1] == 1);
+
+        // One host-side graph-build cue, never emitted with the default OFF.
+        // This proves the graph chose the Gather branch; it is not a GPU
+        // dispatch marker or evidence that this graph was executed.
+        static std::atomic<bool> reported{false};
+        if (!reported.exchange(true, std::memory_order_relaxed)) {
+            std::fprintf(stderr, "qwen4exp_common005_v1 graph_built=compact n_kv=%" PRId64 " n_sel=%" PRId64 "\n",
+                    n_kv, n_sel);
+            std::fflush(stderr);
+        }
 
         ggml_tensor * k_cells = ggml_view_3d(ctx0, k, hd_k*n_h_kv, n_kv, 1,
                 k->nb[2], k->nb[3], 0);

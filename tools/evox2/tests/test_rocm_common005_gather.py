@@ -48,6 +48,7 @@ class TestQsaCommon005(unittest.TestCase):
         self.assertIn('qsa_gather_mask', src)
         self.assertIn('qsa_k_gathered', src)
         self.assertIn('qsa_v_gathered', src)
+        self.assertIn('qwen4exp_common005_v1 graph_built=compact', src)
         self.assertIn('if (gather_idx) {', src)
         self.assertIn('GGML_ASSERT(ggml_are_same_shape(sel, kq_mask))', src)
         self.assertIn('ggml_mul(ctx0,', src)
