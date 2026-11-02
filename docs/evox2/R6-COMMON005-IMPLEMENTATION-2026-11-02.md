@@ -120,3 +120,34 @@ User-supplied ZIP `20261102-223233-977-cli-rocm-b12013-ctx131072-479c75226db1.zi
 - Output fingerprints differ across **all four runs, including both OFF runs**. Manual inspection of the 512-token Japanese summaries found all four coherent, with shared central topics (polarity lexicons, lexical networks, PMI/co-occurrence, contextual bootstrapping, document classification and limitations); no obvious corruption, but **not a mathematical equivalence / exact-logit proof**. Normalized output may end mid-sentence because output is capped at 512 tokens.
 - **Gate: PASS** for 128k speed, basic validity and operational stability. Proceed to **only 256k ABBA** using the exact same patched b12013 binary and research plan, with `-OnlyJob common005-long-abba -OnlyCase 256k -StopOnError`; inspect results before changing any defaults or deciding release suitability. Preserve frozen b11908. No repeat RGP necessary yet. Deferred capture-B CPU-bound queue gap remains a separate investigation if unprofiled TG gains unexpectedly flatten.
 
+
+## 256k ABBA gate — 2026-11-03 (PASS, final long-context gate)
+
+User ZIP `20261103-000255-742-cli-rocm-b12013-ctx262144-e98d3c9afac4.zip` (SHA256 `e4eee9b8062fdf671a5240d3b286e1e83d5d2cbd5bbd3cabe85ffe903e876e86`) contains **four successful, independent OFF/ON/ON/OFF runs** of the 256k real input. Same `b12013 / f29592d6a` patched binary (`4aa6dd0c1fd47baba0b0861be7b89c7cca4ad39c266f090f9bd04d9ddb81a628`), same runtime digest `df577616ae33fcec7984f6ae17441070955c08882d1d91f83c86f57864257684`; all `RuntimeArtifactStatus=Verified`. Context 262,144, actual prompt **255,181 tokens**, generated **512** each; MTP OFF, F16 K/V, ROCm/TheRock 10, batch 2048 / ubatch 1024, same model and seed. Local timestamps span 2026-11-02 22:51 to 2026-11-03 00:26 JST.
+
+| Order / RunId | Gather | PP tok/s | TG tok/s | PP eval ms | TG eval ms | PP+TG eval ms | Condition ID |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| A1 `20261102-225102-548` | OFF | 198.95 | 12.65 | 1,282,635.56 | 40,393.59 | 1,323,029.15 | `e98d3c9afac4` |
+| B1 `20261102-231512-434` | ON | 198.85 | 19.74 | 1,283,314.16 | 25,891.10 | 1,309,205.26 | `3c3ef5186fd6` |
+| B2 `20261102-233912-583` | ON | 199.01 | 19.78 | 1,282,260.01 | 25,832.29 | 1,308,092.31 | `3c3ef5186fd6` |
+| A2 `20261103-000255-742` | OFF | 197.90 | 12.68 | 1,289,468.62 | 40,287.63 | 1,329,756.25 | `e98d3c9afac4` |
+| **OFF mean** | OFF | **198.425** | **12.665** | **1,286,052.09** | **40,340.61** | **1,326,392.70** | |
+| **ON mean** | ON | **198.930** | **19.760** | **1,282,787.085** | **25,861.695** | **1,308,648.785** | |
+
+- **TG +56.02%** for Gather ON vs OFF; 512-token TG evaluation time falls by **14,478.915 ms** (**−35.89% latency**). All ON runs 19.74–19.78 vs all OFF 12.65–12.68; highly separated, stable direction. Total PP+TG eval time appears **17,743.915 ms shorter**, but this contains PP measurement drift, so **14.48s TG saving is the more trustworthy causal estimate**. The end-to-end process wall-time mean differs by 22.36s, but includes startup/teardown/cooldown variations and is not a controlled inference-only metric.
+- **PP variance**: A1 OFF 198.95 vs A2 OFF 197.90 (**−0.528%**) while ON is 198.85/199.01 (spread **0.080%**). The lower last OFF drives the OFF mean down to 198.425, causing the apparent **+0.255% ON PP** in the ABBA means. **Do not report this as a Gather PP improvement**. Previously frozen b11908 256k three-run PP mean was **198.96**, versus patched ON mean **198.93** (−0.015%, source/binary differ so not controlled), and patched A1 OFF **198.95**. As Gather is decode-only, no PP performance change is predicted. The A2 OFF PP eval is 6.83s longer than A1, <0.6% of its ~21.4-minute prompt eval; within observed real-world run-to-run drift but not a statistically proven random error.
+- **GPU monitor context**: per-run ADLX CSV averages GPU clock (whole capture, including startup/teardown) **A1 2845.25, B1 2838.51, B2 2843.20, A2 2833.60 MHz**, matching the direction of A2's slightly slower PP; GPU load whole-run averages 96.45/96.02/96.38/95.91%; VRAM clock 981.68/981.58/981.23/980.84 MHz. Do **not** claim a causal clock explanation without PP-only interval/clock alignment, as these averages cover the whole run. High-load GPU power **117.673 / 117.705 / 117.731 / 117.833 W**, all Performance-like. All P-MODE start/finish Performance, `PModeChanged=False`, `AdlxPModeConsistency.Consistent=True`.
+- **Background monitoring**: `ResourceMonitorEnabled=False` for all runs; ADLX remained on. Boundary named-process probe: A1/B1/A2 status `Observed`, `PossibleNoise=False`; B2 `PartialCoverage`, `PossibleNoise=null` (unknown, **not a clean bill**). No monitored `BusyNames`. Short-lived OS/background activity cannot be excluded.
+- **Gather activation**: both ON stderr logs have exactly one `qwen4exp_common005_v1 graph_built=compact n_kv=262144 n_sel=2051`; no OFF cue. Proven graph construction, **not GPU-kernel trace**. The selection width remains 2051 from 32k through 256k. No model-side parse/crash/fatal/NaN indications in inspected logs.
+- **Output**: normalized result fingerprints differ across all four outputs, including OFF/OFF (known ROCm non-determinism). Manual content inspection: coherent Japanese summaries of the input's evaluation-expression lexicon construction (lexical networks, PMI/co-occurrence, contextual methods) and polarity/document classification, with no obvious semantic collapse. The prompt source is not fully reviewed; treat this as **smoke-level qualitative correctness only**, not exact-logit parity or factual certification.
+
+### Combined r6 COMMON-005 results (same model; no changes to public defaults)
+
+| Context | OFF TG tok/s | ON TG tok/s | TG change | Scope |
+| --- | ---: | ---: | ---: | --- |
+| 32k | 24.41 | 25.31 | **+3.69%** | single run / condition |
+| 64k | 21.80 | 24.56 | **+12.66%** | ABBA mean |
+| 128k | 17.625 | 22.715 | **+28.88%** | ABBA mean |
+| 256k | 12.665 | 19.760 | **+56.02%** | ABBA mean |
+
+**Decision:** 256k speed/activation/basic-output/stability gate **PASS**. The b12013 research prototype delivers context-dependent TG gains while preserving PP within observed variability, and at 256k its ~19.76 TG exceeds the **historical, differently configured** contemporary MTP-ON 14.80–15.04 TG; do not call that a controlled MTP-ON/OFF A/B. Keep `QWEN4EXP_QSA_GATHER` **default OFF** until further targeted output correctness and adoption review. No third 256k repeat required now. Optional narrow postpatch RGP comparison if identifying residual GPU bottlenecks or explaining the deferred CPU-bound capture B becomes important; no broad HIP FA suite and no upstream upgrade. Main and published b11908 are unchanged.
