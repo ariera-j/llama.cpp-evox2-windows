@@ -589,3 +589,37 @@ IQ4/IQ3 advantage **+9.181%** on ANLP `111137/ub512`, versus **+9.509%** on *dif
 Exactly **four new runs**, no repetition of completed cases. Standalone PowerShell `Evox2-R6-ROCm-UBatch-Crosscheck-20261104.ps1` and README supplied in `Evox2-R6-ROCm-UBatch-Crosscheck-20261104.zip` outside repo. Supports `-Stage Plan`, then independent `-Stage Run -Case MH-IQ3-UB1024`, `MH-IQ4-UB1024`, `Random-IQ3-UB512`, `Random-IQ4-UB512`, and `-Stage Package`. Each case logs using unchanged `Measure-LlamaBench.ps1`; validates fixed bench EXE hash and frozen MH prompt SHA; checks GGUF presence and size without rehashing whole models; runs exactly one new case per command, writes per-case JSON in `%TEMP%\evox2-r6-rocm-ubatch-crosscheck-20261104`; refuses automatic rerun of already recorded case; package can contain partial jobs and identifies missing. Expected final ZIP `%TEMP%\evox2-r6-rocm-ubatch-crosscheck-20261104.zip`. **The script has not been executed on Windows in this session.**
 
 **Next interpretation:** If MH ub1024 switches to IQ3 advantage *with unchanged111137 tokens*, UBatch is strong contributor; if MH remains IQ4-fast even ub1024 then 111137 vs126253 length or structural batching differences become candidates. Random ub512 vs ub1024 at identical126253 and same model controls UBatch under pseudo-random input independently. If two UBatch tests disagree, inspect prompt length and expert routing / quantized GEMM and ADLX memory clock, avoiding premature single-cause attribution. Leave Vulkan b12032 128k IQ4 on HOLD pending ROCm gates and risk review.
+
+## 2026-11-04 — ROCm b12038 UBatch 512/1024 matched 4run actual results
+
+**User supplied four complete newly measured runs** in `evox2-r6-rocm-ubatch-crosscheck-20261104(1).zip` including native `llama-bench.json`, `summary.csv`, `conditions.json`, `result.json`, `stderr.log`, ADLX `gpu-metrics.csv`, `crosscheck-index.json`. Direct ZIP audit: **all 4/4 Status OK, ExitCode 0, BackendDetected ROCm, Build b12038 commit d321e7ff3**, same bench EXE SHA256 `a46e512cdc78ab2475b52d5d1d694ec968edade16c9229f95ced3380d559298a`, correct original Unsloth IQ3 and original IQ4 GGUF, `-c131072 -b2048 -t4 -ngl999 -ncmoe0 -fa auto -ctk/ctv f16 -n0 -d0 -r1`, prompt warmup ON, Gather OFF and MTP OFF, P-MODE Performance maintained, ADLX monitoring success, no GPU faults. MH source `mh128k_s20261026_A.prompt.txt` SHA `3df86efedd7e3fbc1f71226392fbcf076f68a0a9b3135647087f3340040275e3` independently validated, 111137 native tokens head. Random uses native **no-file** `llama-bench` pseudo-random-token PP path, 126253 tokens, not a reusable explicit SHA-pinned sequence (cannot assert bit-identical token IDs across runs).
+
+### All currently matched 128k-context ROCm bench PP rows
+
+| Input | n_prompt | UBatch | IQ3 PP tok/s | original IQ4 PP tok/s | IQ4/IQ3 (%) | Evidence |
+|---|---:|---:|---:|---:|---:|---|
+| MH-128K seed20261026 A | 111137 | 512 | 285.350153 | 312.485669 | **+9.509** | prior 2026-11-03 MH bench ZIP |
+| MH-128K seed20261026 A | 111137 | 1024 | **319.116692** | 310.343360 | **−2.749** | **new 4run ZIP** |
+| ANLP d31 head | 111137 | 512 | 284.780804 | 310.925072 | **+9.180** | prior 2026-11-04 ANLP 111137 ZIP |
+| ANLP d31 head | 126253 | 1024 | **299.151698** | 290.899345 | **−2.759** | prior 12-case matrix ZIP |
+| Native random | 126253 | 512 | 283.042099 | 307.105801 | **+8.502** | **new 4run ZIP** |
+| Native random | 126253 | 1024 | **313.880965** | 308.615225 | **−1.678** | prior 12-case matrix ZIP |
+| llama.cpp code head | 126253 | 1024 | **299.941061** | 291.982779 | **−2.653** | prior 12-case matrix ZIP |
+
+Every row one timed repetition (native stddev=0 does not establish low variance), same ROCm b12038 binary, ctx131072, batch2048, F16 KV, FA auto, Gather OFF, MTP OFF; at fixed n_prompt and source with only UBatch changed:
+- **MH** UB512→1024: IQ3 **+11.833%**, IQ4 **−0.686%**. IQ4/IQ3 rank from **+9.509%** to **−2.749%**.
+- **Random** UB512→1024: IQ3 **+10.895%**, IQ4 **+0.492%**. IQ4/IQ3 rank from **+8.502%** to **−1.678%**.
+- Across sources at UB512, IQ3 ≈283–285 tok/s and IQ4 ≈307–312 tok/s. The other ANLP and code UB1024 rows have **different prompt lengths** from MH, so a quantization-specific batching conclusion should come from *within-source fixed-token* MH and Random pairs, not from those confounded contrasts.
+
+### New four-run details / ADLX high GPU use >=95%
+
+| Case / Run ID prefix | Native PP tok/s | avg PP ns | Samples >=95% GPU | high-use VRAM clock mean MHz | high-use VRAM <900MHz | high-use GPU clock mean MHz | high-use GPU power mean W | max ADLX gpu_vram_mb MiB | max temperature C |
+|---|---:|---:|---:|---:|---|---:|---:|---:|---:|
+| MH IQ3 UB1024 `20261104-005501-840` | 319.116692 | 348264452500 | 345 | **968.7** | 1/345 | 2884.4 | 119.2 | 56323 | 87 |
+| MH IQ4 UB1024 `20261104-010801-682` | 310.343360 | 358109804600 | 357 | **997.9** | 0/357 | 2889.3 | 119.5 | 67240 | 87 |
+| Random IQ3 UB512 `20261104-012122-516` | 283.042099 | 446057320100 | 443 | **932.4** | 54/443 | 2887.2 | 118.1 | 55745 | 85 |
+| Random IQ4 UB512 `20261104-013734-679` | 307.105801 | 411105878400 | 408 | **951.2** | 2/408 | 2890.6 | 119.3 | 66689 | 87 |
+
+The earlier **MH UB512** high-load averages were IQ3 VRAM **925.74MHz** (41/386 <900), IQ4 **957.86MHz** (3/353 <900), while MH UB1024 clocks improved to **968.7/997.9MHz**, respectively; **IQ4 throughput is nearly flat despite its similarly raised VRAM clock**. Thus the observed ~11% differential response is consistent with quantization-dependent compute efficiency/physical batch behavior and *possibly* secondary memory-clock policy, not proven exclusively one or the other. ROCm HIP kernel tracing or controlled clock matching/RGP will be needed to identify which quantized matmul/dequant/FFN/expert path causes it. Different dataset content & PP lengths affect absolute rates, but a strict UBatch-controlled MH and native Random double crossover now confirms UBatch is a major experimental factor.
+
+**Scope/decision:** Requested four new ROCm runs are complete; no need to redo available IQ3. Leave Vulkan b12032 IQ4 128k retry on HOLD until independent memory/TDR controls are chosen, including existing successful b11908 QSA OFF, UB512, CLI, and ADLX logs. If proceeding to isolate source/token interplay, optional **ANLP head111137 UB1024 IQ3+IQ4** (2run) would hold source and prompt size fixed versus new MH UB1024, and/or targeted RGP high-load HIP comparisons (not broad matrix). Do not infer cross-backend performance solely from these ROCm figures.
