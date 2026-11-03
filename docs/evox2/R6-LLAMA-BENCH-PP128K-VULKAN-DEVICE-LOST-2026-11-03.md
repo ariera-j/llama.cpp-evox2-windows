@@ -144,3 +144,39 @@ Interpretation:
 If user wants to finish the experimental comparison, first design a **separate, explicitly scoped** post-recovery plan: retain valid ROCm six and Vulkan IQ3 Japanese one; consider safer Vulkan IQ3 random/code under isolation only after health checks, and evaluate a reduced-size / lower-risk Vulkan IQ4 diagnostic separately rather than repeating the failed 126253-token warmup+timed full PP. This does **not** certify any new matrix results.
 
 At this point WinDbg largely confirms the *failure class* and responsible driver module; hardware-vs-memory-vs-kernel root cause remains undetermined.
+
+## WinDbg secondary tags and loaded module (follow-up) — 2026-11-03
+
+**User reports normal Windows reboot has completed.** This is a user-confirmed reboot, not independent certification that P-MODE/driver/VRAM clocks have recovered under load. No benchmark was performed during this diagnostic step.
+
+Input: `貼り付けたテキスト（1）(20261103-093608).txt` with WinDbg `.enumtag` and `lmvm amdkmdag`, approximately 944151 bytes / 13690 lines. Full raw tag hexdump remains an external local attachment, **not** reproduced in repository.
+
+### .enumtag
+
+- Two secondary data tags: `{270A33FD-3DA6-460D-BA893C1BAE21E39B} - 0x3567c bytes` and `{8BE1C8F0-B5BD-48FE-BCB7BBD165DEB285} - 0x10 bytes`. The first is the TDR-related secondary tag identified in Microsoft's 0x141 documentation (which writes the formatted GUID `{270A33FD-3DA6-460D-BA89-3C1BAE21E39B}`). The `0x3567c` is ~217.6 KiB.
+- Readable hex/ASCII content includes `vTDR` and `llama-bench.ex` (WinDbg ASCII view; trailing extension terminator is not fully shown on that line). This corroborates association of the timeout context with the running `llama-bench.exe` workload, though it **does not** itself identify the failing Vulkan compute shader or establish the executable as the sole initiating cause.
+- Additional labels visible in the raw hex/ASCII include `WaveChunk`, `HwExecUnitCp` and `GlobalMmr`. These are undissected driver/GPU state records, **not** actionable kernel identifiers without AMD-specific decoder/documentation. Do not derive GPU scheduler event chronology from the arbitrary raw tag bytes.
+- Second 0x10-byte secondary tag is present but no further diagnostic identification is supported.
+- Microsoft: https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x141---video-engine-timeout-detected and https://learn.microsoft.com/en-us/windows-hardware/drivers/debuggercmds/-enumtag--enumerate-secondary-callback-data- .
+
+### lmvm amdkmdag
+
+```text
+fffff803`4b1d0000 fffff803`502f6000  amdkmdag T (no symbols)
+Loaded symbol image file: amdkmdag.sys
+Image path: amdkmdag.sys
+ImageSize: 05126000
+Timestamp: Tue Jun 24 05:14:56 1975 (0A4C8340)
+CheckSum: 0508CC9B
+Mapping Form: Loaded
+```
+
+The module identity agrees with `!analyze -v`, but AMD function names are unavailable (`no symbols`). The 1975 PE header timestamp is **not reliable evidence of the installed driver's actual build date**: reproducible PE builds may set timestamp fields from content hashes (Microsoft PE format: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format). We have **not independently verified** whether this particular AMD binary has an `IMAGE_DEBUG_TYPE_REPRO` record; do not assert it does. The separately captured adapter/WER driver module version `32.0.31041.1004` remains a better version anchor. No proof of corrupt module, outdated driver, or debugger failure beyond unavailable symbols.
+
+### Revised decision after WinDbg supplemental data
+
+This completes the practical **failure-class** and owner-tag diagnosis from the current small triage dump: Windows GPU engine timeout `0x141`, AMD kernel display module `amdkmdag`, TDR content referencing `llama-bench.ex`. **Root cause is still not isolated** between near-UMA-capacity GPU memory/residency pressure (~97130 MiB ADLX), Vulkan QSA UNION long-context active path, WDDM scheduling/driver behavior, and an interaction among them.
+
+Since the OS has been rebooted, next perform **read-only/lightweight system health probes** (Device Manager/adapter recognition, P-MODE Performance, current clock/VRAM reporting, basic GUI/RDP reliability) without any 128k stress. If normal and user wishes to continue, run a separate **bounded, staged** diagnostic starting with a lower-context Vulkan IQ4 trial or lower-risk IQ3 pending cases; do not relaunch `-Stage Remaining` because it automatically retries the failed 08 `Vulkan-IQ4-Japanese` case. Keep first seven 128k PP numbers and mark remaining four as not attempted. Repeating full 128k IQ4 under identical conditions is deferred.
+
+No changes to C++ sources, binary, driver, BIOS/UMA, or TDR registry.
