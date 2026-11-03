@@ -353,3 +353,36 @@ Memory comparison: at **same 64k context** the earlier 8192-token QSA-OFF real P
 **Proposed controlled next discrimination (not executed yet):** If user wishes to continue after a no-anomaly status check, run exactly **one** 64k-context / 60000-token / same model and same Japanese input **QSA UNION ON**, with `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_MIN_KV=32768`, `GGML_VK_QSA_UNION_STATS=0`, and keep **no warmup**, same batch2048/ubatch1024, f16 KV, native executable. Compare precisely against this QSA-OFF 355.311327tok/s run **only if logs actually show `qsa-union active`**; otherwise ON merely requested, not activated. Any TDR or device loss is a reason to stop, preserve dump and not retry. GPU memory already ~94424 MiB in OFF path, and QSA activation may change buffers; this has a real driver-timeout risk. Do not jump to 128k IQ4 or resume original `-Stage Remaining`; that script retries case08. Reassess after the QSA ON run, before considering 128k context-only smoke with QSA OFF.
 
 No changes made to C++ patches, driver, BIOS/UMA or WDDM TDR registry.
+
+## Post-reboot Vulkan IQ4 64k/60k QSA-ON paired with QSA-OFF — 2026-11-03
+
+**PASS: actual QSA UNION active and no TDR on 60,000-token full real-text PP in 64k context. But important ADLX clock-state transition makes the ~+0.8% PP comparison provisional and confounded.**
+
+User ZIP `20261103-192525-644-bench-vulkan-b12032-ctx65536-384a52ae061f.zip`; raw ZIP is not committed. Matched comparison is immediately prior **QSA-OFF** 64k/60k run `20261103-191514-805-bench-vulkan-b12032-ctx65536-32a9841dae75.zip` (see preceding section). Same Windows session, same model/input hash/binary, ctx65536/p60000/b2048/ub1024/f16 KV, no warmup, single native repetition. Only intended independent variable: QSA UNION flag, with MIN_KV=32768 on ON; environmental drift may remain.
+
+| Metric | QSA OFF | QSA ON |
+| --- | ---: | ---: |
+| Native PP throughput tok/s | **355.311327** | **358.089891** |
+| Native prompt `avg_ns` | 168865992700 | **167555693600** |
+| PP elapsed s | 168.866 | **167.556** |
+| Claimed speed delta (unreplicated) | baseline | **+0.7820%** |
+| ADLX max VRAM MiB | 94424 | **94578** |
+| High GPU-use samples >=95% | 83/103 | **82/103** |
+| High GPU-use mean clock MHz | 2827.012 | **2847.780** |
+| High GPU-use mean VRAM clock MHz | **999.940** | **904.134** |
+| High GPU-use mean power W | 119.554 | **111.476** |
+| Max observed GPU temp C | 81 | **78** |
+| P-MODE | Performance start/end | Performance start/end |
+| Native status | OK / exit0 | **OK / exit0** |
+
+ON run details:
+- Run ID `20261103-192525-644-bench-vulkan-b12032-ctx65536-384a52ae061f`; 2026-11-03 19:25:26.502–19:28:57.542 JST; total wrapper duration **211.040 seconds** including model load.
+- Native b12032 `c4ddd239b`; binary SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`, original Unsloth IQ4_XS Ple16 GGUF 93682576992 bytes (full GGUF hash not recomputed); same Japanese ANLP `nlp-survey-ch3-d31-b1.txt` source SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`. `-c 65536 -p 60000 -n 0 -d 0 -r 1 --no-warmup -b 2048 -ub 1024 -ngl 999 -ncmoe 0 -fa auto -ctk/-ctv f16 -t 4`. `Status=OK`, exit0, 1 native JSON row, no run/parse errors, ADLX exit0 and 103 samples.
+- Environment: `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_MIN_KV=32768`, `GGML_VK_QSA_UNION_STATS=0`, `QWEN4EXP_QSA_GATHER=0`. Stderr contains both `qsa-union fallback: query count, selection size or KV threshold` and **`qsa-union active (r6), source=mask-compact, group=64, path=1, Br=16, Bc=64, groups=16, capacity=32768, min_kv=32768, scratch=81801472 bytes`**. Thus actual activation is confirmed for some work, but this single line does not tell the exact activation timestamp or fraction of kernels using UNION.
+- P-MODE was `Performance` both ends with `PModeChanged=false`. ADLX performance classification is consistent (`HighLoadSampleCount=82`, `AverageGpuPowerW=111.476 W`, `PowerClass=Performance-like`). GPU clock mean at high load ~2848MHz, VRAM clock mean ~904MHz, peak 78C, peak memory 94578MiB. RDP session. Background check `PartialCoverage`, `PossibleNoise=null`: **do not infer a quiet system**.
+- **Crucial intra-run state change** around **19:27:23 JST**: at 19:27:21 GPU 100%, GPU clock2806MHz, VRAM1000MHz, power120W, VRAM94365MiB, temp78C; at 19:27:23 GPU99%, GPU clock2832MHz, VRAM900MHz, power110W, VRAM94482MiB, temp73C; at 19:27:25 GPU100%, GPU clock2861MHz, VRAM834MHz, power106W, VRAM94482MiB, temp72C. Thereafter through ~19:28:53, GPU still ~99–100%, VRAM clock typically ~793–868 MHz and power ~101–108W with GPU core clock ~2850–2870MHz; no reset. Within ON high-load samples, 46/82 have VRAM clock <=900MHz; early high-load mean before 19:27:27 is ~992.9MHz VRAM / 119.1W, late high-load mean from 19:27:27 onward ~827.5MHz VRAM / 104.9W. The OFF paired run had high-load mean 999.94MHz VRAM with no comparable sustained drop.
+- The transition occurs during the timed long PP, approximately a minute-plus after it began. **Do not equate the transition timestamp to exact `min_kv=32768` QSA activation**: QSA active stderr has no timestamp and the token-position evolution is not independently measured. It is a correlation to investigate, **not proof that QSA caused the clock change**. GPU time vs tokens is non-linear.
+- ON max VRAM usage `94578 MiB` vs OFF `94424 MiB`: +154MiB. The ON activation line reports 81801472 bytes of QSA scratch, but this is not a direct one-to-one explanation of ADLX total or delta, which includes other allocations/residency and samples. The earlier failed 128k QSA ON reached `97130 MiB`. Thus 64k QSA ON success alone does not clear the 128k problem, and QSA ON is **not generally broken**.
+- Compared speed +0.782% is a single unreplicated observation with different observed VRAM clock regimes; **not evidence of a stable QSA speedup**. No controlled confidence interval or clock-normalized performance estimate.
+
+**Recommended gating:** Do NOT automatically relaunch 12-case `-Stage Remaining` (will reattempt 128k IQ4). After this success, the most informative next dimension is **context/memory** with QSA forced OFF, rather than blindly increasing PP length with QSA ON. If user accepts bounded risk, begin with **`-c 131072 -p 256` QSA-OFF/no-warmup smoke** and ADLX: this tests 128k context allocation while avoiding QSA long-context active path and sustained compute. This deliberately does not yet test full 126253 tokens. Require stable P-MODE/desktop/monitor and no other GPU job; stop if a new driver timeout occurs. Then reconsider 8k PP at 128k context vs more precise measurement of QSA-ON VRAM clock state. Original full 128k case remains deferred. No code, driver, BIOS/UMA or TDR registry changes made.
