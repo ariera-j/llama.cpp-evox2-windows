@@ -94,3 +94,53 @@ The `system-events.txt` reports no selected System event (raw System queries=1, 
 3. Perform one **normal OS reboot** after capturing incident information. Verify adapter, P-MODE, desktop/RDP and GPU memory reporting afterward. Do not change `TdrDelay/TdrLevel`, BIOS, UMA, or drivers solely based on this occurrence.
 4. Decide a bounded low-risk investigation only after reviewing root-cause evidence. At present, 128k IQ4 Vulkan memory reported peak 97130 MiB (~94.85 GiB) and the desktop compositor also crashed; capacity pressure and QSA active-path/driver scheduling all remain plausible. If more testing is pursued, avoid a full 128k IQ4 warmup + timed retry as the first post-reboot action.
 5. No source edits or patches, no kernel attribution, no assertion of thermal cause, no claim of hardware defect. Incident priority is Windows graphics-stack recovery and isolation before finishing matrix.
+
+## WinDbg WATCHDOG dump analysis 2026-11-03
+
+**Updated conclusion:** a `VIDEO_ENGINE_TIMEOUT_DETECTED (0x141)` live dump with AMD kernel display module `amdkmdag.sys` bucketing and Windows GPU scheduler engine-reset stack. **This establishes GPU-engine non-response / TDR recovery, not the initiating Vulkan shader, an AMD software defect, or an allocation failure.**
+
+Evidence: user-provided WinDbg `.symfix; .reload; !analyze -v` transcript from `WATCHDOG-20261103-1713.dmp`. Only textual analysis supplied; actual .dmp is not in Git or this chat.
+
+Key extracted fields:
+
+```text
+VIDEO_ENGINE_TIMEOUT_DETECTED (141)
+Arg1 = ffff808f9d4513d0  (internal TDR recovery context pointer)
+Arg2 = fffff8034b3a0fb0  (pointer into responsible display driver module)
+Arg3 = 0000000000000000  (secondary driver-specific bucketing)
+Arg4 = ffff808fb1c5a080  (internal context-dependent data)
+Failure.Bucket = LKD_0x141_IMAGE_amdkmdag.sys
+Failure.Exception.IP.Module = amdkmdag
+Failure.Exception.IP.Offset = 0x1d0fb0
+SYMBOL_NAME = amdkmdag+1d0fb0
+IMAGE_NAME = amdkmdag.sys
+PROCESS_NAME = System
+DUMP_FILE_ATTRIBUTES = 0x18 / Kernel Generated Triage Dump / Live Generated Dump
+```
+
+Decisive stack excerpt:
+
+```text
+dxgkrnl!TdrCollectDbgInfoStage1+0xe6a
+dxgmms2!VidSchiResetHwEngine+0x222
+dxgmms2!VidSchiResetEngines+0xcb
+dxgmms2!VidSchiCheckHwProgress+0x316
+dxgmms2!VidSchiWaitForSchedulerEvents+0x1b1
+dxgmms2!VidSchiScheduleCommandToRun+0x32e
+dxgmms2!VidSchiWorkerThread+0xdc
+```
+
+Interpretation:
+
+- Microsoft's official bug check documentation identifies `0x141` as a **GPU/video engine timeout live dump**, not an actual whole-system BSOD; `Arg2` is a pointer into the responsible driver for diagnostics. See https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x141---video-engine-timeout-detected and https://learn.microsoft.com/en-us/windows-hardware/drivers/display/timeout-detection-and-recovery .
+- Kernel stack shown is the **Windows TDR detection/reset/collection path**. It does **not** show the instruction sequence or queue submission of the original shader workload. `PROCESS_NAME=System` refers to the kernel diagnostic/scheduler thread, not the user process's origin.
+- `amdkmdag+0x1d0fb0` is the driver-owner/bucketing address, not independently demonstrated to be the faulty code location. Do not conclude driver source bug/hardware damage from the bucket.
+- WinDbg warning `Unable to load image amdkmdag.sys, Win32 error 0n2` and `Unable to verify timestamp` indicates missing/unavailable image for symbol validation; **not evidence that the installed driver is corrupt**.
+- Mini-dump limitations: `Mini Kernel Dump does not contain unloaded driver list`, unavailable `dxgkrnl!_TDR_RECOVERY_CONTEXT` type symbol, and no readable precise faulting GPU shader. Secondary tag TDR data might be present: optional WinDbg `.enumtag` (Microsoft docs), and `lmvm amdkmdag` for driver module metadata. Their output may be insufficient to identify a shader or allocation failure.
+- Reconcile with previously analyzed 17:13:27 WATCHDOG file, 17:13:29 `llama-bench.exe` fail-fast `0xC0000409`, 17:13:53 `dwm.exe` AMD user-mode module `amdxx64.dll` crash. These are related in time, but a causal sequence at kernel/device level is not proven. The observed peak ADLX ~97130 MiB (~94.85GiB) in the 96 GiB configured UMA remains a **capacity-pressure hypothesis**, not an OOM diagnosis.
+
+**Action:** Keep interrupted 128k 12-case run at 7 OK / 1 failed / 4 not attempted; **do not re-run `-Stage Remaining`** since it retries the failed IQ4 Vulkan Japanese case. If not already done, preserve dump/OS metadata and restart Windows normally before more GPU work. Check GPU device, P-MODE, RDP/physical display, VRAM clock, memory reporting. Do not alter TDR registry, BIOS, driver or source as a first response.
+
+If user wants to finish the experimental comparison, first design a **separate, explicitly scoped** post-recovery plan: retain valid ROCm six and Vulkan IQ3 Japanese one; consider safer Vulkan IQ3 random/code under isolation only after health checks, and evaluate a reduced-size / lower-risk Vulkan IQ4 diagnostic separately rather than repeating the failed 126253-token warmup+timed full PP. This does **not** certify any new matrix results.
+
+At this point WinDbg largely confirms the *failure class* and responsible driver module; hardware-vs-memory-vs-kernel root cause remains undetermined.
