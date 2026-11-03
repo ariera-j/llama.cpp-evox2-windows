@@ -180,3 +180,26 @@ This completes the practical **failure-class** and owner-tag diagnosis from the 
 Since the OS has been rebooted, next perform **read-only/lightweight system health probes** (Device Manager/adapter recognition, P-MODE Performance, current clock/VRAM reporting, basic GUI/RDP reliability) without any 128k stress. If normal and user wishes to continue, run a separate **bounded, staged** diagnostic starting with a lower-context Vulkan IQ4 trial or lower-risk IQ3 pending cases; do not relaunch `-Stage Remaining` because it automatically retries the failed 08 `Vulkan-IQ4-Japanese` case. Keep first seven 128k PP numbers and mark remaining four as not attempted. Repeating full 128k IQ4 under identical conditions is deferred.
 
 No changes to C++ sources, binary, driver, BIOS/UMA, or TDR registry.
+
+## Post-reboot Windows and Vulkan device listing — 2026-11-03
+
+User confirms **Windows was rebooted** after the 17:13 GPU TDR. A subsequent PowerShell read-only probe shows the graphics driver and Vulkan device can be discovered again:
+
+```text
+Get-CimInstance Win32_VideoController:
+Microsoft Remote Display Adapter | 10.0.26100.9818 | OK
+AMD Radeon(TM) 8060S Graphics    | 32.0.31041.1004 | OK
+
+llama-bench.exe --list-devices (Vulkan b12032):
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon(TM) 8060S Graphics (AMD proprietary driver)
+load_backend: loaded Vulkan backend ...ggml-vulkan.dll
+Available devices:
+Vulkan0: AMD Radeon(TM) 8060S Graphics (114507 MiB, 108782 MiB free)
+```
+
+**Result: PASS for Windows adapter status and Vulkan backend/device discovery only.** The driver version is unchanged from the captured incident. Windows reports a Remote Display Adapter in addition to AMD GPU, consistent with the user's RDP workflow. The reported Vulkan total/free memory is the backend/driver-reported budget, **not** direct proof of the configured 96GiB UMA size, nor of full IQ4 128k allocation headroom.
+
+**Not verified by these two commands:** P-MODE and live memory clocks after reboot, real GPU compute, long-duration device stability, or safety of 128k IQ4. Continue to hold `-Stage Remaining` because it retries the full-length IQ4 failure. If proceeding with a bounded diagnostic, start with **one** low-context, short Vulkan model-run after ensuring the display works and other GPU workloads are stopped. Set QSA UNION OFF and no warmup. Inspect ADLX/P-MODE and WER before any repeat. Only after that consider a larger but still bounded 32k IQ4 PP. The default QSA union threshold 32768 means a 32k input may not activate the feature, so a 32k OFF/ON nominal comparison is **not** a valid proof of QSA kernel effects; compare QSA only where logs positively show activation, and defer that heavier test for now.
+
+No benchmark was executed in this post-reboot check. No source/driver/BIOS/UMA/TDR configuration changes.
