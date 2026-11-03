@@ -1,0 +1,81 @@
+# r6 TOOL-001 Gate 1 — 実入力 llama-bench native移植結果
+
+日付: 2026-11-03 (JST)  
+状態: **Gate 1 ソース移植・静的レビュー完了。Windows build・実行検証は未実施。**  
+作業ブランチ: `feature/r6-llama-bench-real-prompt-20261103`、分岐元main `7e2150bb99164bea87ee119c50bdbbbd9444561b`。  
+詳細手順: [事前調査・移植計画](R6-LLAMA-BENCH-REAL-PROMPT-PORT-PLAN-2026-11-03.md)。  
+引き継ぎ: [COMMON-005後](R6-POST-COMMON005-HANDOFF-AND-RESEARCH-2026-11-03.md) §5。
+
+## 実装コミット
+
+- `85dcddf75c86c4b8e55431258f86a72d92266180`: `feat(evox2): port r5 real-prompt llama-bench native mode to r6`
+- `3f14e5c5c8f23c9d50048df9907851d58bbfa985`: `fix(evox2): preserve r6 fit-min-context sizing in real-prompt bench`
+
+C++変更対象: **`tools/llama-bench/llama-bench.cpp` のみ**。r5の元commitは `4bf9af6fefa98622a65bd8d4c04ba73a02e27422`、実装済みドナー `r5/upstream-refresh-20261009`。Gate 1完成ソースのGitHub blob SHAは `cd551f9a67a0975423da022342cb694bd772f02f`。mainと比較したnative差分は**188行追加・8行削除**（GitHub compare、コード変更のみ）。GGML・QSA・Vulkan・HIP・MTP・COMMON-005は変更していない。
+
+## 実装内容
+
+- `-f/--prompt-file`、`--prompt-slice head-tail|head`、`-c/--ctx-size`をnative help/parse/defaultへ追加。`-fitc/--fit-ctx`は別フラグとして残す。
+- `-f`指定時のUTF-8ファイル読込とモデルのvocabでの`common_tokenize(vocab, prompt_file_text, true, false)`。`-p`省略時のみファイル全文のtoken数を採用。`-p N`では選択後が正確にN token。
+- `head-tail`: head `ceil(N/2)`+tail `floor(N/2)`、`head`: 先頭N、separator/padding/繰返しなし。tokenizeとslice構築は測定開始前。各timed repetitionとwarmupに同一配列を渡す。
+- `cmd_params_instance::n_ctx`をPP、TG、PG各testに伝播し、明示context不足をエラーにする。`-c 0`または省略で既存の自動context sizing。`-f`で`-p`省略と`--fit-target`組合せはr5同様に明示的に拒否する。
+- 既存random `test_prompt()`、generation `test_gen()`、depthのrandom prefill、JSON出力列、warmup/repetitionループ、モデル再利用処理は維持。
+- **r6固有の非回帰配慮**: r5側の`-fitc`helpには「default: 4096」というmainと異なる文字列があったが、mainの`default: 0`を保持。fit実行時のcontextは`max(workload, explicit -c, inst.fit_min_ctx)`とし、r6の`--fit-ctx`最小値を落とさない。
+
+## PowerShellラッパー
+
+main `tools/evox2/benchmark/Measure-LlamaBench.ps1` のblob SHA `e6777e864ee362e4232422d171c84939af316042`を**変更なし**。元r5 wrapperとは別で、現mainには既に以下がある。
+
+- `-InputKey/-InputFile/-PromptSlice/-Context`、実入力パス/byte数/SHA256、context modeの条件記録、ADLX/P-MODE・build Git identityの記録。
+- `-c`と`-f/--prompt-slice`の旧バイナリ対応可否を`--help`から検査。今回追加したhelp書式は既存の正規表現に整合する。
+- wrapperは常に`-p`を送るため、**native全文入力モードは直接CLIで確認**する。
+
+`configs/local.psd1`はユーザー固有情報としてcommitしない。
+
+## 静的レビュー（GitHub sourceに対する15検査、全PASS）
+
+1. nativeの3種の追加オプションがparseに存在
+2. native help表記がmain wrapper検知条件に合致
+3. random初期値と`test_prompt()`の元ロジック保持
+4. `-f`で`-p`なしの内部full-file sentinel解決
+5. `common_tokenize`はchat templateを使わないraw入力
+6. source token不足とcontext不足のエラーパスが存在
+7. `head-tail`の奇数token分配が正しい
+8. warmupとtimed双方でreal-token経路選択
+9. depthのrandom prefill保持
+10. r6 `fit_min_ctx`の保持
+11. `--fit-target`と全文入力未解決の組合せを明示的に拒否
+12. mainのwrapper blob SHAが不変
+13. mainの`-fitc default: 0`help保持
+14. mainとの差分にGPU/backend系ファイルが含まれない
+15. C++ソースの行末余白なし
+
+**重要:** これはsource上の静的確認であり、コンパイル成功やWindows実機の動作/性能を示すものではない。`git diff --check`、実機ソースcheckout状況、help実出力はGate 2で確認。
+
+## 次：Gate 2 Windows Vulkan build、Gate 3 smoke
+
+既存r6統合バイナリと公開b11908 previewを上書きせず、新build directoryに作る。作業ディレクトリには本ブランチをfetch/checkoutし、dirty treeやmainとの差を事前確認する。
+
+```powershell
+git fetch origin
+git switch feature/r6-llama-bench-real-prompt-20261103
+git pull --ff-only
+git status --short
+git diff --check main...HEAD
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+    -BuildDir .\build-vulkan-bench-real-r6 `
+    -VulkanSdk C:\VulkanSDK\1.4.357.0 `
+    -LlvmBin 'C:\Program Files\LLVM\bin' `
+    -Parallel 4
+
+$bin = '.\build-vulkan-bench-real-r6\bin\Release'
+& "$bin\llama-bench.exe" --help
+& "$bin\llama-bench.exe" --version
+```
+
+`--help`で`-f/--prompt-file`・`--prompt-slice`・`-c/--ctx-size`を確認。`--version`の非対応のみでbuild失敗とは判定しない。model/bench path・compiler・commit・hashを記録。
+
+その後のスモークは[計画書 §5](R6-LLAMA-BENCH-REAL-PROMPT-PORT-PLAN-2026-11-03.md)の3ケース：256-token random / real head-tail / real head。条件：`Context=1024, PromptTokens=256, GenerationTokens=0, Depths=0, Repetitions=1, Batch=256, UBatch=256, Threads=4, KvType=f16, ngl=999, ncmoe=0, fa=auto, NoWarmup`、同一バイナリ・同一モデル。旧r5の256-token速度を比較目標にしない。
+
+Gate 4ではnegative、全文省略`-p`、複数`-p`、`-pg`、fit/minctx、randomのnon-regression、可能なら短い既知token配列のhead/head-tail同等性を検証する。**合格判定はWindowsログ確認後**。その後に64k以上のrandom/real PP比較とROCm判断へ進む。
