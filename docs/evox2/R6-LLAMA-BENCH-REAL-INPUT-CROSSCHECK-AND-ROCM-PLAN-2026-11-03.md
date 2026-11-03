@@ -214,3 +214,27 @@ In the same ROCm TheRock shell, keep `QWEN4EXP_QSA_GATHER=0` and avoid simultane
 Wrapper must be invoked with `-LlamaBench (Resolve-Path ...llama-bench.exe).Path`, `-ModelKey 'UnslothPle16'`, `-ExpectedBackend ROCm`. Compare source SHA and binary SHA per result; ExitCode=0, native n_prompt=256, JSON valid, ROCm active, P-MODE stable, no ROCm allocation/BLAS errors. Stage C is a correctness/smoke gate, not a throughput ranking.
 
 If Stage C passes, next run same ROCm b12038 binary for IQ3 Ple16 versus original IQ4 Ple16 using fixed real-text hash, batch/ubatch, context and warmup, `QWEN4EXP_QSA_GATHER=0`, MTP OFF. No ROCmFP4 FAST custom tensor quantization until separate HIP implementation is completed.
+
+## Stage C Windows ROCm 256-token smoke actual result — 2026-11-03
+
+**Smoke gate PASS 2/2.** Native ROCm b12038 ran **one real PLE16 IQ3 model PP** workload each in random and file-token head-tail mode. These are correctness/operational tests, not long-context quantization/throughput results.
+
+User ZIP: `20261103-143236-657-bench-rocm-b12038-ctx1024-4c74a84fbd7d.zip`, containing **two complete run directories**, separate per-run `conditions.json`, `result.json`, `llama-bench.json`, `summary.csv`, stdout/stderr and ADLX metrics. The ZIP itself is not committed. Both source and executable identity match the preceding verified b12038 ROCm build:
+
+- Git/source `d321e7ff38052be311fde9392598fe02c7548956`, clean, `feature/r6-llama-bench-real-prompt-20261103`.
+- `llama-bench.exe` SHA256 `a46e512cdc78ab2475b52d5d1d694ec968edade16c9229f95ced3380d559298a`, b12038, Clang 23.0.0, native `backends=ROCm`, `gpu_info=AMD Radeon(TM) 8060S Graphics`; `ggml-hip.dll` explicitly loaded, no Vulkan backend loaded.
+- Model `Qwen3.8-Flash-Next-UD-IQ3_XXS-ple16.gguf`, 81,961,816,672 bytes at the same path in both runs. Model full SHA not calculated.
+- Common `-p 256 -n 0 -d 0 -r 1 --no-warmup -b 256 -ub 256 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 -c 1024`; `QWEN4EXP_QSA_GATHER=0`.
+
+| Case | ConditionId | Input / slice | Native n_prompt | avg_ns | PP tok/s | Status |
+|---|---|---|---:|---:|---:|---|
+| Random | `12ebcc0c6fb6` | No `-f` / random | 256 | 2351161600 | **108.882350** | OK, exit 0 |
+| Real text | `4c74a84fbd7d` | `-f nlp-survey-ch3-d7-b1.txt --prompt-slice head-tail` | 256 | 1195535800 | **214.129932** | OK, exit 0 |
+
+For real-file case input path `C:\Users\ai\Desktop\qwen38-flash-next-evo-x2\test_input\long-input-abstract-out\nlp-survey-ch3-d7-b1.txt`, byte size 304931, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`. Input identity null in the random case. Each run: native JSON row count 1, `samples_ns` length 1, `RunException=null`, `ParseException=null`, `PModeAtStart=Performance`, `PModeAtFinish=Performance`, `PModeChanged=false`. ADLX monitor completed with exit 0, 27 random / 26 real CSV samples. Background named-process `PossibleNoise=false` (short-lived/unmonitored processes not ruled out). Both sessions flagged `remote=yes` by ADLX.
+
+**Caveat:** the user shell's captured `Environment.HIP_PATH` points to `C:\Program Files\AMD\ROCm\7.2\` and `HIP_PATH_72` to the same, despite executable manifest's **TheRock 10.0** runtime staging with hash verification. The short tests **passed** and no current mixed-DLL runtime failure is shown; however, for fair later long-context/quantization comparisons use a fresh activated TheRock shell and normalize/record `HIP_PATH` and runtime provenance before timing. Do not interpret environment path alone as proof of actual loaded-DLL path. If needed, inspect process-loaded modules separately.
+
+**No PP speed inference from 256-token smoke:** the real/random ratio (~1.97x) is one short no-warmup run each and differs from r5 64k trends; do not generalize. There is no verbose proof here of every tensor's GPU offload, although native ROCm device was selected and real PP succeeded.
+
+**Decision:** TOOL-001 native r6 real-prompt Vulkan+ROCm functional smoke gates passed. No source changes/rebuild required. Next task: controlled ROCm b12038 **IQ3 PLE16 vs original IQ4 PLE16** long-context PP test using a shared file SHA, `-p` at or below actual token count (the `d7` source provides 61777 token with IQ3; **IQ4 tokenize length must be checked independently**, since tokenization can vary by model). Fix `QWEN4EXP_QSA_GATHER=0`, MTP off; use same context/batch/ubatch/KV/FA and repetitions; check HIP SDK/runtime provenance, P-MODE and artifacts. Custom ROCmFP4 GGUF is outside this supported HIP experiment.
