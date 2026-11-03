@@ -63,3 +63,34 @@ Within these ROCm cases, IQ3 exceeds IQ4 by +2.84% Japanese, +1.71% Random, +2.7
 6. No changes to existing frozen binaries, GPU driver, BIOS, UMA setting, source, or public release while incident is under investigation.
 
 **Key difference from a normal bench error:** this incident involved a reported AMD display driver timeout, Vulkan device loss, abrupt VRAM release and P-MODE probe failure. The first seven cases remain valid; the missing five are *not* a reason to restart the matrix immediately.
+
+## Windows Event / WER follow-up — collected 2026-11-03 18:17 JST
+
+**Evidence upgrade: current incident is a confirmed Windows LiveKernelEvent 141 (VIDEO_ENGINE_TIMEOUT_DETECTED), with a matching new WATCHDOG live dump and subsequent `dwm.exe` APPCRASH in AMD graphics module.** This moves the diagnosis beyond a generic Vulkan process crash, but does **not** prove whether Vulkan kernel, driver scheduling, memory pressure, or resource residency initiated the timeout.
+
+Source archive `evox2-gpu-timeout-20261103.zip` (about 5.6KB) from read-only `Collect-Evox2-GpuTimeout-20261103.ps1`; event interval **2026-11-03 17:08–17:20 JST**, collection 18:17:30 JST. ZIP contents: `application-events.csv`, `graphics-adapter.csv`, `live-kernel-dump-file-list.csv`, `system-events.txt`, `readme.txt`. No .dmp bytes uploaded. Original Windows event messages retained in the user ZIP, not copied into repo.
+
+| Event timestamp JST | Provider / event | Details |
+|---|---|---|
+| **17:13:27** | Live dump file metadata | `C:\Windows\LiveKernelReports\WATCHDOG\WATCHDOG-20261103-1713.dmp`; 480988 bytes, creation/write 17:13:27 |
+| **17:13:29.908** | Application Error ID 1000 | `llama-bench.exe` fault, module `ucrtbase.dll`, exception **0xC0000409**, offset `0xA527E` |
+| **17:13:30.973**, **17:13:31.907** | Windows Error Reporting ID 1001 | `Event Name: LiveKernelEvent`, **P1:141**, points to **same new 20261103 WATCHDOG live dump** |
+| **17:13:33.023** | Windows Error Reporting ID 1001 | `Event Name: BEX64`, `llama-bench.exe`, `ucrtbase.dll`, `P8:c0000409`, `P9:0000000000000007`; same process crash as 17:13:29, not a second independent PP failure |
+| **17:13:53.724** | Application Error ID 1000 | `dwm.exe` fault, module **`amdxx64.dll`**, version **32.0.31041.1004**, exception **0xC0000005** (access violation), offset `0xD0C82` |
+| **17:13:57.876** | Windows Error Reporting ID 1001 | `Event Name: APPCRASH` with `dwm.exe` / `amdxx64.dll` and same 0xC0000005; WER report for the prior DWM fault |
+
+Microsoft's documentation identifies `0x141` as **VIDEO_ENGINE_TIMEOUT_DETECTED**, indicating a display/GPU processing engine failed to respond in time; a *live dump* code, not proof of a machine-wide BSOD. See `https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x141---video-engine-timeout-detected`. `0xC0000409` is a Windows fail-fast termination category; do not diagnose buffer overrun purely from its legacy label. `0xC0000005` signifies invalid memory access in the DWM/AMD module; without a DWM crash dump cannot establish root cause or direction of causality.
+
+**Important historical WER caveat:** Although `application-events.csv` has 27 selected rows, many ID 1001 records at **17:13:31** re-list *pre-existing* WATCHDOG dumps dated October 22, October 10, September and August/July 2026, plus older BlueScreen reports. They are **not separate new GPU hangs at 17:13 on November 3**. Only the WER entries pointing to **WATCHDOG-20261103-1713.dmp** establish the new 0x141 incident, and they refer to the same dump. Therefore do not count 19 `LiveKernelEvent` WER rows as 19 new faults.
+
+The `system-events.txt` reports no selected System event (raw System queries=1, selected=0); **absence of Display 4101 in the selected window does not override LiveKernelEvent 141**. The collection also reports Access Denied when reading `C:\ProgramData\Microsoft\Windows\WER\ReportArchive` and `ReportQueue`; `0` matched report folders is **not** proof there are no WER reports. New 480988-byte WATCHDOG live dump exists, but **not parsed**.
+
+`graphics-adapter.csv` reports `AMD Radeon(TM) 8060S Graphics` driver **32.0.31041.1004**, date shown as 2026-08-17; also lists Microsoft Remote Display Adapter, consistent with RDP session. This is driver identity only, not a recommendation to change drivers.
+
+### Updated decision
+
+1. **Halt** matrix `-Stage Remaining`: it would retry failed `08-Vulkan-IQ4-Japanese`, risking another display-driver hang. Preserve all 7 good 128k PP results; keep case08 FAILED and cases09–12 NOT RUN.
+2. If the system is still running from the incident, save work and preserve the specific 480988-byte `WATCHDOG-20261103-1713.dmp` in a private local location if deeper analysis is desired. It is a live dump and may contain sensitive machine information. Optional inspect with WinDbg `!analyze -v` rather than blindly retrying the full workload.
+3. Perform one **normal OS reboot** after capturing incident information. Verify adapter, P-MODE, desktop/RDP and GPU memory reporting afterward. Do not change `TdrDelay/TdrLevel`, BIOS, UMA, or drivers solely based on this occurrence.
+4. Decide a bounded low-risk investigation only after reviewing root-cause evidence. At present, 128k IQ4 Vulkan memory reported peak 97130 MiB (~94.85 GiB) and the desktop compositor also crashed; capacity pressure and QSA active-path/driver scheduling all remain plausible. If more testing is pursued, avoid a full 128k IQ4 warmup + timed retry as the first post-reboot action.
+5. No source edits or patches, no kernel attribution, no assertion of thermal cause, no claim of hardware defect. Incident priority is Windows graphics-stack recovery and isolation before finishing matrix.
