@@ -347,3 +347,24 @@ User's next two scientific questions:
 5. Before a large comparison, run a single matched 32k or 64k input proof-of-identity gate to confirm CLI prompt counts and bench prompt counts. Keep the experimental comparison scoped and avoid uncontrolled four-run sweep if model input lengths/counters mismatch.
 
 No C++/driver/BIOS/UMA/TDR modifications are required by these finished tests. User will decide when to run the next compare.
+
+## Historical r5 → r6 IQ3 128k same-workload comparison — 2026-11-03
+
+User requested comparison against Qiita [EVO-X2 x Qwen3.8-Flash-Next 番外編4, 128k Vulkan OFF/ON/ROCm](https://qiita.com/ariera/items/2f9353899c2265dea7cd#128kvulkan-off--on--rocm%E6%AF%94%E8%BC%83). **Naming correction: that article explicitly describes experiments off `r5/upstream-refresh-20261009`, not r4.** Values from its 128k table are r5 Vulkan b11535 UNION ON and ROCm b11543, original IQ3_XXS Ple16. New r6 b12032 Vulkan UNION ON and b12038 ROCm IQ3 numbers are the original matrix Case07, ROCm cases02/03/06, and separate IQ3-only Cases10/11. All PP126253/context131072, warmup ON, batch2048/ubatch1024, f16 KV, no MTP, one timed repetition. R5 and r6 use different binaries and backends, so this is a cross-build trend, not same-binary A/B.
+
+| Input | r5 Vulkan ON | r6 Vulkan ON | r6/r5 | r5 ROCm | r6 ROCm | r6/r5 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Japanese repeated ANLP | 310.682 | 306.831891 | **-1.239%** | 296.27 (Qiita rounded; underlying ~296.27) | 299.151698 | **+0.973%** |
+| C/C++ llama.cpp code | 346.600 | 346.382879 | **-0.063%** | 296.08 | 299.941061 | **+1.304%** |
+| Native random token | 261.673 | 279.980810 | **+6.998%** | 308.22 | 313.880965 | **+1.837%** |
+
+Rounded percentage arithmetic uses Qiita's displayed ROCm 2-decimal figures. For exact r5 source values refer to [r5 ROCm/Vulkan report](R5-ROCM-VULKAN-CORPUS-PP-64K-128K-2026-10-10.md). Same Japanese source `nlp-survey-ch3-d31-b1.txt` SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788` and same code source `llamacpp-inference-code.txt` SHA256 `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345` (head126253 tokens), consistent with historical r5 manifest. Native random-generation token IDs are not externally pinned/verified identical across r5 and r6, so treat +6.998% Vulkan Random as an observed speed delta for the random-generation condition, **not a guaranteed exact-token matched A/B**.
+
+Rankings are conserved:
+- Vulkan ON: **Code > Japanese ANLP > Random** in both r5/r6.
+- ROCm: **Random > Japanese/Code ~equal** (r5 Japanese slightly above Code, r6 Code slightly above Japanese).
+- Vulkan vs ROCm within Japanese: r5 +4.864%, r6 +2.567%; Code: r5 +17.063%, r6 +15.484%; Random: r5 **-15.103%**, r6 **-10.800%**. Ranking still input-dependent, but Random's Vulkan gap shrank.
+
+**Interpretation limitations:** r6 Vulkan IQ3 Random PP was heavily confounded by ADLX memory-clock drops (high-load mean ~795.44MHz), while r6 Code averaged ~881.94MHz. r5 article does **not** publish matching ADLX clock regime, so do not claim Random's +7% as a pure algorithm or upstream speedup, and don't assign QSA causality from this comparison. R6 ROCm changes +1–2% are single-run/cross-build observations, not statistically significant improvements. The r5/Qiita OFF column (183.66 ANLP, 236.13 Code, 170.62 Random) has **no r6 same-condition 128k OFF counterpart** here and must not be mixed with r6 Vulkan ON.
+
+**Conclusion:** same essential input-dependence signature reproduced and no major IQ3 128k Vulkan PP regression found in these three inputs. Continue the planned matched CLI/bench ROCm quantization and Vulkan memory study, but capture runtime GPU/VRAM clocks and verify prompt-token equivalence first.
