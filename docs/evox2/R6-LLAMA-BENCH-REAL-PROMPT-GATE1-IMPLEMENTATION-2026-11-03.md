@@ -79,3 +79,57 @@ $bin = '.\build-vulkan-bench-real-r6\bin\Release'
 その後のスモークは[計画書 §5](R6-LLAMA-BENCH-REAL-PROMPT-PORT-PLAN-2026-11-03.md)の3ケース：256-token random / real head-tail / real head。条件：`Context=1024, PromptTokens=256, GenerationTokens=0, Depths=0, Repetitions=1, Batch=256, UBatch=256, Threads=4, KvType=f16, ngl=999, ncmoe=0, fa=auto, NoWarmup`、同一バイナリ・同一モデル。旧r5の256-token速度を比較目標にしない。
 
 Gate 4ではnegative、全文省略`-p`、複数`-p`、`-pg`、fit/minctx、randomのnon-regression、可能なら短い既知token配列のhead/head-tail同等性を検証する。**合格判定はWindowsログ確認後**。その後に64k以上のrandom/real PP比較とROCm判断へ進む。
+
+## Gate 2 実機ビルド結果 — 2026-11-03
+
+**判定：Vulkan Windows build / CLI help / version — PASS。Gate 3実入力スモークは未実施。**
+
+ユーザーから提供された`(vulkan-bench)evox2-build.json`（生成時刻 2026-11-03 10:45:39 JST）、および`llama-bench.exe --help`/`--version`の実行出力を確認した。ファイル自体はGitHubへ追加しない（個別環境パス等を含む）。
+
+| 項目 | 実機結果 |
+| --- | --- |
+| Build | b12032 / commit `c4ddd239ba01ee3e7f18986e98b10bd089553aae` |
+| Branch / dirty | `feature/r6-llama-bench-real-prompt-20261103` / `false` |
+| BuildIdentity | `Verified` — source stable / embedded commit一致 |
+| Configuration | `Release`, `Vulkan`, `Ninja Multi-Config` |
+| Compiler | Clang 20.1.8, Windows x86_64 |
+| BuildDir | `C:\llama-build\llama.cpp-evox2-windows-r6\build-vulkan-bench-real-r6` |
+| Target | `llama-cli`, `llama-server`, `llama-bench`, `test-backend-ops` |
+| GPU | AMD Radeon 8060S / Vulkan0, device-list exit 0 |
+| Native help | `-f/--prompt-file`, `--prompt-slice`, `-c/--ctx-size`を表示 |
+| Native version | `0.7.0-dev (build 12032, commit c4ddd239b)`, Clang 20.1.8 |
+| `llama-bench.exe` SHA256 | `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f` |
+
+`--help`のロードログではRPC、Vulkan、CPU-zen4 backendを読み込んだ。Vulkan deviceは8060S 1台、`fp16:1`、`bf16:1`、`fp4:0`、`KHR_coopmat`を検出。
+
+**注意:** ビルドスクリプトの`Validation.Version`と`ListDevices`は`llama-cli.exe`による自動チェック。これとは別にユーザーが実行した`llama-bench.exe --help`および`--version`を確認済み。モデルをロードしたPP実入力処理の成功はまだ未確認であり、Gate 3が次のゲート。
+
+### Gate 3 実機256-token smoke（提案）
+
+r6の既存`Measure-LlamaBench.ps1`を使用し、新しい実行ファイルを`-LlamaBench`で直接指定してもよい。ローカル`local.psd1`の`ModelKey`と`InputKey`の既存名を用いる（下記はr5からの既知例）。`-InputKey`を付けないrandom対照が必須。3条件の出力ログを同一build・同一modelで採取する。
+
+```powershell
+$bin = '.\build-vulkan-bench-real-r6\bin\Release'
+$common = @{
+    LlamaBench = (Resolve-Path "$bin\llama-bench.exe").Path
+    ModelKey = 'UnslothPle16'
+    Context = 1024
+    PromptTokens = @(256)
+    GenerationTokens = @(0)
+    Depths = @(0)
+    Repetitions = 1
+    Batch = 256
+    UBatch = 256
+    Threads = 4
+    KvType = 'f16'
+    GpuLayers = 999
+    CpuMoe = 0
+    FlashAttn = 'auto'
+    NoWarmup = $true
+}
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 @common
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 @common -InputKey '64k' -PromptSlice head-tail
+.\tools\evox2\benchmark\Measure-LlamaBench.ps1 @common -InputKey '64k' -PromptSlice head
+```
+
+model/input keyが違う場合は、実機の`local.psd1`に登録済みのキーへ置き換える。絶対パスの`-ModelFile`/`-InputFile`を使ってもよい。受入条件は3 runともExitCode 0、native `n_prompt=256`、有効なJSON/CSV、real casesの入力SHA一致、randomが`InputIdentity=null`、slice/context metadataが期待値どおり、かつOOM/driver resetなし。256-tokenのtok/s値を性能改善指標にしない。
