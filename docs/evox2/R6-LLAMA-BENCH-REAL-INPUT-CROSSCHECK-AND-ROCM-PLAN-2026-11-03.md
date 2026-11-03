@@ -177,3 +177,40 @@ Actual native stderr:
 Comparison: CLI **341.16 tok/s** vs bench **348.278425 tok/s**; bench about **+2.09%** faster by bench/CLI ratio. Important: CLI token count **61789** vs bench `61777` (same raw input file SHA) reveals 12 extra tokens in the CLI path even without Jinja, and the tools use different input/request constructions and reporting. The logs do not isolate exactly where the 12 extra tokens arose; avoid claiming exact token-ID identity or an identified BOS cause. This is a **near-value cross-check, not strict performance parity**.
 
 **Acceptance/next steps:** Stage A quick directional check passes. No code change or Vulkan rebuild is justified. Stage B/C ROCm build + 256-token real/random smoke remain next. Thereafter IQ3-vs-IQ4 quantization PP comparisons at matched context with the same ROCm binary and the same verified raw source. `QWEN4EXP_QSA_GATHER=0` is fixed until a separate gather A/B experiment.
+
+## Stage B Windows ROCm build actual result — 2026-11-03 JST
+
+**Build gate PASS.** Actual model PP smoke (Stage C) has **not yet been performed**, so there is no claim of inference correctness or IQ3/IQ4 performance.
+
+User-provided `(rocm-bench)evox2-build.json` generated `2026-11-03T14:24:34.6741034+09:00`, plus manually run `llama-bench.exe --version`, `--help`, `--list-devices`.
+
+| Item | Observed |
+| --- | --- |
+| Backend/config | ROCm / Release, GGML_HIP=ON, GGML_BACKEND_DL=ON, target gfx1151 |
+| Branch/source | `feature/r6-llama-bench-real-prompt-20261103` / `d321e7ff38052be311fde9392598fe02c7548956`, clean |
+| Identity | `BuildIdentity.Status=Verified`: stable source; embedded commit matched |
+| Build/version | `0.7.0-dev`, b12038, `d321e7ff3`, AMD Clang 23.0.0 |
+| Toolchain | TheRock ROCm SDK 10.0.0, VS2022 MSVC 14.44, CMake 3.31.6-msvc6, Ninja 1.12.1 |
+| Build directory | `build-rocm-bench-real-r6`, separately from b12032 Vulkan and existing ROCm release binaries |
+| Targets | `ggml-hip`, `llama-cli`, `llama-server`, `llama-bench`, `test-backend-ops` |
+| GPU | `ROCm0: AMD Radeon(TM) 8060S Graphics (110456 MiB, 110301 MiB free)`; no Vulkan backend loaded |
+| Native bench options | `-f/--prompt-file`, `--prompt-slice head-tail/head`, `-c/--ctx-size` all present |
+| `llama-bench.exe` SHA256 | `a46e512cdc78ab2475b52d5d1d694ec968edade16c9229f95ced3380d559298a` |
+| `llama-cli.exe` SHA256 | `d710c9baf82a33c3294e6f82f618416d41da9d9b39a89050de14d48318323347` |
+| Runtime | `StagingPerformed=true`; `Verification=DllAndRuntimeDataHashesVerified`; unified TheRock HIP/rocBLAS/hipBLASLt/rocsolver runtime DLL staging verified |
+| gfx1151 libraries | rocBLAS `150` files and hipBLASLt `100` files, source/destination tree digest equal |
+| Automatic smoke | `llama-cli --version` and `--list-devices` both exit 0; independent native `llama-bench` invocation also succeeds |
+| Broad backend ops | `BackendTestRequested=false`, intentionally avoids unsafe full `FLASH_ATTN_EXT` sweep on this Windows/gfx1151 combination |
+
+The observed build source commit `d321e7ff3` predates subsequent **documentation-only** commits on this feature branch; the modified C++ source has not changed, and the executable identity is internally verified. Do not conflate current remote branch HEAD with the embedded build commit when interpreting the next smoke logs.
+
+### Stage C immediate follow-up
+
+In the same ROCm TheRock shell, keep `QWEN4EXP_QSA_GATHER=0` and avoid simultaneous GPU inference jobs; run `tools/evox2/benchmark/Measure-LlamaBench.ps1` for two short cases on the newly-built executable:
+
+- Random path: `-p 256 -n 0 -d 0 -c 1024 -r 1 -b 256 -ub 256 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 --no-warmup`.
+- Real path: same, plus `-InputKey '64k' -PromptSlice head-tail`.
+
+Wrapper must be invoked with `-LlamaBench (Resolve-Path ...llama-bench.exe).Path`, `-ModelKey 'UnslothPle16'`, `-ExpectedBackend ROCm`. Compare source SHA and binary SHA per result; ExitCode=0, native n_prompt=256, JSON valid, ROCm active, P-MODE stable, no ROCm allocation/BLAS errors. Stage C is a correctness/smoke gate, not a throughput ranking.
+
+If Stage C passes, next run same ROCm b12038 binary for IQ3 Ple16 versus original IQ4 Ple16 using fixed real-text hash, batch/ubatch, context and warmup, `QWEN4EXP_QSA_GATHER=0`, MTP OFF. No ROCmFP4 FAST custom tensor quantization until separate HIP implementation is completed.
