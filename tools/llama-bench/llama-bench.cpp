@@ -2468,9 +2468,10 @@ int llama_bench(int argc, char ** argv) {
 
             std::vector<size_t> margins(llama_max_devices(), inst.fit_target * 1024 * 1024);
 
+            // Preserve the r6 fit minimum while honoring an explicit benchmark context.
             const uint32_t n_ctx_work = run_inst.n_prompt + run_inst.n_gen + run_inst.n_depth;
             const uint32_t n_ctx_requested = run_inst.n_ctx > 0 ? (uint32_t) run_inst.n_ctx : 0;
-            const uint32_t n_ctx_needed = std::max(n_ctx_work, n_ctx_requested);
+            const uint32_t n_ctx_needed = std::max(std::max(n_ctx_work, n_ctx_requested), inst.fit_min_ctx);
             cparams.n_ctx = std::max(cparams.n_ctx, n_ctx_needed);
 
             common_fit_params(inst.model.c_str(), &mparams, &cparams,
