@@ -261,3 +261,33 @@ User requested **Vulkan/ROCm × original IQ3/IQ4 × Japanese/Random/llama.cpp co
 Vulkan `GGML_VK_QSA_UNION=1`, `MIN_KV=32768`, statistics OFF; ROCm `QWEN4EXP_QSA_GATHER=0`. MTP OFF both. Use known b12032 and b12038 binaries and fixed model identities; no rebuild. Running one **full-length** pilot (`ROCm × IQ4 × Japanese`) before the other 11 protects against the gap between a 256-token allocation smoke and full 126253-token PP success. Stop on error or environmental anomaly. Keep native result JSON, conditions, model/input identities, ADLX/P-MODE and full stderr per case. The assistant supplied a separate temporary standalone PowerShell orchestration ZIP `Evox2-R6-PP128k-Matrix-20261103.zip` with Stage Plan, Pilot, Remaining, All and Package; user runs locally and shares result ZIP, **not a repo file**.
 
 Future comparisons should separate within-backend model quantization ratio, within-backend input rank, and cross-backend ratios; warmup/repetition and other numerical differences matter. This initial 12-case sweep is exploratory; follow-up repetition can be targeted if a small margin or surprising ranking merits it.
+
+## 128k PP matrix Pilot actual result — 2026-11-03
+
+**Pilot PASS: ROCm × original IQ4_XS Ple16 × Japanese ANLP 126253-token PP completed.** Proceed with the remaining 11 cases under the frozen session plan; no need to repeat Pilot or rebuild the source/binary.
+
+User ZIP: `evox2-r6-pp128k-matrix-20261103(1).zip`, containing `matrix-plan.json`, `matrix-records.csv` (one `OK`), and all native logs/monitoring for `runs/01-ROCm-IQ4-Japanese`. Recorded run directory `20261103-150619-433-bench-rocm-b12038-ctx131072-09cb593dd1c9`; actual start `2026-11-03T15:06:20+09:00`, finish `15:21:32+09:00`, elapsed `911.899` sec. ZIP itself is retained outside Git.
+
+| Field | Verified |
+| --- | --- |
+| Case | `01-ROCm-IQ4-Japanese` |
+| Native build | ROCm `llama-bench` b12038 `d321e7ff3`; executable SHA256 `a46e512cdc78ab2475b52d5d1d694ec968edade16c9229f95ced3380d559298a` |
+| Model | original Unsloth IQ4_XS Ple16, GGUF 93682576992 bytes, not Huihui; model SHA not computed in run |
+| Source | `nlp-survey-ch3-d31-b1.txt` 1261235 bytes, SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788` |
+| Source tokenization | 255169 available, first 126253 used (`--prompt-slice head`) |
+| Workload | `-c 131072 -p 126253 -n 0 -d 0 -r 1 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 --progress`, **warmup ON** |
+| Optimization | `QWEN4EXP_QSA_GATHER=0`, HIP_PATH and ROCM_PATH TheRock 10.0 venv root; no Vulkan QSA flags |
+| Native result | `Status=OK`, `ExitCode=0`, `RunException=null`, `ParseException=null`, JSON one row / one PP sample `434009227600 ns` |
+| PP | **290.899345 tok/s** (7m14.009s timed); sample-only, not a repeated confidence estimate |
+| P-MODE | Performance at start/end; `PModeChanged=false`, no P-MODE warnings |
+| ADLX | 456 samples, exit0; high-load (>95% use) 433 samples; mean high-load GPU power `119.432 W` (Performance-like). Across all samples mean GPU clock ~2828 MHz, mean VRAM clock ~998 MHz, VRAM allocated ~67.3 GB at peak |
+| Environment | RDP monitor present, no physical candidate found by probe; ADLX still shows consistently high clocks. No observed GPU reset, OOM or HIP error |
+| Background | Process probes `Observed`, coverage `Complete`, named `PossibleNoise=false`; does not exclude all transient system activity |
+
+The `QsaActiveLog=False` value in matrix CSV is **expected for ROCm**; Vulkan-specific `qsa-union active` log need not occur in the ROCm run. It does not indicate a missing ROCm path. The ROCm source's `QWEN4EXP_QSA_GATHER` is intentionally OFF.
+
+Native `model_size` reported 93671551580 bytes, distinct from the filesystem GGUF length because native model size uses its own definition; this is not a model identity discrepancy.
+
+Pilot proves 128k-length **actual PP** works with this binary/model/source, unlike the earlier 256-token `-c 131072` allocation preflight. It does **not** prove every future combination, and no 128k throughput difference between models/backends is concluded from this one case.
+
+**Next:** in the same experimental environment with TheRock venv available, run the preexisting matrix runner `& $s -Stage Remaining`. It checks the existing Pilot `OK` record and runs `02` through `12`; no rerun of case `01`. It stops on failure and packages progress. Inspect final 12-case ZIP and validate per-case identities, context, inputs, errors, telemetry and missing cases before describing r6 IQ3/IQ4/backend/input rankings. Do not infer per-case speed from `r5` or the previous short smoke runs.
