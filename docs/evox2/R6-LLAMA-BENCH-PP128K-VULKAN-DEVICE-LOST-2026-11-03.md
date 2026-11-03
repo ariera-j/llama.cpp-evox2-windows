@@ -292,3 +292,27 @@ The high-load stretch has GPU usage ~99–100%, VRAM clock near 1000MHz, GPU pow
 Memory comparison using ADLX per-run peaks (not identical usage windows): 32k 256-token IQ4 smoke **90648 MiB**; this 64k 256-token smoke **93002 MiB** (delta **+2354 MiB** at fixed 256-token prompt); 32k 30000-token PP **93203 MiB**; failed 128k IQ4 **97130 MiB**. During 64k smoke, sampled memory rose from ~90653 MiB on model load to 93002 MiB at start of actual PP, consistent with context-size-associated reservation changes but not direct proof of the exact KV byte contribution. The 64k PP workspace/residency and performance at 60k input have **not** been measured. ADLX GPU memory usage vs configured 96 GiB UMA should not be treated as allocatable headroom.
 
 **Decision:** reboots, backend discovery, 32k 256-token, 32k 8k-PP, 32k 30k-PP, and this 64k 256-token model/PP smoke have succeeded. Since 64k short-smoke memory already reaches **93002 MiB** and 128k timed QSA-ON previously TDR'd at **97130 MiB**, conservatively gate the next long-context run with **one 64k-context 8192-token QSA-OFF real-PP check**, using actual PP batch2048/ubatch1024 and no warmup, before the originally proposed ~60000-token 64k PP. This smaller intermediate test probes PP scratch/residency and high GPU load at 64k context. Examine ADLX max/memory stability and TDR before authorizing any 60k PP. Do not automatically rerun the interrupted 12-case matrix, where case08 auto-retries failed full 128k Vulkan IQ4. No changes to driver, source, BIOS, UMA or TDR registry.
+
+## Post-reboot Vulkan IQ4 64k-context 8192-token PP — 2026-11-03
+
+**PASS: native 8192-token Japanese-document PP at explicit 65536 context with Vulkan IQ4 PLE16, QSA UNION OFF, no warmup.** Source ZIP `20261103-190852-549-bench-vulkan-b12032-ctx65536-1e220eff4716.zip` (user-side artifact; not committed). Valid full conditions/result/native JSON and ADLX telemetry.
+
+| Field | Observed |
+| --- | --- |
+| Run ID | `20261103-190852-549-bench-vulkan-b12032-ctx65536-1e220eff4716` |
+| Start/finish (JST) | 2026-11-03 19:08:53.404 – 19:09:46.079 |
+| Total wrapper duration | 52.675 seconds including model load, actual timed PP 15.5355915 seconds |
+| Binary | Vulkan0, b12032 `c4ddd239b`, EXE SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f` |
+| Model | Same original Unsloth IQ4_XS PLE16, filesystem size 93682576992 bytes; full model SHA not computed in this run |
+| Input | Same Japanese ANLP `nlp-survey-ch3-d31-b1.txt`, input SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`, `--prompt-slice head` |
+| Arguments | `-c 65536 -p 8192 -n 0 -d 0 -r 1 --no-warmup -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk/-ctv f16` |
+| Environment | `GGML_VK_QSA_UNION=0`; `GGML_VK_QSA_UNION_STATS=0`; `QWEN4EXP_QSA_GATHER=0`; no `qsa-union active` stderr. |
+| Native PP | One native row: `n_prompt=8192`, `avg_ns=15535591500`, **527.305317 tok/s**; no repetition-derived stddev |
+| Result / exceptions | `Status=OK`, exit0, `RunException=null`, `ParseException=null`, stderr has no GPU fault or device lost |
+| ADLX | Exit0, **26 samples**, GPU usage >=95% on **6 samples**; high-load mean GPU clock **2857.667 MHz**, VRAM clock **999.167 MHz**, GPU power **119.333 W**, classified Performance-like/consistent; max GPU temperature **63C**, peak ADLX GPU memory **94311 MiB (~92.10 GiB)** |
+| P-MODE | Performance both at start and finish, `PModeChanged=false`, no warnings |
+| Background | Monitored named processes, CPU coverage complete, `PossibleNoise=false`; cannot rule out all transient interference |
+
+ADLX chronological observations: GPU-memory usage `90654 MiB` steady from ~19:09:01 through ~19:09:27 during model setup; at 19:09:29 it rose to `94299 MiB`, and during high GPU utilization reached `94311 MiB` by 19:09:43. No continued steep growth in the short 8k PP or collapse of power/VRAM clock. Context65536 short smoke peak was `93002 MiB` (this run **+1309 MiB**), 32k-context 8k PP peak was `93156 MiB` (this run **+1155 MiB**), and failed 128k IQ4 peak `97130 MiB` (this run **-2819 MiB**). Compare peaks with caution: each job has its own allocations, and ADLX reported usage is **not** exact allocatable free memory within manually configured UMA.
+
+**Decision:** 64k-context QSA-OFF IQ4 demonstrated a valid short full-batch PP under high GPU load. If continuing isolation, one bounded `-c 65536 -p 60000` real-input, QSA UNION OFF, no warmup, batch2048/ubatch1024 and the same model/file/binary is now justified **provided GPU desktop/P-MODE remain normal and no other GPU inference job is running**. The test increases sustained GPU load at fixed context to check for temporal/longer-prompt instability while keeping QSA disabled. It remains a risk, especially with ~94 GiB already reported; watch GPU/video and stop on a new TDR. This neither proves nor disproves whether QSA UNION or memory pressure initiated the prior 128k TDR. **Do not re-run `-Stage Remaining`**; it retries failed 128k Vulkan IQ4 case08. Do not alter BIOS/UMA, driver or TDR registry during isolation.
