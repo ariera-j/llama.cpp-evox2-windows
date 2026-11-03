@@ -133,3 +133,28 @@ $common = @{
 ```
 
 model/input keyが違う場合は、実機の`local.psd1`に登録済みのキーへ置き換える。絶対パスの`-ModelFile`/`-InputFile`を使ってもよい。受入条件は3 runともExitCode 0、native `n_prompt=256`、有効なJSON/CSV、real casesの入力SHA一致、randomが`InputIdentity=null`、slice/context metadataが期待値どおり、かつOOM/driver resetなし。256-tokenのtok/s値を性能改善指標にしない。
+
+## Gate 3 実機smoke結果 — 2026-11-03
+
+**判定：PASS（Random / real head-tail / real head 3ケース、すべてExitCode 0、各1有効行）。**
+
+ユーザー提供の複数run ZIP `20261103-111602-549-bench-vulkan-b12032-ctx1024-c006631dc4fe.zip` 内の3ディレクトリを解析。`conditions.json`, `result.json`, `llama-bench.json`, `output.log`, `summary.csv`, `stderr.log`を照合。生ログZIPはこのリポジトリにcommitせず、各run ID/条件/値のみ記録する。
+
+| 実行 (JST) | 種別 | ConditionId | PP tok/s | avg_ns | Status / ExitCode |
+|---|---|---|---:|---:|---|
+| 11:08 | Random | `2338e7f59fb4` | 73.208628 | 3496855600 | OK / 0 |
+| 11:12 | real `head-tail` | `ca63c79231e2` | 386.068536 | 663094700 | OK / 0 |
+| 11:16 | real `head` | `c006631dc4fe` | 385.298514 | 664419900 | OK / 0 |
+
+実行条件：b12032 `c4ddd239b`（clean `feature/r6-llama-bench-real-prompt-20261103`）、`llama-bench.exe` SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`（3ケース一致）、Vulkan0 AMD Radeon 8060S、モデル `Qwen3.8-Flash-Next-UD-IQ3_XXS-ple16.gguf`、`-p 256 -n 0 -d 0 -r 1 -b 256 -ub 256 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 -c 1024 --no-warmup`。`ContextMode=ExplicitLegacyFlag`、native `n_prompt=256`、`n_gen=0`、`n_depth=0`、各run `NativeRowCount=1`、JSON parse exceptionなし。
+
+実入力は同じ `nlp-survey-ch3-d7-b1.txt`（304931 bytes、SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`）で、`--prompt-slice`を`head-tail`/`head`と変更。`InputIdentity`/`InputSha256`と発行したnative `-f`/`--prompt-slice`引数が一致している。Randomではnative `-f`なし、`InputIdentity=null`、`PromptSlice=null`。
+
+3ケースとも`PModeAtStart=Performance`、`PModeAtFinish=Performance`、`PModeChanged=false`。`ADLX`正常終了（samples 24/23/24）、background `PossibleNoise=false`、`ResourceSamples=0`（リソースモニタを使用せず）。stderrのbackend load以外にエラーなし。実入力とrandomの速度差は約5.27倍/5.26倍だが、**各1回の短いtoken列の結果であり、速度改善・再現性・実際のexpert活性分布は未検証**。後続のベンチ差・MoE入力依存性調査の動機として記録する。
+
+### Gate 3で検証できた範囲 / 未検証
+
+- 検証できた: 新機能付きnative EXEが実モデルのVulkan PPテストで正常終了、2種類の`--prompt-slice`オプションを受理、wrapperのinput source SHA・条件記録が一致、従来random経路も生きている。
+- **未検証**: 選択後の実token IDs/切り出し位置のgolden比較、全文入力`-f`かつ`-p`省略、n_prompt奇数、明示context不足、short/empty/missing prompt file、fit-ctxとfit-target、`-pg`混合、warmupとtimedでの実token再利用、複数`-p`、64k以上の長文。
+- 特に**native JSONには入力token ID列やslice方式列が出ない**。成功ログだけで正しいhead/tail内容を証明したとはみなさない。必要なら短いgolden textでtokenize結果を対照比較する。
+- 次はGate 4の非正常系・回帰テスト。Windows環境ではモデルロードに時間がかかるので、CLI parser段階で止まるinvalid slice/空ファイル/存在しないファイルを先に実行し、重いモデルロードを伴うケースを段階的に試す。実装の修正がなければbuild再実施不要。
