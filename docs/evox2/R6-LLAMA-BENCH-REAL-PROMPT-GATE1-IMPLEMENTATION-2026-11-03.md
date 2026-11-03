@@ -158,3 +158,47 @@ model/input keyが違う場合は、実機の`local.psd1`に登録済みのキ�
 - **未検証**: 選択後の実token IDs/切り出し位置のgolden比較、全文入力`-f`かつ`-p`省略、n_prompt奇数、明示context不足、short/empty/missing prompt file、fit-ctxとfit-target、`-pg`混合、warmupとtimedでの実token再利用、複数`-p`、64k以上の長文。
 - 特に**native JSONには入力token ID列やslice方式列が出ない**。成功ログだけで正しいhead/tail内容を証明したとはみなさない。必要なら短いgolden textでtokenize結果を対照比較する。
 - 次はGate 4の非正常系・回帰テスト。Windows環境ではモデルロードに時間がかかるので、CLI parser段階で止まるinvalid slice/空ファイル/存在しないファイルを先に実行し、重いモデルロードを伴うケースを段階的に試す。実装の修正がなければbuild再実施不要。
+
+## Gate 4 Fast + Core 実機結果 — 2026-11-03
+
+**結果：Fast 5/5 PASS、Core 自動判定 8/9 PASS、手動ログ照合ではCore 9/9が期待どおり動作（合計14/14）。** Gate 4 Extended 2ケース・golden token ID比較・fit正常系は未実施。
+
+入力ZIP：`evox2-bench-gate4-20261103-113622.zip`（Fast）および`evox2-bench-gate4-20261103-113643.zip`（Core）。いずれも同一`llama-bench.exe` SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`、モデル`Qwen3.8-Flash-Next-UD-IQ3_XXS-ple16.gguf`、既存実入力`nlp-survey-ch3-d7-b1.txt` SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`。短文テスト用ファイル`full-utf8.txt`は1356 bytes / SHA256 `dc9db5d3f3099cf2af8be914edd8c2794ffb2322eb0144e428a5fc183cf7a1b4`（ZIP内バイト列を独立検証）。PowerShell 5.1.26100.9818、scriptはP-MODE/ADLX状態を採取せず。生ZIPはrepoにcommitしない。
+
+### Fast — 5件全PASS
+
+| Case | 内容 / 実行結果 |
+| --- | --- |
+| F01 | 未知の`--prompt-slice` → ExitCode=1、invalid parameter、PASS |
+| F02 | `-c`負値 → ExitCode=1、invalid parameter、PASS |
+| F03 | 存在しない`-f`ファイル → ExitCode=1、failed to open prompt file、PASS |
+| F04 | 空の`-f`ファイル → ExitCode=1、prompt file is empty、PASS |
+| F05 | `-f`かつ`-p`省略、`-fitc 512` → ExitCode=1、fit/full-file拒否、PASS |
+
+F05診断文字列は`--fit-target with --prompt-file and no -p ...`となるが、実際のケースは`-fitc 512`のみ。実装上`do_fit`がfit-targetまたはfit-ctxのどちらでも成立するため、**拒否は想定どおり、メッセージはやや不正確**。後続の表示改善候補（この検証ではコード変更なし）。
+
+### Core — 自動8/9、ログ再照合で9/9正常
+
+| Case | 実行結果 | 判定 |
+| --- | --- | --- |
+| C01 | source token 1に対して`-p 256` → ExitCode=1、token不足診断 | PASS |
+| C02 | 実入力256 tokensに対して`-c 128` → ExitCode=1、context不足診断 | PASS |
+| C03 | `-p`省略で短いUTF8全文 → ExitCode=0、JSON 1行、`n_prompt=360`、samples 1、進捗には`360 available/using 360 (head)` | **native PASS / 検証script FALSE** |
+| C04 | `-p 257 --prompt-slice head` → ExitCode=0、JSON 1行、samples 1 | PASS |
+| C05 | `-p 257 --prompt-slice head-tail` → ExitCode=0、JSON 1行、samples 1 | PASS |
+| C06 | 複数`-p 255 -p 256` → ExitCode=0、JSON 2行、各samples 1 | PASS |
+| C07 | `-p 257 -r 2`、warmupあり → ExitCode=0、JSON 1行、samples 2、進捗でwarmup/1of2/2of2を確認 | PASS |
+| C08 | `-pg 32,4` → ExitCode=0、`n_prompt=32`、`n_gen=4`、samples 1 | PASS |
+| C09 | `-f`なしrandom `-p 257` → ExitCode=0、`n_prompt=257`、samples 1 | PASS |
+
+**C03の自動判定FAILの原因：PowerShellの`stderr.log`改行処理。** `gate4-summary.csv`には`progressMatch=False`として記録された。しかし生`stderr.log`（UTF-16 LE）では、長いWindows入力パスを含む進捗表示が改行され、`360 availabl`と次行の`e tokens, using 360 (head)`に分断されていた。JSONでは実際の`n_prompt=360`・ExitCode=0・`samples_ns=[1010828300]`を確認。これは本体ではなく**スモーク検証器の長いログ行への非対応による誤検知**。再実行は不要。今後スクリプトでは折り返しを考慮するか短いログパスを利用する。
+
+C03を除く陽性8ケースも、出力JSONの`build_commit=c4ddd239b`・`build_number=12032`・expected `n_prompt/n_gen`・samples件数を独立確認。F01/F02のusage標準出力はJSONではないが、エラーケースのため正常。C07にはベース引数`-r 1`に加えて`-r 2`を後置しており、native実際のサンプル数は2（最後の指定が有効）。`--progress`と実サンプルからwarmupありで動作したことを確認できるが、token IDsの同一性はまだ証明できていない。
+
+### 残件 / 今後の方針
+
+1. Gate 4 Extended：`-c 0` 自動context、実入力＋random depthなどの補足2ケースを実行し確認。
+2. 未検証の`--fit-target/-fitc`正常系、明示`-c`と組合せたfit minimumの挙動、head/head-tailのgolden token ID同等性は別の小テストとして扱う。単なる出力行一致ではsliceの正当性を完全には示せない。
+3. 実入力ベンチの長文（64k→必要時128k/256k）とrandom比較は、機能検証が完了してから計測条件・再現性を揃えて進める。
+4. 識別可能な改善候補：`F05`のエラーメッセージ文言修正、Gate 4 scriptの折り返しログ対応。**実装の修正が必須な障害は今回観測していない。**
+
