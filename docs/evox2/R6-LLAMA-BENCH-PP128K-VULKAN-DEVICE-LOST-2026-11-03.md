@@ -425,3 +425,35 @@ Do not infer precise physical 96GiB UMA free capacity from `98304 - 94932`: the 
 **Next bounded diagnostic (proposal only):** Prefer **`-c 131072 -p 2048 -b 2048 -ub 1024 -r 1 --no-warmup` QSA UNION OFF** with same model and document, not a jump to 8k or 126253 tokens. This exercises full measurement batch/ubatch memory patterns while limiting length, temperature and duration. Watch ADLX memory jump (and potential ~96GiB pressure), P-MODE, WER, and desktop; stop at first fault. This test is still risky: max memory 94932 MiB in the short smoke, and a different PP batch size may allocate more. Do not make unsafe claims that 2048-token run is guaranteed stable. Only evaluate any larger 128k PP if this staged test passes. Keep original 12-case run interrupted (7 PASS, 1 TDR, four not attempted), and do NOT relaunch `-Stage Remaining`, which retries failed Vulkan IQ4 128k case08.
 
 No changes to C++ patches, driver, BIOS/UMA, TDR registry or memory allocation policy.
+
+## Post-reboot Vulkan IQ4 128k-context 2048-token PP — 2026-11-03
+
+**PASS:** a short but full-batch 2048-token real-document PP at `-c 131072`, Vulkan original IQ4_XS PLE16, QSA UNION forced OFF, no warmup. **Important:** GPU memory reported **96511 MiB**, approaching the previously failed 128k QSA-ON run's **97130 MiB** (difference only **619 MiB**). This is **not proof of physical OOM**, nor of sustained 128k stability.
+
+Source user archive: `20261103-194031-691-bench-vulkan-b12032-ctx131072-3ed9d145bfa0.zip`, with conditions/result/native JSON/ADLX/stderr/summary. Archive itself not committed. Inspection based on exact supplied artifact.
+
+| Field | Verified value |
+| --- | --- |
+| Run ID | `20261103-194031-691-bench-vulkan-b12032-ctx131072-3ed9d145bfa0` |
+| Time JST | 2026-11-03 19:40:32.5398 to 19:41:15.0015 (wrapper 42.462 sec including model load) |
+| Binary | `llama-bench.exe` Vulkan b12032 `c4ddd239b`; SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f` |
+| Model | Original Unsloth IQ4_XS PLE16 `Qwen3.8-Flash-Next-UD-IQ4_XS-ple16.gguf`, wrapper file length `93682576992` bytes, native model_size `93671551580`; full model SHA not collected |
+| Input | Same Japanese ANLP `nlp-survey-ch3-d31-b1.txt`, source SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`, head slice |
+| Command args | `-c 131072 -p 2048 -n 0 -d 0 -r 1 --delay 0 -b 2048 -ub 1024 -ctk f16 -ctv f16 -t 4 -ngl 999 -ncmoe 0 -fa auto -f <same file> --prompt-slice head --no-warmup` |
+| Environment | `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_MIN_KV=32768` (inert when OFF), `GGML_VK_QSA_UNION_STATS=0`, `QWEN4EXP_QSA_GATHER=0`; stderr has no device loss or qsa-union active |
+| Result | `Status=OK`, exit0, one native JSON row, `n_prompt=2048`, `avg_ns=3691626400`, **554.769031 tok/s**, stddev0 because one repetition; not comparable directly to long-context average PP |
+| ADLX | Exit0, 21 samples at 2-second cadence; **max GPU memory 96511 MiB (~94.25 GiB)**; max GPU use96% (only 1 >=95% sample); max GPU temp61 C; max GPU power115W (single high-load sample); last active VRAM clock ~996–999 MHz; no P-MODE power consistency classification (InsufficientSamples) |
+| P-MODE | Performance at start and finish, RawValue1, no change/warning |
+| RDP | Remote SessionName `RDP-Tcp#0` and remote-like monitor at finish |
+| Background | `Status=Observed`, CPU coverage Complete for named processes, BusyNames empty, PossibleNoise=false, observed ~0.026% CPU among `MsMpEng`, `NisSrv`, `SearchIndexer`. Named-process coverage cannot exclude all interference. |
+
+**ADLX sequence:** at 19:40:38 initial model fully loaded ~90679MiB; 19:40:40–19:41:06 ~90683MiB stable while preparing; 19:41:08 sudden rise to **96499MiB**, GPU usage10%/VRAM1000MHz; 19:41:10 **96511MiB**, GPU usage76%/VRAM996MHz, GPU temp58C, GPU power95W; 19:41:12 41909MiB with GPU use96%/VRAM999MHz, likely rapid release as process exits; final sample should not be treated as loaded-model steady state. Observed high-load GPU clock2821MHz/power115W at final sample, but only 1 such sample, so **no sustained power stability conclusion**.
+
+**Comparison:**
+- previous `-c 131072 -p 256 -b 256 -ub 256` QSA-OFF smoke: ADLX max **94932 MiB**; current full-batch `-p 2048 -b 2048 -ub 1024`: **+1579 MiB**. The change includes prompt length and batch/ubatch; **cannot isolate their contributions**.
+- prior failed full `-c 131072 -p 126253`, QSA ON, warmup involved: peak **97130 MiB**, or **+619 MiB** over this run. The difference across distinct workloads is NOT the free capacity margin; driver-resident/physical UMA/Vulkan budget accounting may differ. Peak 96511MiB is also arithmetically 1793MiB below 96GiB (98304MiB), but not proven allocatable VRAM.
+- In the prior paired 64k/60k PP tests QSA OFF max94424MiB and QSA ON max94578MiB. A repeatable mid-run drop in VRAM clock **has not** yet been established; ON run alone displayed a sharp drop and must remain an open issue.
+
+**Updated decision:** 128k IQ4 QSA-OFF allocation and full-batch *short* compute are functional after reboot. Given the original 0x141 TDR at 97130MiB and the narrow observed memory delta, **do not assume the next longer 128k IQ4 PP is low risk** and do not rerun the original 126253-token QSA ON/warmup case or the 12-case `-Stage Remaining` automatically. The highest-value low-risk near-term next steps may be completing missing Vulkan IQ3 128k cases with a separately filtered matrix runner, and/or gathering Vulkan heap budget/residency diagnostics and QSA invocation counts to assess the fault hypothesis. A single 128k-context 8192-token QSA-OFF PP remains *possible only after deliberate risk acceptance*, not the default automatic next step. It would provide more insight into high-load behavior but might trigger another GPU TDR. If attempted, use only one bounded trial, `--no-warmup`, preserve ADLX, immediately stop on GPU/desktop anomalies.
+
+No driver/BIOS/UMA, TDR setting, source code or binaries were changed.
