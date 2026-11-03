@@ -134,3 +134,46 @@ Accept each if exit 0, valid `llama-bench.json` + `result.json` + `conditions.js
 Start with **IQ3 PLE16 vs original IQ4 PLE16** using one ROCm binary, same real input raw hash, head slice, model-generation/MTP OFF, `QWEN4EXP_QSA_GATHER=0`, same context, prompt length, batch/ubatch, f16 KV, flash-attn auto, GPU layers and clocks. Initially one short sanity and matched 64k samples; increase repeats if a difference matters. Historical r6 ROCm b12013 128k quality-task incidental PP averages: IQ3 286.04 vs IQ4 313.94 tok/s (different input, not an equal-controlled bench); it motivates but **does not establish** a causal quantization speed gap. Quantization-vs-input interaction and gathering ON/OFF should be separate experiments.
 
 Do **not** include Agention `ROCmFP4 FAST v2` under the assumption that it runs on the ROCm backend: current r6 has Vulkan/CPU support but lacks complete HIP dequant/GET_ROWS/MMQ/MMVQ integration for the custom tensor types. That is an independent later implementation task.
+
+## Stage A Windows actual measurements — 2026-11-03
+
+**Verdict: directional input-dependence reproducibility PASS and approximate native CLI-vs-bench PP parity PASS.** All three `llama-bench` runs completed normally. The one `llama-cli` run completed prompt processing and printed its PP timing, but its wrapper was manually stopped after the program stayed interactive; thus no finalized `result.json` was produced. The CLI PP metric itself is valid as a diagnostic from stderr, **not** an ordinary completed wrapper-run result.
+
+User ZIP: `20261103-140329-613-bench-vulkan-b12032-ctx65536-a98b531e3a08.zip` (3 full bench run directories + 1 partial CLI directory). Raw ZIP remains outside Git.
+
+Build: Vulkan b12032 `c4ddd239b`, Clang 20.1.8, Radeon 8060S, UMA label 96GB, common Qwen3.8-Flash-Next UD-IQ3_XXS Ple16 GGUF (81961816672 bytes; full model hash unavailable). Native bench executable SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`; CLI executable SHA256 `e8516bc136f2340af45f622d593e199db9f826e41249518ce8bfb642f4956584`. `git Dirty=false`. All four recordings have `GGML_VK_QSA_UNION=1`, `GGML_VK_QSA_UNION_MIN_KV=32768`, `QWEN4EXP_QSA_GATHER=0`. CLI and all three bench stderr logs show `qsa-union active (r6)`.
+
+All bench runs: `-p 61777 -n 0 -d 0 -r 2 -c 65536 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16`; warmup **enabled**, `--prompt-slice head` for real files. Each gives 1 JSON native row, 2 timed samples, `Status=OK`, `ExitCode=0`, `ParseException=null`, P-MODE Performance throughout, `PModeChanged=false`, ADLX monitor completed. Named-process background noise probe `PossibleNoise=false` for these runs, with coverage caveats.
+
+| Input | Run id (short) | r6 PP tok/s | timed samples tok/s | r5 comparison, tok/s |
+|---|---|---:|---|---:|
+| Japanese technical (`nlp-survey-ch3-d7-b1.txt`) | `9137728a98e7` | **348.278425** | 348.648 / 347.909 | 342.640 |
+| Native random (no `-f`) | `6b5f6b46f3d6` | **322.695353** | 322.864 / 322.527 | 323.346 |
+| llama.cpp code (`llamacpp-inference-code.txt`) | `a98b531e3a08` | **387.549749** | 387.815 / 387.284 | 378.014 |
+
+Real input identities:
+- Japanese technical `nlp-survey-ch3-d7-b1.txt`: 304931 bytes, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`.
+- llama.cpp code `llamacpp-inference-code.txt`: 6168010 bytes, SHA256 `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`. **This SHA matches r5's seven-corpus code input**; r5 sliced 61789 tokens, r6 slices 61777.
+- **Crucial difference:** the **r5 repeated Japanese ANLP** reference used `nlp-survey-ch3-d31-b1.txt` (SHA `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`), not r6's shorter `d7` file. Thus only the *directional ranking*, not precise numeric ANLP cross-version speed, is directly comparable. These are distinct files; do not claim an exact same-prompt benchmark. r5 prompt=61789, r6=61777 (12-token difference), though context and many PP settings are the same.
+
+Within r6:
+- code vs Japanese: **+11.28%**
+- Japanese vs random: **+7.93%**
+- code vs random: **+20.10%**.
+
+The rank **code > Japanese > random** matches the r5 Vulkan QSA-union-ON direction; r5 code-vs-ANLP +10.32%, ANLP-vs-random +5.97%. Changing input source, source refresh, software versions and other environmental differences preclude causal attribution for absolute small differences (+1.65% ANLP, +2.52% code, -0.20% random). Prior r5 evidence was a set of warmup-ON measurements with other software source and environment details. No more large corpus sweep is needed for this limited acceptance question.
+
+### CLI cross-check and its apparent hang
+
+Run `20261103-130931-865-cli-vulkan-b12032-ctx65536-f6b5c06e4100`. Same file SHA/model/backend/context/PP batch/f16 KV/QSA-UNION conditions as the Japanese bench, but command had `-NoJinja -NoSingleTurn` on the **PowerShell wrapper**, translating to **neither `--jinja` nor `--single-turn` in the native CLI argv**.
+
+Actual native stderr:
+- `prompt eval time = 181114.72 ms / 61789 tokens (... 341.16 tokens per second)`; prompt completed normally, one requested generation token was accounted for in stats with 0.00 ms eval.
+- `all slots are idle` after `stop processing: n_tokens = 61789, truncated=0` at approximately **4m56s** after native start.
+- Then remained in interactive wait until user manually stopped it approximately **50m51s** after start; stderr subsequently shows `cleaning up before exit...` and stdout ends in `> Exiting...`. ZIP has `conditions.json` plus `stdout.log`/`stderr.log` and metrics, but no finalized `result.json` or condition `Status/ExitCode`.
+- **Root cause:** earlier instructions incorrectly passed wrapper `-NoSingleTurn`, suppressing native `--single-turn` and leaving CLI in interactive mode after a completed request. The symptom is consistent with intentional input wait, **not** GPU PP still executing. This was an instruction error, not evidence of C++ or Vulkan freeze.
+- **Correction:** when re-running CLI, keep `-NoJinja` but remove `-NoSingleTurn`, so wrapper sends native `--single-turn`. Not necessary to rerun 64k solely for this exploratory PP metric.
+
+Comparison: CLI **341.16 tok/s** vs bench **348.278425 tok/s**; bench about **+2.09%** faster by bench/CLI ratio. Important: CLI token count **61789** vs bench `61777` (same raw input file SHA) reveals 12 extra tokens in the CLI path even without Jinja, and the tools use different input/request constructions and reporting. The logs do not isolate exactly where the 12 extra tokens arose; avoid claiming exact token-ID identity or an identified BOS cause. This is a **near-value cross-check, not strict performance parity**.
+
+**Acceptance/next steps:** Stage A quick directional check passes. No code change or Vulkan rebuild is justified. Stage B/C ROCm build + 256-token real/random smoke remain next. Thereafter IQ3-vs-IQ4 quantization PP comparisons at matched context with the same ROCm binary and the same verified raw source. `QWEN4EXP_QSA_GATHER=0` is fixed until a separate gather A/B experiment.
