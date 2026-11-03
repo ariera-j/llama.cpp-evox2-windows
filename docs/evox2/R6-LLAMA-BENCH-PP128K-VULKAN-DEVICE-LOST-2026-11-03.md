@@ -386,3 +386,42 @@ ON run details:
 - Compared speed +0.782% is a single unreplicated observation with different observed VRAM clock regimes; **not evidence of a stable QSA speedup**. No controlled confidence interval or clock-normalized performance estimate.
 
 **Recommended gating:** Do NOT automatically relaunch 12-case `-Stage Remaining` (will reattempt 128k IQ4). After this success, the most informative next dimension is **context/memory** with QSA forced OFF, rather than blindly increasing PP length with QSA ON. If user accepts bounded risk, begin with **`-c 131072 -p 256` QSA-OFF/no-warmup smoke** and ADLX: this tests 128k context allocation while avoiding QSA long-context active path and sustained compute. This deliberately does not yet test full 126253 tokens. Require stable P-MODE/desktop/monitor and no other GPU job; stop if a new driver timeout occurs. Then reconsider 8k PP at 128k context vs more precise measurement of QSA-ON VRAM clock state. Original full 128k case remains deferred. No code, driver, BIOS/UMA or TDR registry changes made.
+
+## Post-reboot Vulkan IQ4 128k-context 256-token smoke — 2026-11-03
+
+**PASS for a *short* 256-token model-load/PP smoke at the formerly failing full `-c 131072`, with QSA UNION explicitly disabled and no warmup. Not a pass for 128k sustained PP.**
+
+User ZIP `20261103-193555-852-bench-vulkan-b12032-ctx131072-20f1c22e11fa.zip`, contains conditions/result/native JSON/stderr/ADLX. Raw archive is not stored in the repository.
+
+| Item | Verified observation |
+| --- | --- |
+| Run | `20261103-193555-852-bench-vulkan-b12032-ctx131072-20f1c22e11fa` |
+| Start/finish JST | 2026-11-03 19:35:56.6926739 → 19:36:35.1528258; wall **38.46 sec** |
+| Model | Original Unsloth IQ4_XS PLE16 (GGUF file 93682576992 bytes, wrapper metadata); native `model_size=93671551580` |
+| Executable | Vulkan b12032 `c4ddd239b`, SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`, Clang20.1.8 |
+| Input | Same `nlp-survey-ch3-d31-b1.txt`, SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`, slice=head |
+| Native command | `-c 131072 -p 256 -n 0 -d 0 -r 1 --delay 0 -b 256 -ub 256 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 --no-warmup` |
+| QSA | `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_MIN_KV=32768` (inert while OFF), `GGML_VK_QSA_UNION_STATS=0`, `QWEN4EXP_QSA_GATHER=0`. No `qsa-union active` log. |
+| Native PP | `n_prompt=256`, one repetition, `avg_ns=646646300`, `avg_ts=395.888757 tokens/s`, stddev=0 because 1 sample |
+| Result | `Status=OK`, exit 0, 1 native row, no run/parse exception, no Vulkan stderr fault |
+| ADLX | Exit0, **19** samples at 2-sec cadence; max **94932 MiB GPU memory (~92.71 GiB)**; max GPU utilization **21%** (0 samples >=95%); no performance-class inference possible. GPU clock ~2900MHz and VRAM clock 1000MHz during tail of load, GPU temp up to **38 C**; power around55W during allocation/prep |
+| P-MODE | Performance start and finish; `PModeChanged=false`, no PModeWarnings |
+| Background / RDP | Named-process CPU coverage Complete, PossibleNoise=false, 0.013% sampled; RDP session, remote-like monitor; no native device loss |
+
+ADLX memory chronology: initial 479MiB at 19:35:57 → 28735 MiB at 19:35:59 → 59230 MiB at 19:36:01 → 89950 MiB at 19:36:03 → **90659 MiB from ~19:36:05 through 19:36:31**, then **94932 MiB at final 19:36:33 sample**. Thus an important late memory-residency/scratch transition is sampled, but *only one sample* at the maximum, and no heavy PP phase. The output does **not** prove that the whole 128k long-context working set is resident/stable.
+
+Comparators, with caution because independent runs:
+- 32k/256 smoke peak `90648 MiB`
+- 64k/256 smoke peak `93002 MiB`
+- 128k/256 smoke peak `94932 MiB` (**+1930 MiB** over 64k/256)
+- 64k/60000 PP QSA-OFF peak `94424 MiB`
+- 64k/60000 PP QSA-ON peak `94578 MiB`
+- Earlier **failed** 128k/126253 PP QSA-ON peak `97130 MiB` (**+2198 MiB** vs current 128k smoke).
+
+Do not infer precise physical 96GiB UMA free capacity from `98304 - 94932`: the driver, Windows budget, GPU mapping and ADLX memory accounting do not directly convert to available headroom. Short 128k PP performance (~396tok/s) is **not comparable** with long PP throughput.
+
+**Interpretation:** After reboot, device works at c131072 with 256 real tokens under QSA-OFF. The prior GPU engine TDR must be tied to an additional condition beyond merely choosing `-c 131072` and loading the full model: e.g. increased PP batch/workspace/residency, deeper context processing, QSA ON, or an intermittent driver/scheduler/memory pressure condition. Success of *a single* short smoke cannot rule out intermittent faults at allocation alone.
+
+**Next bounded diagnostic (proposal only):** Prefer **`-c 131072 -p 2048 -b 2048 -ub 1024 -r 1 --no-warmup` QSA UNION OFF** with same model and document, not a jump to 8k or 126253 tokens. This exercises full measurement batch/ubatch memory patterns while limiting length, temperature and duration. Watch ADLX memory jump (and potential ~96GiB pressure), P-MODE, WER, and desktop; stop at first fault. This test is still risky: max memory 94932 MiB in the short smoke, and a different PP batch size may allocate more. Do not make unsafe claims that 2048-token run is guaranteed stable. Only evaluate any larger 128k PP if this staged test passes. Keep original 12-case run interrupted (7 PASS, 1 TDR, four not attempted), and do NOT relaunch `-Stage Remaining`, which retries failed Vulkan IQ4 128k case08.
+
+No changes to C++ patches, driver, BIOS/UMA, TDR registry or memory allocation policy.
