@@ -242,3 +242,31 @@ No benchmark was executed in this post-reboot check. No source/driver/BIOS/UMA/T
 - P-MODE Performance at start and finish, `PModeChanged=false`, no P-mode warnings; named background process probe `Observed`, `Complete`, `PossibleNoise=false` (sampling coverage caveat).
 - Relative to failed 128k Vulkan IQ4 ADLX high watermark `97130 MiB`, observed 8k maximum is **3974 MiB lower**. Relative to an arithmetic 96GiB=98304MiB UMA setting, 8k leaves **5148 MiB**, but allocated/resident/available memory limits are NOT equivalent and may change dynamically. Do not call either delta a proven free budget.
 - **Decision:** post-reboot IQ4 compute now demonstrated beyond 256-token smoke. This supports a bounded ~30k-token run in the **same 32k context with QSA UNION OFF**, still no warmup and single repetition, subject to GPU desktop stability and avoiding parallel GPU work. This probes longer sustained load while limiting context and feature activation, without pretending it isolates the original 128k TDR trigger. Watch ADLX/high-load, WER, clocks, VRAM. Stop upon any new TDR/UI freeze. Do NOT invoke original `-Stage Remaining` (auto-retries failed 08) and do NOT test full 128k IQ4 yet.
+
+## Post-reboot Vulkan IQ4 30000-token PP (32k context) — 2026-11-03
+
+**PASS: extended sustained real-text 30000-token PP, Vulkan IQ4 PLE16, `-c 32768`, QSA UNION OFF, no warmup.** This establishes stable observed behavior under a ~70-second timed PP and >1-minute high GPU utilization in the tested 32k context. It **does not** certify the 128k failure path or all memory residency conditions.
+
+User ZIP: `20261103-185642-516-bench-vulkan-b12032-ctx32768-cb387aa6f067.zip`, containing valid conditions/result/native JSON, stderr, ADLX, summary, output. No raw ZIP is committed.
+
+| Field | Observed value |
+|---|---|
+| Run ID | `20261103-185642-516-bench-vulkan-b12032-ctx32768-cb387aa6f067` |
+| Start/finish JST | `2026-11-03T18:56:43.363+09:00` to `18:58:31.832+09:00` |
+| Total run wall time | 108.469 sec including model load/preparation |
+| Backend/build | Vulkan0, b12032 `c4ddd239b`, same verified executable SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f` |
+| Model | Original Unsloth IQ4_XS Ple16, `93682576992` GGUF filesystem bytes, model SHA not independently calculated |
+| Input | `nlp-survey-ch3-d31-b1.txt`, source SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788` |
+| Workload | `-c 32768 -p 30000 -n 0 -d 0 -r 1 --no-warmup -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk/-ctv f16 --prompt-slice head` |
+| Environment | `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0`, `QWEN4EXP_QSA_GATHER=0`. No active QSA diagnostics. |
+| Native PP result | `n_prompt=30000`, `avg_ns=70053151300` = **428.246259 tok/s**; one sample |
+| Status | `OK`, exit0, one native JSON row, no run/parse errors |
+| P-MODE | Performance start and finish, no changes/warnings |
+| ADLX | Exit0, 54 samples at 2-sec cadence, 34 >=95% GPU use, high-load mean clock **2839.82 MHz**, VRAM clock **999.91 MHz**, power **119.647 W** (Performance-like), peak GPU temperature **75 C**, peak ADLX GPU memory **93203 MiB** (~91.02 GiB). RDP session present. |
+| Named-process noise | Observed, CPU coverage Complete, PossibleNoise false; transient background activity cannot be excluded |
+
+Memory time series: GPU-memory usage first rises to ~90648 MiB on model load, ~90653 MiB while preparing, then ~93120 MiB when PP starts (18:57:19) and climbs gradually to 93203 MiB by run end. The earlier same-`-c 32768` **8192-token** short PP reached 93156 MiB (difference **47 MiB**) and initial **256-token** smoke reached 90648 MiB; short-only smoke can miss PP workspace/residency and cannot be compared as a controlled memory experiment. Failed 128k IQ4 recorded **97130 MiB** ADLX peak (difference **3927 MiB** vs this 30k run). The ~96GiB manually set UMA target and these ADLX reported usage numbers are **not** proof of allocatable headroom or exact per-context KV size. Do not claim OOM as cause.
+
+The high-load stretch has GPU usage ~99–100%, VRAM clock near 1000MHz, GPU power 115–122W, peak temp75C, and no observed device-loss/driver timeout. GPU clock gradually decreased from ~2860 to ~2780MHz by the last sample with sustained high power; this alone is not the previous pathological VRAM-clock failure or evidence of thermal shutdown.
+
+**Decision / next diagnostic:** 32k IQ4 QSA-OFF sustained GPU compute is functioning after reboot. To distinguish context-size/memory pressure from the QSA-ON long-context kernel, do **not** rerun failed 128k IQ4 or original `-Stage Remaining`. If proceeding, start a separate **64k-context IQ4 QSA-OFF** *short prompt* smoke first (model/context allocation), followed only if healthy by one **~60k-token** real-input PP at `-c 65536` with QSA OFF and no warmup. Keep exact original model and Japanese source, same binary, threads, full-PP batch2048/ubatch1024/f16, performance P-MODE, ADLX. Clearly separate the short smoke from timed long PP results and stop on any WER/TDR/GPU display anomaly. QSA-on activation/failure requires additional controlled evidence; toggling UNION at short inputs cannot exercise the relevant kernel. Avoid UMA/BIOs/driver/TDR registry changes during isolation.
