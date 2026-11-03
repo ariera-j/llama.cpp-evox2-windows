@@ -1,5 +1,8 @@
 # Evo-X2 downstream patch registry
 
+> **2026-11-03 COMMON-005 FINAL STATUS:** r6の`QWEN4EXP_QSA_GATHER=1`は**source main統合済み／デフォルトOFF／限定検証完了**（同一バイナリABBA 64k/128k/256k TG +12.66/+28.88/+56.02%、128k ROCm IQ3/元IQ4 18run検索品質でON/OFF両方106/108の回答インスタンス正解）。IQ4 ONだけのQ08誤答は1度発生したが、同条件再試行では再現せず。完全数値等価、MTP-ON、Vulkan active pathまで認証したわけではない。以下の「quality pending」は当時の履歴であり、この限定ゲートについては[最終品質記録](R6-COMMON005-MH128K-QUALITY-PLAN-2026-11-03.md)が優先。以後の計測ツール・ROCmFPx HIP・他エンジン・upstream調査は[2026-11-03作業引き継ぎ](R6-POST-COMMON005-HANDOFF-AND-RESEARCH-2026-11-03.md)を参照。公開b11908/tagは変更しない。
+
+
 > **2026-11-03 r6 COMMON-005 source integration checkpoint (newer than the dated historical entries below):** r3 concept reimplemented for r6 Qwen4Exp pooled Top-K as an **explicit opt-in** `QWEN4EXP_QSA_GATHER=1` selected K/V gather / compact FA decode path; **default OFF**, existing Full-KV fallback unchanged. Native Windows ROCm b12013 (`f29592d6a` source) 4k/32k smoke PASS, 64k/128k/256k MTP-OFF matched ABBA TG **+12.66%/+28.88%/+56.02%** with PP essentially flat. 128k RGP selected FA kernel **1,490.8 → 40.7 µs** (two short captures); unrelated occasional capture-local CPU-bound GPU idle remains deferred. Integrate source and records into main without changing published **b11908 binary/release/tag**. **Not a default-on or all-backend validation:** answer-quality comparison, numerical parity, MTP-ON and Vulkan active-path tests remain outstanding; static contract tests and narrow native runtime tests do not establish general correctness. Full evidence: [COMMON-005 r6 implementation/results](R6-COMMON005-IMPLEMENTATION-2026-11-02.md) and [RGP record](R6-COMMON005-RGP-2026-11-02.md). Older rows marking COMMON-005 “not ported” describe their dated r4/r5 snapshots, not current r6.
 
 
