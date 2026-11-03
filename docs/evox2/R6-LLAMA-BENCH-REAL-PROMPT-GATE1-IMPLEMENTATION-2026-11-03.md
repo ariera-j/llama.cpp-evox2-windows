@@ -202,3 +202,28 @@ C03を除く陽性8ケースも、出力JSONの`build_commit=c4ddd239b`・`build
 3. 実入力ベンチの長文（64k→必要時128k/256k）とrandom比較は、機能検証が完了してから計測条件・再現性を揃えて進める。
 4. 識別可能な改善候補：`F05`のエラーメッセージ文言修正、Gate 4 scriptの折り返しログ対応。**実装の修正が必須な障害は今回観測していない。**
 
+
+## Gate 4 Extended 実機結果 — 2026-11-03
+
+**Extended: 2/2 PASS。Gate 4 Fast + Core + Extended 全16ケースでnativeの期待動作を確認（Core C03は検証スクリプトの誤判定、nativeはPASS）。**
+
+ユーザー提供ZIP `evox2-bench-gate4-20261103-114952.zip`の`gate4-summary.csv`, `metadata.json`, 各`arguments.json`/`stdout.json`/`stderr.log`を照合。生ZIPはGitHubに保存しない。実機binary SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`、build b12032 `c4ddd239b`、Vulkan0 AMD Radeon 8060S、Qwen3.8-Flash-Next-UD-IQ3_XXS-ple16、実入力`nlp-survey-ch3-d7-b1.txt`（304931 bytes, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`）。
+
+| Case | CLI要点 | ExitCode / JSON rows / samples | avg_ns | tok/s | 判定 |
+| --- | --- | --- | ---: | ---: | --- |
+| E01-auto-context | `-f ... -p 257 -c 0 --prompt-slice head --no-warmup` | `0 / 1 / 1` | 688977200 | 373.016698 | PASS |
+| E02-depth | `-f ... -p 32 -d 16 -c 1024 --prompt-slice head --no-warmup` | `0 / 1 / 1` | 265939000 | 120.328346 | PASS |
+
+共通: `-n 0 -r 1 -b 256 -ub 256 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 -o json --progress`。出力はモデル/バイナリ/b12032整合、`n_prompt`・`n_depth`期待値と一致、`progressMatch=True`。
+
+- E01: native進捗に`61777 available tokens, using 257 (head)`、`prompt run 1/1`を確認。`-c 0`の自動context指定でも正常終了。**実際に確保されたn_ctxはJSON出力されないため値そのものの検証ではない**。
+- E02: 進捗に`61777 available tokens, using 32 (head)`、`depth run 1/1`と`prompt run 1/1`を確認。depthのrandom prefill + 実入力PPが同じnativeテストで完走した。時間計測はdepthを含む複合条件のため、通常のPP単独速度と単純比較しない。
+- stderr.logにはPowerShell 5.1側の`NativeCommandError`ラッパー（backendロードのstderr出力に由来）が記録されているが、処理自体はExitCode 0で正常完走、JSONを取得できている。実行失敗を示すものではない。
+- テストスクリプトはP-MODE/ADLX監視なし、token ID列のgolden比較なし。`-fit-target/-fitc`の正常系は未実施。
+
+### Gate 4 総括
+
+- **16/16 native期待動作を確認**：Fast 5/5、Core 9/9（うちC03のscript判定は偽陰性）、Extended 2/2。
+- 機能確認の残件は主に (1) 短いgolden token列でhead/head-tailの位置と内容を独立検証する、(2) `-fitc`と`-c`のfit正常系を検証する、(3) Gate4 PowerShell検証器の長行折り返し正規化とF05の診断文言を改善するか判断。
+- データ依存PP速度の定量評価は、次段の64k実文書vs random同条件複数runで行う。Gate 3の256-token約5.3倍は予備的観測にとどめる。
+- **この段階でnative C++の機能上の不具合は検出されていない。** 新ソースコミット・再ビルドは不要。
