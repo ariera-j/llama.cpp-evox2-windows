@@ -203,3 +203,29 @@ Vulkan0: AMD Radeon(TM) 8060S Graphics (114507 MiB, 108782 MiB free)
 **Not verified by these two commands:** P-MODE and live memory clocks after reboot, real GPU compute, long-duration device stability, or safety of 128k IQ4. Continue to hold `-Stage Remaining` because it retries the full-length IQ4 failure. If proceeding with a bounded diagnostic, start with **one** low-context, short Vulkan model-run after ensuring the display works and other GPU workloads are stopped. Set QSA UNION OFF and no warmup. Inspect ADLX/P-MODE and WER before any repeat. Only after that consider a larger but still bounded 32k IQ4 PP. The default QSA union threshold 32768 means a 32k input may not activate the feature, so a 32k OFF/ON nominal comparison is **not** a valid proof of QSA kernel effects; compare QSA only where logs positively show activation, and defer that heavier test for now.
 
 No benchmark was executed in this post-reboot check. No source/driver/BIOS/UMA/TDR configuration changes.
+
+## Post-reboot Vulkan IQ4 real-model smoke (32k context) — 2026-11-03
+
+**PASS for short Vulkan IQ4 load and 256-token PP after reboot.** The user's ZIP `20261103-184435-722-bench-vulkan-b12032-ctx32768-5c7652f9e27f.zip` contains the complete `conditions.json`, `result.json`, `llama-bench.json`, stderr, ADLX and summary. Raw archive is not committed.
+
+| Item | Observed |
+| --- | --- |
+| Run ID | `20261103-184435-722-bench-vulkan-b12032-ctx32768-5c7652f9e27f` |
+| Started → finished | 18:44:37 → 18:45:20 JST; elapsed 43.633 s including load |
+| Model | Original Unsloth `Qwen3.8-Flash-Next-UD-IQ4_XS-ple16.gguf` 93682576992 bytes |
+| Binary | Vulkan b12032 `c4ddd239b`, SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f` |
+| Input | `nlp-survey-ch3-d31-b1.txt`, SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`; `head` |
+| Context/prompt | `-c 32768 -p 256 -n 0 -d 0 -r 1 -b 256 -ub 256 --no-warmup -fa auto -ctk/ctv f16 -ngl 999 -ncmoe 0 -t 4` |
+| QSA | `GGML_VK_QSA_UNION=0`, `GGML_VK_QSA_UNION_STATS=0` (feature requested OFF). No active-UNION line in stderr. |
+| Native JSON | `n_prompt=256`, `avg_ns=658279700`, `avg_ts=388.892442`, samples=1 |
+| Wrapper | `Status=OK`, `ExitCode=0`, no Run/Parse exception |
+| ADLX | Exit0, 19 samples at 2 s, remote_session=1; max VRAM `90648 MiB` = 88.52 GiB; max GPU clock `2900 MHz`, max VRAM clock `1000 MHz`, peak temperature `57 C`, peak power `76 W`, GPU busy max `45%` |
+| P-MODE | `Performance` start/end, `PModeChanged=false`; no high-load (>95%) samples for ADLX power-class consistency |
+| External noise | Named-process coverage complete; PossibleNoise false |
+| TDR / reset | None observed during this short run |
+
+**Interpretation:** After a normal OS restart the AMD GPU and Vulkan path appear usable for an IQ4 model load and actual, short PP compute. Short smoke and `--list-devices` do not certify full 128k stability. 256-token PP cannot be used for absolute speed comparison against the interrupted 126253-token job; QSA OFF, context, and batch/ubatch also differ.
+
+**Capacity clue:** failed 128k Vulkan IQ4 recorded `97130 MiB` ADLX VRAM, vs `90648 MiB` here: peak difference `6482 MiB`. These are peaks in *distinct runs*, not directly decomposable into KV or scratch allocation. 90648 MiB is already a substantial reservation for an apparent 96GiB manually configured UMA, so do not assume ample Vulkan IQ4 128k headroom. Within the short-run sample, GPU usage never reached 95%, so it does not establish sustained power or memory residency robustness.
+
+**Recommended next step:** If more fault isolation is worthwhile, proceed to **a single bounded ~8k-token real-text PP run** of Vulkan IQ4 with **explicit QSA OFF** (`-c 32768 -p 8192 -n 0 -r 1 --no-warmup -b 2048 -ub 1024 -ngl 999 -ncmoe 0 -fa auto -ctk/ctv f16`) and monitor ADLX, event history, GPU/VRAM clocks, P-MODE. Require completion, no new TDR, stable memory. Then only if healthy consider a separate ~30k-token 32k context trial, still QSA OFF. Never automatically restart the 12-case matrix because it will retry the failed full-length case08. More repetitions/ON-OFF tests are deferred until safety and root-cause criteria are satisfied. A QSA flag toggled at 256 or 8k does not by itself exercise the long-context active UNION kernel, so passing or failing one case cannot identify that feature as the cause.
