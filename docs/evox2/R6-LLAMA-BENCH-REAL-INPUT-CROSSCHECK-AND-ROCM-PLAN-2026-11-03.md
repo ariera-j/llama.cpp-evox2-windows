@@ -238,3 +238,26 @@ For real-file case input path `C:\Users\ai\Desktop\qwen38-flash-next-evo-x2\test
 **No PP speed inference from 256-token smoke:** the real/random ratio (~1.97x) is one short no-warmup run each and differs from r5 64k trends; do not generalize. There is no verbose proof here of every tensor's GPU offload, although native ROCm device was selected and real PP succeeded.
 
 **Decision:** TOOL-001 native r6 real-prompt Vulkan+ROCm functional smoke gates passed. No source changes/rebuild required. Next task: controlled ROCm b12038 **IQ3 PLE16 vs original IQ4 PLE16** long-context PP test using a shared file SHA, `-p` at or below actual token count (the `d7` source provides 61777 token with IQ3; **IQ4 tokenize length must be checked independently**, since tokenization can vary by model). Fix `QWEN4EXP_QSA_GATHER=0`, MTP off; use same context/batch/ubatch/KV/FA and repetitions; check HIP SDK/runtime provenance, P-MODE and artifacts. Custom ROCmFP4 GGUF is outside this supported HIP experiment.
+
+## IQ4 b12032/b12038 128k allocation preflight — 2026-11-03
+
+**Both backends PASS for native IQ4 PLE16 model load and 256-token PP at explicit context 131072.** Does not yet prove processing 126253-token source or GPU memory use under a full 128k workload. Logs provided as paired run ZIP `20261103-145024-894-bench-rocm-b12038-ctx131072-866fc960f647.zip`. ZIP is not stored in Git.
+
+| Case | Run ID | Backend/build | Model | Context | Prompt | PP tok/s | Exit |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| Vulkan | `20261103-144911-745-bench-vulkan-b12032-ctx131072-65320fcdd146` | Vulkan b12032, `c4ddd239b` | original IQ4_XS Ple16 | 131072 | 256 | **237.082434** | 0 |
+| ROCm | `20261103-145024-894-bench-rocm-b12038-ctx131072-866fc960f647` | ROCm b12038, `d321e7ff3` | original IQ4_XS Ple16 | 131072 | 256 | **214.603824** | 0 |
+
+- Same GGUF path, size `93682576992` bytes. No full model SHA recomputed in these runs.
+- Input: r5 repeated Japanese ANLP `nlp-survey-ch3-d31-b1.txt`, size `1261235` bytes, SHA256 `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788`, **255169 available raw tokens** (same count from both actual native logs), enough for 126253 tokens.
+- Both `Status=OK`, exit0, one native JSON row and one sample, no warmup, `-b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk/-ctv f16`. PowerShell status parse clean, P-MODE Performance start/end unchanged, ADLX exited0 with 19/22 samples, named background processes `PossibleNoise=false`.
+- Vulkan `GGML_VK_QSA_UNION=1`, threshold32768 but runtime `qsa-union fallback: query count, selection size or KV threshold` because actual prompt is only 256 tokens; no claim that QSA activated in this short smoke. ROCm `QWEN4EXP_QSA_GATHER=0`. TheRock HIP_PATH and ROCM_PATH correctly point to venv root in both logs.
+- No OOM, GPU reset, allocation errors observed. **n_ctx 131072 requested** via CLI, and process completed. Logs do not provide an independent verbose `llama_context: n_ctx` row here, so the inference of accepted allocation follows from successful execution on the 128k configured path, not a separate memory/verbose audit.
+
+### Next Gate: 128k PP 12-case matrix
+
+User requested **Vulkan/ROCm × original IQ3/IQ4 × Japanese/Random/llama.cpp code**, exactly 12 cases. Recommended common `-c 131072 -p 126253 -n 0 -d 0 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk/-ctv f16`, warmup ON, 1 timed repetition; Japanese/code use raw file with `--prompt-slice head`; random uses unchanged native path. The Japanese source and code source SHA256 are fixed: `63a5c074c457c8de8016ca8498cf38c432b47b8fb8782f7c35a4d37006cc8788` / `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`. Code is the same r5 file and was previously measured with ample tokens, but verify the current binary's available count in verbose/progress logs (models may tokenize differently).
+
+Vulkan `GGML_VK_QSA_UNION=1`, `MIN_KV=32768`, statistics OFF; ROCm `QWEN4EXP_QSA_GATHER=0`. MTP OFF both. Use known b12032 and b12038 binaries and fixed model identities; no rebuild. Running one **full-length** pilot (`ROCm × IQ4 × Japanese`) before the other 11 protects against the gap between a 256-token allocation smoke and full 126253-token PP success. Stop on error or environmental anomaly. Keep native result JSON, conditions, model/input identities, ADLX/P-MODE and full stderr per case. The assistant supplied a separate temporary standalone PowerShell orchestration ZIP `Evox2-R6-PP128k-Matrix-20261103.zip` with Stage Plan, Pilot, Remaining, All and Package; user runs locally and shares result ZIP, **not a repo file**.
+
+Future comparisons should separate within-backend model quantization ratio, within-backend input rank, and cross-backend ratios; warmup/repetition and other numerical differences matter. This initial 12-case sweep is exploratory; follow-up repetition can be targeted if a small margin or surprising ranking merits it.
