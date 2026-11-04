@@ -8,7 +8,7 @@
 **中心課題：** どの入力文書で、どの処理（FA、mask、MoE、量子化GEMMなど）が、どのKV深さ・物理UBatch・バックエンドで時間を使い、PP全体の差を生むのかを、同一位置のGPUイベントと計測値で説明する。
 
 **元の3テーマ（今回も主軸）：**
-1. **ROCm / HIP FA:** 入力別PP差が旧Vulkanより小さく見えた理由。旧RGPでROM/HIP FAの特殊化は見つけたが、**同一レイヤー・KV長・マイクロバッチ・warmup／本計測を揃えていない**ため、厳密なGPU時間比較が未完。
+1. **ROCm / HIP FA:** 入力別PP差が旧Vulkanより小さく見えた理由。旧RGPでROCm/HIP FAの特殊化は見つけたが、**同一レイヤー・KV長・マイクロバッチ・warmup／本計測を揃えていない**ため、厳密なGPU時間比較が未完。
 2. **Vulkan / QSA mask可視化:** 旧r5で16×64タイルの ALL_NEG_INF／ALL_ZERO／Mixed の**数**は取得済み。次は実際の**位置・連結／偏り・query行ごとの形**を可視化して、非スキップタイル数2.58倍と同一FA本体時間4.1倍の残差を説明したい。
 3. **MoE Expert選択:** 文書ジャンルによるExpert ID分布、物理UBatch内での**distinct expert数**、各Expertに割り当てられたtoken数、実際のMoE GPU時間が入力差に寄与するか。HF記事を仮説の手掛かりとして使う。
 
@@ -17,7 +17,7 @@
 ### 先行資料と未解明点
 
 - [Qiita 番外編5「入力文書と読み込み速度の関係（検証編）」](https://qiita.com/ariera/items/40c915c47009ec0a7e16)（2026-10-19）。旧r5 Vulkan b11535～b11571／ROCm b11543 の実験。Vulkan QSA UNION **OFF**、IQ3、64k、UBatch1024で、コード vs 日本語文学の全PP中のFA GPU時間 69.565 vs 102.460秒。RGPの同一FAノード KV=49152、N=1024、Qcur-19、Br/Bc=16/64でFA本体がコード約75.8～76.0ms、文学約311.0～314.1ms（約4.1倍）。mask分類49152タイル中スキップ可能 ALL_NEG_INF はコード36881（75.03%）／文学17538（35.68%）、非スキップは12271／31614（比約2.58倍）。元のRGP・mask診断は **investigation/r5-vulkan-off-fa-dispatch-20261010** にあり、r6 current sourceへ既に移植済みと仮定しない。
-- 同記事の旧ROCm HIP RGPは \`flash_attn_ext_f16<256,256,16,4,false,false,false>\`（文学104.911ms／コード111.198ms）と \`flash_attn_mask_to_KV_max<16>\` を確認したが**取得したGPUイベントの位置・層・KV・warmup識別が未確定**。この2値をVulkanのKV49152 Qcur-19と同条件の直接比較に使わない。CUDA由来のcompact sparse gatherがHIPで無効だった調査結果と、HIPが末尾KV範囲を短縮できる可能性も、現行r6の実dispatchで再確認する。
+- 同記事の旧ROCm HIP RGPは `flash_attn_ext_f16<256,256,16,4,false,false,false>`（文学104.911ms／コード111.198ms）と `flash_attn_mask_to_KV_max<16>` を確認したが**取得したGPUイベントの位置・層・KV・warmup識別が未確定**。この2値をVulkanのKV49152 Qcur-19と同条件の直接比較に使わない。CUDA由来のcompact sparse gatherがHIPで無効だった調査結果と、HIPが末尾KV範囲を短縮できる可能性も、現行r6の実dispatchで再確認する。
 - [r5 ROCm/Vulkan corpus PP](R5-ROCM-VULKAN-CORPUS-PP-64K-128K-2026-10-10.md)：旧r5、IQ3、UB1024でROCm入力差は64k約5.5%、128k約4.1%（旧入力群の max/min−1）、一方VulkanはQSA OFF/ONや入力で大きな差。**旧r5条件の観察であり、現行r6/量子化横断の結論ではない**。
 - [Hugging Face「Sort your prompts」](https://huggingface.co/blog/badaoui/sort-your-prompts)（2026-10-19）：**複数リクエストのdecodeバッチ**をドメイン順に並べ、batch内のdistinct expertを減らす手法。対象はQwen3-30B-A3B等＋vLLMの専用実装であり、**単一長文のprefillやQwen3.8-Flash-Nextでの性能改善率を直接外挿しない**。本調査では「Expert分布・distinct集合・カーネル時間をセットで測る」という観点のみ移す。
 - [r6 実入力bench／128k比較と生ログ集約](R6-LLAMA-BENCH-REAL-INPUT-CROSSCHECK-AND-ROCM-PLAN-2026-11-03.md)、[r6 COMMON-005以降の調査バックログ](R6-POST-COMMON005-HANDOFF-AND-RESEARCH-2026-11-03.md)、[r5 MTP/RGPのdispatch位置合わせ例](R5-MTP-PP-KV-CROP-STAGE1-IMPLEMENTATION-2026-10-14.md)。旧r5のソース／診断とr6 b12032/12038の実測は**異なるビルド**であり数値を無条件に接続しない。
@@ -39,11 +39,11 @@ Vulkan QSA OFF/UB512ではIQ3 248.367・IQ4 249.836 tok/s。ROCm b12038では、
 
 **最重要原則：『同じ秒数』ではなく『同じ仕事』を比較する。**
 
-- 取得イベントのjoin keyを \`session_id, backend, binary_sha, model_sha_or_verified_identity, input_token_hash, qsa_mode, ubatch, phase(warmup/measured), sample_ordinal, token_begin/end, n_tokens, KV_start/end, layer_index, op_role, kernel_signature, dispatch_shape, RGP_capture_id\` とする。最低限、**レイヤー／KV位置／対象Qブロック／実際のカーネル／warmupか否か**が確定しなければ「厳密な同一ノード比較」とは書かない。
+- 取得イベントのjoin keyを `session_id, backend, binary_sha, model_sha_or_verified_identity, input_token_hash, qsa_mode, ubatch, phase(warmup/measured), sample_ordinal, token_begin/end, n_tokens, KV_start/end, layer_index, op_role, kernel_signature, dispatch_shape, RGP_capture_id` とする。最低限、**レイヤー／KV位置／対象Qブロック／実際のカーネル／warmupか否か**が確定しなければ「厳密な同一ノード比較」とは書かない。
 - tokenizerとllama-benchの**raw prompt file、BOSの扱い、head slicing、実token数、できればtoken ID列のSHA**を固定。以前CLIとbenchのraw vs Jinja入力でtoken数が異なる例があるため、混ぜない。同一モデルなら語彙が共通でもIQ3/IQ4のtoken ID列一致は照合する。native randomは実行内で疑似乱数生成されるため、**jobを跨いだbit-identical入力とみなさない**。厳密なrandom比較が必要なら固定token ID列の再生／ダンプ方式を別途実現した後に使う。
-- CPU trace（実際に処理中のubatch/層/KVとkernel role）↔ RGPのdispatch を照合する。Vulkan既存 \`EVOX2_FA_MAIN\`／\`EVOX2_FA_MASK_OPT\` ラベル等はr5診断ブランチを**読んでから**最小限移植を検討。HIPはVulkanと同じdebug-label機構を想定せず、**marker／HIP profiler dispatch correlationの実現性を先に確認**。位置が確定しない場合は探索的captureとして分離して保存。
+- CPU trace（実際に処理中のubatch/層/KVとkernel role）↔ RGPのdispatch を照合する。Vulkan既存 `EVOX2_FA_MAIN`／`EVOX2_FA_MASK_OPT` ラベル等はr5診断ブランチを**読んでから**最小限移植を検討。HIPはVulkanと同じdebug-label機構を想定せず、**marker／HIP profiler dispatch correlationの実現性を先に確認**。位置が確定しない場合は探索的captureとして分離して保存。
 - **全PPスループット（通常ビルド・診断OFF）／個別GPU kernel時間（RGP）／全GPU演算の合計（perf logger）／CPU submit/idle／診断によるCPU-GPU同期の追加時間**を別指標として記録。キュー重なりやhost idleがあればkernel時間の単純和をwall時間とはしない。
-- マイクロバッチの位置を合わせた**同一KV深度の2入力**をまず比較し、その後UBatchを変える場合は\`ubatch_index\`ではなく\`absolute_token_position\`／\`n_tokens\`で比較する。QSA UNIONのON/OFFを変更するなら**別の実験因子**にする。
+- マイクロバッチの位置を合わせた**同一KV深度の2入力**をまず比較し、その後UBatchを変える場合は`ubatch_index`ではなく`absolute_token_position`／`n_tokens`で比較する。QSA UNIONのON/OFFを変更するなら**別の実験因子**にする。
 
 ## 3. 4系統で共有する採取設計
 
