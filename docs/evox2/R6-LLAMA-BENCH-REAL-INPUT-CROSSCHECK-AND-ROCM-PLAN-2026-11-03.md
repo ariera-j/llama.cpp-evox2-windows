@@ -664,3 +664,34 @@ Windows monitor `resources.csv`: process `TargetGPUTotalCommitted_GiB` peak**82.
 **Cautionary comparison**: immediately previous **IQ4 QSA OFF** original same MH input PP111137 UB512, no-warmup b12032 bench **249.836469tok/s**, ADLX max**95490MiB**, high-load VRAM clock **999.15MHz**, 0/221 samples<900, finished clean. However IQ3-ON and IQ4-OFF **differ by both model and optimization**; the observed ~3.23% IQ3-ON speed advantage cannot be represented as model-specific QSA-ON speed ranking. IQ3-ON uses ~11.3GiB less ADLX GPU memory than IQ4-OFF. Previously b12032 **IQ4 QSA ON** UB1024/PP126253/WarmupON failed with ADLX GPU memory**97130MiB**, 0x141 Device Lost; causes cannot be identified from these mismatched workloads.
 
 **Gate decision: HOLD on automatically launching IQ4 QSA ON at 128k.** Even though IQ3-ON succeeded with ample memory, sustained VRAM clock <900 is explicit caution criterion from prior gate plan. IQ4 OFF at ~95490MiB near 98304MiB UMA label means relatively small memory headroom; QSA scratch ~73MiB on IQ3 gives no guarantee of IQ4 ON peak or driver behavior. Recommended next low-risk diagnostic: single **Vulkan IQ3 QSA OFF** MH111137 UB512 NoWarmup with same build, ADLX+Windows resource monitors to isolate **QSA ON vs OFF** effect and see whether VRAM slowdown also happens without QSA; stop/reevaluate if OFF also exhibits collapse. Alternatively perform a shorter **64k IQ4 QSA ON** smoke only if uncertainty remains, but existing 64k QSA ON successes are limited evidence and neither path proves 128k safe. The end goal is a matched IQ3/IQ4 QSA-ON pair if user elects the residual 128k TDR risk after reviewing this gate; do not restart old 12-case runner or claim safe memory solely from one successful IQ3. ROCm UBatch controls remain CLOSED.
+
+## 2026-11-04 Vulkan MH-128K IQ3 QSA OFF/ON matched comparison: OFF PASSED and VRAM clock stable
+
+New user-uploaded raw ZIP **`evox2-vulkan-mh128k-iq3-qsa-off-ub512.zip`**, RunID `20261104-110741-676-bench-vulkan-b12032-ctx131072-e8f2e613589a`, audited directly against already-uploaded raw previous IQ3 QSA-ON and IQ4 QSA-OFF ZIPs. **OFF run PASS**, `result.Status=OK`, exit0, Vulkan b12032 `c4ddd239b`, exact benchmark EXE SHA256 `9ad4fa1220fb9241dfa6d5a3c752c55eb4087d1fd74e9999d3e33ef8ba72e69f`, original Unsloth PLE16 IQ3, MH-A `3df86efedd7e3fbc1f71226392fbcf076f68a0a9b3135647087f3340040275e3`, n_prompt111137 head, Context131072, UBatch512, Batch2048, `-n0 -d0 -r1 -t4 -ngl999 -ncmoe0 -fa auto -ctk/-ctv f16 --no-warmup --progress`. **Exact command-line arguments match prior IQ3-ON**; `conditions.json` tracked relevant env vars differ **only `GGML_VK_QSA_UNION=0` vs `1`**, both `GGML_VK_QSA_UNION_MIN_KV=32768`, stats0, Gather/MTP off, same GFX config. No `qsa-union active` in OFF stderr (expected); previous ON had active log. Both P-MODE Performance direct start/end, both no reset/OOM.
+
+| metric | IQ3 QSA OFF 20261104-110741 | IQ3 QSA ON 20261104-104146 | IQ4 QSA OFF 20261104-093619 |
+|---|---:|---:|---:|
+| measured PP tok/s | **248.367390** | **257.918782** | **249.836469** |
+| measured PP seconds | **447.470** | **430.899** | **444.839** |
+| wrapper wall seconds (includes load etc) | 499.014 | 609.160 | 487.455 |
+| native status | OK | OK | OK |
+| ADLX samples / resource samples | 247 / 245 | 302 / 300 | 241 / 239 |
+| GPU >=95% samples | 222 | 214 | 221 |
+| high-load VRAM clock mean MHz | **995.302** | **835.341** | **999.154** |
+| high-load VRAM clock median/min MHz | 999 / 955 | 804 / 747 | 1000 / 987 |
+| high-load VRAM clock <900 MHz | **0/222** | **171/214** | **0/221** |
+| high-load GPU core clock mean MHz | **2839.61** | **2882.60** | **2815.39** |
+| high-load GPU power mean W | **119.450** | **104.64** | **119.656** |
+| ADLX `gpu_vram_mb` peak MiB | **84049** | **84201** | **95490** |
+| max Windows process GPU committed GiB | **82.110** | **82.261** | **93.431** |
+| max Windows adapter total committed GiB | **82.709** | **82.858** | **94.025** |
+| min physical RAM free GiB | **24.497** | **24.644** | **24.246** |
+| max system committed GiB / limit127.647 | **92.775** | **92.884** | **104.192** |
+| GPU temperature peak C | **86** | **78** | **83** |
+| P-MODE direct | Performance | Performance | Performance |
+
+**Within-IQ3 QSA ON vs OFF PP effect** `257.918782/248.367390-1=+3.846%` (+9.551392 tok/s), despite **VRAM clock ~160MHz lower** on ON. ON also **GPU core clock ~43MHz higher**, GPU power **~14.81W lower**, and max ADLX memory just **152MiB higher**. OFF high-load samples VRAM clock **955–1000MHz**, none under900; 1-minute groups from minute2 onward ~998–999MHz, while ON dropped around elapsed minute4 and stayed ~780–815MHz in subsequent minutes. The distinct clock regimes are therefore **not explained by IQ3 memory footprint**; association of QSA ON with GPU memory clock reduction is strengthened but not proven causal without repeated/alternating runs, driver telemetry and QSA trace. Benchmark is one timed repetition per arm, run startup/overall duration differs due loading and system state, so do not compare wrapper wall time as PP. `PagesInput_PerSec` median0 in OFF and ON; OFF peak697417 during initial 80+GiB file load, not a sustained PP-swap problem.
+
+**Within QSA OFF same-source/model pair:** original IQ3 248.367390 vs original IQ4 249.836469 tok/s -> **IQ4 +0.5915%**, which is directionally aligned with historical b11592 Vulkan MH 4run original-IQ4 ~+0.71%, though differing builds and bench/no-warmup vs CLI/Jinja. This **supports small Vulkan original IQ4 PP advantage with QSA OFF**, but single run and 0.6% difference cannot establish statistical significance.
+
+**Safety / QSA ON IQ4 decision:** This IQ3 OFF control met the prior clock gate (0 low-clock samples), whereas IQ3 ON did not (171/214 under900), which increases reason to treat **Vulkan IQ4 QSA ON full128k as an explicit-risk opt-in**, not a routine automatic next run. IQ4 QSA OFF already at **95490MiB** vs UMA96GiB nominal98304MiB and previous IQ4 UB1024 ON/warmup failed at97130MiB. QSA ON alone added only ~152MiB in IQ3, but cannot extrapolate that as a guaranteed IQ4 peak. If user elects to pursue original IQ4 QSA ON, make one **isolated** test with same MH SHA, PP111137, UB512, warmup OFF, dual monitors, P-MODE unchanged and QSA active log, stopping on device lost, sustained clock depression/high memory; optional lower-context 64k pilot does not prove 128k safety. After that only compare same-QSA IQ3/IQ4 if it completes, and distinguish the earlier QSA OFF ratio. Do not relaunch old 12-case remaining runner. ROCm study remains closed.
