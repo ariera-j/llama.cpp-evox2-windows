@@ -1,6 +1,6 @@
 # r6 PP RGP/mask GPU runbook — DRAFT (2026-11-05)
 
-> **NOT YET EXECUTABLE.** The branch currently has no r6 FA markers or mask snapshot implementation. Do not set any proposed diagnostic env var and assume it works until the feature is built, its help/init log checked, and the required smoke gates pass.
+> **Gate 1 marker-only source and short diagnostic plan added (2026-11-05); NOT YET NATIVE-BUILT OR GPU-VALIDATED.** See [Gate 1 implementation and executable commands](R6-PP-RGP-MASK-GATE1-IMPLEMENTATION-2026-11-05.md). Gate 2 mask snapshot/heatmap and ROCm correlation are NOT implemented. Do not run 64k diagnostic capture until the short smoke and RGP visibility gates pass.
 
 ## 1. Local checkout without disturbing r6 baseline
 
