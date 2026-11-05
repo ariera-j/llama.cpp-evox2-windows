@@ -53,7 +53,7 @@ class R6FaRgpMarkerTests(unittest.TestCase):
         for key in ('shader=', ' KV=', ' N=', ' Br=', ' Bc=', ' n_kv_max=', ' q='):
             self.assertIn(key, helper)
         self.assertIn(
-            "ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);",
+            "ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups, ordinal_out);",
             helper,
         )
         self.assertEqual(helper.count("ggml_vk_dispatch_pipeline("), 2)
@@ -79,7 +79,13 @@ class R6FaRgpMarkerTests(unittest.TestCase):
         self.assertIn("GGML_VK_QSA_UNION                   = '0'", self.plan)
         self.assertIn("GGML_VK_PERF_LOGGER                 = $null", self.plan)
         self.assertIn("GGML_VK_DEBUG_MARKERS               = $null", self.plan)
-        self.assertEqual(self.plan.count("GGML_VK_FA_RGP_MARKERS = '1'"), 1)
+        # Both marker-only and host-trace variants request the same FA labels.
+        # The OFF control must remain opt-out, even after adding host tracing.
+        self.assertEqual(self.plan.count("GGML_VK_FA_RGP_MARKERS = '1'"), 2)
+        self.assertIn("GGML_VK_FA_RGP_MARKERS = $null", self.plan)
+        self.assertIn("GGML_VK_FA_DISPATCH_TRACE           = $null", self.plan)
+        self.assertIn("GGML_VK_FA_DISPATCH_TRACE = '1'", self.plan)
+        self.assertIn("Name = 'hosttrace-on'", self.plan)
         self.assertIn("Name = 'markers-off-control'", self.plan)
         self.assertIn("Name = 'markers-on'", self.plan)
         self.assertNotIn("65536", self.plan)
