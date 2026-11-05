@@ -28,7 +28,15 @@ class R6FaRgpMarkerTests(unittest.TestCase):
         self.assertIn('(getenv("GGML_VK_DEBUG_MARKERS") != nullptr || fa_rgp_markers)', self.cpp)
         self.assertIn("if (fa_rgp_markers && !debug_utils_available)", self.cpp)
         self.assertIn("ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)", self.cpp)
-        self.assertIn("ggml_vk_debug_label region(subctx, label);", self.cpp)
+        self.assertIn(
+            "ggml_vk_debug_label region(subctx, label, groups[0], groups[1], groups[2]);",
+            self.cpp,
+        )
+        self.assertIn(
+            "ggml_vk_debug_label(vk_context & ctx, const std::string & pipeline_name, "
+            "uint32_t wg0, uint32_t wg1, uint32_t wg2);",
+            (ROOT / "ggml/src/ggml-vulkan/ggml-vulkan-types.h").read_text(encoding="utf-8"),
+        )
 
     def test_five_dispatch_stages_with_exact_kernel_metadata(self):
         main = self.cpp.split("void ggml_vk_flash_attn(", 1)[1].split(
