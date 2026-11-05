@@ -123,3 +123,34 @@ python -m unittest discover -s .\tools\evox2\tests -p 'test_r6_fa_rgp_markers.py
 `-BuildOnly` still performs the script's environment and toolchain validation, including the CMake version pin. If the original build explicitly used `-CMakeExe`/`-ExpectedCMakeVersion`, pass the **same** arguments again. Do not clear or reconfigure the build directory unnecessarily. If compilation fails at another point, stop and send the first compiler error (rather than the final PowerShell throw).
 
 **Gate condition remains unchanged**: new executable identity, short OFF/ON native smoke, actual RGP user-event visibility; no 64k profiling yet.
+
+
+## Gate 1 Windows short smoke (2026-11-05 23:42–23:45 JST)
+
+**Observed results from user-uploaded ZIP: Native inference OFF/ON smoke PASS, RGP event-tree visibility still PENDING.** Initial attempt without the ADLX monitor executable was rerun; only the two monitored reruns below are accepted as the completed Gate 1 short-smoke evidence.
+
+Archive: \`20261105-234205-965-bench-vulkan-b12094-ctx2048-e5f7b74db89b.zip\` (outside Git), SHA-256 \`242a806c06417e189a9c180b5b9555abbeba949379e2da81326d04c3602b679f\`.
+
+| Evidence | Markers OFF | Markers ON |
+|---|---|---|
+| Run ID | \`20261105-234205-965-bench-vulkan-b12094-ctx2048-e5f7b74db89b\` | \`20261105-234459-522-bench-vulkan-b12094-ctx2048-c2518537e3ba\` |
+| Effective flag \`GGML_VK_FA_RGP_MARKERS\` | Unset | Literal \`1\` |
+| Backend / build | Vulkan b12094 / \`0847585f2\` | Same |
+| \`Status\`, \`ExitCode\` | OK / 0 | OK / 0 |
+| PP prompt, ctx, physical UBatch | 1024, 2048, 1024 | Same |
+| Measured PP (single run) | **530.712141 tok/s**, 1.929483 s | **532.608126 tok/s**, 1.922617 s |
+| ADLX | Started, 24 samples, exit0, no monitor error | Started, 26 samples, exit0, no error |
+| Windows resource monitor | 23 samples | 26 samples |
+| P-MODE start → finish | Performance → Performance, no change/warning | Same |
+| GPU memory (ADLX peak) | 80,821 MiB | 80,828 MiB |
+| Windows physical free RAM minimum | 23.013 GiB | 22.953 GiB |
+| Named-process background probe | Observed, possible noise false | Same |
+| RGP FA enabled stderr line | Absent | **Present** |
+
+Common executable SHA-256 \`d8f6a022fbf1b1ada3e56ac1dfb0c28cfa8a76b4eb5f4d7236e6b67aae062fb5\`; source commit \`0847585f24fae354359b19df239350fcf14e3bf7\`; source clean at build; same IQ3 PLE16 file identity (model hash not calculated for this large file). Source input SHA-256 \`8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143\` (literature), \`--prompt-slice head\`; QSA UNION OFF, f16 KV, no MTP, no warmup, batch2048.
+
+Marker ON \`stderr.log\` and \`DeviceIdentity.RawText\` confirm \`ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)\`. This demonstrates successful **Vulkan debug-utils extension enabling and host marker path initialization**, but **does not prove any individual GPU FA region appeared in an RGP capture**: no \`.rgp\`, label-tree screenshot or dispatch matching is in the ZIP.
+
+The monitor reports \`RDP-Tcp#0\`, \`remote_session=1\`, with no detected physical monitor candidate; record and hold this state constant for the next capture, or connect a physical display and deliberately restart controlled captures. The \`AdlxPModeConsistency.HighLoadSampleCount=0\` in each short run, so the ADLX high-load power classifier cannot independently validate clock/power behavior; the WMI P-MODE probe still reports Performance at start/finish.
+
+**Decision:** pass native 1024 PP and monitoring; proceed to **Gate 1 final check: a small Radeon Developer Panel Vulkan RGP capture with a visible \`EVOX2_FA_\` label, actual \`KV\`, \`N\`, query tensor and shader**, using marker ON, QSA UNION OFF, and a pre-armed capture because 1024 PP lasts only ~1.9 s. Do NOT start mask heatmap Gate 2 nor claim full Gate 1 PASS until the actual RGP event-tree label is inspected. The +0.36% OFF→ON PP difference is r=1 smoke noise and must not be treated as a speed gain.
