@@ -169,3 +169,20 @@ User reported that initial RDP \`Dispatch start index=512, count=256\` generated
 - The earlier start=512/count=256 attempt would need a sufficient number of dispatches to complete its window; no generated file alone **does not establish** that fewer than 512 occurred.
 
 **Next focused step:** retain the 1024-token marker-ON workload and all capture options except set \`Dispatch start index=257, Dispatch count=128\`. If no capture, probe start=129/count=128; if a capture exists but no FA, inspect event names, then adjust based on observed dispatch range, not elapsed time. Stop blind capture attempts if no range contains FA; investigate event-tree grouping/debug marker visibility and whether the FA call path used the expected instrumented backend. Gate 1 RGP label visibility remains **PENDING**, not PASS.
+
+
+## 2026-11-06 RDP capture troubleshooting: dispatch 257+16 succeeded, FA label not yet observed
+
+User screenshots from RGP Event timing / Wavefront occupancy showed a successful **dispatch start index 257, count 16** capture with nested ordinary user-event labels (for example `UNARY`, `MUL_MAT`, `CONCAT`, `GET_ROWS`, MoE matmul). No `EVOX2_FA_` label was found by the user in that capture; this does **not** establish a marker defect or a full FA dispatch inventory. The full new `.rgp` capture has not been supplied/decoded.
+
+User supplied RDP `log.txt` (RDP 3.5.0.18). Four post-device-init capture sessions were observed in the log:
+- **23:52:02 request → 23:52:53 failure**, profiling capture failed.
+- **23:58:24 request → 23:59:13 success**, collected and dumped trace (previous start=1/count=256 capture).
+- **00:06:43 request → 00:07:34 failure**, profiling capture failed (start=257/count=128 attempt).
+- **00:14:52 request → 00:15:41 success**, collected and dumped trace (start=257/count=16).
+
+Other short-lived Vulkan client connections show `Failed to step driver initialization from DeviceInit to Unknown` prior to actual successful main client; they should not by themselves be attributed to a GPU reset. RDP success confirms the event-tree/clock capture mechanism is functional; the root cause of missing `EVOX2_FA_` remains **unresolved**.
+
+**Likely dispatch-window constraint:** if the capture must complete its entire requested window, the successes for start=1/count=256 and start=257/count=16 plus failure at start=257/count=128 are consistent with total capture-eligible dispatch count roughly 272–383, but RDP/device initialization or trace failure is an alternative. This is a *hypothesis*, not a proven total dispatch count or a benchmark metric. RGP event-tree numeric indices are **not** necessarily the same as global start-dispatch indices.
+
+**Follow-up:** avoid repeating start=257/count=128 or start=512/count=256 on the same 1024-token case. First inspect/filter user events for `FLASH_ATTN_EXT` and `EVOX2_FA_`, noting existing ordinary labels are visible. Then run **one** narrow target range farther along (e.g. start=289/count=16), and if no FA or trace failure, use a systematically bounded search or add opt-in host-side FA dispatch correlation; do not continue blindly sampling large windows. Keep marker=1, QSA UNION=0, same 1024 token case and provenance. No 64k capture or Gate 2 yet.
