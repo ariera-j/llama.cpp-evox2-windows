@@ -1,6 +1,6 @@
 # r6 64k PP: Vulkan FA mask heatmap + Vulkan/ROCm aligned RGP experiment (2026-11-05)
 
-> **Status: DESIGN COMMITTED / IMPLEMENTATION NOT STARTED / NATIVE GPU TEST NOT STARTED.**
+> **Status (2026-11-05): Gate 1 Vulkan FA RGP marker-only source implemented; native Windows build, static Python tests, short GPU runs, and RGP-label visibility remain NOT TESTED. Gate 2 mask snapshots and HIP correlation NOT implemented.**
 > Dedicated research branch: `investigation/r6-pp-fa-mask-rgp-20261105`.
 > Parent: `feature/r6-llama-bench-real-prompt-20261103` at commit `6a092fd2e60789d6ff7001cbe8e342fccff323ac`. Do not merge this branch into r6 stable/feature until the experiments have an independently verified reason.
 
