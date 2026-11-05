@@ -154,3 +154,18 @@ Marker ON \`stderr.log\` and \`DeviceIdentity.RawText\` confirm \`ggml_vulkan: F
 The monitor reports \`RDP-Tcp#0\`, \`remote_session=1\`, with no detected physical monitor candidate; record and hold this state constant for the next capture, or connect a physical display and deliberately restart controlled captures. The \`AdlxPModeConsistency.HighLoadSampleCount=0\` in each short run, so the ADLX high-load power classifier cannot independently validate clock/power behavior; the WMI P-MODE probe still reports Performance at start/finish.
 
 **Decision:** pass native 1024 PP and monitoring; proceed to **Gate 1 final check: a small Radeon Developer Panel Vulkan RGP capture with a visible \`EVOX2_FA_\` label, actual \`KV\`, \`N\`, query tensor and shader**, using marker ON, QSA UNION OFF, and a pre-armed capture because 1024 PP lasts only ~1.9 s. Do NOT start mask heatmap Gate 2 nor claim full Gate 1 PASS until the actual RGP event-tree label is inspected. The +0.36% OFF→ON PP difference is r=1 smoke noise and must not be treated as a speed gain.
+
+
+## Gate 1 RGP first generated file: capture successful, FA label not observed (2026-11-05 23:59 JST)
+
+User reported that initial RDP \`Dispatch start index=512, count=256\` generated no file. A repeat with **start=1, count=256** generated a valid file, but in the RGP GUI the user did not find an \`EVOX2_FA_\` marker.
+
+- Capture filename: \`llama-bench-20261105-235912976.rgp\`, **73,717,512 bytes** (~70.3 MiB), SHA-256 \`8428825fde1f195619aee16c6d3d1a11f22e5d9eb24a2645b7472516a71b5607\`. Raw file retained outside Git.
+- Parsed AMD RDF container header/index (85 chunk records). It contains 2 \`SqttData\` chunks, 62 \`CodeObject\` chunks, \`TraceConfig\`, and \`TraceProcessInfo\`. This verifies structural presence of GPU trace data, **not** complete event decoding or label visibility.
+- Exact RDF \`TraceConfig.controller\`: \`{"name":"renderop","config":{"enabled":true,"renderOpMode":"dispatch","numPrepRenderOps":0,"captureRenderOpCount":256,"captureMode":"absolute","preparationStartRenderOp":1}}\`.
+- SQTT \`TraceConfig\`: enabled, \`memoryLimitInMb=128\`, no instruction tokens, SPM disabled.
+- \`TraceProcessInfo\` confirms \`C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag\build-vulkan-ppdiag-rgp\bin\Release\llama-bench.exe\`, not a different executable.
+- Absence of \`EVOX2_FA_\` in the user's **first 256-dispatch** GUI search does not prove that the marker code fails, because the selected capture window may end before FA. No GPU-event tree screenshot or decoded dispatch inventory was included, so no definitive attribution of those first 256 dispatches is possible.
+- The earlier start=512/count=256 attempt would need a sufficient number of dispatches to complete its window; no generated file alone **does not establish** that fewer than 512 occurred.
+
+**Next focused step:** retain the 1024-token marker-ON workload and all capture options except set \`Dispatch start index=257, Dispatch count=128\`. If no capture, probe start=129/count=128; if a capture exists but no FA, inspect event names, then adjust based on observed dispatch range, not elapsed time. Stop blind capture attempts if no range contains FA; investigate event-tree grouping/debug marker visibility and whether the FA call path used the expected instrumented backend. Gate 1 RGP label visibility remains **PENDING**, not PASS.
