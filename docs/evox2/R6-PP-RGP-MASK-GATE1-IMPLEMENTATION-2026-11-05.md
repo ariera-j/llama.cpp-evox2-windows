@@ -186,3 +186,23 @@ Other short-lived Vulkan client connections show `Failed to step driver initiali
 **Likely dispatch-window constraint:** if the capture must complete its entire requested window, the successes for start=1/count=256 and start=257/count=16 plus failure at start=257/count=128 are consistent with total capture-eligible dispatch count roughly 272–383, but RDP/device initialization or trace failure is an alternative. This is a *hypothesis*, not a proven total dispatch count or a benchmark metric. RGP event-tree numeric indices are **not** necessarily the same as global start-dispatch indices.
 
 **Follow-up:** avoid repeating start=257/count=128 or start=512/count=256 on the same 1024-token case. First inspect/filter user events for `FLASH_ATTN_EXT` and `EVOX2_FA_`, noting existing ordinary labels are visible. Then run **one** narrow target range farther along (e.g. start=289/count=16), and if no FA or trace failure, use a systematically bounded search or add opt-in host-side FA dispatch correlation; do not continue blindly sampling large windows. Keep marker=1, QSA UNION=0, same 1024 token case and provenance. No 64k capture or Gate 2 yet.
+
+
+## 2026-11-06 RDP follow-up: start=289/count=16 also fails
+
+User provided updated \`log(1).txt\` after changing the same 1024-token ON diagnostic workload to **Dispatch start index=289, count=16**. The new RDP 3.5.0.18 log records:
+
+| Time (local) | Connection 7921, Vulkan PID 18392 |
+|---|---|
+| 00:23:14.811 | Reached POSTDEVICEINIT |
+| 00:23:15.105 | Successfully requested trace |
+| 00:23:15.293 | Driver successfully initialized |
+| 00:24:08.144 | Client disconnected |
+| 00:24:08.226 | There was an error trying to collect a trace |
+| 00:24:08.226 | Failed to abort trace / Profiling capture failed |
+
+No RGP file was produced in this new attempt. The timestamps and behavior are similar to the earlier failure at start=257/count=128 (about 50 seconds from trace request to client disconnect), whereas start=1/count=256 and start=257/count=16 produced files. **This is consistent with the requested dispatch window not completing, but the RDP log does not expose the actual total dispatch count or isolate the failure cause.** Conditional on completion being the only reason for failure, the 1024 workload might have at least the end of the 257+16 window and not enough dispatches to complete 289+16; this is **not a measured total**. The errors from short-lived, pre-device-init auxiliary client connections are separate from the fully initialized client that requested this trace.
+
+**Decision: stop blind RDP start-index trials.** The diagnosis is blocked on whether the FA marker wrapper actually executes and which CPU/Vulkan dispatch sequence corresponds to the target FA node. The proven RGP captures already show ordinary Vulkan labels (\`UNARY\`, \`MUL_MAT\`, \`GET_ROWS\`, etc.), so a blanket "all Vulkan debug-utils labels are broken" explanation is not supported.
+
+**Next proposed implementation (separate reviewed patch, not yet coded):** opt-in **host-only FA dispatch trace**, with no new GPU sync or mask copy. Bound output (e.g., first 64 FA events and first relevant graph), recording stage (\`MASK_OPT\`/\`MAIN\`/\`SPARSE\`), actual shader, \`q\`, \`KV\`, \`N\`, \`Br\`, \`Bc\`, physical groups, a per-process count and graph/phase identity where available. At the actual \`vkCmdDispatch\` insertion point, also count/record an opt-in CPU dispatch ordinal (following r5 dispatch-trace reference); never assert it equals RDP's absolute RenderOp index until calibrated. Short ON trace must first show *whether* FA main is dispatched; then choose one small capture window based on observed valid mapping. If no FA dispatch occurs, debug backend/path selection rather than continue probing RDP indices. Keep tracing **off** during any throughput measurements. No restart, change of UMA, or 64k RGP profiling is justified by these logs alone.
