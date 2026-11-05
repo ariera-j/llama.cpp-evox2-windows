@@ -8492,7 +8492,7 @@ static void ggml_vk_fa_rgp_dispatch(
             " KV=" + std::to_string(kv) + " N=" + std::to_string(n) +
             " Br=" + std::to_string(br) + " Bc=" + std::to_string(bc) +
             " n_kv_max=" + std::to_string(n_kv_max) + " q=" + query_name;
-        ggml_vk_debug_label region(subctx, label);
+        ggml_vk_debug_label region(subctx, label, groups[0], groups[1], groups[2]);
         ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
     } else {
         ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
