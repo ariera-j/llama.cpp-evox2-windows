@@ -35,6 +35,7 @@
             GGML_VK_QSA_UNION_STATS_FILE        = $null
             GGML_VK_DEBUG_MARKERS               = $null
             GGML_VK_FA_RGP_MARKERS              = $null
+            GGML_VK_FA_DISPATCH_TRACE           = $null
             GGML_VK_FA_MASK_DIAG                = $null
             GGML_VK_FA_DISPATCH_DIAG            = $null
             GGML_VK_PERF_LOGGER                 = $null
@@ -64,6 +65,11 @@
             Variants = @(
                 @{ Name = 'markers-off-control'; Environment = @{ GGML_VK_FA_RGP_MARKERS = $null } }
                 @{ Name = 'markers-on';          Environment = @{ GGML_VK_FA_RGP_MARKERS = '1' } }
+                # CPU-only ordinal collection for capture-window calibration.
+                @{ Name = 'hosttrace-on';        Environment = @{
+                    GGML_VK_FA_RGP_MARKERS = '1'
+                    GGML_VK_FA_DISPATCH_TRACE = '1'
+                } }
             )
         }
     )

@@ -1,6 +1,37 @@
 #pragma once
 #include "ggml-vulkan-push-constants.h"
 
+// Investigation-only host-side ordinal for actual Vulkan vkCmdDispatch recording.
+// Exact GGML_VK_FA_DISPATCH_TRACE=1 opt-in. CPU order is NOT the RDP render-op index.
+#include <atomic>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+
+inline bool ggml_vk_fa_dispatch_trace_enabled() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("GGML_VK_FA_DISPATCH_TRACE");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+inline std::atomic<uint64_t> & ggml_vk_fa_dispatch_trace_ordinal() {
+    static std::atomic<uint64_t> ordinal {0};
+    return ordinal;
+}
+
+inline std::atomic<uint64_t> & ggml_vk_fa_dispatch_trace_graph_id() {
+    static std::atomic<uint64_t> graph_id {0};
+    return graph_id;
+}
+
+inline std::atomic<uint64_t> & ggml_vk_fa_dispatch_trace_event_id() {
+    static std::atomic<uint64_t> event_id {0};
+    return event_id;
+}
+
+
 inline std::ostream & operator<<(std::ostream & os, vk::Buffer buffer) {
     return os << static_cast<VkBuffer>(buffer);
 }
@@ -262,7 +293,7 @@ uint32_t ggml_vk_concat_unit_size(ggml_type type);
 bool ggml_vk_concat_supported(const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * dst);
 
 template <typename T>
-inline void ggml_vk_dispatch_pipeline(ggml_backend_vk_context* ctx, vk_context& subctx, vk_pipeline& pipeline, std::initializer_list<vk::DescriptorBufferInfo> const& descriptor_buffer_infos, const T &push_constants, std::array<uint32_t, 3> elements) {
+inline void ggml_vk_dispatch_pipeline(ggml_backend_vk_context* ctx, vk_context& subctx, vk_pipeline& pipeline, std::initializer_list<vk::DescriptorBufferInfo> const& descriptor_buffer_infos, const T &push_constants, std::array<uint32_t, 3> elements, uint64_t * cpu_dispatch_ordinal = nullptr) {
     const uint32_t wg0 = CEIL_DIV(elements[0], pipeline->wg_denoms[0]);
     const uint32_t wg1 = CEIL_DIV(elements[1], pipeline->wg_denoms[1]);
     const uint32_t wg2 = CEIL_DIV(elements[2], pipeline->wg_denoms[2]);
@@ -319,6 +350,12 @@ inline void ggml_vk_dispatch_pipeline(ggml_backend_vk_context* ctx, vk_context& 
                                 {});
     {
         ggml_vk_debug_label dbg(subctx, pipeline->name, wg0, wg1, wg2);
+        if (ggml_vk_fa_dispatch_trace_enabled()) {
+            const uint64_t ordinal = ggml_vk_fa_dispatch_trace_ordinal().fetch_add(1, std::memory_order_relaxed) + 1;
+            if (cpu_dispatch_ordinal != nullptr) {
+                *cpu_dispatch_ordinal = ordinal;
+            }
+        }
         subctx->s->buffer->buf.dispatch(wg0, wg1, wg2);
     }
 }

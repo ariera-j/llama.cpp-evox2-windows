@@ -2,6 +2,12 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+
+static std::mutex & ggml_vk_fa_dispatch_trace_log_mutex() {
+    static std::mutex log_mutex;
+    return log_mutex;
+}
 
 // Gate 1: r6 Vulkan Flash Attention markers for RGP. Exact literal "1"
 // enables labels; the default path has no extra Vulkan work or GPU sync.
@@ -5359,6 +5365,9 @@ void ggml_vk_instance_init() {
     const bool portability_enumeration_ext = ggml_vk_instance_portability_enumeration_ext_available(instance_extensions);
 #endif
     const bool fa_rgp_markers = ggml_vk_fa_rgp_markers_enabled();
+    if (ggml_vk_fa_dispatch_trace_enabled()) {
+        std::cerr << "ggml_vulkan: FA host dispatch trace enabled (GGML_VK_FA_DISPATCH_TRACE=1, max 128 FA events)\n";
+    }
     const bool debug_utils_available = ggml_vk_instance_debug_utils_ext_available(instance_extensions);
     const bool debug_utils_ext = debug_utils_available &&
         (getenv("GGML_VK_DEBUG_MARKERS") != nullptr || fa_rgp_markers);
@@ -8486,6 +8495,12 @@ static void ggml_vk_fa_rgp_dispatch(
         std::initializer_list<vk::DescriptorBufferInfo> buffers, const PushConstants & pc,
         std::array<uint32_t, 3> groups,
         const char * stage, const char * query_name, uint32_t kv, uint32_t n, uint32_t br, uint32_t bc, int32_t n_kv_max) {
+    // The ordinal is recorded directly beside the existing vkCmdDispatch call in
+    // ggml_vk_dispatch_pipeline; it counts CPU-recorded dispatches, not RDP renderops.
+    const bool host_trace = ggml_vk_fa_dispatch_trace_enabled();
+    uint64_t cpu_dispatch_ordinal = 0;
+    uint64_t * ordinal_out = host_trace ? &cpu_dispatch_ordinal : nullptr;
+
     if (ggml_vk_fa_rgp_markers_enabled() && vk_instance.debug_utils_support) {
         const std::string label =
             std::string("EVOX2_FA_") + stage + " shader=" + pipeline->name +
@@ -8493,12 +8508,34 @@ static void ggml_vk_fa_rgp_dispatch(
             " Br=" + std::to_string(br) + " Bc=" + std::to_string(bc) +
             " n_kv_max=" + std::to_string(n_kv_max) + " q=" + query_name;
         ggml_vk_debug_label region(subctx, label, groups[0], groups[1], groups[2]);
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
+        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups, ordinal_out);
     } else {
-        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups);
+        ggml_vk_dispatch_pipeline(ctx, subctx, pipeline, buffers, pc, groups, ordinal_out);
+    }
+
+    if (host_trace) {
+        const uint64_t event_id = ggml_vk_fa_dispatch_trace_event_id().fetch_add(1, std::memory_order_relaxed) + 1;
+        static constexpr uint64_t max_fa_events = 128;
+        if (event_id <= max_fa_events) {
+            const uint32_t wg0 = CEIL_DIV(groups[0], pipeline->wg_denoms[0]);
+            const uint32_t wg1 = CEIL_DIV(groups[1], pipeline->wg_denoms[1]);
+            const uint32_t wg2 = CEIL_DIV(groups[2], pipeline->wg_denoms[2]);
+            std::lock_guard<std::mutex> lock(ggml_vk_fa_dispatch_trace_log_mutex());
+            std::cerr << "evox2_vk_fa_dispatch_v1 event=" << event_id
+                      << " cpu_dispatch_ordinal=" << cpu_dispatch_ordinal
+                      << " stage=" << stage << " shader=" << pipeline->name
+                      << " q=" << query_name
+                      << " KV=" << kv << " N=" << n
+                      << " Br=" << br << " Bc=" << bc
+                      << " n_kv_max=" << n_kv_max
+                      << " wg=(" << wg0 << "," << wg1 << "," << wg2 << ")"
+                      << "\n";
+        } else if (event_id == max_fa_events + 1) {
+            std::lock_guard<std::mutex> lock(ggml_vk_fa_dispatch_trace_log_mutex());
+            std::cerr << "evox2_vk_fa_dispatch_v1 truncated_after=" << max_fa_events << "\n";
+        }
     }
 }
-
 void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const ggml_tensor * q, const ggml_tensor * k, const ggml_tensor * v, const ggml_tensor * mask, const ggml_tensor * sinks, ggml_tensor * dst) {
     if (ggml_vk_qsa_union(ctx, subctx, q, k, v, mask, sinks, dst)) {
         return;
@@ -14719,6 +14756,23 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
     VK_LOG_DEBUG("ggml_backend_vk_graph_compute(" << cgraph->n_nodes << " nodes)");
     ggml_backend_vk_context * ctx = (ggml_backend_vk_context *)backend->context;
 
+    const bool fa_trace = ggml_vk_fa_dispatch_trace_enabled();
+    const uint64_t trace_graph_id = fa_trace ?
+        ggml_vk_fa_dispatch_trace_graph_id().fetch_add(1, std::memory_order_relaxed) + 1 : 0;
+    const uint64_t trace_dispatch_begin = fa_trace ?
+        ggml_vk_fa_dispatch_trace_ordinal().load(std::memory_order_relaxed) : 0;
+    const uint64_t trace_fa_begin = fa_trace ?
+        ggml_vk_fa_dispatch_trace_event_id().load(std::memory_order_relaxed) : 0;
+    if (fa_trace && trace_graph_id <= 16) {
+        std::lock_guard<std::mutex> lock(ggml_vk_fa_dispatch_trace_log_mutex());
+        std::cerr << "evox2_vk_graph_dispatch_v1 state=begin graph=" << trace_graph_id
+                  << " cpu_dispatch_before=" << trace_dispatch_begin
+                  << " n_nodes=" << cgraph->n_nodes
+                  << " first_node=" << (cgraph->n_nodes ? cgraph->nodes[0]->name : "none")
+                  << " last_node=" << (cgraph->n_nodes ? cgraph->nodes[cgraph->n_nodes - 1]->name : "none")
+                  << "\n";
+    }
+
     ctx->device->diag_cgraph = nullptr;
     ctx->device->diag_prev_start = -1;
     ctx->device->diag_prev_end = -1;
@@ -15212,6 +15266,18 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
 
     if (!ctx->device->support_async) {
         ggml_vk_synchronize(ctx);
+    }
+
+    if (fa_trace && trace_graph_id <= 16) {
+        const uint64_t trace_dispatch_end = ggml_vk_fa_dispatch_trace_ordinal().load(std::memory_order_relaxed);
+        const uint64_t trace_fa_end = ggml_vk_fa_dispatch_trace_event_id().load(std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lock(ggml_vk_fa_dispatch_trace_log_mutex());
+        std::cerr << "evox2_vk_graph_dispatch_v1 state=end graph=" << trace_graph_id
+                  << " cpu_dispatch_begin=" << trace_dispatch_begin
+                  << " cpu_dispatch_end=" << trace_dispatch_end
+                  << " cpu_dispatch_count=" << (trace_dispatch_end - trace_dispatch_begin)
+                  << " fa_events=" << (trace_fa_end - trace_fa_begin)
+                  << "\n";
     }
 
     return GGML_STATUS_SUCCESS;

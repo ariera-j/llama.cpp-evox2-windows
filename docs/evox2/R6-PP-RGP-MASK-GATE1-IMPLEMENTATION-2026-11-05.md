@@ -206,3 +206,57 @@ No RGP file was produced in this new attempt. The timestamps and behavior are si
 **Decision: stop blind RDP start-index trials.** The diagnosis is blocked on whether the FA marker wrapper actually executes and which CPU/Vulkan dispatch sequence corresponds to the target FA node. The proven RGP captures already show ordinary Vulkan labels (\`UNARY\`, \`MUL_MAT\`, \`GET_ROWS\`, etc.), so a blanket "all Vulkan debug-utils labels are broken" explanation is not supported.
 
 **Next proposed implementation (separate reviewed patch, not yet coded):** opt-in **host-only FA dispatch trace**, with no new GPU sync or mask copy. Bound output (e.g., first 64 FA events and first relevant graph), recording stage (\`MASK_OPT\`/\`MAIN\`/\`SPARSE\`), actual shader, \`q\`, \`KV\`, \`N\`, \`Br\`, \`Bc\`, physical groups, a per-process count and graph/phase identity where available. At the actual \`vkCmdDispatch\` insertion point, also count/record an opt-in CPU dispatch ordinal (following r5 dispatch-trace reference); never assert it equals RDP's absolute RenderOp index until calibrated. Short ON trace must first show *whether* FA main is dispatched; then choose one small capture window based on observed valid mapping. If no FA dispatch occurs, debug backend/path selection rather than continue probing RDP indices. Keep tracing **off** during any throughput measurements. No restart, change of UMA, or 64k RGP profiling is justified by these logs alone.
+
+
+## Gate 1 follow-up source patch: CPU dispatch correlation (2026-11-06)
+
+**State: source patch + static tests + short smoke variant committed. Native Windows rebuild and 1024-token diagnostic log still REQUIRED.** The earlier b12094 smoke remains valid for marker-only mode; the rebuilt diagnostic binary will have a *new SHA-256* and must not be treated as the old executable.
+
+Why: RDP successfully captured start=1/count=256 and start=257/count=16, but failed at start=257/count=128 and start=289/count=16. The captured frames did not show \`EVOX2_FA_\`. Those observations do not determine whether Flash Attention was dispatched or whether the RDP window missed it.
+
+### Implementation
+
+- Exact opt-in \`GGML_VK_FA_DISPATCH_TRACE=1\`. Default OFF. Independent of \`GGML_VK_FA_RGP_MARKERS\`.
+- \`ggml-vulkan-common.h\`: count **actual CPU-side invocations of** \`vk::CommandBuffer::dispatch(wg0,wg1,wg2)\` in the existing \`ggml_vk_dispatch_pipeline\` helper. Counter is process-wide and uses \`std::atomic<uint64_t>\` with relaxed memory order. Capture the 1-based ordinal via an optional output pointer, default \`nullptr\`; all existing non-FA call sites remain source-compatible.
+- \`ggml-vulkan.cpp\`: when a FA pipeline is dispatched, output one \`evox2_vk_fa_dispatch_v1\` stderr line with ordinal, \`MASK_OPT\`/\`MAIN\` etc, \`shader\`, query name, \`KV\`, \`N\`, \`Br/Bc\`, \`n_kv_max\`, actual workgroup counts. **At most 128 FA event lines** per process, with one truncation notice if exceeded.
+- The existing \`ggml_backend_vk_graph_compute\` function logs up to the first **16** graph begin/end pairs as \`evox2_vk_graph_dispatch_v1\`, showing CPU ordinal interval, count, FA event count, first/last graph-node names. No new GPU synchronizations were added (the original conditional synchronize remains unchanged).
+- Trace output occurs in native \`stderr.log\` captured by \`Measure-LlamaBench.ps1\`. No extra CUDA/HIP instrumentation, shader compilation flags, GPU buffer copies or per-dispatch GPU sync.
+
+**Important limitation:** this CPU-recording ordinal counts the dispatches through the existing \`ggml_vk_dispatch_pipeline\` helper, not necessarily *all* GPU RenderOps visible to RDP; CPU multithreaded command-buffer recording may interleave, and RDP may use a different indexing origin or count non-dispatch events. **Do not directly set RDP start to a recorded CPU ordinal without one verified event-tree calibration.** This trace is diagnostic only and must not be used to compare PP throughput.
+
+### Worktree update / native incremental build
+
+\`\`\`powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag
+git pull --ff-only
+
+python -m unittest discover -s .\tools\evox2\tests -p 'test_r6_fa_rgp_markers.py' -v
+python -m unittest discover -s .\tools\evox2\tests -p 'test_r6_fa_dispatch_trace.py' -v
+
+.\tools\evox2\build\Build-Vulkan.ps1 \`
+    -BuildDir .\build-vulkan-ppdiag-rgp \`
+    -VulkanSdk 'C:\VulkanSDK\1.4.357.0' \`
+    -LlvmBin 'C:\Program Files\LLVM\bin' \`
+    -Parallel 4 -BuildOnly
+\`\`\`
+
+Use the original validated explicit \`-CMakeExe\`/\`-ExpectedCMakeVersion\` settings if applicable. \`-BuildOnly\` reuses the existing diagnostic CMake cache; do not delete or rebuild the successful production r6 Vulkan path.
+
+### One 1024-token probe (no RDP needed on this run)
+
+The plan adds exactly one new variant \`hosttrace-on\`, separate from the two original PASS variants. It keeps \`GGML_VK_FA_RGP_MARKERS=1\` and sets the new trace flag to \`1\`.
+
+\`\`\`powershell
+$plan = '.\tools\evox2\benchmark\configs\qwen38-r6-pp-fa-rgp-gate1-20261105.psd1'
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant hosttrace-on -StopOnError
+\`\`\`
+
+After the run, inspect native stderr for:
+- \`ggml_vulkan: FA host dispatch trace enabled (GGML_VK_FA_DISPATCH_TRACE=1, max 128 FA events)\`
+- \`evox2_vk_graph_dispatch_v1 state=begin/end ... cpu_dispatch_begin/end ... fa_events=...\`
+- \`evox2_vk_fa_dispatch_v1 event=... cpu_dispatch_ordinal=... stage=MAIN q=... KV=... N=... wg=(...)\` (if the target FA wrapper executed)
+
+If graph dispatches are present but **no** FA event appears, do **not** guess a late RGP start; inspect the **actual selected FA op/graph/backend path**, and whether QSA UNION is truly off. If FA is present, compare its CPU ordinal with successfully captured RGP event labels before selecting another narrow RDP capture. Upload the new run ZIP or at least \`stderr.log\` + \`condition.json\` / telemetry summary to the investigation.
+
+**Gate 1 RGP label visibility remains pending** until a genuine \`EVOX2_FA_\` event is seen in the RGP event tree.
