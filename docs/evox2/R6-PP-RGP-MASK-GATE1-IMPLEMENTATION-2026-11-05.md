@@ -260,3 +260,39 @@ After the run, inspect native stderr for:
 If graph dispatches are present but **no** FA event appears, do **not** guess a late RGP start; inspect the **actual selected FA op/graph/backend path**, and whether QSA UNION is truly off. If FA is present, compare its CPU ordinal with successfully captured RGP event labels before selecting another narrow RDP capture. Upload the new run ZIP or at least \`stderr.log\` + \`condition.json\` / telemetry summary to the investigation.
 
 **Gate 1 RGP label visibility remains pending** until a genuine \`EVOX2_FA_\` event is seen in the RGP event tree.
+
+
+## 2026-11-06 hosttrace b12100 CPU ordinals: FA execution confirmed, RGP mapping OPEN
+
+**User-uploaded native run:** \`20261106-080259-189-bench-vulkan-b12100-ctx2048-4a5dca8500ea.zip\` (retain outside Git), SHA-256 \`2b1e5f53b397d1097e84b7196d7d857691e1178874887254b2a2016f311c2cb8\`. Verified source commit \`9f018acb76ebb723ee55ee5ac41a072827247a86\`, BuildIdentity Verified, source clean, exe SHA-256 \`54c1a19e7bf75a3ca3f155e6e05a98f4a2ff56eb6bf18bf819802be60520579b\`, compiled b12100 / Clang20.1.8 / Vulkan Radeon 8060S, UMA label96GB.
+
+**Status:** \`OK\`, exit0, original IQ3_XXS PLE16 GGUF (not original multi-shard), Japanese literature source SHA \`8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143\`, head 1024 tokens, \`ctx2048\`, batch2048, UBatch1024, f16 KV, 4 threads, no warmup, no MTP, QSA UNION OFF, \`GGML_VK_FA_RGP_MARKERS=1\`, \`GGML_VK_FA_DISPATCH_TRACE=1\`.
+
+**CPU-side dispatch graph summary** extracted from \`stderr.log\`:
+
+- Graph1: 48 nodes, ordinal span after 0 to 31 inclusive = 31 CPU-recorded dispatches, zero FA events. Embedding graph.
+- Graph2: 6864 nodes, begin after CPU ordinal31, end after 3879, count **3848** CPU-recorded dispatches, **24** annotated FA dispatch events.
+- Combined count across both: **3879 dispatches**, per-process CPU dispatch counter; not a measured RDP RenderOp total. \`FA event count=24\`: 12 \`MASK_OPT\`, 12 \`MAIN\`, no \`SPARSE\` or split-k pipeline in this short run.
+
+| q tensor | mask-opt CPU ordinal | main CPU ordinal |
+|---|---:|---:|
+| Qcur-3 | 351 | 352 |
+| Qcur-7 | 668 | 669 |
+| Qcur-11 | 985 | 986 |
+| Qcur-15 | 1302 | 1303 |
+| Qcur-19 | 1619 | 1620 |
+| Qcur-23 | 1936 | 1937 |
+| Qcur-27 | 2253 | 2254 |
+| Qcur-31 | 2570 | 2571 |
+| Qcur-35 | 2887 | 2888 |
+| Qcur-39 | 3204 | 3205 |
+| Qcur-43 | 3521 | 3522 |
+| Qcur-47 | 3840 | 3841 |
+
+All observed \`MASK_OPT\` events select actual \`fa_mask_opt\`, \`wg=(1,64,1)\`. All observed \`MAIN\` events use \`flash_attn_f32_f16_aligned_cm1\`, \`wg=(64,24,1)\`. Shared dimensions \`KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283\` and \`q=Qcur-* (view) (permuted)\`. The target \`Qcur-19\` is **definitely dispatched** in this CPU instrumentation context. This resolves the doubt that FA wrapper wasn't called.
+
+Measured PP 528.214195 tok/s / 1.9386075s, **single opt-in diagnostic run — not a valid performance comparison**. ADLX started and exited0, 24 GPU samples, Windows resource 24 samples, P-MODE Performance unchanged, physical free RAM minimum22.899GiB, commit maximum89.832GiB, no reported OOM/reset. High-load sample classifier insufficient on short PP.
+
+**Correction to earlier RDP capture hypothesis:** we previously inferred that start=289/count=16 failing might mean only ~288 dispatches occurred. The new CPU log observes 3879 dispatch *recordings*, so the simple inference is **not justified**. RDP's \`Dispatch start index\` is a GPU-driver RenderOp/capture counter and **must not be assumed equal** to the CPU count, nor do driver-side capture failures prove a total <289. Prior successes (1×256 and 257×16) did not include the observed first FA event at CPU ordinal351 if these numbering sequences were aligned, which is qualitatively consistent with no FA label in those earlier captures. But the mapping is uncalibrated; do **not** blindly try 351 or 1619 as an RDP absolute start.
+
+**Follow-up decision:** Gate1 native host trace **PASS**; full RGP visible FA marker remains **PENDING**. Focus next on CPU command-buffer submit/trace ordering versus RDP RenderOp indexing and a robust trigger method. Prefer a controlled small, longer-lived input workload or RDP manual/auto-capture mode adjusted with explicit evidence, rather than brute-force 1024 index sweeps. Keep the same instrumented b12100 executable for pure capture exploration and inspect both Vulkan labels and RDP process-disconnect errors. No new C++ diagnostic patch is necessary just to prove FA was executed.
