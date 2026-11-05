@@ -1,6 +1,6 @@
 # Gate 1 implemented: r6 Vulkan FA RGP marker-only port (2026-11-05)
 
-**Status:** GitHub source patch + static source-contract tests + **short-only** benchmark plan committed. **Windows native build NOT RUN; Python tests NOT RUN in a Windows worktree; model inference and RGP capture NOT RUN.** G1 is **implementation complete / validation pending**, not a GPU PASS.
+**Status (2026-11-05):** Gate 1 source patch + static source-contract tests + short-only benchmark plan committed. User confirmed **Python static tests PASS**. First Windows build stopped with a constructor-arity error in `ggml_vk_debug_label`; **FIX1 changes only that call to r6's existing five-argument overload**. Native Windows re-build, model inference and RGP visibility remain **NOT PASSED**.
 
 **Branch** `investigation/r6-pp-fa-mask-rgp-20261105`. Originated from source feature commit `6a092fd2e60789d6ff7001cbe8e342fccff323ac`.
 
@@ -8,6 +8,7 @@
 
 - `ggml/src/ggml-vulkan/ggml-vulkan.cpp`: ported r5 **marker-only** design into r6 without old r5 QSA/FA source. Exact `GGML_VK_FA_RGP_MARKERS=1` enables `VK_EXT_debug_utils` (when available) and wraps Vulkan FA **MASK_OPT, SPARSE, MAIN_SPLIT, SPLIT_REDUCE, MAIN** dispatches in `EVOX2_FA_...` regions. User-event labels report true shader pipeline name, `KV` K tensor length, `N` FA query dimension, `Br`, `Bc`, `n_kv_max`, `q` tensor name.
 - Only the normal `ggml_vk_flash_attn` path is annotated. r6 QSA UNION is unchanged and must be **OFF** during the investigation. Intel Xe dual-stage FA has no custom wrapper in G1 (the EVO-X2 is AMD).
+- **FIX1: r6 constructor compatibility:** use `ggml_vk_debug_label region(subctx, label, groups[0], groups[1], groups[2]);`. r6 does not have r5's two-argument `(vk_context&, std::string)` constructor. Its existing overload appends the **passed dispatch group tuple** as `(x,y,z)` to the label; preserve this in RGP screenshot/export when matching. The tuple is the dispatch helper's input group arguments and is not a substitute for verifying actual GPU dispatch dimensions.
 - No additional shader, GPU memory copy/readback, QSA data mutation, FA math change, queue wait or forced GPU synchronization. The wrapper's disabled branch invokes exactly the former `ggml_vk_dispatch_pipeline` with the same arguments.
 - `tools/evox2/tests/test_r6_fa_rgp_markers.py`: static source/plan opt-in/dispatch/absence-of-sync contract. **No claim of native correctness from static assertions**.
 - `tools/evox2/benchmark/configs/qwen38-r6-pp-fa-rgp-gate1-20261105.psd1`: one **1024-token / ctx2048 / head-sliced literary prompt** job with markers OFF and ON variants. No 64k job, reducing risk of accidental full GPU profiling before smoke verification. Requires a new local BuildKey `R6PpFaRgpVulkan`.
@@ -98,3 +99,27 @@ Gate 1 native PASS requires: static tests pass, unique diagnostic build compiles
 - **No mask metadata snapshots or heatmaps in Gate 1.** These are Gate 2 and should be a separate commit, after RGP source verification.
 - No ROCm/HIP source changes in Gate 1. HIP layer ↔ kernel correlation and ROCm captures are a later gate.
 - Marker-enabled rates are diagnostic and should not enter the `evox2-llm-experiments` throughput baseline table.
+
+
+## FIX1 — incremental build after constructor mismatch
+
+The first Windows clang-cl build failed at `ggml-vulkan.cpp` because the initial Gate 1 wrapper invoked `ggml_vk_debug_label region(subctx, label)`, but r6 only offers a five-argument command-buffer pipeline-name constructor. This was not discovered by pure string-contract static tests, which previously omitted constructor compatibility.
+
+After `git pull --ff-only` on the diagnostic worktree, rerun the updated static test then **reuse the existing diagnostic build directory** (no need to delete the CMake cache or rebuild the validated baseline):
+
+```powershell
+cd C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag
+git pull --ff-only
+python -m unittest discover -s .\tools\evox2\tests -p 'test_r6_fa_rgp_markers.py' -v
+
+.\tools\evox2\build\Build-Vulkan.ps1 `
+    -BuildDir .\build-vulkan-ppdiag-rgp `
+    -VulkanSdk 'C:\VulkanSDK\1.4.357.0' `
+    -LlvmBin 'C:\Program Files\LLVM\bin' `
+    -Parallel 4 `
+    -BuildOnly
+```
+
+`-BuildOnly` still performs the script's environment and toolchain validation, including the CMake version pin. If the original build explicitly used `-CMakeExe`/`-ExpectedCMakeVersion`, pass the **same** arguments again. Do not clear or reconfigure the build directory unnecessarily. If compilation fails at another point, stop and send the first compiler error (rather than the final PowerShell throw).
+
+**Gate condition remains unchanged**: new executable identity, short OFF/ON native smoke, actual RGP user-event visibility; no 64k profiling yet.
