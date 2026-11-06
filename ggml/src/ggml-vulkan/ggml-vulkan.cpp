@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <fstream>
 #include <mutex>
 
 static std::mutex & ggml_vk_fa_dispatch_trace_log_mutex() {
@@ -17,6 +19,141 @@ static bool ggml_vk_fa_rgp_markers_enabled() {
         return env != nullptr && std::strcmp(env, "1") == 0;
     }();
     return enabled;
+}
+
+// One-shot FA mask-opt *metadata* snapshot. The diagnostic does not change the
+// actual attention mask, the existing compute kernel, or the FA main shader.
+static bool ggml_vk_fa_mask_diag_enabled() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("GGML_VK_FA_MASK_DIAG");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static uint32_t ggml_vk_fa_mask_diag_target_kv() {
+    static const uint32_t value = [] {
+        const char * env = std::getenv("GGML_VK_FA_MASK_DIAG_KV");
+        if (env == nullptr || *env == '\0') {
+            return uint32_t{1024};
+        }
+        char * end = nullptr;
+        const unsigned long long parsed = std::strtoull(env, &end, 10);
+        if (end == env || *end != '\0' || parsed == 0 || parsed > UINT32_MAX) {
+            std::cerr << "ggml_vulkan: invalid GGML_VK_FA_MASK_DIAG_KV, using 1024\n";
+            return uint32_t{1024};
+        }
+        return (uint32_t) parsed;
+    }();
+    return value;
+}
+
+static const char * ggml_vk_fa_mask_diag_target_query() {
+    const char * env = std::getenv("GGML_VK_FA_MASK_DIAG_QUERY");
+    return env != nullptr && *env != '\0' ? env : "Qcur-19";
+}
+
+// Minimal UTF-8 preserving JSON string escape for the tensor name.
+static std::string ggml_vk_fa_mask_diag_json_string(const std::string & in) {
+    static const char hex[] = "0123456789abcdef";
+    std::string out = "\"";
+    for (unsigned char c : in) {
+        if (c == '"' || c == '\\') {
+            out.push_back('\\');
+            out.push_back((char) c);
+        } else if (c < 0x20) {
+            out += "\\u00";
+            out.push_back(hex[c >> 4]);
+            out.push_back(hex[c & 15]);
+        } else {
+            out.push_back((char) c);
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+// Called only after the ORIGINAL ggml_vk_synchronize fence completion.
+// The private snapshot is independent of prealloc_y, which is re-used by FA.
+static void ggml_vk_fa_mask_diag_flush(ggml_backend_vk_context * ctx) {
+    if (!ctx->fa_mask_diag_pending || !ctx->fa_mask_diag_snapshot) {
+        return;
+    }
+    ctx->fa_mask_diag_pending = false; // avoid writing twice on later sync
+    const size_t words = (size_t) ctx->fa_mask_diag_words_per_row *
+                         ctx->fa_mask_diag_rows * ctx->fa_mask_diag_slices;
+    if (!words || words > (1u << 18)) {
+        std::cerr << "ggml_vulkan: FA mask diag invalid pending word count\n";
+        return;
+    }
+    std::vector<uint32_t> packed(words);
+    ggml_vk_buffer_read(ctx->fa_mask_diag_snapshot, 0, packed.data(), packed.size() * sizeof(uint32_t));
+
+    const char * requested = std::getenv("GGML_VK_FA_MASK_DIAG_FILE");
+    const std::string prefix = requested != nullptr && *requested != '\0' ? requested : "fa-mask-tiles";
+    const std::string binary_path = prefix + ".bin";
+    const std::string metadata_path = prefix + ".json";
+
+    // Refuse to overwrite an earlier run. Supply a unique prefix for each input.
+    {
+        std::ifstream existing_bin(binary_path, std::ios::binary);
+        std::ifstream existing_json(metadata_path, std::ios::binary);
+        if (existing_bin.good() || existing_json.good()) {
+            std::cerr << "ggml_vulkan: FA mask diag output exists; refusing overwrite: " << prefix << "\n";
+            return;
+        }
+    }
+
+    std::ofstream out_binary(binary_path, std::ios::binary | std::ios::out);
+    if (!out_binary) {
+        std::cerr << "ggml_vulkan: FA mask diag cannot open binary output: " << binary_path << "\n";
+        return;
+    }
+    out_binary.write(reinterpret_cast<const char *>(packed.data()), (std::streamsize) (words * sizeof(uint32_t)));
+    out_binary.close();
+    if (!out_binary.good()) {
+        std::cerr << "ggml_vulkan: FA mask diag binary write failure: " << binary_path << "\n";
+        return;
+    }
+
+    std::ofstream meta(metadata_path, std::ios::out);
+    if (!meta) {
+        std::cerr << "ggml_vulkan: FA mask diag cannot open JSON output: " << metadata_path << "\n";
+        return;
+    }
+    meta << "{\n"
+         << "  \"schema_version\": 1,\n"
+         << "  \"source\": \"vulkan_fa_mask_opt_packed_2bit\",\n"
+         << "  \"word_encoding\": \"uint32_le_16x2bit\",\n"
+         << "  \"query\": " << ggml_vk_fa_mask_diag_json_string(ctx->fa_mask_diag_query) << ",\n"
+         << "  \"kv\": " << ctx->fa_mask_diag_kv << ",\n"
+         << "  \"n\": " << ctx->fa_mask_diag_n << ",\n"
+         << "  \"br\": " << ctx->fa_mask_diag_br << ",\n"
+         << "  \"bc\": " << ctx->fa_mask_diag_bc << ",\n"
+         << "  \"n_kv_max\": " << ctx->fa_mask_diag_n_kv_max << ",\n"
+         << "  \"mask_ne0\": " << ctx->fa_mask_diag_mask_ne0 << ",\n"
+         << "  \"words_per_row\": " << ctx->fa_mask_diag_words_per_row << ",\n"
+         << "  \"tiles_per_row\": " << ctx->fa_mask_diag_tiles_per_row << ",\n"
+         << "  \"rows\": " << ctx->fa_mask_diag_rows << ",\n"
+         << "  \"slices\": " << ctx->fa_mask_diag_slices << ",\n"
+         << "  \"payload_bytes\": " << words * sizeof(uint32_t) << ",\n"
+         << "  \"codebook\": {\"0\": \"MIXED\", \"1\": \"ALL_NEG_INF\", \"2\": \"ALL_ZERO\", \"3\": \"INVALID\"}\n"
+         << "}\n";
+    meta.close();
+    if (!meta.good()) {
+        std::cerr << "ggml_vulkan: FA mask diag JSON write failure: " << metadata_path << "\n";
+        return;
+    }
+
+    std::cerr << "evox2_vk_fa_mask_diag_v1 status=wrote"
+              << " query=" << ctx->fa_mask_diag_query
+              << " KV=" << ctx->fa_mask_diag_kv << " N=" << ctx->fa_mask_diag_n
+              << " Br=" << ctx->fa_mask_diag_br << " Bc=" << ctx->fa_mask_diag_bc
+              << " rows=" << ctx->fa_mask_diag_rows
+              << " cols=" << ctx->fa_mask_diag_tiles_per_row
+              << " slices=" << ctx->fa_mask_diag_slices
+              << " bytes=" << words * sizeof(uint32_t)
+              << " prefix=" << prefix << "\n";
 }
 
 static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& device) {
@@ -8982,6 +9119,49 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
                                   { mask_opt_num_dwords, CEIL_DIV(nem1, Br), nem2 * nem3 },
                                   "MASK_OPT", q->name, KV, N, Br, Bc, n_kv_max);
         ggml_vk_sync_buffers(ctx, subctx);
+        // Copy only the *already computed* mask tile metadata. The main FA
+        // still reads its original scratch buffer, not this private snapshot.
+        if (ggml_vk_fa_mask_diag_enabled() && !ctx->fa_mask_diag_captured &&
+            KV == ggml_vk_fa_mask_diag_target_kv() && N == 1024) {
+            const char * query = ggml_vk_fa_mask_diag_target_query();
+            const size_t prefix_len = std::strlen(query);
+            if (std::strncmp(q->name, query, prefix_len) == 0 &&
+                (q->name[prefix_len] == '\0' || q->name[prefix_len] == ' ')) {
+                const uint64_t rows = CEIL_DIV(nem1, Br);
+                const uint64_t slices = (uint64_t) nem2 * nem3;
+                const uint64_t words = (uint64_t) mask_opt_num_dwords * rows * slices;
+                const uint64_t bytes = words * sizeof(uint32_t);
+                const uint64_t logical_cols = CEIL_DIV(KV, Bc);
+                // The 1MiB bound also prevents unbounded dimensions/overflow.
+                if (words && bytes <= (1u << 20) && bytes <= mask_opt_buf.size &&
+                    logical_cols > 0 && logical_cols <= (uint64_t) mask_opt_num_dwords * 16 &&
+                    rows <= UINT32_MAX && slices <= UINT32_MAX) {
+                    ctx->fa_mask_diag_snapshot = ggml_vk_create_buffer_device(ctx->device, (size_t) bytes);
+                    ggml_vk_buffer_copy_async(subctx, ctx->fa_mask_diag_snapshot, 0,
+                                              mask_opt_buf.buffer, mask_opt_buf.offset, (size_t) bytes);
+                    ggml_vk_sync_buffers(ctx, subctx);
+                    ctx->fa_mask_diag_query = q->name;
+                    ctx->fa_mask_diag_kv = KV;
+                    ctx->fa_mask_diag_n = N;
+                    ctx->fa_mask_diag_br = Br;
+                    ctx->fa_mask_diag_bc = Bc;
+                    ctx->fa_mask_diag_n_kv_max = (uint32_t) std::max<int32_t>(0, n_kv_max);
+                    ctx->fa_mask_diag_mask_ne0 = nem0;
+                    ctx->fa_mask_diag_words_per_row = mask_opt_num_dwords;
+                    ctx->fa_mask_diag_tiles_per_row = (uint32_t) logical_cols;
+                    ctx->fa_mask_diag_rows = (uint32_t) rows;
+                    ctx->fa_mask_diag_slices = (uint32_t) slices;
+                    ctx->fa_mask_diag_captured = true;
+                    ctx->fa_mask_diag_pending = true;
+                    std::cerr << "evox2_vk_fa_mask_diag_v1 status=queued query=" << q->name
+                              << " KV=" << KV << " bytes=" << bytes << "\n";
+                } else {
+                    std::cerr << "evox2_vk_fa_mask_diag_v1 status=rejected invalid_size_or_shape"
+                              << " KV=" << KV << " bytes=" << bytes
+                              << " mask_buf_size=" << mask_opt_buf.size << "\n";
+                }
+            }
+        }
     }
 
     if (use_sparse)
@@ -13429,6 +13609,12 @@ void ggml_vk_cleanup(ggml_backend_vk_context * ctx) {
 
     ggml_vk_graph_cleanup(ctx);
 
+    if (ggml_vk_fa_mask_diag_enabled() && !ctx->fa_mask_diag_captured) {
+        std::cerr << "evox2_vk_fa_mask_diag_v1 status=not_captured"
+                  << " target_KV=" << ggml_vk_fa_mask_diag_target_kv()
+                  << " target_query=" << ggml_vk_fa_mask_diag_target_query() << "\n";
+    }
+    ggml_vk_destroy_buffer(ctx->fa_mask_diag_snapshot);
     ggml_vk_destroy_buffer(ctx->prealloc_x);
     ggml_vk_destroy_buffer(ctx->prealloc_y);
     ggml_vk_destroy_buffer(ctx->prealloc_split_k);
@@ -14000,6 +14186,7 @@ void ggml_vk_synchronize(ggml_backend_vk_context * ctx) {
         }
         ctx->compute_ctx.reset();
     }
+    ggml_vk_fa_mask_diag_flush(ctx);
 }
 
 static void ggml_backend_vk_synchronize(ggml_backend_t backend) {

@@ -1225,6 +1225,23 @@ class vk_perf_logger {
 struct ggml_backend_vk_context {
     std::string name;
 
+    // Investigation only, opt-in one-shot snapshot of existing fa_mask_opt
+    // packed 2-bit tile classifications. Ownership survives prealloc_y reuse.
+    vk_buffer fa_mask_diag_snapshot;
+    std::string fa_mask_diag_query;
+    uint32_t fa_mask_diag_kv = 0;
+    uint32_t fa_mask_diag_n = 0;
+    uint32_t fa_mask_diag_br = 0;
+    uint32_t fa_mask_diag_bc = 0;
+    uint32_t fa_mask_diag_n_kv_max = 0;
+    uint32_t fa_mask_diag_mask_ne0 = 0;
+    uint32_t fa_mask_diag_words_per_row = 0;
+    uint32_t fa_mask_diag_tiles_per_row = 0;
+    uint32_t fa_mask_diag_rows = 0;
+    uint32_t fa_mask_diag_slices = 0;
+    bool fa_mask_diag_captured = false;
+    bool fa_mask_diag_pending = false;
+
     vk_device device;
 
     size_t semaphore_idx, event_idx;
