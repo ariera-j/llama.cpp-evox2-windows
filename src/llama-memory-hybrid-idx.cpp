@@ -1016,6 +1016,8 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
     if (diag_flag && std::strcmp(diag_flag, "1") == 0 && !indexer_diag_saved.load() &&
         ubatch->pos && ubatch->n_pos > 0 && ubatch->n_seqs_unq == 1 &&
         ubatch->seq_id && ubatch->n_tokens > 0) {
+        // ubatch->pos stores each M-RoPE component in a contiguous token section;
+        // the first section uses pos[i], NOT pos[i*n_pos].
         // A diagnostic must never make inference fail. Stage probes distinguish
         // graph/input rejection from a GPU dispatch/readback failure.
         static std::atomic<bool> probe_logged{false};
@@ -1052,7 +1054,7 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
             const llama_seq_id target_seq = ubatch->seq_id[0][0];
             for (uint32_t i = 0; i < ubatch->n_tokens; ++i) {
                 if (ubatch->n_seq_id[i] != 1 || ubatch->seq_id[i][0] != target_seq ||
-                    ubatch->pos[(size_t) i * ubatch->n_pos] != ubatch->pos[0] + (llama_pos) i) {
+                    ubatch->pos[i] != ubatch->pos[0] + (llama_pos) i) {
                     throw std::runtime_error("evox2 indexer diag: non-contiguous/multi-sequence UBatch");
                 }
             }
