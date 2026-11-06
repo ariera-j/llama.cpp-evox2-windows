@@ -110,3 +110,23 @@ RGP → Events → **Event timing**, enable user-event grouping/filtering and se
 For **each** corpus: benchmark ZIP, `.rgp` file (or if too large, RGP event-timing screenshots showing both stage labels and duration, plus RDP capture status log), actual timer/dispatch start and count, build identity and P-MODE observations. Initial code capture alone is enough to verify calibration before literature.
 
 Reference: AMD RDP [Profiling & capture settings](https://gpuopen.com/manuals/rdp_manual/features/) and [compute-only Vulkan RGP](https://gpuopen.com/learn/radeon_gpu_profiler_2-4_support_rx9000_series_pure-compute_applications/).
+
+## 2026-11-07 first 64k RGP calibration pair — GPU capture obtained, FA target NOT YET confirmed
+
+Native marker-only runs completed normally on the correctly configured b12133/da51a88c2 Vulkan binary:
+
+| Corpus | Native run ID | Native Exit | RGP file | Initial RDP Dispatch timer |
+|---|---|---|---|---|
+| Code | `20261107-012232-772-bench-vulkan-b12133-ctx65536-283633fc79f0` | OK / 0 | `llama-bench-20261107-012538502.rgp` | 175,000 ms (planned) |
+| Literature | `20261107-013603-436-bench-vulkan-b12133-ctx65536-1e4b472c638e` | OK / 0 | `llama-bench-20261107-013915236.rgp` | 185,000 ms (planned) |
+
+- Native `conditions.json.Environment` and `stderr.log` positively confirm `GGML_VK_FA_RGP_MARKERS=1`, the `ggml_vulkan: FA RGP markers enabled (VK_EXT_debug_utils, label prefix EVOX2_FA_)` line, correct Vulkan backend, QSA UNION0, gather0, prompt61777, ctx65536, N1024 nominal and unchanged b12133 build. Code sample native `384.331 tok/s` and literature `356.762 tok/s` are marker-only/RDP-influenced; don't use them for a clean timing attribution.
+- Four user screenshots show **valid RGP event-tree and wavefront-occupancy captures**, with grouped `GET_ROWS node_1`, `CONCAT node_4`, and MoE `ffn_moe_gate-2/ffn_moe_up-2` among the most expensive captured events. In the shown event area no `EVOX2_FA_` marker appears; user reports none found. **Do not conclude global FA absence:** a 256-dispatch window can sample the beginning of one graph while missing its later `Qcur-19` FA dispatch.
+- The actual RGP filenames are around +184.777s after the code run's START and +190.359s after literature START, but filenames represent profile creation, not a verified `KV49152` moment; the screenshot doesn't establish physical KV. These are **exploratory calibration traces**, not a matched FA timing pair.
+- Evidence digests: code ZIP `5ebe07e10f30a1da2e89fe854511a7d0fa02cc90be076d2f4a247f7aaf2e990a`; code RGP `e864b6aa334b556d88b880e3653505e323a8cb01dd9f8e0018f5f996bc8cc5c4`; literature ZIP `cea963af09ef6eeafdff789630c55b546464dde92371f784c58000ee5e8b5ee7`; literature RGP `5121e305be038db7f1e9123e7b86811b09635a4e2ddb76759d881cee7dbcc658`.
+
+**Cheap check before rerunning:** in the existing RGP *Event timing* view, clear all filters and search the exact literal `EVOX2_FA_` (without `EVO-X2` hyphen) using **Filter event tree**. Verify both `EVOX2_FA_MASK_OPT` and `EVOX2_FA_MAIN` absent in the complete captured event hierarchy, not merely the first on-screen `submit 0` rows.
+
+**One-step code-only probe if the marker is absent:** keep dispatch count256, SQTT High, counters/tracing OFF, all benchmark plan parameters unchanged, and move RDP `Dispatch timer / Capture time` to **176,000 ms** from175,000 ms. This **+1000ms is only an exploratory heuristic**, intended to move from visibly early MoE layers toward later `Qcur-19` within or near the same 1024-token physical batch; it does not guarantee the same KV, or even the same batch. Inspect the **nearest actual `EVOX2_FA_ ... KV=... N=... q=...`** event and report. Only after this code-side calibration choose a literature timer value. If the next sample still shows early graph and no FA, inspect RDP timer behavior and consider a different dispatch range/capture trigger; do not blindly repeat entire code/literature 64k pairs.
+
+**No C++ source change or Vulkan rebuild is indicated by this evidence.** If a future RGP capture has an `EVOX2_FA_` label but not KV49152/Qcur-19, that is valuable stage calibration but must not be recorded as exact-alignment PASS.

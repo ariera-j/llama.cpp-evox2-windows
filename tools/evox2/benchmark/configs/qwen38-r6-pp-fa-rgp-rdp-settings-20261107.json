@@ -43,5 +43,27 @@
     ],
     "q_global_window": "48640-48703 belongs to this physical UBatch, but markers refer to full N=1024"
   },
-  "not_for_speed_baseline": true
+  "not_for_speed_baseline": true,
+  "first_capture_results": {
+    "status": "calibration only, FA target not verified in user screenshots",
+    "code": {
+      "run_id": "20261107-012232-772-bench-vulkan-b12133-ctx65536-283633fc79f0",
+      "rgp": "llama-bench-20261107-012538502.rgp",
+      "dispatch_timer_ms": 175000,
+      "result": "native OK, marker flag enabled, only early graph MoE shown"
+    },
+    "literature": {
+      "run_id": "20261107-013603-436-bench-vulkan-b12133-ctx65536-1e4b472c638e",
+      "rgp": "llama-bench-20261107-013915236.rgp",
+      "dispatch_timer_ms": 185000,
+      "result": "native OK, marker flag enabled, only early graph MoE shown"
+    }
+  },
+  "next_code_only_calibration": {
+    "dispatch_timer_ms": 176000,
+    "dispatch_count": 256,
+    "status": "HEURISTIC ONLY; no verified KV or RDP dispatch index",
+    "preflight": "Search existing RGP Event timing Filter event tree for exact EVOX2_FA_ first",
+    "next": "Send actual nearest KV/N/q markers; do not run literature until code capture is calibrated"
+  }
 }
