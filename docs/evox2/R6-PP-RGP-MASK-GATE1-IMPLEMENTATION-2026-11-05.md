@@ -296,3 +296,38 @@ Measured PP 528.214195 tok/s / 1.9386075s, **single opt-in diagnostic run — no
 **Correction to earlier RDP capture hypothesis:** we previously inferred that start=289/count=16 failing might mean only ~288 dispatches occurred. The new CPU log observes 3879 dispatch *recordings*, so the simple inference is **not justified**. RDP's \`Dispatch start index\` is a GPU-driver RenderOp/capture counter and **must not be assumed equal** to the CPU count, nor do driver-side capture failures prove a total <289. Prior successes (1×256 and 257×16) did not include the observed first FA event at CPU ordinal351 if these numbering sequences were aligned, which is qualitatively consistent with no FA label in those earlier captures. But the mapping is uncalibrated; do **not** blindly try 351 or 1619 as an RDP absolute start.
 
 **Follow-up decision:** Gate1 native host trace **PASS**; full RGP visible FA marker remains **PENDING**. Focus next on CPU command-buffer submit/trace ordering versus RDP RenderOp indexing and a robust trigger method. Prefer a controlled small, longer-lived input workload or RDP manual/auto-capture mode adjusted with explicit evidence, rather than brute-force 1024 index sweeps. Keep the same instrumented b12100 executable for pure capture exploration and inspect both Vulkan labels and RDP process-disconnect errors. No new C++ diagnostic patch is necessary just to prove FA was executed.
+
+
+## 2026-11-06 4k RGP capture: Gate 1 PASS (actual EVOX2 FA GPU labels visible)
+
+**Outcome:** Windows native static/binary/1024 smoke, 4k CPU host-trace, and 4k **RGP Event timing visible labels** all passed. Screenshots explicitly show `EVOX2_FA_MASK_OPT` and `EVOX2_FA_MAIN` nested under `FLASH_ATTN_EXT node_624`; Gate 1 RGP marker visibility is **PASS**. This is a *functional capture validation*, not a 64k mask/FA hypothesis test or a PP performance result.
+
+### Inputs and raw captures
+
+- One user-uploaded ZIP containing **two successful native 4k PP runs**: `20261106-100501-905-bench-vulkan-b12100-ctx8192-b73c60074ecb.zip` (49,746 B), SHA-256 `0dc6d781353fa9db50ba1ea63144a5c9d08d297312a0c36ac419ba7251973964`.
+- User-uploaded Radeon GPU Profiler file `llama-bench-20261106-100554594.rgp` (35,056,393 B), SHA-256 `7712600592ed52ea6c6ea5a218105ef6e3b07aebb0a3a6dbb644bc55134b8399`. Raw ZIP/RGP live outside Git; keep these hashes for provenance.
+- RGP AMD RDF internal `TraceConfig.controller`: `renderOpMode=dispatch`, `captureMode=absolute`, **`preparationStartRenderOp=321`, `captureRenderOpCount=64`**. SQTT enabled, `memoryLimitInMb=128`; SPM and instruction tracing disabled. RDF process info path is the r6 `build-vulkan-ppdiag-rgp\\bin\\Release\\llama-bench.exe` diagnostic binary. This confirms RDP settings/target; it does not calibrate CPU ordinal to RDP RenderOp count.
+- Native executable both runs: b12100 commit `9f018acb7`, SHA-256 `54c1a19e7bf75a3ca3f155e6e05a98f4a2ff56eb6bf18bf819802be60520579b` (validated in `result.json`). Model Unsloth **IQ3_XXS PLE16**, source literature SHA `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`, `-p4096 -c8192 -b2048 -ub1024 -n0 -d0 -r1`, f16 KV, Performance P-MODE, UMA96GB, no warmup, QSA UNION OFF, MTP OFF.
+
+### Runs (4k probe; throughput is diagnostic-only)
+
+| Condition | Native run ID | Status | PP tok/s | PP time | ADLX samples | GPU memory max | Min Windows free RAM |
+|---|---|---:|---:|---:|---:|---:|---:|
+| hosttrace-4k, markers+CPU trace ON, **no RDP** | `20261106-095649-329-bench-vulkan-b12100-ctx8192-535c55cafdf0` | OK / exit0 | 519.813 | 7.880 s | 28 | 81,065 MiB | 22.969 GiB |
+| rgp-markers-4k, marker ON, CPU trace OFF, **RDP active** | `20261106-100501-905-bench-vulkan-b12100-ctx8192-b73c60074ecb` | OK / exit0 | 520.490 | 7.870 s | 29 | 81,079 MiB | 22.830 GiB |
+
+The speed similarity is **not** an asserted instrumentation overhead result: each run was measured once, RDP changes clock/capture conditions, and the traces intentionally differ. ADLX monitor exited0, resource monitor saved, P-MODE Performance maintained in both; no recorded OOM/driver reset. Captures took ~1 minute wall clock including model loading/unloading, far longer than the ~7.9s measured PP phase. The session was RDP; keep capture display conditions controlled in later experiments.
+
+### Host CPU dispatch and GPU RGP matched by actual FA metadata
+
+- Hosttrace recorded **8 graph executions** (four 1024-token microbatches, each with a small embedding graph and an inference graph). Overall **15,235** CPU-recorded Vulkan dispatch calls and **96 FA pipeline events**, i.e., four blocks × 12 `MASK_OPT` + 12 `MAIN` events. For each of `KV=1024/2048/3072/4096`, 24 FA events occur. `n_q=1024` for these FA events. CPU ordinal of the first `Qcur-3` `MASK_OPT/MAIN` at `KV=1024`: **351/352** (same as the prior 1024-token hosttrace). These are **CPU ordinals**, not RDP indices.
+- RGP screenshot at `FLASH_ATTN_EXT node_624` shows `EVOX2_FA_MASK_OPT shader=fa_mask_opt KV=1024 N=1024 Br=16 Bc=64 n_kv_max=1283 q=Qcur-3 ...`, followed by `EVOX2_FA_MAIN shader=flash_attn_f32_f16_aligned_cm1` with same KV/N/Br/Bc/query. Actual `vkCmdDispatch` workgroup dimensions: mask-opt **(1,64,1)** and main **(64,24,1)**.
+- From user's screenshot, **GPU Event timing**: `MASK_OPT` **16.076 µs**, `MAIN` **1,408.075 µs**, enclosing `FLASH_ATTN_EXT` **1,424.716 µs**. The main duration is ~98.8% of the enclosing FA GPU event at this early KV; this is **one selected GPU event in one trace**, not a representative mean, causal estimate or wall-clock breakdown. Nested command-buffer barriers/overhead and profiling conditions can affect such attribution.
+- RGP also displays normal non-FA user event groups (`TOP_K`, `GET_ROWS`, `ROPE+VIEW+SET_ROWS`, etc.), confirming the FA label is part of the expected GPU event tree and not merely the native stderr initialization message.
+- The successful capture window **start321/count64** contains the first FA event. This validates a *useful calibration window for this configuration*, **not** equality of RDP RenderOp index and host `cpu_dispatch_ordinal=351`. The numbers may differ due to driver-managed RenderOps, command-buffer submission and event numbering. Do not extrapolate index offsets to 64k/other builds.
+
+### Gate decision and next action
+
+**Gate 1 full PASS.** The following are independently verified: opt-in compiled markers, native diagnostic OFF/ON 1024 smoke, host ordinal metadata, genuine RGP FA mask/main user events at the expected 4k workload and no recorded resource stability failures. No extra 4k capture is required purely to prove markers work.
+
+Move to **Gate 2 Vulkan 2-bit FA mask snapshot** in a separately reviewed commit on this branch. Reuse the r5 one-shot GPU->host packed tile copy pattern but save **tile positions** rather than only aggregate row counts; start with 1024 smoke, then literature/code at exactly matched KV/layer (ultimately 64k at KV49152). Ensure capture disabled by default, separately from RGP timing; never combine mask dump and RGP GPU timing in a performance comparison.
