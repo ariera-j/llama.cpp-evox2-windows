@@ -1021,7 +1021,7 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
         static std::atomic<bool> probe_logged{false};
         if (!probe_logged.exchange(true)) {
             std::fprintf(stderr,
-                "evox2_indexer_pool_map_v1 status=probe KV=%u q0=%d N=%u n_pool=%u n_real=%u kpool=%u\\n",
+                "evox2_indexer_pool_map_v1 status=probe KV=%u q0=%d N=%u n_pool=%u n_real=%u kpool=%u\n",
                 n_kv, (int) ubatch->pos[0], ubatch->n_tokens, n_pool,
                 st.n_pool_real, kpool);
             std::fflush(stderr);
