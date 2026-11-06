@@ -123,3 +123,32 @@ Status `OK`, `ExitCode=0`; diagnostics `evox2_vk_fa_mask_diag_v1 status=queued/w
 ### Next step
 
 64k **code** raw F16 gate PASS. Run `raw-mask-literature` with the identical Q32..35 K718..721 geometry and `KV49152` target, then validate its 16 packed labels, F16 values and P-MODE/memory. Compare *element-level allowed fraction*, not only mixed tile count (literature has 7 MIXED and 9 ALL_NEG_INF at the same coordinates in prior 2-bit capture). Broader relevance to end-to-end PP awaits multi-window and separate RGP timing comparisons.
+
+## 2026-11-06 64k literature raw mask PASS and paired code comparison
+
+64k literature benchmark ZIP `20261106-201001-990-bench-vulkan-b12117-ctx65536-f07843e26d55.zip`, SHA256 `3c5f708043a2c969f06a44848d3f20160caa785f4d0de8500ecd3969c57afd8e`; visualization/raw archive `raw-literature-zoom.zip`, SHA256 `e67c598d507d5e4138966c8e94b17f08b734382d560ba5924a4c7cabb829cdbf`. Raw F16 binary SHA256 `a8d3c523af394c3e4b5791e248cf60b5a134320890b9f9cd5e766a69706da74b` (32768 bytes). Native b12117 / commit `7bb6e926f`, executable SHA256 `b68a71aeb4e0f227d33ea792486d3d7f05e6dccf24b271871b85daeab536e32e`, source `wagahaiwa_nekodearu_utf8.txt` SHA256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`, same model, context65536, prompt61777, UBatch1024, f16 KV, QSA UNION OFF, no warmup, P-MODE Performance. Match against code's earlier same-geometry raw capture.
+
+### Literature native diagnostics
+
+- Benchmark `Status OK`, `ExitCode0`, `BackendDetected Vulkan`, `avg_ts=354.559567 tok/s`, `avg_ns=174235885000` (174.236s). 111 ADLX samples, 110 resource samples, P-MODE Performance unchanged, high-load power estimate 118.791W; peak ADLX GPU VRAM 83,167MiB, minimum Windows free RAM 22.412GiB. No logged OOM, DeviceLost or TDR. These are DIAGNOSTIC-only single runs and must not replace clean PP throughput comparisons.
+- Stderr explicitly records packed `status=queued/wrote` and F16 raw `status=queued/wrote` at `KV49152, query Qcur-19`, `Br16 Bc64`, Q tiles32..35, K tiles718..721. Earlier context `not_captured` is not a failure of the selected backend context.
+- Independent F16 read of raw 64×256 (16384 cells): **15824 negative infinity**, **560 zero**, 0 other/NaN; 560/16384 = **3.41796875% valid positions**. The 16 reconstructed 2-bit codes match packed codes **16/16**, including **5 MIXED and 11 ALL_NEG_INF**. This CORRECTS the previous tentative claim of 7 MIXED/9 ALL_NEG_INF for this specific crop.
+
+### Exact paired 4×4 tile window: number of zero/unmasked mask entries out of 1024 per tile
+
+| Q tile | Code K718 | Code K719 | Code K720 | Code K721 | Literature K718 | Literature K719 | Literature K720 | Literature K721 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Q32 | 128 | 116 | 36 | 64 | 4 | 0 | 0 | 124 |
+| Q33 | 12 | 40 | 20 | 0 | 0 | 0 | 0 | 112 |
+| Q34 | 40 | 68 | 60 | 176 | 0 | 0 | 0 | 108 |
+| Q35 | 48 | 16 | 40 | 128 | 0 | 0 | 0 | 212 |
+| TOTAL | 228 | 240 | 156 | 368 | 4 | 0 | 0 | 556 |
+
+- Code: 992/16384 = **6.0546875%** unmasked, 15 MIXED + 1 ALL_NEG_INF. Literature: 560/16384 = **3.41796875%** unmasked, 5 MIXED + 11 ALL_NEG_INF. The ratio of local valid entries is 992/560 = 1.7714x. Both masks show constant values for every 4 consecutive KV positions within each sampled query row. Their content-specific selection locations differ; the original input texts themselves are different, and this is NOT post-softmax attention.
+- In literature, **556 of 560** unmasked mask positions fall in K721; code valid entries are distributed across K718:228, K719:240, K720:156, K721:368. The same-coordinate intersection of allowed entries is 68/16384; note that positions in different source documents are not semantically equivalent.
+- Across the entire 64×768 packed tile maps at the same `Qcur-19/KV49152`, **code** = ALL_NEG_INF 36860, MIXED 12200, ALL_ZERO 92; **literature** = ALL_NEG_INF 17512, MIXED 31638, ALL_ZERO 2. Thus the selected 4×4 crop has the reverse MIXED-frequency ordering from the whole map, a **local** structure.
+- The fixed upper-right 480-tile causal triangle exists in both maps. The selected sample is well left of that triangle (Q48640..48703 versus Key45952..46207), hence its mostly blocked positions are noncausal mask selection. The specific model source code producing the 4-token-granularity selection has not yet been established.
+
+### Interpretation / next decision
+
+**64k paired raw F16 diagnostic gate PASS.** This paired window proves that MIXED is a tile uniformity classification rather than a high effective density of unmasked elements. Local code's 15 MIXED tiles hide only 992 allowed entries, so only one tile is directly ALL_NEG_INF-skippable in this region, despite 93.95% individual elements being blocked. Literature skips 11 entire tiles and has 560 allowed entries. Do not infer end-to-end PP causality or shader FLOP savings directly from these 16 tiles or instrumentation-ON run speeds. Next investigate mask generator / 4-token grouping in llama.cpp source and sample additional spatially separated windows before deciding whether detailed RGP timings or an optimized coarse mask could help.
