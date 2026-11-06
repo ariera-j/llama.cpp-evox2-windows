@@ -98,6 +98,19 @@ class ScoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "F16 mask mismatch"):
                 diag.check_mask_crop(rawpre, meta, pools, selected)
 
+    def test_mrope_positions_are_sectioned_and_diagnostic_is_nonfatal(self):
+        # llama_ubatch::pos is laid out in contiguous component sections.
+        # pos[i*n_pos] incorrectly treats it as token-interleaved.
+        host = (ROOT/"src/llama-memory-hybrid-idx.cpp").read_text(encoding="utf-8")
+        self.assertIn("ubatch->pos[i] != ubatch->pos[0] + (llama_pos) i", host)
+        self.assertNotIn("ubatch->pos[(size_t) i * ubatch->n_pos]", host)
+        self.assertIn("evox2_indexer_pool_map_v1 status=probe", host)
+        self.assertIn('} catch (const std::exception & e) {', host)
+        self.assertIn('status=rejected reason=%s', host)
+        vk = (ROOT/"ggml/src/ggml-vulkan/ggml-vulkan.cpp").read_text(encoding="utf-8")
+        self.assertIn('evox2_indexer_diag_v1 status=dispatch_begin', vk)
+        self.assertIn('evox2_indexer_diag_v1 status=transfer_begin', vk)
+
     def test_src_is_bounded_opt_in(self):
         vk = (ROOT/"ggml/src/ggml-vulkan/ggml-vulkan.cpp").read_text(encoding="utf-8")
         types = (ROOT/"ggml/src/ggml-vulkan/ggml-vulkan-types.h").read_text(encoding="utf-8")
