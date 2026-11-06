@@ -1016,6 +1016,17 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
     if (diag_flag && std::strcmp(diag_flag, "1") == 0 && !indexer_diag_saved.load() &&
         ubatch->pos && ubatch->n_pos > 0 && ubatch->n_seqs_unq == 1 &&
         ubatch->seq_id && ubatch->n_tokens > 0) {
+        // A diagnostic must never make inference fail. Stage probes distinguish
+        // graph/input rejection from a GPU dispatch/readback failure.
+        static std::atomic<bool> probe_logged{false};
+        if (!probe_logged.exchange(true)) {
+            std::fprintf(stderr,
+                "evox2_indexer_pool_map_v1 status=probe KV=%u q0=%d N=%u n_pool=%u n_real=%u kpool=%u\\n",
+                n_kv, (int) ubatch->pos[0], ubatch->n_tokens, n_pool,
+                st.n_pool_real, kpool);
+            std::fflush(stderr);
+        }
+        try {
         auto parse_target = [](const char * name, uint32_t fallback) {
             const char * value = std::getenv(name);
             if (!value || !*value) { return fallback; }
@@ -1112,6 +1123,17 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
                 fprintf(stderr, "evox2_indexer_pool_map_v1 status=wrote KV=%u Q=%d n_pool=%u real=%u kpool=%u prefix=%s\n",
                         n_kv, (int) ubatch->pos[0], n_pool, n_pool_real, kpool, prefix.c_str());
             }
+        }
+        } catch (const std::exception & e) {
+            // Do not propagate an optional file/UBatch validation error into
+            // llama-bench. Preserve any partial evidence for diagnosis.
+            indexer_diag_saved.store(true);
+            std::fprintf(stderr, "evox2_indexer_pool_map_v1 status=rejected reason=%s\n", e.what());
+            std::fflush(stderr);
+        } catch (...) {
+            indexer_diag_saved.store(true);
+            std::fprintf(stderr, "evox2_indexer_pool_map_v1 status=rejected unknown_exception\n");
+            std::fflush(stderr);
         }
     }
 
