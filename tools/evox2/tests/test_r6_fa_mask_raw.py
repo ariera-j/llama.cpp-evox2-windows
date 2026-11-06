@@ -92,6 +92,29 @@ class RawMaskContractTests(unittest.TestCase):
             self.assertIn(label, src)
         self.assertIn("vk_buffer fa_mask_diag_raw_snapshot;", types)
 
+    def test_short_smoke_is_isolated_and_contains_causal_boundary(self):
+        smoke_path = (ROOT / "tools/evox2/benchmark/configs/"
+                      "qwen38-r6-fa-mask-raw-1024-smoke-20261106.psd1")
+        smoke = smoke_path.read_text(encoding="utf-8")
+        for term in (
+            "PromptTokens     = @(1024)",
+            "GenerationTokens = @(0)",
+            "Context          = 2048",
+            "UBatch           = 1024",
+            "NoWarmup         = $true",
+            "GGML_VK_FA_MASK_DIAG_KV         = '1024'",
+            "GGML_VK_FA_MASK_DIAG_QUERY      = 'Qcur-19'",
+            "GGML_VK_FA_MASK_DIAG_RAW       = '1'",
+            "GGML_VK_FA_MASK_DIAG_RAW_Q_TILE = '32'",
+            "GGML_VK_FA_MASK_DIAG_RAW_K_TILE = '8'",
+            "Name = 'raw-mask-smoke-1024'",
+            "GGML_VK_FA_RGP_MARKERS            = $null",
+            "GGML_VK_FA_DISPATCH_TRACE         = $null",
+        ):
+            self.assertIn(term, smoke)
+        self.assertEqual(smoke.count("Tool = 'bench'"), 1)
+        self.assertEqual(smoke.count("GGML_VK_FA_MASK_DIAG_RAW       = '1'"), 1)
+
     def test_plan_two_separate_runs(self):
         data = PLAN.read_text(encoding="utf-8")
         self.assertEqual(data.count("Tool = 'bench'"), 2)
