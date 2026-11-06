@@ -16,6 +16,25 @@ Existing GGML_VK_FA_MASK_DIAG=1 must still be set; additional GGML_VK_FA_MASK_DI
 
 Outputs, using a fresh GGML_VK_FA_MASK_DIAG_FILE prefix, include the existing 2-bit .bin and .json plus new -raw.bin and -raw.json. Files are never silently overwritten. Raw F16 snapshots use IEEE754 float16 little-endian values. Because diagnostic GPU copies are added, PP tok/s from these runs is NOT a clean performance result.
 
+## Mandatory short F16 smoke before any 64k run
+
+After updating and rebuilding the diagnostic Vulkan binary, run a separate 1024-token raw crop first. The plan targets q tile32 and k tile8 at KV1024, which includes a causal boundary. This guards against an expensive repeated 64k benchmark when the GPU readback or F16 decoding is incorrect.
+
+~~~powershell
+$smoke = '.\tools\evox2\benchmark\configs\qwen38-r6-fa-mask-raw-1024-smoke-20261106.psd1'
+$dir = 'C:\llama-build\evox2-ppdiag-mask'
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+foreach ($suffix in @('.bin','.json','-raw.bin','-raw.json')) {
+    $p = Join-Path $dir ('raw-smoke-1024-q32-k8' + $suffix)
+    if (Test-Path -LiteralPath $p) { throw "Existing snapshot: $p. Select a new unique prefix." }
+}
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $smoke -PlanOnly
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $smoke -OnlyVariant raw-mask-smoke-1024 -StopOnError
+python .\tools\evox2\benchmark\visualize_fa_mask_raw.py --prefix "$dir\raw-smoke-1024-q32-k8" --out "$dir\raw-smoke-1024-zoom.svg"
+~~~
+
+Require exit0, a 32768-byte raw binary, raw status=wrote in stderr, and a 16-tile crosscheck PASS from Python. Then proceed to the subsequent existing 64k code and literature instructions. Preserve all failed/previous evidence and use a new prefix for retries.
+
 ## Windows commands (investigation branch only)
 
 ~~~powershell
