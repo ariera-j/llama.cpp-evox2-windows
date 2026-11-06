@@ -320,7 +320,7 @@ static void ggml_vk_indexer_diag_capture(
     const uint64_t cols = (uint64_t) node->ne[0];
     const uint64_t rowbytes = cols * sizeof(uint32_t);
     const uint64_t bytes = rowbytes * q_count;
-    const vk_subbuffer src = ggml_vk_tensor_subbuffer(ctx, node);
+    vk_subbuffer src = ggml_vk_tensor_subbuffer(ctx, node);
     const uint64_t last = ((uint64_t) q_start + q_count - 1) * node->nb[1] + rowbytes;
     if (bytes == 0 || bytes > (16u << 20) || last > src.size) {
         std::cerr << "evox2_indexer_diag_v1 status=rejected buffer_bounds name=" << node->name << "\n";
