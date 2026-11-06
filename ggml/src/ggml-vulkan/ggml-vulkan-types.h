@@ -1242,6 +1242,17 @@ struct ggml_backend_vk_context {
     bool fa_mask_diag_captured = false;
     bool fa_mask_diag_pending = false;
 
+    // Optional 4x4 raw tile-window of the *original* F16 mask, independent
+    // of the 2-bit classifications. Captured once, <= 32 KiB.
+    vk_buffer fa_mask_diag_raw_snapshot;
+    uint32_t fa_mask_diag_raw_q_tile_start = 0;
+    uint32_t fa_mask_diag_raw_k_tile_start = 0;
+    uint32_t fa_mask_diag_raw_q_start = 0;
+    uint32_t fa_mask_diag_raw_k_start = 0;
+    uint32_t fa_mask_diag_raw_height = 0;
+    uint32_t fa_mask_diag_raw_width = 0;
+    bool fa_mask_diag_raw_pending = false;
+
     vk_device device;
 
     size_t semaphore_idx, event_idx;

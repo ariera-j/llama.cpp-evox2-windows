@@ -156,6 +156,111 @@ static void ggml_vk_fa_mask_diag_flush(ggml_backend_vk_context * ctx) {
               << " prefix=" << prefix << "\n";
 }
 
+
+static bool ggml_vk_fa_mask_diag_raw_enabled() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("GGML_VK_FA_MASK_DIAG_RAW");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+// Read only small nonnegative decimal tile indices; fail closed on invalid input.
+static uint32_t ggml_vk_fa_mask_diag_raw_tile_index(const char * name, uint32_t fallback) {
+    const char * value = std::getenv(name);
+    if (value == nullptr || *value == '\0') {
+        return fallback;
+    }
+    for (const char * c = value; *c != '\0'; ++c) {
+        if (*c < '0' || *c > '9') {
+            std::cerr << "ggml_vulkan: invalid FA raw tile index " << name << "\n";
+            return UINT32_MAX;
+        }
+    }
+    char * end = nullptr;
+    const unsigned long long index = std::strtoull(value, &end, 10);
+    if (end == value || *end != '\0' || index > UINT32_MAX) {
+        std::cerr << "ggml_vulkan: invalid FA raw tile index " << name << "\n";
+        return UINT32_MAX;
+    }
+    return static_cast<uint32_t>(index);
+}
+
+static void ggml_vk_fa_mask_diag_raw_flush(ggml_backend_vk_context * ctx) {
+    if (!ctx->fa_mask_diag_raw_pending || !ctx->fa_mask_diag_raw_snapshot) {
+        return;
+    }
+    ctx->fa_mask_diag_raw_pending = false;
+    const size_t bytes = (size_t) ctx->fa_mask_diag_raw_height *
+                         ctx->fa_mask_diag_raw_width * sizeof(ggml_fp16_t);
+    if (bytes == 0 || bytes > (1u << 16)) {
+        std::cerr << "evox2_vk_fa_mask_raw_v1 status=rejected invalid_readback_length\n";
+        return;
+    }
+    const char * requested = std::getenv("GGML_VK_FA_MASK_DIAG_FILE");
+    const std::string prefix = requested != nullptr && *requested != '\0' ? requested : "fa-mask-tiles";
+    const std::string binary_path = prefix + "-raw.bin";
+    const std::string metadata_path = prefix + "-raw.json";
+
+    // Never modify or replace previously captured evidence.
+    if (std::ifstream(binary_path, std::ios::binary).good() ||
+        std::ifstream(metadata_path, std::ios::binary).good()) {
+        std::cerr << "evox2_vk_fa_mask_raw_v1 status=exists prefix=" << prefix << "\n";
+        return;
+    }
+
+    std::vector<uint8_t> raw(bytes);
+    ggml_vk_buffer_read(ctx->fa_mask_diag_raw_snapshot, 0, raw.data(), bytes);
+    std::ofstream bin(binary_path, std::ios::binary | std::ios::out);
+    if (!bin) {
+        std::cerr << "evox2_vk_fa_mask_raw_v1 status=cannot_open_bin path=" << binary_path << "\n";
+        return;
+    }
+    bin.write(reinterpret_cast<const char *>(raw.data()), (std::streamsize) bytes);
+    bin.close();
+    if (!bin.good()) {
+        std::cerr << "evox2_vk_fa_mask_raw_v1 status=bin_write_failed path=" << binary_path << "\n";
+        return;
+    }
+
+    std::ofstream meta(metadata_path);
+    if (!meta) {
+        std::cerr << "evox2_vk_fa_mask_raw_v1 status=cannot_open_json path=" << metadata_path << "\n";
+        return;
+    }
+    meta << "{\n"
+         << "  \"schema_version\": 1,\n"
+         << "  \"source\": \"vulkan_original_f16_fa_mask_cropped\",\n"
+         << "  \"encoding\": \"ieee754_float16_le\",\n"
+         << "  \"query\": " << ggml_vk_fa_mask_diag_json_string(ctx->fa_mask_diag_query) << ",\n"
+         << "  \"kv\": " << ctx->fa_mask_diag_kv << ",\n"
+         << "  \"n\": " << ctx->fa_mask_diag_n << ",\n"
+         << "  \"br\": " << ctx->fa_mask_diag_br << ",\n"
+         << "  \"bc\": " << ctx->fa_mask_diag_bc << ",\n"
+         << "  \"q_tile_start\": " << ctx->fa_mask_diag_raw_q_tile_start << ",\n"
+         << "  \"k_tile_start\": " << ctx->fa_mask_diag_raw_k_tile_start << ",\n"
+         << "  \"q_local_start\": " << ctx->fa_mask_diag_raw_q_start << ",\n"
+         << "  \"q_global_start\": " << (ctx->fa_mask_diag_kv - ctx->fa_mask_diag_n + ctx->fa_mask_diag_raw_q_start) << ",\n"
+         << "  \"k_global_start\": " << ctx->fa_mask_diag_raw_k_start << ",\n"
+         << "  \"rows\": " << ctx->fa_mask_diag_raw_height << ",\n"
+         << "  \"columns\": " << ctx->fa_mask_diag_raw_width << ",\n"
+         << "  \"payload_bytes\": " << bytes << "\n"
+         << "}\n";
+    meta.close();
+    if (!meta.good()) {
+        std::cerr << "evox2_vk_fa_mask_raw_v1 status=json_write_failed path=" << metadata_path << "\n";
+        return;
+    }
+    std::cerr << "evox2_vk_fa_mask_raw_v1 status=wrote"
+              << " KV=" << ctx->fa_mask_diag_kv
+              << " q_start=" << ctx->fa_mask_diag_raw_q_start
+              << " k_start=" << ctx->fa_mask_diag_raw_k_start
+              << " rows=" << ctx->fa_mask_diag_raw_height
+              << " columns=" << ctx->fa_mask_diag_raw_width
+              << " bytes=" << bytes
+              << " prefix=" << prefix << "\n";
+}
+
 static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& device) {
     vk::PhysicalDeviceProperties props = device.getProperties();
 
@@ -9140,6 +9245,68 @@ void ggml_vk_flash_attn(ggml_backend_vk_context * ctx, vk_context& subctx, const
                     ggml_vk_buffer_copy_async(subctx, ctx->fa_mask_diag_snapshot, 0,
                                               mask_opt_buf.buffer, mask_opt_buf.offset, (size_t) bytes);
                     ggml_vk_sync_buffers(ctx, subctx);
+                    // Optional dense F16 crop of the original input mask
+                    // (not of the packed 2-bit mask-opt output). Only copy
+                    // 4 query tiles x 4 key tiles, <= 32 KiB, at a checked
+                    // tensor subrange. No full 64k x 1024 readback.
+                    if (ggml_vk_fa_mask_diag_raw_enabled()) {
+                        const uint32_t qt = ggml_vk_fa_mask_diag_raw_tile_index(
+                            "GGML_VK_FA_MASK_DIAG_RAW_Q_TILE", 32);
+                        const uint32_t kt = ggml_vk_fa_mask_diag_raw_tile_index(
+                            "GGML_VK_FA_MASK_DIAG_RAW_K_TILE", 718);
+                        const uint64_t q_start = (uint64_t) qt * Br;
+                        const uint64_t k_start = (uint64_t) kt * Bc;
+                        const uint64_t height = (uint64_t) Br * 4;
+                        const uint64_t width = (uint64_t) Bc * 4;
+                        const uint64_t row_bytes = width * sizeof(ggml_fp16_t);
+                        const uint64_t bytes_raw = height * row_bytes;
+                        const bool valid_shape =
+                            mask && mask->type == GGML_TYPE_F16 &&
+                            mask->nb[0] == sizeof(ggml_fp16_t) &&
+                            nem2 == 1 && nem3 == 1 && KV >= N &&
+                            Br <= 16 && Bc <= 64 &&
+                            height > 0 && width > 0 &&
+                            height <= 64 && width <= 256 &&
+                            q_start + height <= nem1 && k_start + width <= nem0 &&
+                            bytes_raw <= (1u << 16) &&
+                            mask->nb[1] <= UINT32_MAX;
+                        if (valid_shape) {
+                            const uint64_t last_end =
+                                (q_start + height - 1) * mask->nb[1] +
+                                k_start * sizeof(ggml_fp16_t) + row_bytes;
+                            if (last_end <= mask_buf.size) {
+                                ctx->fa_mask_diag_raw_snapshot = ggml_vk_create_buffer_device(
+                                    ctx->device, (size_t) bytes_raw);
+                                for (uint32_t row = 0; row < (uint32_t) height; ++row) {
+                                    const size_t src_off = (size_t) (q_start + row) * mask->nb[1] +
+                                                           (size_t) k_start * sizeof(ggml_fp16_t);
+                                    ggml_vk_buffer_copy_async(subctx, ctx->fa_mask_diag_raw_snapshot,
+                                                              (size_t) row * (size_t) row_bytes,
+                                                              mask_buf.buffer, mask_buf.offset + src_off,
+                                                              (size_t) row_bytes);
+                                }
+                                ggml_vk_sync_buffers(ctx, subctx);
+                                ctx->fa_mask_diag_raw_q_tile_start = qt;
+                                ctx->fa_mask_diag_raw_k_tile_start = kt;
+                                ctx->fa_mask_diag_raw_q_start = (uint32_t) q_start;
+                                ctx->fa_mask_diag_raw_k_start = (uint32_t) k_start;
+                                ctx->fa_mask_diag_raw_height = (uint32_t) height;
+                                ctx->fa_mask_diag_raw_width = (uint32_t) width;
+                                ctx->fa_mask_diag_raw_pending = true;
+                                std::cerr << "evox2_vk_fa_mask_raw_v1 status=queued"
+                                          << " KV=" << KV << " q_tile=" << qt << " k_tile=" << kt
+                                          << " bytes=" << bytes_raw << "\n";
+                            } else {
+                                std::cerr << "evox2_vk_fa_mask_raw_v1 status=rejected source_buffer_range"
+                                          << " last_end=" << last_end << " size=" << mask_buf.size << "\n";
+                            }
+                        } else {
+                            std::cerr << "evox2_vk_fa_mask_raw_v1 status=rejected shape_or_tile_bounds"
+                                      << " q_tile=" << qt << " k_tile=" << kt
+                                      << " Br=" << Br << " Bc=" << Bc
+                                      << " nem1=" << nem1 << " nem0=" << nem0 << "\n";
+                        }
+                    }
                     ctx->fa_mask_diag_query = q->name;
                     ctx->fa_mask_diag_kv = KV;
                     ctx->fa_mask_diag_n = N;
@@ -13615,6 +13782,7 @@ void ggml_vk_cleanup(ggml_backend_vk_context * ctx) {
                   << " target_query=" << ggml_vk_fa_mask_diag_target_query() << "\n";
     }
     ggml_vk_destroy_buffer(ctx->fa_mask_diag_snapshot);
+    ggml_vk_destroy_buffer(ctx->fa_mask_diag_raw_snapshot);
     ggml_vk_destroy_buffer(ctx->prealloc_x);
     ggml_vk_destroy_buffer(ctx->prealloc_y);
     ggml_vk_destroy_buffer(ctx->prealloc_split_k);
@@ -14187,6 +14355,7 @@ void ggml_vk_synchronize(ggml_backend_vk_context * ctx) {
         ctx->compute_ctx.reset();
     }
     ggml_vk_fa_mask_diag_flush(ctx);
+    ggml_vk_fa_mask_diag_raw_flush(ctx);
 }
 
 static void ggml_backend_vk_synchronize(ggml_backend_t backend) {
