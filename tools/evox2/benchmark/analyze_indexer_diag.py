@@ -42,6 +42,8 @@ def load_snapshot(prefix: str):
         raise ValueError("Query base mismatch")
     if type(host.get("n_pool_real")) is not int or not 0 <= host["n_pool_real"] <= n_pool:
         raise ValueError("invalid real pool count")
+    if n_pool * count * 4 > (16 << 20) or n_top * count * 4 > (16 << 20):
+        raise ValueError("refusing oversized diagnostic payload")
 
     score_data = Path(base + "-score.f32").read_bytes()
     topk_data = Path(base + "-topk.i32").read_bytes()

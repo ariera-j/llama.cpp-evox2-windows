@@ -1,6 +1,6 @@
 # r6 QSA Indexer score/top-k diagnostic design (2026-11-06)
 
-**状態: 設計のみ。コード実装・新規ビルド・GPU計測は未実施。** 実装先は調査ブランチ `investigation/r6-pp-fa-mask-rgp-20261105` またはその子ブランチ。production `main` は変更しない。
+**状態: 実装を調査ブランチに追加済み。ソースコードレビューとPythonテストfixtureを追加。Windowsビルド・GPU smoke・64k計測は未実施。** 実装先は調査ブランチ `investigation/r6-pp-fa-mask-rgp-20261105` またはその子ブランチ。production `main` は変更しない。
 
 ## 目的と既存実測
 
@@ -90,6 +90,16 @@ GGML_VK_INDEXER_DIAG_FILE=C:\llama-build\evox2-ppdiag-indexer\idx-code-kv49152-i
 - cutoff付近で同点が多い→topk budgetやtieによって繰り返し選択が起きる可能性。
 - c93/c470の近接groupが同時に高得点→領域全体が関連poolとして評価される可能性。
 - **どの結果でもAttention sink・最終Attention重み・性能差の因果性は証明できない**。必要なら後で別の測定設計を行う。
+
+
+## 2026-11-06 実装追記 (Gate1 source prepared, native test pending)
+
+- **Source:** `src/models/qwen4exp.cpp` tags QSA score/topk tensors with precise layer/KV/Q-first/N; `ggml/src/ggml-vulkan/ggml-vulkan.cpp` saves an original 64-Query F32 score slice and unordered I32 top-k slice after each corresponding kernel with bounded device copies, releasing only after regular fence; `ggml/src/ggml-vulkan/ggml-vulkan-types.h` holds snapshot ownership; `src/llama-memory-hybrid-idx.cpp` emits exact same UBatch's pool->KV cell->logical Key map, rejecting existing output files. Defaults OFF.
+- **Decoder:** `tools/evox2/benchmark/analyze_indexer_diag.py` computes rank intervals, cutoff and selected pool sets, optionally element-wise checks previous raw F16 crops.
+- **Plans:** `qwen38-r6-indexer-score-1024-smoke-20261106.psd1` and `qwen38-r6-indexer-score-64k-20261106.psd1` (use separately for code and literature).
+- **Unit fixtures:** `tools/evox2/tests/test_r6_indexer_diag.py`: score/topk unordered, ties, missing visible candidates, bad IDs, F16 correspondence, static opt-in bounds.
+- **Runbook:** [R6-QSA-INDEXER-SCORE-TOPK-RUNBOOK-2026-11-06.md](R6-QSA-INDEXER-SCORE-TOPK-RUNBOOK-2026-11-06.md).
+- **Important:** Native Windows compilation and a real Vulkan graph's tensor strides, event barriers, and pool-map alignment remain UNVERIFIED. Execute and inspect Gate1 unittest/build + Gate2 smoke before any 64k work; do not infer PASS from source inspection. No clean tok/s should be taken from this instrumentation.
 
 ## Source references
 

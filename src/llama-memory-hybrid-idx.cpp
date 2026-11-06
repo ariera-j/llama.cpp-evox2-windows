@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <atomic>
 #include <fstream>
 #include <string>
@@ -1015,15 +1016,25 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
     if (diag_flag && std::strcmp(diag_flag, "1") == 0 && !indexer_diag_saved.load() &&
         ubatch->pos && ubatch->n_pos > 0 && ubatch->n_seqs_unq == 1 &&
         ubatch->seq_id && ubatch->n_tokens > 0) {
-        const char * kv_env = std::getenv("GGML_VK_INDEXER_DIAG_KV");
-        const char * layer_env = std::getenv("GGML_VK_INDEXER_DIAG_LAYER");
-        const char * start_env = std::getenv("GGML_VK_INDEXER_DIAG_Q_START");
-        const char * count_env = std::getenv("GGML_VK_INDEXER_DIAG_Q_COUNT");
-        const uint32_t want_kv = kv_env ? (uint32_t) std::strtoul(kv_env, nullptr, 10) : 49152;
-        const uint32_t q_start = start_env ? (uint32_t) std::strtoul(start_env, nullptr, 10) : 512;
-        const uint32_t q_count = count_env ? (uint32_t) std::strtoul(count_env, nullptr, 10) : 64;
-        // Layer is checked in Vulkan; reject impossible values here as well.
-        const uint32_t target_layer = layer_env ? (uint32_t) std::strtoul(layer_env, nullptr, 10) : 19;
+        auto parse_target = [](const char * name, uint32_t fallback) {
+            const char * value = std::getenv(name);
+            if (!value || !*value) { return fallback; }
+            for (const char * p = value; *p; ++p) {
+                if (*p < '0' || *p > '9') {
+                    throw std::runtime_error(std::string("evox2 indexer diag: invalid ") + name);
+                }
+            }
+            char * end = nullptr;
+            const unsigned long long n = std::strtoull(value, &end, 10);
+            if (end == value || *end != '\0' || n > UINT32_MAX) {
+                throw std::runtime_error(std::string("evox2 indexer diag: invalid ") + name);
+            }
+            return (uint32_t) n;
+        };
+        const uint32_t want_kv = parse_target("GGML_VK_INDEXER_DIAG_KV", 49152);
+        const uint32_t q_start = parse_target("GGML_VK_INDEXER_DIAG_Q_START", 512);
+        const uint32_t q_count = parse_target("GGML_VK_INDEXER_DIAG_Q_COUNT", 64);
+        const uint32_t target_layer = parse_target("GGML_VK_INDEXER_DIAG_LAYER", 19);
         if (target_layer < 256 && n_kv == want_kv && ubatch->n_tokens == 1024 &&
             q_count > 0 && q_count <= 256 && q_start + q_count <= ubatch->n_tokens &&
             ubatch->pos[0] >= 0 && (uint32_t) ubatch->pos[0] + ubatch->n_tokens == n_kv) {
