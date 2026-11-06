@@ -91,3 +91,35 @@ Both GPU readbacks succeeded: 2-bit mask classification and original F16 mask cr
 - Performance P-MODE remained constant, ADLX exit0 with 24 samples, resource monitor 24 samples, min available Windows RAM 22.748 GiB, peak ADLX VRAM 80,934 MiB, no recorded OOM/TDR. PageInputs/sec elevated during mapped-model-loading span; high counters do not alone demonstrate pagefile pressure. Single-run 527.171 tok/s is DIAGNOSTIC ONLY and must not be compared with clean PP.
 
 Gate: F16 RAW 1024 SMOKE PASS. Proceed to separate 64k code-only capture (query tiles32..35 / key tiles718..721 / KV49152), verify metadata and 16-code F16 crosscheck, then run literature. 64k long-context contents remain unverified.
+
+## 2026-11-06 64k code raw mask PASS — exact mixed-tile occupancy
+
+Native 64k single run on Vulkan b12117 (commit 7bb6e926f), IQ3_XXS PLE16, head of source code `llamacpp-inference-code.txt` SHA256 `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`; `-p61777 -c65536 -ub1024 -b2048 -n0 -d0 -r1`, no warmup, f16 KV, QSA UNION OFF. Existing raw-F16 target `Qcur-19` KV49152, Q tiles32..35, K tiles718..721, global Q48640..48703, global K45952..46207, Br16×Bc64, 16 raw tiles = 64×256 individual F16 values.
+
+Uploaded evidence:
+- Native run ZIP `20261106-195305-451-bench-vulkan-b12117-ctx65536-eab0e8da254f.zip` SHA256 `8153b158a0a5af2c58a5663a9c166fd59502c1d5dddfc66228638d03f294f6a0`.
+- Raw and rendered ZIP `raw-code-zoom.zip` SHA256 `9b7ca815bd809ee6aec60572b97fa549264b65b870484585810a03ac6bbeaff5`.
+- Packed 2-bit binary 12288 bytes, SHA256 `71a23eede6dbb382e8c520ea27b2caae28a6122460b0d5bef6e9eb554ea463dc`; original F16 32768 bytes, SHA256 `6d12872293810e50040a1ae52e67b661410f4a6eea3dec6b5748e68085a31922`.
+
+Status `OK`, `ExitCode=0`; diagnostics `evox2_vk_fa_mask_diag_v1 status=queued/wrote` and `evox2_vk_fa_mask_raw_v1 status=queued/wrote` both present in stderr at KV49152. Earlier `not_captured` from transient other backend context does not override successful target write. Native PP 383.459 tok/s (161.105s, **diagnostic-only**, do not compare against stock). ADLX 173 samples, resource monitor 171, P-MODE Performance start/finish unchanged; high-GPU-power classifier consistent (mean high-load 119.1W), minimum free Windows RAM 22.75GiB, maximum GPU committed 81.13GiB, ADLX VRAM max 83,168MiB. No OOM/driver-reset indication in the provided run logs. RDP-Tcp session. Background-process sampling PartialCoverage; does not certify no interference.
+
+### Independently decoded F16 and packed two-bit tile occupancy
+
+- All 16,384 F16 mask values are either exact `-inf` (15,392 = **93.9453125%**) or `0` (992 = **6.0546875%**), with no NaN or other values. The *four-by-four tile region* contains **15 MIXED + 1 ALL_NEG_INF**, matching **all 16 original packed codes** exactly (`packed_2bit_crosscheck=PASS`).
+- Code tile distribution is therefore **93.75% tiles marked MIXED but only 6.05% individual entries unmasked**. Mixed tile classification is a uniformity test; it does not imply high density of unmasked entries.
+
+| Query tile | K718 allowed /1024 | K719 allowed /1024 | K720 allowed /1024 | K721 allowed /1024 | Q tile total allowed /4096 |
+|---|---:|---:|---:|---:|---:|
+| Q32 | 128 | 116 | 36 | 64 | 344 |
+| Q33 | 12 | 40 | 20 | **0 (ALL_NEG_INF)** | 72 |
+| Q34 | 40 | 68 | 60 | 176 | 344 |
+| Q35 | 48 | 16 | 40 | 128 | 232 |
+| Total | 228 | 240 | 156 | 368 | **992** |
+
+- Additional precise observation: for each of 64 Query rows, the binary mask is **uniform in every consecutive group of four KV positions** within the 256-column crop; there are exactly 248 unmasked four-token groups out of 4,096 such groups. Query rows themselves are not constant in groups of 2/4/8, and some individual Query rows have zero unmasked keys in this crop.
+- This region lies entirely in the past of the sampled Query positions (`K ≤ 46207`, `Q ≥ 48640`), so causal future-masking cannot account for these `-inf` values. Their structured sparsity must be explained by a separate mask-selection mechanism; exact creating code and its semantic interpretation have NOT yet been verified.
+- These are **mask allowed positions**, NOT actual post-softmax attention weights or the number of GPU FLOPs the shader saved. In the current mask-opt scheme, only the one fully-negative-infinity tile in this crop is trivially skippable as an entire tile, even though 93.95% of F16 elements are individually masked. This offers a testable explanation for why many MIXED tiles can still imply GPU work.
+
+### Next step
+
+64k **code** raw F16 gate PASS. Run `raw-mask-literature` with the identical Q32..35 K718..721 geometry and `KV49152` target, then validate its 16 packed labels, F16 values and P-MODE/memory. Compare *element-level allowed fraction*, not only mixed tile count (literature has 7 MIXED and 9 ALL_NEG_INF at the same coordinates in prior 2-bit capture). Broader relevance to end-to-end PP awaits multi-window and separate RGP timing comparisons.
