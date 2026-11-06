@@ -77,3 +77,17 @@ python $vis --prefix "$dir\raw-literature-49152-q32-k718" --out "$dir\raw-litera
 ~~~
 
 Upload run ZIPs and four files per captured corpus plus zoom SVG/JSON. The raw files are outside benchmark ZIPs. STOP on any TDR, DeviceLost, OOM, memory pressure, wrong mask identity, code-vs-packed mismatch, or P-MODE drift.
+
+## 2026-11-06 b12117 raw-smoke PASS — native Windows evidence
+
+Both GPU readbacks succeeded: 2-bit mask classification and original F16 mask crop. Native Vulkan b12117 (commit 7bb6e926f), Unsloth IQ3_XXS PLE16, literature SHA256 8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143, prompt1024, context2048, UBatch1024, no warmup, QSA UNION OFF. Query Qcur-19, KV1024, Br16/Bc64. Cropped F16 query tiles32..35 and key tiles8..11; 64x256 elements.
+
+- User benchmark ZIP: 20261106-194323-694-bench-vulkan-b12117-ctx2048-a069bebf170f.zip, SHA256 487e091407d013c79ae0f9e6ee7b5f63922920cae1242458babb1eef3c798fb8.
+- User snapshot ZIP: raw-smoke-1024-zoom.zip, SHA256 80a1b462e4a9e59c74a2b032d203596a0219f7b314ecaec92b2d8f4e172260c6.
+- F16 raw bin: 32768 bytes, SHA256 4df00ba6eadc52585f1423d3badd90b04b44488c20c8c34116623a570d2794d9. Original 2-bit bin: 256 bytes, SHA256 1ce6be7bb824511ae407f581cc73662682c69d50fad47200232399e1e2ef3a62.
+- Status OK / ExitCode0; stderr raw status=queued then status=wrote plus packed status=queued then status=wrote, both for KV1024, Qcur-19. An earlier not_captured message was from another context, not an error in the successful target context. Rendered zoom JSON packed_2bit_crosscheck=PASS.
+- Independent F16 scan: exactly 14,304 -infinity, 2,080 zero, 0 other/NaN in all 16,384 sampled positions. Allowed fraction 12.6953125%. Exactly 4 MIXED and 12 ALL_NEG_INF 16x64 tiles. Four MIXED tiles (key tile8) have 136, 392, 648, 904 allowed elements respectively. Every one of the 16 tile codes matched packed 2-bit data.
+- Strongest check: every one of 16,384 raw elements matches causal mask value 0 iff global key index <= query index; otherwise -infinity. Independent F16 vs causal calculation produced ZERO cell mismatches.
+- Performance P-MODE remained constant, ADLX exit0 with 24 samples, resource monitor 24 samples, min available Windows RAM 22.748 GiB, peak ADLX VRAM 80,934 MiB, no recorded OOM/TDR. PageInputs/sec elevated during mapped-model-loading span; high counters do not alone demonstrate pagefile pressure. Single-run 527.171 tok/s is DIAGNOSTIC ONLY and must not be compared with clean PP.
+
+Gate: F16 RAW 1024 SMOKE PASS. Proceed to separate 64k code-only capture (query tiles32..35 / key tiles718..721 / KV49152), verify metadata and 16-code F16 crosscheck, then run literature. 64k long-context contents remain unverified.
