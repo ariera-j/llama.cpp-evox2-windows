@@ -35,8 +35,15 @@ def load_snapshot(prefix: str | Path) -> tuple[dict, list[list[list[int]]]]:
             raise ValueError(f"Invalid or missing positive metadata: {key}")
     rows, cols, planes = meta["rows"], meta["tiles_per_row"], meta["slices"]
     words = meta["words_per_row"]
-    if cols > words * 16 or cols <= (words - 1) * 16:
-        raise ValueError("Tile columns cannot be decoded from this row stride")
+    # mask_opt stride is allocated from mask.ne0, which can be padded beyond
+    # the logical KV depth. Retain and skip unused padding words; do not
+    # require the final word to contain a valid logical tile.
+    if cols > words * 16:
+        raise ValueError("Tile columns exceed available packed row stride")
+    ne0 = meta.get("mask_ne0")
+    if ne0 is not None:
+        if type(ne0) is not int or ne0 <= 0 or words != math.ceil(ne0 / (16 * meta["bc"])):
+            raise ValueError("Packed row stride disagrees with mask_ne0 / Bc")
     if rows * cols * planes > (1 << 20):
         raise ValueError("Unreasonably large logical tile map")
     expected = words * rows * planes * 4
