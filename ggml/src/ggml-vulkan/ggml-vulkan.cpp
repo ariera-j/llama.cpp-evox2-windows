@@ -326,6 +326,10 @@ static void ggml_vk_indexer_diag_capture(
         std::cerr << "evox2_indexer_diag_v1 status=rejected buffer_bounds name=" << node->name << "\n";
         return;
     }
+    std::cerr << "evox2_indexer_diag_v1 status=transfer_begin kind="
+              << (is_topk ? "topk" : "score") << " layer=" << layer
+              << " KV=" << kv << " Q=" << qbase + q_start
+              << " bytes=" << bytes << std::endl;
     vk_buffer snapshot = ggml_vk_create_buffer_device(ctx->device, (size_t) bytes);
     ggml_vk_sync_buffers(ctx, subctx);
     for (uint32_t row = 0; row < q_count; ++row) {
@@ -13662,6 +13666,9 @@ bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph, in
 
         break;
     case GGML_OP_TOP_K:
+        if (ggml_vk_indexer_diag_enabled() && std::strncmp(node->name, "evxidx-topk-", 12) == 0) {
+            std::cerr << "evox2_indexer_diag_v1 status=dispatch_begin kind=topk name=" << node->name << std::endl;
+        }
         ggml_vk_topk(ctx, compute_ctx, src0, node);
         ggml_vk_indexer_diag_capture(ctx, compute_ctx, node, true);
 
@@ -13789,6 +13796,9 @@ bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph, in
         break;
 
     case GGML_OP_LIGHTNING_INDEXER:
+        if (ggml_vk_indexer_diag_enabled() && std::strncmp(node->name, "evxidx-score-", 13) == 0) {
+            std::cerr << "evox2_indexer_diag_v1 status=dispatch_begin kind=score name=" << node->name << std::endl;
+        }
         ggml_vk_lightning_indexer(ctx, compute_ctx, node);
         ggml_vk_indexer_diag_capture(ctx, compute_ctx, node, false);
 
