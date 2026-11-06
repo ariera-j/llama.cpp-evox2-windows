@@ -1253,6 +1253,21 @@ struct ggml_backend_vk_context {
     uint32_t fa_mask_diag_raw_width = 0;
     bool fa_mask_diag_raw_pending = false;
 
+    // QSA Indexer: opt-in score/top-k row-window snapshots, kept until fence.
+    vk_buffer indexer_diag_score_snapshot;
+    vk_buffer indexer_diag_topk_snapshot;
+    uint32_t indexer_diag_kv = 0;
+    uint32_t indexer_diag_layer = 0;
+    uint32_t indexer_diag_q_base = 0;
+    uint32_t indexer_diag_n_tokens = 0;
+    uint32_t indexer_diag_q_start = 0;
+    uint32_t indexer_diag_q_count = 0;
+    uint32_t indexer_diag_n_pool = 0;
+    uint32_t indexer_diag_n_top_pool = 0;
+    bool indexer_diag_score_captured = false;
+    bool indexer_diag_topk_captured = false;
+    bool indexer_diag_wrote = false;
+
     vk_device device;
 
     size_t semaphore_idx, event_idx;

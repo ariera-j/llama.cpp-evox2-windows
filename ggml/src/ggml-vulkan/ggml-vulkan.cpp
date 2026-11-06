@@ -261,6 +261,176 @@ static void ggml_vk_fa_mask_diag_raw_flush(ggml_backend_vk_context * ctx) {
               << " prefix=" << prefix << "\n";
 }
 
+
+static bool ggml_vk_indexer_diag_enabled() {
+    static const bool enabled = [] {
+        const char * env = std::getenv("GGML_VK_INDEXER_DIAG");
+        return env && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static uint32_t ggml_vk_indexer_diag_target(const char * name, uint32_t fallback) {
+    const char * value = std::getenv(name);
+    if (!value || !*value) { return fallback; }
+    for (const char * p = value; *p; ++p) {
+        if (*p < '0' || *p > '9') { return UINT32_MAX; }
+    }
+    char * end = nullptr;
+    const unsigned long long x = std::strtoull(value, &end, 10);
+    return end != value && *end == '\0' && x <= UINT32_MAX ? (uint32_t) x : UINT32_MAX;
+}
+
+// The graph tags only QSA tensors with explicit layer, KV and UBatch start.
+// Tensor shape/name alone never implies the desired model position.
+static void ggml_vk_indexer_diag_capture(
+        ggml_backend_vk_context * ctx, vk_context & subctx,
+        const ggml_tensor * node, bool is_topk) {
+    if (!ggml_vk_indexer_diag_enabled()) { return; }
+    if ((is_topk ? ctx->indexer_diag_topk_captured : ctx->indexer_diag_score_captured)) { return; }
+    char kind[8] = {};
+    uint32_t layer = 0, kv = 0, qbase = 0, n = 0;
+    int consumed = 0;
+    if (std::sscanf(node->name, "evxidx-%7[a-z]-l%u-k%u-q%u-n%u%n",
+                    kind, &layer, &kv, &qbase, &n, &consumed) != 5 ||
+        (size_t) consumed != std::strlen(node->name) ||
+        std::strcmp(kind, is_topk ? "topk" : "score") != 0) {
+        return;
+    }
+    const uint32_t want_kv = ggml_vk_indexer_diag_target("GGML_VK_INDEXER_DIAG_KV", 49152);
+    const uint32_t want_layer = ggml_vk_indexer_diag_target("GGML_VK_INDEXER_DIAG_LAYER", 19);
+    const uint32_t q_start = ggml_vk_indexer_diag_target("GGML_VK_INDEXER_DIAG_Q_START", 512);
+    const uint32_t q_count = ggml_vk_indexer_diag_target("GGML_VK_INDEXER_DIAG_Q_COUNT", 64);
+    if (kv != want_kv || layer != want_layer || n != 1024 ||
+        q_count == 0 || q_count > 256 || q_start > n || q_count > n - q_start ||
+        qbase > kv || qbase + n != kv ||
+        node->type != (is_topk ? GGML_TYPE_I32 : GGML_TYPE_F32) ||
+        node->ne[0] <= 0 || node->ne[1] != n || node->ne[2] != 1 || node->ne[3] != 1 ||
+        node->nb[0] != sizeof(uint32_t) || node->nb[1] < (size_t) node->ne[0] * sizeof(uint32_t)) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected shape_or_target name=" << node->name << "\n";
+        return;
+    }
+    if ((ctx->indexer_diag_score_captured || ctx->indexer_diag_topk_captured) &&
+        (ctx->indexer_diag_kv != kv || ctx->indexer_diag_layer != layer ||
+         ctx->indexer_diag_q_base != qbase || ctx->indexer_diag_q_start != q_start ||
+         ctx->indexer_diag_q_count != q_count)) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected unmatched_score_topk\n";
+        return;
+    }
+    const uint64_t cols = (uint64_t) node->ne[0];
+    const uint64_t rowbytes = cols * sizeof(uint32_t);
+    const uint64_t bytes = rowbytes * q_count;
+    const vk_subbuffer src = ggml_vk_tensor_subbuffer(ctx, node);
+    const uint64_t last = ((uint64_t) q_start + q_count - 1) * node->nb[1] + rowbytes;
+    if (bytes == 0 || bytes > (16u << 20) || last > src.size) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected buffer_bounds name=" << node->name << "\n";
+        return;
+    }
+    vk_buffer snapshot = ggml_vk_create_buffer_device(ctx->device, (size_t) bytes);
+    ggml_vk_sync_buffers(ctx, subctx);
+    for (uint32_t row = 0; row < q_count; ++row) {
+        ggml_vk_buffer_copy_async(subctx, snapshot, (size_t) row*rowbytes,
+                                  src.buffer, src.offset + ((size_t) q_start + row)*node->nb[1],
+                                  (size_t) rowbytes);
+    }
+    ggml_vk_sync_buffers(ctx, subctx);
+    ctx->indexer_diag_kv = kv;
+    ctx->indexer_diag_layer = layer;
+    ctx->indexer_diag_q_base = qbase;
+    ctx->indexer_diag_n_tokens = n;
+    ctx->indexer_diag_q_start = q_start;
+    ctx->indexer_diag_q_count = q_count;
+    if (is_topk) {
+        ctx->indexer_diag_topk_snapshot = std::move(snapshot);
+        ctx->indexer_diag_n_top_pool = (uint32_t) cols;
+        ctx->indexer_diag_topk_captured = true;
+    } else {
+        ctx->indexer_diag_score_snapshot = std::move(snapshot);
+        ctx->indexer_diag_n_pool = (uint32_t) cols;
+        ctx->indexer_diag_score_captured = true;
+    }
+    std::cerr << "evox2_indexer_diag_v1 status=queued kind=" << (is_topk ? "topk" : "score")
+              << " layer=" << layer << " KV=" << kv << " Q=" << qbase + q_start
+              << " rows=" << q_count << " cols=" << cols << " bytes=" << bytes << "\n";
+}
+
+static void ggml_vk_indexer_diag_flush(ggml_backend_vk_context * ctx) {
+    if (!ggml_vk_indexer_diag_enabled() || ctx->indexer_diag_wrote ||
+        !ctx->indexer_diag_score_captured || !ctx->indexer_diag_topk_captured) {
+        return;
+    }
+    ctx->indexer_diag_wrote = true; // single attempt; never overwrite evidence
+    const char * output = std::getenv("GGML_VK_INDEXER_DIAG_FILE");
+    if (!output || !*output) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected missing_prefix\n";
+        return;
+    }
+    const std::string prefix(output);
+    const std::string score_file = prefix + "-score.f32";
+    const std::string topk_file  = prefix + "-topk.i32";
+    const std::string meta_file  = prefix + "-meta.json";
+    const std::string host_map   = prefix + "-pool-map.csv";
+    const std::string host_meta  = prefix + "-pool-map.json";
+    if (!std::ifstream(host_map, std::ios::binary).good() ||
+        !std::ifstream(host_meta, std::ios::binary).good()) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected host_map_missing\n";
+        return;
+    }
+    for (const auto & path : {score_file, topk_file, meta_file}) {
+        if (std::ifstream(path, std::ios::binary).good()) {
+            std::cerr << "evox2_indexer_diag_v1 status=exists path=" << path << "\n";
+            return;
+        }
+    }
+    const size_t score_bytes = (size_t) ctx->indexer_diag_q_count * ctx->indexer_diag_n_pool * 4u;
+    const size_t topk_bytes = (size_t) ctx->indexer_diag_q_count * ctx->indexer_diag_n_top_pool * 4u;
+    if (!score_bytes || !topk_bytes || score_bytes > (16u << 20) || topk_bytes > (16u << 20)) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected size\n";
+        return;
+    }
+    std::vector<uint8_t> scores(score_bytes), topk(topk_bytes);
+    ggml_vk_buffer_read(ctx->indexer_diag_score_snapshot, 0, scores.data(), score_bytes);
+    ggml_vk_buffer_read(ctx->indexer_diag_topk_snapshot, 0, topk.data(), topk_bytes);
+    auto write_payload = [](const std::string & path, const std::vector<uint8_t> & bytes) {
+        std::ofstream f(path, std::ios::out | std::ios::binary);
+        if (!f) { return false; }
+        f.write((const char *) bytes.data(), (std::streamsize) bytes.size());
+        f.close();
+        return f.good();
+    };
+    if (!write_payload(score_file, scores) || !write_payload(topk_file, topk)) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected payload_write_failure\n";
+        return;
+    }
+    std::ofstream meta(meta_file);
+    if (!meta) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected cannot_open_metadata\n";
+        return;
+    }
+    meta << "{\n  \"schema_version\": 1,\n  \"source\": \"vulkan_qsa_indexer_original_f32_i32\",\n"
+         << "  \"kv\": " << ctx->indexer_diag_kv << ",\n"
+         << "  \"layer\": " << ctx->indexer_diag_layer << ",\n"
+         << "  \"q_global_first\": " << ctx->indexer_diag_q_base << ",\n"
+         << "  \"n_tokens\": " << ctx->indexer_diag_n_tokens << ",\n"
+         << "  \"q_local_start\": " << ctx->indexer_diag_q_start << ",\n"
+         << "  \"q_global_start\": " << ctx->indexer_diag_q_base + ctx->indexer_diag_q_start << ",\n"
+         << "  \"q_count\": " << ctx->indexer_diag_q_count << ",\n"
+         << "  \"n_pool\": " << ctx->indexer_diag_n_pool << ",\n"
+         << "  \"n_top_pool\": " << ctx->indexer_diag_n_top_pool << ",\n"
+         << "  \"score_bytes\": " << score_bytes << ",\n"
+         << "  \"topk_bytes\": " << topk_bytes << "\n}\n";
+    meta.close();
+    if (!meta.good()) {
+        std::cerr << "evox2_indexer_diag_v1 status=rejected metadata_write_failure\n";
+        return;
+    }
+    std::cerr << "evox2_indexer_diag_v1 status=wrote layer=" << ctx->indexer_diag_layer
+              << " KV=" << ctx->indexer_diag_kv
+              << " Q=" << ctx->indexer_diag_q_base + ctx->indexer_diag_q_start
+              << " score_bytes=" << score_bytes << " topk_bytes=" << topk_bytes
+              << " prefix=" << prefix << "\n";
+}
+
 static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& device) {
     vk::PhysicalDeviceProperties props = device.getProperties();
 
@@ -13493,6 +13663,7 @@ bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph, in
         break;
     case GGML_OP_TOP_K:
         ggml_vk_topk(ctx, compute_ctx, src0, node);
+        ggml_vk_indexer_diag_capture(ctx, compute_ctx, node, true);
 
         break;
     case GGML_OP_SUM:
@@ -13619,6 +13790,7 @@ bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgraph, in
 
     case GGML_OP_LIGHTNING_INDEXER:
         ggml_vk_lightning_indexer(ctx, compute_ctx, node);
+        ggml_vk_indexer_diag_capture(ctx, compute_ctx, node, false);
 
         break;
 
@@ -13783,6 +13955,12 @@ void ggml_vk_cleanup(ggml_backend_vk_context * ctx) {
     }
     ggml_vk_destroy_buffer(ctx->fa_mask_diag_snapshot);
     ggml_vk_destroy_buffer(ctx->fa_mask_diag_raw_snapshot);
+    if (ggml_vk_indexer_diag_enabled() && !ctx->indexer_diag_wrote) {
+        std::cerr << "evox2_indexer_diag_v1 status=not_captured target_KV="
+                  << ggml_vk_indexer_diag_target("GGML_VK_INDEXER_DIAG_KV", 49152) << "\n";
+    }
+    ggml_vk_destroy_buffer(ctx->indexer_diag_score_snapshot);
+    ggml_vk_destroy_buffer(ctx->indexer_diag_topk_snapshot);
     ggml_vk_destroy_buffer(ctx->prealloc_x);
     ggml_vk_destroy_buffer(ctx->prealloc_y);
     ggml_vk_destroy_buffer(ctx->prealloc_split_k);
@@ -14356,6 +14534,7 @@ void ggml_vk_synchronize(ggml_backend_vk_context * ctx) {
     }
     ggml_vk_fa_mask_diag_flush(ctx);
     ggml_vk_fa_mask_diag_raw_flush(ctx);
+    ggml_vk_indexer_diag_flush(ctx);
 }
 
 static void ggml_backend_vk_synchronize(ggml_backend_t backend) {

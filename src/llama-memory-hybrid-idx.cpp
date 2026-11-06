@@ -4,6 +4,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
+#include <fstream>
+#include <string>
 #include <type_traits>
 
 #include "llama-impl.h"
@@ -1003,4 +1006,102 @@ void llama_memory_hybrid_idx_context::set_input_kpool(ggml_tensor * pool_cells, 
             }
         }
     }
+
+    // Optional one-shot host provenance for the exact same UBatch as Vulkan's
+    // lightning-indexer score/top-k snapshot. Cache cell IDs are not assumed
+    // to equal logical token positions (e.g. after KV edits/sequence copies).
+    static std::atomic<bool> indexer_diag_saved{false};
+    const char * diag_flag = std::getenv("GGML_VK_INDEXER_DIAG");
+    if (diag_flag && std::strcmp(diag_flag, "1") == 0 && !indexer_diag_saved.load() &&
+        ubatch->pos && ubatch->n_pos > 0 && ubatch->n_seqs_unq == 1 &&
+        ubatch->seq_id && ubatch->n_tokens > 0) {
+        const char * kv_env = std::getenv("GGML_VK_INDEXER_DIAG_KV");
+        const char * layer_env = std::getenv("GGML_VK_INDEXER_DIAG_LAYER");
+        const char * start_env = std::getenv("GGML_VK_INDEXER_DIAG_Q_START");
+        const char * count_env = std::getenv("GGML_VK_INDEXER_DIAG_Q_COUNT");
+        const uint32_t want_kv = kv_env ? (uint32_t) std::strtoul(kv_env, nullptr, 10) : 49152;
+        const uint32_t q_start = start_env ? (uint32_t) std::strtoul(start_env, nullptr, 10) : 512;
+        const uint32_t q_count = count_env ? (uint32_t) std::strtoul(count_env, nullptr, 10) : 64;
+        // Layer is checked in Vulkan; reject impossible values here as well.
+        const uint32_t target_layer = layer_env ? (uint32_t) std::strtoul(layer_env, nullptr, 10) : 19;
+        if (target_layer < 256 && n_kv == want_kv && ubatch->n_tokens == 1024 &&
+            q_count > 0 && q_count <= 256 && q_start + q_count <= ubatch->n_tokens &&
+            ubatch->pos[0] >= 0 && (uint32_t) ubatch->pos[0] + ubatch->n_tokens == n_kv) {
+            const llama_seq_id target_seq = ubatch->seq_id[0][0];
+            for (uint32_t i = 0; i < ubatch->n_tokens; ++i) {
+                if (ubatch->n_seq_id[i] != 1 || ubatch->seq_id[i][0] != target_seq ||
+                    ubatch->pos[(size_t) i * ubatch->n_pos] != ubatch->pos[0] + (llama_pos) i) {
+                    throw std::runtime_error("evox2 indexer diag: non-contiguous/multi-sequence UBatch");
+                }
+            }
+            const char * output = std::getenv("GGML_VK_INDEXER_DIAG_FILE");
+            if (!output || !*output) {
+                throw std::runtime_error("evox2 indexer diag: GGML_VK_INDEXER_DIAG_FILE is required");
+            }
+            const std::string prefix(output);
+            const std::string map_path = prefix + "-pool-map.csv";
+            const std::string json_path = prefix + "-pool-map.json";
+            for (const std::string & path : {map_path, json_path, prefix + "-score.f32",
+                                            prefix + "-topk.i32", prefix + "-meta.json"}) {
+                if (std::ifstream(path, std::ios::binary).good()) {
+                    throw std::runtime_error("evox2 indexer diag: output already exists: " + path);
+                }
+            }
+            bool expected = false;
+            if (indexer_diag_saved.compare_exchange_strong(expected, true)) {
+                std::ofstream map(map_path, std::ios::out | std::ios::binary);
+                if (!map) {
+                    throw std::runtime_error("evox2 indexer diag: cannot open pool map");
+                }
+                map << "pool,member,seq_id,cache_cell,key_pos,real\n";
+                uint32_t pool_id = 0;
+                for (llama_seq_id seq = 0; seq < LLAMA_MAX_SEQ; ++seq) {
+                    const auto & sq = lay.seqs[seq];
+                    for (uint32_t j : sq.pools) {
+                        for (uint32_t k = 0; k < kpool; ++k) {
+                            const auto & entry = sq.cells[(size_t) j + k];
+                            map << pool_id << ',' << k << ',' << seq << ','
+                                << pidx[(size_t) pool_id*kpool + k] << ','
+                                << entry.first << ",1\n";
+                        }
+                        ++pool_id;
+                    }
+                }
+                if (pool_id != n_pool_real) {
+                    throw std::runtime_error("evox2 indexer diag: real pool count mismatch");
+                }
+                for (uint32_t ip = n_pool_real; ip < n_pool; ++ip) {
+                    for (uint32_t k = 0; k < kpool; ++k) {
+                        map << ip << ',' << k << ",-1," << sentinel << ",-1,0\n";
+                    }
+                }
+                map.close();
+                if (!map.good()) {
+                    throw std::runtime_error("evox2 indexer diag: pool map write failed");
+                }
+                std::ofstream meta(json_path);
+                if (!meta) {
+                    throw std::runtime_error("evox2 indexer diag: cannot open pool map metadata");
+                }
+                meta << "{\n  \"schema_version\": 1,\n  \"kv\": " << n_kv
+                     << ",\n  \"n_tokens\": " << ubatch->n_tokens
+                     << ",\n  \"q_global_first\": " << ubatch->pos[0]
+                     << ",\n  \"q_local_start\": " << q_start
+                     << ",\n  \"q_count\": " << q_count
+                     << ",\n  \"layer_target\": " << target_layer
+                     << ",\n  \"sequence_id\": " << target_seq
+                     << ",\n  \"kpool\": " << kpool
+                     << ",\n  \"n_pool\": " << n_pool
+                     << ",\n  \"n_pool_real\": " << n_pool_real
+                     << "\n}\n";
+                meta.close();
+                if (!meta.good()) {
+                    throw std::runtime_error("evox2 indexer diag: pool map metadata write failed");
+                }
+                fprintf(stderr, "evox2_indexer_pool_map_v1 status=wrote KV=%u Q=%d n_pool=%u real=%u kpool=%u prefix=%s\n",
+                        n_kv, (int) ubatch->pos[0], n_pool, n_pool_real, kpool, prefix.c_str());
+            }
+        }
+    }
+
 }

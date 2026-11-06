@@ -913,10 +913,24 @@ ggml_tensor * llama_model_qwen4exp::graph::build_qsa_sel(
     ggml_tensor * score = ggml_lightning_indexer(ctx0, q, pooled, weights, inp_kpool->pool_mask); // [n_pool, n_tokens]
     res->add_fused_node({LLM_FUSED_OP_LIGHTNING_INDEXER, score, il});
     cb(score, "indexer_score", il);
+    // Diagnostic-only identity: attach the actual layer, cache KV and UBatch
+    // first position. Vulkan must match all four before reading a GPU tensor.
+    const bool indexer_diag = std::getenv("GGML_VK_INDEXER_DIAG") &&
+        std::strcmp(std::getenv("GGML_VK_INDEXER_DIAG"), "1") == 0;
+    if (indexer_diag && ubatch.pos && ubatch.n_tokens == (uint32_t) n_tokens &&
+        ubatch.n_seqs_unq == 1 && ubatch.n_pos > 0) {
+        ggml_format_name(score, "evxidx-score-l%d-k%u-q%d-n%u", il,
+                         inp_kpool->n_kv, (int) ubatch.pos[0], ubatch.n_tokens);
+    }
 
     const int64_t n_top_pool = std::min<int64_t>(n_pool, hparams.indexer_top_k / kpool);
     ggml_tensor * top_k = ggml_top_k(ctx0, score, n_top_pool); // [n_top_pool, n_tokens], unordered
     cb(top_k, "indexer_top_k", il);
+    if (indexer_diag && ubatch.pos && ubatch.n_tokens == (uint32_t) n_tokens &&
+        ubatch.n_seqs_unq == 1 && ubatch.n_pos > 0) {
+        ggml_format_name(top_k, "evxidx-topk-l%d-k%u-q%d-n%u", il,
+                         inp_kpool->n_kv, (int) ubatch.pos[0], ubatch.n_tokens);
+    }
 
     // COMMON-005 r6: return a compact [n_sel] mask and safe selected row indices.
     // This bypasses full-size TOP_K_MASK/SET_ROWS when gather is active.
