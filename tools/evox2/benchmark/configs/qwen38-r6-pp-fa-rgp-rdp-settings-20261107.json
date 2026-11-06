@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "description": "Radeon Developer Panel UI settings reference ONLY (NOT a directly importable RDP preset). Provisional timer values are not verified dispatch/KV anchors.",
+  "profile": "r6 QSA FA 64k paired, Vulkan b12133 marker-only",
+  "target_process": "llama-bench.exe",
+  "target_executable_directory": "C:\\llama-build\\llama.cpp-evox2-windows-r6-ppdiag\\build-vulkan-ppdiag-rgp\\bin\\Release",
+  "api": "Vulkan",
+  "capture_mode": "Dispatch",
+  "render_op_count": 256,
+  "auto_capture_mode": "Dispatch timer",
+  "timer_dispatch_count": 256,
+  "initial_capture_time_ms": {
+    "code": 175000,
+    "literature": 185000
+  },
+  "initial_capture_time_basis": "Exploratory estimates from prior 64k process wall durations 208.485s code and 229.096s literature; include model load time. RDP timer origin may differ; confirm captured KV/N/q, never assume anchor.",
+  "fallback_if_no_timer_mode": {
+    "auto_capture_mode": "None",
+    "capture_mode": "Dispatch",
+    "render_op_count": 256,
+    "trigger": "manual Capture profile / hotkey at estimated workload stage; verify labels"
+  },
+  "after_calibration": {
+    "auto_capture_mode": "Dispatch range",
+    "dispatch_start_index": null,
+    "dispatch_count": 256,
+    "note": "Record actual calibrated RDP index from a successful capture. RDP index is not assumed equal to CPU vkCmdDispatch ordinal."
+  },
+  "delay_capture_enabled": false,
+  "sqtt_buffer_size": "High",
+  "collect_counters": false,
+  "instruction_tracing": false,
+  "shader_instrumentation": false,
+  "device_clocks": "Do not change from the established setting between code and literature; log actual clocks. RGP capture can alter clocks.",
+  "user_event_prefix": "EVOX2_FA_",
+  "required_target": {
+    "kv": 49152,
+    "n": 1024,
+    "q": "Qcur-19",
+    "stages": [
+      "MASK_OPT",
+      "MAIN"
+    ],
+    "q_global_window": "48640-48703 belongs to this physical UBatch, but markers refer to full N=1024"
+  },
+  "not_for_speed_baseline": true
+}
