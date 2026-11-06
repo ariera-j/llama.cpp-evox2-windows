@@ -1,6 +1,30 @@
 # r6 Vulkan QSA Indexer score/top-k — Windows runbook (2026-11-06)
 
-**Status: source committed; native build, smoke and 64k GPU captures are NOT YET VERIFIED.** Do not proceed to 64k until all smoke checks pass. Must use the updated diagnostic Vulkan executable, not b12117 production or an old cached binary.
+**Status (2026-11-07): first native b12127 1024-token smoke FAILED (0xC0000409). Source fix for M-RoPE position indexing and nonfatal diagnostic validation is committed, but its rebuilt smoke is NOT YET VERIFIED. Do not run 64k until repeat smoke PASS.** Do not proceed to 64k until all smoke checks pass. Must use the updated diagnostic Vulkan executable, not b12117 production or an old cached binary.
+
+## Initial failed smoke: evidence and corrective patch (2026-11-06 23:56 JST)
+
+- Failed archive: `20261106-235648-918-bench-vulkan-b12127-ctx2048-4dddecf3565f.zip`, SHA-256 `1537c696a4ec1e6c2018d87ad8983b3acc46500fe314605dc93bb76292cd97e4`.
+- Build provenance JSON `evox2-build(20261106-150200).json`, SHA-256 `707cc84470d6d15993e7080c1f8905785fba527f30b89206d10d906d8116d092`. Build `b12127/dd3b03e8d` verified using Vulkan 8060S and correct benchmark executable. Dirty status is attributable only to four untracked old mask experiment plan files; it does not by itself imply source modifications.
+- `result.json: Status=FAILED, ExitCode=3221226505 (0xC0000409)`, NativeRowCount0, duration55.434s, JSON output only `[\r\n`; `stderr.log` shows backend load and `evox2_indexer_diag_v1 status=not_captured target_KV=1024`. **No** `status=queued`, `status=wrote` or host pool-map output. The `not_captured` line is a cleanup observation and not a root-cause message.
+- GPU reached ~79GiB model allocations; sampled GPU usage remained low. The snapshot alone does not demonstrate a TDR, OOM, or device reset. Crash dump/Windows event is required to prove exact Windows fast-fail mechanism.
+- **Confirmed source-level bug:** optional host validation compared `ubatch->pos[(size_t) i * ubatch->n_pos]` to a contiguous token position. `llama_ubatch::pos` is **section-major** for multi-position M-RoPE; existing `set_input_kpool` itself reads `ubatch->pos[i]`. The extra diagnostic could therefore reject a valid UBatch and throw prior to any file output. Corrected to `ubatch->pos[i]`. Whether this alone caused the specific 0xC0000409 is not established.
+- Added fail-closed `try/catch` around the entire optional host snapshot, so file/validation failures log `evox2_indexer_pool_map_v1 status=rejected reason=...` instead of propagating. Added one-shot `status=probe` with KV/q0/N/kpool dimensions, Vulkan `status=dispatch_begin` and `status=transfer_begin` logging, and a regression contract test `test_mrope_positions_are_sectioned_and_diagnostic_is_nonfatal`.
+- **Next:** `git pull --ff-only` to receive all fixes, rerun new unit tests and rebuild `ggml-vulkan.dll` + `llama-bench.exe`. Only one 1024-token smoke. If host rejects or fails without `score/topk queued/wrote`, stop there and inspect stderr; do not execute 64k.
+
+If 0xC0000409 recurs, capture the related Windows Application Error / Windows Error Reporting events:
+
+```powershell
+Get-WinEvent -FilterHashtable @{
+    LogName='Application'
+    StartTime=(Get-Date).AddMinutes(-15)
+} -ErrorAction SilentlyContinue |
+  Where-Object { $_.ProviderName -in @('Application Error','Windows Error Reporting') } |
+  Select-Object TimeCreated,ProviderName,Id,Message |
+  Format-List | Out-String -Width 240
+```
+
+Share the new run ZIP, build manifest and event information, without treating `not_captured` as proof of the failure's stage.
 
 ## Change inventory
 
