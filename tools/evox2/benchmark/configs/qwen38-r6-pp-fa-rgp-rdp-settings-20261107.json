@@ -60,18 +60,17 @@
     }
   },
   "next_code_only_calibration": {
-    "dispatch_timer_ms": 166000,
+    "dispatch_timer_ms": 167000,
     "dispatch_count": 512,
-    "status": "ROUGH estimate from 4096 tokens / 383.03 average PP tok/s ≈10.7s; not a calibrated RDP/KV mapping",
-    "logic": "First find exact KV49152; if same KV but early q layer, move timer slightly later to catch Qcur-19. Keep all GPU experiment conditions unchanged",
-    "next": "Only after code KV49152 Qcur-19 timing is captured, begin literature calibration"
+    "status": "Heuristic ~+1s after Qcur-3, must verify actual KV/N/q",
+    "next": "Capture code again; seek KV49152 Qcur-19 MASK_OPT and MAIN, only then literature calibration"
   },
   "last_code_calibration": {
-    "date_local": "2026-11-07T02:00:06+09:00",
-    "timer_ms": 177000,
+    "date_local": "2026-11-07T02:15:57+09:00",
+    "timer_ms": 166000,
     "dispatch_count": 512,
     "actual_marker": {
-      "kv": 53248,
+      "kv": 49152,
       "n": 1024,
       "q": "Qcur-3",
       "Br": 16,
@@ -79,13 +78,13 @@
       "shader": "flash_attn_f32_f16_aligned_cm1"
     },
     "actual_duration_us": {
-      "mask_opt": 5126.844,
-      "main": 78277.633,
-      "enclosing_fa": 83405.076
+      "mask_opt": 4986.261,
+      "main": 49663.102,
+      "enclosing_fa": 54649.954
     },
-    "status": "Observed RGP event labels, not the intended KV49152 / Qcur-19",
-    "rgp": "llama-bench-20261107-020006687.rgp",
-    "rgp_sha256": "b327c99d1a9959b059fb1211928bde3392ecae12039a656afd19ce56f8c4958e",
-    "native_sha256": "58b9ade148077e2acc452842ff3a0781a6a3337c1396131d52c600d9af95c69a"
+    "status": "KV anchor correct; wrong Qcur layer (target Qcur-19)",
+    "rgp": "llama-bench-20261107-021557314.rgp",
+    "rgp_sha256": "4d2a580173d0ef36be1001b1152ae5d5f328aadf4b8b3860688d4fffa55f15bf",
+    "native_sha256": "279f64bb77f8575b3a8c21e991649725b9d7d1a744cfbdd281c03b385074e9c2"
   }
 }
