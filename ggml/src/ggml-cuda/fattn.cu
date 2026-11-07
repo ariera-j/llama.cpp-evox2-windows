@@ -899,9 +899,9 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         const int64_t filter_kv = ggml_hip_rgp_anchor_kv_filter();
         if ((layer == 19 || layer == 23) && (filter_kv < 0 || k->ne[1] == filter_kv)) {
             if (layer == 19) {
-                evox2_hip_anchor_fa_layer19<<<1, 1, 0, ctx.stream()>>>();
+                evox2_hip_anchor_fa_layer19<<<128, 64, 0, ctx.stream()>>>();
             } else {
-                evox2_hip_anchor_fa_layer23<<<1, 1, 0, ctx.stream()>>>();
+                evox2_hip_anchor_fa_layer23<<<128, 64, 0, ctx.stream()>>>();
             }
             CUDA_CHECK(cudaGetLastError());
             static std::atomic<unsigned long long> next_anchor { 0 };

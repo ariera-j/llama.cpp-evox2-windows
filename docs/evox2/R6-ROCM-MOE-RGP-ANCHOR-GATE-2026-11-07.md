@@ -59,3 +59,28 @@ If MoE MMQ trace rows are missing, first inspect actual src0 weight names and ch
 Capture RGP using the same binary and setup from the earlier ROCm PP RGP runbook. Do not assume the old Event IDs or Dispatch range 181200 still refer to the same work. Look for anchor names adjacent to flash_attn_ext_f16 and mm_ids_helper -> quantize_mmq_q8 -> mul_mat_q. Correlate host MMQ entries by layer/weight/order, not by absolute GPU event ID. The strict MMQ-to-KV mapping remains a verification step because MMQ does not know KV.
 
 Next: compare code/literature at matched RGP positions, then measure unmarked equivalent runs to avoid marker-induced bias.
+
+
+## Visibility probe follow-up — 2026-11-07
+
+Two b12161 RGP captures with start=181200 and start=181500, count512, show valid MoE kernels and long FA but do not show the four layer-specific anchors. This does not prove the anchor was optimized out: only layers19/23 are marked and each 512-dispatch capture covers a small part of the full PP.
+
+For a discriminating follow-up, use the **separate** branch `investigation/r6-rocm-rgp-anchor-visibility-20261107` instead of guessing more start offsets. All HIP anchor kernels now launch 128 blocks x 64 threads instead of one thread. `GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE=1` adds a distinct `evox2_hip_anchor_moe_any_gate` immediately before the routed MoE Gate MMQ in **every** layer with N1024. It emits at most 16 short `evox2_hip_anchor_probe_v1` host messages. The original FA and layer19/23 MoE anchors remain in place.
+
+This is deliberately a **visibility-only** experiment: many additional dispatches and HIP graph captures can change graph scheduling and profiling behavior. Never use its PP speed to compare code/literature or original RGP.
+
+### New gate
+
+1. Switch to the new branch. Build into a new directory `build-rocm-moe-anchor-probe-r6` using `Build-ROCm.ps1 -AmdGpuTarget gfx1151` and verify build commit identity.
+2. Add a new local ignored build key `R6RocmMoeAnchorProbe` pointing to the new build directory (keep `R6RocmMoeAnchor` for the original b12161 build).
+3. Run `python tools/evox2/tests/test_r6_rocm_moe_rgp_anchors.py`, then `-OnlyVariant moe-anchor-smoke` with no RGP. Confirm `evox2_hip_anchor_probe_v1` is present with `src0="blk.X.ffn_gate_exps.weight"`. Confirm FA and layer19/23 logs are still present.
+4. For the only necessary full RGP run, use `-OnlyVariant moe-anchor-code-visibility-probe-64k`, HIP Dispatch range start=181500,count512, SQTT High, counters/instruction trace OFF. Search Event Timing for `evox2_hip_anchor_moe_any_gate`. This all-layer marker should appear beside at least one MoE Gate if visible, rather than relying on a rare layer19/23 target.
+5. If the generic marker is seen: the earlier two captures likely missed target layers (not proven until layer matching). If no generic marker is seen *despite a trace window containing topk_moe_cuda/mm_ids_helper and logged probe launches*, investigate RGP/HIP graph marker visibility next. In that case do **not** keep adjusting dispatch starts blindly.
+
+The ROCm build uses `GGML_HIP_GRAPHS` enabled by default in this source tree. A host launch message may describe graph capture, not a completed physical GPU dispatch. Kernel names and durations are confirmed only when the new RGP displays them.
+
+Probe build key in ignored `tools/evox2/benchmark/configs/local.psd1`:
+
+    R6RocmMoeAnchorProbe = @{ BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag\build-rocm-moe-anchor-probe-r6\bin\Release'; ExpectedBackend = 'ROCm' }
+
+All variants in this visibility branch's plan use this new BuildKey. Do not use the old b12161 binary for this probe.

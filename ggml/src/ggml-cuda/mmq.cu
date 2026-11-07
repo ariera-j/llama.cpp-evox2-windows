@@ -23,6 +23,20 @@ static __global__ void evox2_hip_anchor_moe_layer23() {
 #endif
 }
 
+static __global__ void evox2_hip_anchor_moe_any_gate() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static bool ggml_hip_rgp_probe_all_moe_enabled() {
+    static const bool enabled = [] {
+        const char * const env = std::getenv("GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
 static bool ggml_hip_rgp_mmq_anchor_enabled() {
     static const bool enabled = [] {
         const char * const env = std::getenv("GGML_HIP_RGP_ANCHOR");
@@ -345,15 +359,28 @@ void ggml_cuda_mul_mat_q(
     const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;
 
 #if defined(GGML_USE_HIP)
+    if (ggml_hip_rgp_probe_all_moe_enabled() && ne12 == 1024 &&
+        std::strstr(src0->name, "ffn_gate_exps.weight") != nullptr) {
+        evox2_hip_anchor_moe_any_gate<<<128, 64, 0, stream>>>();
+        CUDA_CHECK(cudaGetLastError());
+        static std::atomic<unsigned long long> probe_count { 0 };
+        const unsigned long long probe_id = probe_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (probe_id <= 16) {
+            std::fprintf(stderr,
+                "evox2_hip_anchor_probe_v1 probe_id=%llu N=%lld src0=\"%s\""
+                " note=hip_graph_capture_may_defer_execution\n",
+                probe_id, static_cast<long long>(ne12), src0->name);
+        }
+    }
     if (ggml_hip_rgp_mmq_anchor_enabled() || ggml_hip_mmq_trace_enabled()) {
         const long layer = ggml_hip_mmq_weight_layer(src0->name);
         if ((layer == 19 || layer == 23) && ne12 == 1024) {
             bool anchored = false;
             if (ggml_hip_rgp_mmq_anchor_enabled()) {
                 if (layer == 19) {
-                    evox2_hip_anchor_moe_layer19<<<1, 1, 0, stream>>>();
+                    evox2_hip_anchor_moe_layer19<<<128, 64, 0, stream>>>();
                 } else {
-                    evox2_hip_anchor_moe_layer23<<<1, 1, 0, stream>>>();
+                    evox2_hip_anchor_moe_layer23<<<128, 64, 0, stream>>>();
                 }
                 CUDA_CHECK(cudaGetLastError());
                 anchored = true;

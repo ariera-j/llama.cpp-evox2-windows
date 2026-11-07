@@ -24,18 +24,26 @@ class HipRgpAnchorTests(unittest.TestCase):
 
     def test_fa_anchor_placement_and_kv(self):
         body = self.fa.split("void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context", 1)[1]
-        self.assertIn("evox2_hip_anchor_fa_layer19<<<1, 1, 0, ctx.stream()>>>();", body)
+        self.assertIn("evox2_hip_anchor_fa_layer19<<<128, 64, 0, ctx.stream()>>>();", body)
         self.assertIn("evox2_hip_anchor_fa_layer23<<<1, 1, 0, ctx.stream()>>>();", body)
         self.assertIn("(filter_kv < 0 || k->ne[1] == filter_kv)", body)
         self.assertLess(body.index("evox2_hip_anchor_fa_layer19<<<"), body.index("switch (kernel)"))
 
     def test_moe_anchor_placement_and_metadata(self):
         body = self.mmq.split("const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;", 1)[1]
-        self.assertIn("evox2_hip_anchor_moe_layer19<<<1, 1, 0, stream>>>();", body)
+        self.assertIn("evox2_hip_anchor_moe_layer19<<<128, 64, 0, stream>>>();", body)
         self.assertIn("evox2_hip_anchor_moe_layer23<<<1, 1, 0, stream>>>();", body)
         self.assertIn("J_best, ggml_type_name(src0->type)", body)
         self.assertIn("KV=unknown", body)
         self.assertLess(body.index("evox2_hip_anchor_moe_layer19<<<"), body.index("ggml_cuda_launch_mm_ids_helper("))
+
+    def test_moe_visibility_probe_covers_all_gate_layers(self):
+        src = self.mmq
+        self.assertIn('std::getenv("GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE")', src)
+        self.assertIn('std::strstr(src0->name, "ffn_gate_exps.weight")', src)
+        self.assertIn('evox2_hip_anchor_moe_any_gate<<<128, 64, 0, stream>>>();', src)
+        self.assertIn('evox2_hip_anchor_probe_v1', src)
+        self.assertIn('moe-anchor-code-visibility-probe-64k', self.plan)
 
     def test_no_new_gpu_synchronization(self):
         for src, marker in (
@@ -49,7 +57,7 @@ class HipRgpAnchorTests(unittest.TestCase):
         self.assertIn("GGML_EVOX2_MOE_TOPK_TRACE         = $null", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR               = '1'", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR_KV            = '49152'", self.plan)
-        self.assertIn("R6RocmMoeAnchor", self.plan)
+        self.assertIn("R6RocmMoeAnchorProbe", self.plan)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@
         Environment = @{
             GGML_HIP_RGP_ANCHOR               = '1'
             GGML_HIP_RGP_ANCHOR_KV            = '49152'
+            GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE = $null
             GGML_HIP_MMQ_TRACE                = '1'
             GGML_HIP_FA_TRACE                 = '1'
             GGML_HIP_FA_TRACE_KV              = '49152'
@@ -50,7 +51,7 @@
         @{
             Name = 'rocm-moe-anchor-smoke'
             Tool = 'bench'
-            BuildKeys = @('R6RocmMoeAnchor')
+            BuildKeys = @('R6RocmMoeAnchorProbe')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{
@@ -66,8 +67,9 @@
                 @{
                     Name = 'moe-anchor-smoke'
                     Environment = @{
-                        GGML_HIP_RGP_ANCHOR_KV = '1024'
-                        GGML_HIP_FA_TRACE_KV   = '1024'
+                        GGML_HIP_RGP_ANCHOR_KV            = '1024'
+                        GGML_HIP_FA_TRACE_KV               = '1024'
+                        GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE  = '1'
                     }
                 }
             )
@@ -75,7 +77,7 @@
         @{
             Name = 'rocm-moe-anchor-code'
             Tool = 'bench'
-            BuildKeys = @('R6RocmMoeAnchor')
+            BuildKeys = @('R6RocmMoeAnchorProbe')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{
@@ -85,12 +87,20 @@
                     }
                 }
             )
-            Variants = @( @{ Name = 'moe-anchor-code-64k' } )
+            Variants = @(
+                @{ Name = 'moe-anchor-code-64k' }
+                @{
+                    Name = 'moe-anchor-code-visibility-probe-64k'
+                    Environment = @{
+                        GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE = '1'
+                    }
+                }
+            )
         }
         @{
             Name = 'rocm-moe-anchor-literature'
             Tool = 'bench'
-            BuildKeys = @('R6RocmMoeAnchor')
+            BuildKeys = @('R6RocmMoeAnchorProbe')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{
