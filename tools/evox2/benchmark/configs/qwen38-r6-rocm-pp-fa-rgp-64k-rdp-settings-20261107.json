@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "title": "ROCm HIP 64k QSA FA RGP exploratory profiler settings",
+  "note": "RDP GUI reference only; RDP does not import this JSON as a preset. HIP lacks Vulkan's EVOX2_FA_ user markers.",
+  "connection": {
+    "api": "HIP",
+    "auto_connect": "Any application",
+    "process": "llama-bench.exe",
+    "binary": "C:\\llama-build\\llama.cpp-evox2-windows-r6\\build-rocm-bench-real-r6\\bin\\Release\\llama-bench.exe"
+  },
+  "first_probe": {
+    "capture_mode": "Dispatch",
+    "auto_capture_mode": "None (manual)",
+    "dispatch_count": 512,
+    "sqtt_buffer_size": "High",
+    "delay_capture": false,
+    "collect_counters": false,
+    "enable_instruction_tracing": false,
+    "enable_shader_instrumentation": false
+  },
+  "after_first_capture": {
+    "capture_mode": "Dispatch",
+    "auto_capture_mode": "Dispatch range",
+    "dispatch_start_index": null,
+    "dispatch_count": 512,
+    "calibration_note": "Must obtain actual HIP-specific dispatch index first; never copy Vulkan start=181200."
+  },
+  "event_patterns": [
+    "flash_attn_ext_f16",
+    "flash_attn_mask_to_KV_max",
+    "flash_attn_tile",
+    "lightning_indexer",
+    "top_k_mask_kernel",
+    "k_get_rows_float"
+  ],
+  "target_comparison": {
+    "kv": 49152,
+    "n_queries": 1024,
+    "layer": 19,
+    "additional_layer": 23,
+    "warning": "HIP kernel names and matching template parameters alone do not prove KV/layer. No inference of exact alignment until independently verified."
+  },
+  "build": {
+    "preferred_build_key": "R6RocmRealPromptRgp",
+    "baseline": "b12038 (real-prompt TOOL-001)",
+    "legacy_combined": "b11908 (no real input llama-bench)",
+    "legacy_common005": "b12013 (no real input llama-bench)",
+    "qsa_gather": "0"
+  },
+  "stop_conditions": [
+    "TDR/0x141",
+    "DeviceLost/HIP trap",
+    "OOM/paging",
+    "P-MODE change",
+    "unexpected backend/driver",
+    "missing real-input support"
+  ],
+  "status": "settings authored only; no new capture performed"
+}
