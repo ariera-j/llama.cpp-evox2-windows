@@ -25,14 +25,14 @@ class HipRgpAnchorTests(unittest.TestCase):
     def test_fa_anchor_placement_and_kv(self):
         body = self.fa.split("void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context", 1)[1]
         self.assertIn("evox2_hip_anchor_fa_layer19<<<128, 64, 0, ctx.stream()>>>();", body)
-        self.assertIn("evox2_hip_anchor_fa_layer23<<<1, 1, 0, ctx.stream()>>>();", body)
+        self.assertIn("evox2_hip_anchor_fa_layer23<<<128, 64, 0, ctx.stream()>>>();", body)
         self.assertIn("(filter_kv < 0 || k->ne[1] == filter_kv)", body)
         self.assertLess(body.index("evox2_hip_anchor_fa_layer19<<<"), body.index("switch (kernel)"))
 
     def test_moe_anchor_placement_and_metadata(self):
         body = self.mmq.split("const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;", 1)[1]
         self.assertIn("evox2_hip_anchor_moe_layer19<<<128, 64, 0, stream>>>();", body)
-        self.assertIn("evox2_hip_anchor_moe_layer23<<<1, 1, 0, stream>>>();", body)
+        self.assertIn("evox2_hip_anchor_moe_layer23<<<128, 64, 0, stream>>>();", body)
         self.assertIn("J_best, ggml_type_name(src0->type)", body)
         self.assertIn("KV=unknown", body)
         self.assertLess(body.index("evox2_hip_anchor_moe_layer19<<<"), body.index("ggml_cuda_launch_mm_ids_helper("))
