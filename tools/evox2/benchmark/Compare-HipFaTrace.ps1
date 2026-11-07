@@ -61,7 +61,7 @@ function Index-ByIdentity([object[]]$Rows) {
         Add-Member -InputObject $r -NotePropertyName Occurrence -NotePropertyValue $seen[$key]
         Add-Member -InputObject $r -NotePropertyName Identity -NotePropertyValue "$key/$($r.Occurrence)"
     }
-    return ,$Rows
+    return $Rows
 }
 
 $code = @(Index-ByIdentity -Rows $code)
