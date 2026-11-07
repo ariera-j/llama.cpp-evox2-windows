@@ -5,6 +5,17 @@
 #include "fattn-vec.cuh"
 #include "fattn.cuh"
 
+#if defined(GGML_USE_HIP)
+// Default-OFF host-only FA metadata trace. No HIP events, kernels, memory
+// copies, queue waits or GPU synchronizations. Diagnostics stay in HIP builds.
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#endif // defined(GGML_USE_HIP)
+
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 // one list per group of ncols1 queries: a column is selected if any query of the group can see it
 template <int ncols1, bool oob>
@@ -754,9 +765,103 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
     return f16_extra.end - (uintptr_t) dst->data;
 }
 
+#if defined(GGML_USE_HIP)
+// Log the host submission of an FA op, NOT a GPU dispatch ordinal or a
+// completed GPU event. HIP RGP does not expose Vulkan-style user markers.
+// The Q and K tensors are the same metadata source as the Vulkan FA labels:
+//   KV = K->ne[1], N = Q->ne[1], layer from Qcur-N's tensor name.
+// GGML_HIP_FA_TRACE=1 enables logging; GGML_HIP_FA_TRACE_KV and _LAYER
+// optionally filter it. Only first 256 matching entries are logged.
+static bool ggml_hip_fa_trace_enabled() {
+    static const bool enabled = [] {
+        const char * const env = std::getenv("GGML_HIP_FA_TRACE");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static void ggml_hip_fa_trace_host(const ggml_tensor * dst, const best_fattn_kernel kernel, const int device) {
+    static std::atomic<unsigned long long> next_fa_id { 0 };
+    const unsigned long long fa_id = next_fa_id.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    const ggml_tensor * const q = dst->src[0];
+    const ggml_tensor * const k = dst->src[1];
+    const ggml_tensor * const mask = dst->src[3];
+
+    const char * const layer_start = std::strstr(q->name, "Qcur-");
+    const long layer = layer_start != nullptr ? std::strtol(layer_start + 5, nullptr, 10) : -1;
+
+    static const long long filter_kv = [] {
+        const char * const value = std::getenv("GGML_HIP_FA_TRACE_KV");
+        return value != nullptr && *value != '\0' ? std::strtoll(value, nullptr, 10) : -1LL;
+    }();
+    static const long filter_layer = [] {
+        const char * const value = std::getenv("GGML_HIP_FA_TRACE_LAYER");
+        return value != nullptr && *value != '\0' ? std::strtol(value, nullptr, 10) : -1L;
+    }();
+
+    static std::once_flag first_message;
+    std::call_once(first_message, [] {
+        std::fprintf(stderr,
+                "evox2_hip_fa_trace_v1 enabled=1 filter_kv=%lld filter_layer=%ld"
+                " note=host_FA_submission_not_RGP_dispatch_id max_matched=256\\n",
+                filter_kv, filter_layer);
+    });
+
+    if ((filter_kv >= 0 && k->ne[1] != filter_kv) ||
+        (filter_layer >= 0 && layer != filter_layer)) {
+        return;
+    }
+
+    static std::atomic<unsigned long long> matched { 0 };
+    const unsigned long long match_id = matched.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (match_id > 256) {
+        if (match_id == 257) {
+            std::fprintf(stderr, "evox2_hip_fa_trace_v1 truncated_after=256_mapped_events\\n");
+        }
+        return;
+    }
+
+    const char * const kernel_name =
+        kernel == BEST_FATTN_KERNEL_MMA_F16 ? "mma_f16" :
+        kernel == BEST_FATTN_KERNEL_TILE    ? "tile" :
+        kernel == BEST_FATTN_KERNEL_VEC     ? "vec" : "none";
+
+    // This only predicts the suffix scan from the same condition as
+    // fattn-common.cuh, and does NOT claim it ran unless the MMA path is used.
+    const bool suffix_scan_candidate =
+        kernel == BEST_FATTN_KERNEL_MMA_F16 && mask != nullptr &&
+        k->ne[1] % FATTN_KQ_STRIDE == 0 && (q->ne[1] >= 1024 || q->ne[3] > 1);
+
+    static const auto host_origin = std::chrono::steady_clock::now();
+    const auto host_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - host_origin).count();
+    static std::mutex log_mutex;
+    std::lock_guard<std::mutex> guard(log_mutex);
+    std::fprintf(stderr,
+            "evox2_hip_fa_trace_v1 fa_id=%llu matched=%llu host_us=%lld"
+            " device=%d KV=%lld N=%lld layer=%ld kernel=%s"
+            " suffix_scan_candidate=%d kv_max_hint=%d"
+            " q_heads=%lld k_heads=%lld seq=%lld"
+            " q_name=\\\"%s\\\" dst_name=\\\"%s\\\"\\n",
+            fa_id, match_id, static_cast<long long>(host_us), device,
+            static_cast<long long>(k->ne[1]), static_cast<long long>(q->ne[1]),
+            layer, kernel_name, suffix_scan_candidate ? 1 : 0,
+            mask != nullptr ? ggml_get_op_params_i32(dst, 4) : 0,
+            static_cast<long long>(q->ne[2]), static_cast<long long>(k->ne[2]),
+            static_cast<long long>(q->ne[3]), q->name, dst->name);
+}
+#endif // defined(GGML_USE_HIP)
+
 void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     ggml_cuda_set_device(ctx.device);
-    switch (ggml_cuda_get_best_fattn_kernel(ggml_cuda_get_device(), dst)) {
+    const best_fattn_kernel kernel = ggml_cuda_get_best_fattn_kernel(ggml_cuda_get_device(), dst);
+#if defined(GGML_USE_HIP)
+    if (ggml_hip_fa_trace_enabled()) {
+        ggml_hip_fa_trace_host(dst, kernel, ctx.device);
+    }
+#endif
+    switch (kernel) {
         case BEST_FATTN_KERNEL_NONE:
             GGML_ABORT("fatal error");
         case BEST_FATTN_KERNEL_TILE:
