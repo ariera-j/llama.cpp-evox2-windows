@@ -133,3 +133,32 @@ A minimal first milestone is **KV/layer metadata and correspondence between mode
 - **Conclusion:** new default-OFF diagnostic is validated for identifying the 12 FA graph nodes at the target `KV49152/Qcur-19/23` in code. It does **not** validate that older RGP Event423 was `Qcur-19`; host id and RGP GPU Event id are different numbering systems, and code/literature identity matching only becomes possible when the literature host trace is recorded.
 
 **Next: run only `hip-trace-literature-64k` in the same b12148 diagnostic build**, then compare both `stderr.log` records with `Compare-HipFaTrace.ps1`. No new RGP, GPU kernel instrumentation, or rebuild needed at this stage. Optional existing b12038 HIP RGP **Most expensive events** screenshots remain the least-expensive way to investigate why unprofiled full PP slightly favors literature.
+
+## 2026-11-07 14:35 JST — 64k code/literature KV49152 host trace pair PASS
+
+**Gate HIP-TRACE-1 completed for the 64k code/literature host metadata pair.** Each original archive has exactly 12 `evox2_hip_fa_trace_v1` records at KV49152, N1024 for layers 3,7,11,15,19,23,27,31,35,39,43,47. All matched records show `kernel=mma_f16`, `suffix_scan_candidate=1`, `kv_max_hint=2051`, `q_heads=24`, `k_heads=2`, `seq=1`; q_name/dst_name and filtered index and fa_id coincide one-for-one. This establishes **host-side FA op identity and path equality at the target KV**, not HIP RGP GPU Event423↔Qcur19 binding and not mask equality.
+
+| Raw ZIP provenance | Code | Literature |
+|---|---|---|
+| ZIP | `20261107-142123-521-bench-rocm-b12148-ctx65536-65f6dbd15ee9.zip` | `20261107-143156-059-bench-rocm-b12148-ctx65536-41a0d4bb3911.zip` |
+| ZIP SHA256 | `f1fc2000eeead177ce467d95eb13f6e4079478f2b824408f3733f2ae6593ade8` | `20b2dedccb537a336b2afa9267df82d12eabc37350b5a2523c955f67ddbba8c2` |
+| Archive bytes | 30828 | 31034 |
+| Input SHA256 | `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345` | `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143` |
+| Native PP time | **153.0039322s** | **150.7452838s** |
+| Native PP speed | 403.760865 tok/s | 409.810499 tok/s |
+| Result | OK / ExitCode0 | OK / ExitCode0 |
+| P-MODE | Performance→Performance | Performance→Performance |
+| ADLX high-load mean | 120.147 W | 120.055 W |
+| RGP active? | **No** | **No** |
+
+- Both use same **b12148 / `5066464c3`**, ROCm/gfx1151 runtime, same GGUF model, prompt61777/head, ctx65536, batch2048, ubatch1024, threads4, K/V f16, generation0, NoWarmup, all-GPU offload, MTP OFF, Gather OFF and identical environment diagnostics `GGML_HIP_FA_TRACE=1`, `GGML_HIP_FA_TRACE_KV=49152`. No trace truncation, no P-MODE warnings/recorded resets; no background high-load interference flagged.
+- Host FA call IDs from **565..576** in both corpora, `fa_id=569 / matched=5 / q_name=Qcur-19 (view) (permuted) / dst=node_2741`, and `fa_id=570 / matched=6 / Qcur-23 / dst=node_3277`. All remaining layer IDs and node names also agree.
+- Relative `host_us` at Qcur-19: code `4199`, literature `5314`; Qcur-23 code `5054`, literature `6198`. These numbers measure the **CPU-side submission/logging timeline within a single observed host graph**, not the HIP kernel duration or FA cost, and must **not** be interpreted as literature's FA being slower by ~1.1ms.
+- **Literature PP was 6.049634 tok/s or +1.4983% faster**, finishing **2.2586484s sooner** than code in these one-run each diagnostic-ON b12148 results. This reproduces the prior ROCm direction but is not a repeated-distribution statistical test and does not prove whether FA/GDN/MoE/Indexer/other kernels account for the difference.
+- For comparison the separate **b12038 HIP RGP same-index** snapshots had one FA MAIN **98.000337ms code / 98.447049ms literature** (literature 0.447ms slower), but **exact KV and layer are not verified for those snapshots and build/source differ**. A single FA event need not predict whole-PP duration.
+
+**Conclusion:** At KV49152 the FA invocation structure and backend selection are identical, despite content-dependent sparse mask differences observed in the Vulkan investigation. The longstanding opposite-direction PP throughput is *not explained by any different FA kernel choice / n_kv_max hint at this exact point*. This does not exclude content-dependent FA timing elsewhere or different effective per-tile work.
+
+**Next discriminating work (no need to re-run 64k host trace):** compare existing b12038 HIP RGP **Overview → Most expensive events** for code `llama-bench-20261107-131042215.rgp` and literature `llama-bench-20261107-132609191.rgp` (top 15–20 kernel durations, same Dispatch range 181200/count512, optionally total time by kernel family). If a non-FA kernel dominates consistently in code, plan a narrower repeated profiling or per-UBatch category timing study. It is a sampled window, not a complete PP attribution. For *strict* RGP KV49152/Qcur-19 equivalence, a separate HIP host-to-GPU launch correlation Gate remains **not implemented**; do not label old Event423 as layer19 just because the new host trace includes that layer.
+
+**Status note:** The initial **default-OFF vs ON performance-neutrality A/B** is still untested. The safe claim is "trace-ON code/literature structural match PASS," not "all diagnostics validated for zero overhead."
