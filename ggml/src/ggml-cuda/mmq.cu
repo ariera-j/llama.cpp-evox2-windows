@@ -5,6 +5,61 @@
 
 #include <cstdint>
 
+#if defined(GGML_USE_HIP)
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+static __global__ void evox2_hip_anchor_moe_layer19() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static __global__ void evox2_hip_anchor_moe_layer23() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static bool ggml_hip_rgp_mmq_anchor_enabled() {
+    static const bool enabled = [] {
+        const char * const env = std::getenv("GGML_HIP_RGP_ANCHOR");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static bool ggml_hip_mmq_trace_enabled() {
+    static const bool enabled = [] {
+        const char * const env = std::getenv("GGML_HIP_MMQ_TRACE");
+        return env != nullptr && std::strcmp(env, "1") == 0;
+    }();
+    return enabled;
+}
+
+static long ggml_hip_mmq_weight_layer(const char * name) {
+    const char * const blk = std::strstr(name, "blk.");
+    if (blk != nullptr) {
+        char * end = nullptr;
+        const long layer = std::strtol(blk + 4, &end, 10);
+        if (end != blk + 4 && *end == '.' && layer >= 0) {
+            return layer;
+        }
+    }
+    const char * const suffix = std::strrchr(name, '-');
+    if (suffix != nullptr && std::strstr(name, "ffn_") != nullptr) {
+        char * end = nullptr;
+        const long layer = std::strtol(suffix + 1, &end, 10);
+        if (end != suffix + 1 && (*end == '\0' || *end == ' ') && layer >= 0) {
+            return layer;
+        }
+    }
+    return -1;
+}
+#endif // defined(GGML_USE_HIP)
+
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream, const ggml_prec prec_src1) {
     switch (args.type_x) {
         case GGML_TYPE_Q1_0:
@@ -288,6 +343,39 @@ void ggml_cuda_mul_mat_q(
     // gate/up activations are broadcast across experts (ne11 == 1): quantize each token once and
     // scatter to its slots. ids_src1 then holds the inverse map (token slot -> compact row).
     const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;
+
+#if defined(GGML_USE_HIP)
+    if (ggml_hip_rgp_mmq_anchor_enabled() || ggml_hip_mmq_trace_enabled()) {
+        const long layer = ggml_hip_mmq_weight_layer(src0->name);
+        if ((layer == 19 || layer == 23) && ne12 == 1024) {
+            bool anchored = false;
+            if (ggml_hip_rgp_mmq_anchor_enabled()) {
+                if (layer == 19) {
+                    evox2_hip_anchor_moe_layer19<<<1, 1, 0, stream>>>();
+                } else {
+                    evox2_hip_anchor_moe_layer23<<<1, 1, 0, stream>>>();
+                }
+                CUDA_CHECK(cudaGetLastError());
+                anchored = true;
+            }
+            static std::atomic<unsigned long long> next_mmq_id { 0 };
+            const unsigned long long mmq_id = next_mmq_id.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (mmq_id <= 512) {
+                std::fprintf(stderr,
+                    "evox2_hip_mmq_trace_v1 mmq_id=%llu layer=%ld ids=1 N=%lld"
+                    " experts=%lld k=%lld J=%d weight_type=%s anchor=%d"
+                    " src0=\"%s\" dst=\"%s\""
+                    " note=host_launch_not_RGP_event_id KV=unknown\n",
+                    mmq_id, layer, static_cast<long long>(ne12),
+                    static_cast<long long>(ne02), static_cast<long long>(n_expert_used),
+                    J_best, ggml_type_name(src0->type), anchored ? 1 : 0,
+                    src0->name, dst->name);
+            } else if (mmq_id == 513) {
+                std::fprintf(stderr, "evox2_hip_mmq_trace_v1 truncated_after=512\n");
+            }
+        }
+    }
+#endif // defined(GGML_USE_HIP)
 
     {
         GGML_ASSERT(ids->nb[0] == ggml_element_size(ids));
