@@ -163,3 +163,35 @@ Code/Literatureが**同一HIPカーネル・KV・layerで確認された場合�
 
 - HIP `flash_attn_mask_to_KV_max<16>` detects suffix and is not identical to Vulkan `EVOX2_FA_MASK_OPT` tile-classification stage; do not compare 55µs vs Vulkan 4ms as same operation.
 - HIP code FA MAIN98.0ms and Vulkan code FA MAIN44.83ms cannot be interpreted as direct speed ratio: the HIP event has **unknown KV/layer** and is a separate source revision. Need comparable totals, not a single chosen dispatch, to explain whole-run ROCm/Vulkan PP.
+
+## 2026-11-07 13:26 — HIP literature capture PASS; same-index code/literature FA are almost identical
+
+**Gate2 exploratory HIP paired observation completed**, no code edits. Both captures are the same **ROCm b12038/d321e7ff3** `llama-bench` binary, same UnslothPle16 IQ3 model, 61777 tokens/head, ctx65536, UBatch1024, Batch2048, no-warmup, no generation, QWEN4EXP_QSA_GATHER=0, P-MODE Performance. The different inputs are validated against the earlier SHA256 manifests.
+
+| RGP field | Code (13:10) | Literature (13:26) |
+|---|---:|---:|
+| API | HIP | HIP |
+| Auto capture | Dispatch range | Dispatch range |
+| RDP start / count | **181200 / 512** | **181200 / 512** |
+| Event 421 `flash_attn_mask_to_KV_max<16>` | **55.474 µs** | **47.822 µs** |
+| Event 423 `flash_attn_ext_f16<256,256,16,4,false,false,false>` | **98,000.337 µs** | **98,447.049 µs** |
+| MAIN ms | **98.000337** | **98.447049** |
+| Native PP tok/s, profiled | 368.838634 | 375.711898 |
+| Native result / P-MODE | OK / 0 / Performance | OK / 0 / Performance |
+
+- **Literature/Code HIP FA MAIN ratio = 1.004558× (+0.4558% or +0.446712 ms literature)**. Suffix scan difference is only **−7.652 µs literature**. Thus the observed HIP FA input dependency at the sampled dispatch is tiny, unlike prior **strictly matched Vulkan KV49152 Qcur-19** literature/code MAIN ratio **133.210264/44.829555=2.971×**. **Caveat: the HIP pair lacks independently confirmed KV49152/layer19** and is built at an earlier source revision than Vulkan b12133.
+- Both HIP RGP event numbers **421 (suffix scan) / 423 (FA main)** and **same kernel template** match between inputs; using the same *HIP* Dispatch range is a useful **same-relative-program-location** control. It is stronger than comparing arbitrary RGP snapshots, but **RDP same index and event id alone do not prove same KV/layer**.
+- Literature native ZIP: `20261107-132316-840-bench-rocm-b12038-ctx65536-e38bc6abba27.zip` SHA256 `0e9e66782ba150b086b3f1f4d3d677556fa44268b565b40f21f5a182c9b89aed`, bytes 30575; input `wagahaiwa_nekodearu_utf8.txt`, SHA `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`, result `OK/ExitCode0`; PP `375.711898` tok/s, full-run wall `223.096s`, P-MODE unchanged, high-load ADLX power `119.21W`, no warnings.
+- Literature HIP RGP: `llama-bench-20261107-132609191.rgp`, SHA256 `79744ed4b8f1928382acfb14d0f7ffdcc1af2bc1a8b44e0f91c8a8d51a4d0e41`, bytes `288054835` (original large RDF binary kept off Git). Source of 47.822/98447.049 µs timings: user-supplied RGP Event timing screenshot `image(20261107-043134).png`, SHA256 `a399bc90b1e341a87cae681b2fdad23e1cac34719a8ef9accaa51f1cfec79118`. Wavefront screenshot `image(20261107-043140).png`, SHA256 `ce299a4ccc68a424ad2a56680dc581cb3f4466a0fd11cf35bc75365aa64f936e`.
+- Previously verified code: `20261107-130748-235-bench-rocm-b12038-ctx65536-d5705f57f05b.zip`, SHA256 `5c5e10b70faadc5e677abe5a273326aff5c72b8ade71de92bfa1d3ee738aa1af`; RGP `llama-bench-20261107-131042215.rgp` SHA256 `bdd4f8282dbf06fc7f6377157db1a0524d4407d043ca1f63977515c96067a997`. Code input SHA `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`.
+- Both native `llama-bench.exe` SHA `a46e512cdc78ab2475b52d5d1d694ec968edade16c9229f95ced3380d559298a` (source `d321e7ff38052be311fde9392598fe02c7548956`). HIP `ggml-hip.dll` loaded in both; no Vulkan backend. Run contexts match and files are verified; native progress remains unavailable in stderr by design.
+- ADLX sampling near RGP filename times: code **13:10:41.541** GPU `2884MHz, 800MHz VRAM, 100%, 120W`; literature **13:26:08.722** GPU `2884MHz, 800MHz VRAM, 100%, 120W`. This is **sampling near profile file timestamps**, not necessarily synchronized to the captured GPU event; it rules out obvious gross mode mismatch but not per-kernel clock variation.
+- Literature Wavefront occupancy includes a long comparatively low nearly flat wave band through MAIN, resembling code. The **RGP profile is a bounded window**, not a full-PP GPU-time decomposition. No precise occupancy percent or per-tile cost inferred.
+
+### Interpretation and next decision gate
+
+**What is supported:** at the same HIP capture index, both corpora execute nearly-identical duration of the same HIP FA template even though the model/inputs' QSA mask distributions were previously found to differ markedly in Vulkan. Existing HIP code disables the NVIDIA CUDA sparse KV-index gather path; HIP uses a suffix mask scan, not Vulkan's per-interior-tile skip. This matches the hypothesis of weak ROCm input dependency. It is **not proof** that HIP ignores the mask entirely or that the two captures are at exactly the same KV49152/Qcur-19. The profiled PP ratio literature/code **1.0186×** also remains a diagnostic not a clean-speed benchmark.
+
+**No immediate 64k repeat needed.** Decide with the user whether this exploratory r6 HIP evidence suffices for a high-confidence *qualitative* conclusion or to proceed with a **minimal HIP host-side KV/layer and dispatch ordinal trace** (default-OFF; no GPU kernel modifications; validate host↔RGP correlation), then reacquire one correctly annotated code/literature pair. Do not blindly use Vulkan RDP markers on HIP, infer KV from event index, or start a broad ROCm 4x2xN matrix. Avoid unsafe Windows gfx1151 HIP broad backend test suite and forced GPU synchronization.
+
+The main ongoing technical outcome is a plausible source-backed explanation for the **Vulkan PP content sensitivity vs weak ROCm sensitivity**; strict equal-KV/source causal quantification is explicitly still open.
