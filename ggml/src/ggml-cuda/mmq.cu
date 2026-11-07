@@ -29,6 +29,16 @@ static __global__ void evox2_hip_anchor_moe_any_gate() {
 #endif
 }
 
+template <int layer>
+static __global__ void evox2_hip_anchor_moe_tagged() {
+#if defined(__HIP_PLATFORM_AMD__)
+#pragma unroll
+    for (int i = 0; i <= layer; ++i) {
+        asm volatile("s_nop 0");
+    }
+#endif
+}
+
 static bool ggml_hip_rgp_probe_all_moe_enabled() {
     static const bool enabled = [] {
         const char * const env = std::getenv("GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE");
@@ -361,15 +371,88 @@ void ggml_cuda_mul_mat_q(
 #if defined(GGML_USE_HIP)
     if (ggml_hip_rgp_probe_all_moe_enabled() && ne12 == 1024 &&
         std::strstr(src0->name, "ffn_gate_exps.weight") != nullptr) {
-        evox2_hip_anchor_moe_any_gate<<<128, 64, 0, stream>>>();
+        const long layer = ggml_hip_mmq_weight_layer(src0->name);
+        // Keep the GPU symbol unique for each layer so RGP can identify it.
+#define EVOX2_HIP_MOE_TAG_CASE(n) case n: evox2_hip_anchor_moe_tagged<n><<<128, 64, 0, stream>>>(); break
+        switch (layer) {
+            EVOX2_HIP_MOE_TAG_CASE(0);
+            EVOX2_HIP_MOE_TAG_CASE(1);
+            EVOX2_HIP_MOE_TAG_CASE(2);
+            EVOX2_HIP_MOE_TAG_CASE(3);
+            EVOX2_HIP_MOE_TAG_CASE(4);
+            EVOX2_HIP_MOE_TAG_CASE(5);
+            EVOX2_HIP_MOE_TAG_CASE(6);
+            EVOX2_HIP_MOE_TAG_CASE(7);
+            EVOX2_HIP_MOE_TAG_CASE(8);
+            EVOX2_HIP_MOE_TAG_CASE(9);
+            EVOX2_HIP_MOE_TAG_CASE(10);
+            EVOX2_HIP_MOE_TAG_CASE(11);
+            EVOX2_HIP_MOE_TAG_CASE(12);
+            EVOX2_HIP_MOE_TAG_CASE(13);
+            EVOX2_HIP_MOE_TAG_CASE(14);
+            EVOX2_HIP_MOE_TAG_CASE(15);
+            EVOX2_HIP_MOE_TAG_CASE(16);
+            EVOX2_HIP_MOE_TAG_CASE(17);
+            EVOX2_HIP_MOE_TAG_CASE(18);
+            EVOX2_HIP_MOE_TAG_CASE(19);
+            EVOX2_HIP_MOE_TAG_CASE(20);
+            EVOX2_HIP_MOE_TAG_CASE(21);
+            EVOX2_HIP_MOE_TAG_CASE(22);
+            EVOX2_HIP_MOE_TAG_CASE(23);
+            EVOX2_HIP_MOE_TAG_CASE(24);
+            EVOX2_HIP_MOE_TAG_CASE(25);
+            EVOX2_HIP_MOE_TAG_CASE(26);
+            EVOX2_HIP_MOE_TAG_CASE(27);
+            EVOX2_HIP_MOE_TAG_CASE(28);
+            EVOX2_HIP_MOE_TAG_CASE(29);
+            EVOX2_HIP_MOE_TAG_CASE(30);
+            EVOX2_HIP_MOE_TAG_CASE(31);
+            EVOX2_HIP_MOE_TAG_CASE(32);
+            EVOX2_HIP_MOE_TAG_CASE(33);
+            EVOX2_HIP_MOE_TAG_CASE(34);
+            EVOX2_HIP_MOE_TAG_CASE(35);
+            EVOX2_HIP_MOE_TAG_CASE(36);
+            EVOX2_HIP_MOE_TAG_CASE(37);
+            EVOX2_HIP_MOE_TAG_CASE(38);
+            EVOX2_HIP_MOE_TAG_CASE(39);
+            EVOX2_HIP_MOE_TAG_CASE(40);
+            EVOX2_HIP_MOE_TAG_CASE(41);
+            EVOX2_HIP_MOE_TAG_CASE(42);
+            EVOX2_HIP_MOE_TAG_CASE(43);
+            EVOX2_HIP_MOE_TAG_CASE(44);
+            EVOX2_HIP_MOE_TAG_CASE(45);
+            EVOX2_HIP_MOE_TAG_CASE(46);
+            EVOX2_HIP_MOE_TAG_CASE(47);
+            EVOX2_HIP_MOE_TAG_CASE(48);
+            EVOX2_HIP_MOE_TAG_CASE(49);
+            EVOX2_HIP_MOE_TAG_CASE(50);
+            EVOX2_HIP_MOE_TAG_CASE(51);
+            EVOX2_HIP_MOE_TAG_CASE(52);
+            EVOX2_HIP_MOE_TAG_CASE(53);
+            EVOX2_HIP_MOE_TAG_CASE(54);
+            EVOX2_HIP_MOE_TAG_CASE(55);
+            EVOX2_HIP_MOE_TAG_CASE(56);
+            EVOX2_HIP_MOE_TAG_CASE(57);
+            EVOX2_HIP_MOE_TAG_CASE(58);
+            EVOX2_HIP_MOE_TAG_CASE(59);
+            EVOX2_HIP_MOE_TAG_CASE(60);
+            EVOX2_HIP_MOE_TAG_CASE(61);
+            EVOX2_HIP_MOE_TAG_CASE(62);
+            EVOX2_HIP_MOE_TAG_CASE(63);
+            default:
+                evox2_hip_anchor_moe_any_gate<<<128, 64, 0, stream>>>();
+                break;
+        }
+#undef EVOX2_HIP_MOE_TAG_CASE
         CUDA_CHECK(cudaGetLastError());
         static std::atomic<unsigned long long> probe_count { 0 };
         const unsigned long long probe_id = probe_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (probe_id <= 16) {
             std::fprintf(stderr,
-                "evox2_hip_anchor_probe_v1 probe_id=%llu N=%lld src0=\"%s\""
+                "evox2_hip_anchor_probe_v2 probe_id=%llu layer=%ld tagged=%d N=%lld src0=\"%s\""
                 " note=hip_graph_capture_may_defer_execution\n",
-                probe_id, static_cast<long long>(ne12), src0->name);
+                probe_id, layer, layer >= 0 && layer < 64 ? 1 : 0,
+                static_cast<long long>(ne12), src0->name);
         }
     }
     if (ggml_hip_rgp_mmq_anchor_enabled() || ggml_hip_mmq_trace_enabled()) {

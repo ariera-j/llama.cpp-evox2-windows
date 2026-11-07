@@ -1,6 +1,6 @@
 @{
     SchemaVersion = 1
-    Name = 'qwen38-r6-rocm-moe-rgp-anchor-20261107'
+    Name = 'qwen38-r6-rocm-moe-rgp-layer-tags-20261107'
     # GPU markers are only for RGP positioning, not PP performance comparison.
     Settings = @{ CooldownSeconds = 15; ContinueOnError = $false }
     Defaults = @{
@@ -51,7 +51,7 @@
         @{
             Name = 'rocm-moe-anchor-smoke'
             Tool = 'bench'
-            BuildKeys = @('R6RocmMoeAnchorProbe')
+            BuildKeys = @('R6RocmMoeLayerTags')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{
@@ -77,7 +77,7 @@
         @{
             Name = 'rocm-moe-anchor-code'
             Tool = 'bench'
-            BuildKeys = @('R6RocmMoeAnchorProbe')
+            BuildKeys = @('R6RocmMoeLayerTags')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{
@@ -90,7 +90,7 @@
             Variants = @(
                 @{ Name = 'moe-anchor-code-64k' }
                 @{
-                    Name = 'moe-anchor-code-visibility-probe-64k'
+                    Name = 'moe-anchor-code-layer-tags-64k'
                     Environment = @{
                         GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE = '1'
                     }
@@ -100,7 +100,7 @@
         @{
             Name = 'rocm-moe-anchor-literature'
             Tool = 'bench'
-            BuildKeys = @('R6RocmMoeAnchorProbe')
+            BuildKeys = @('R6RocmMoeLayerTags')
             ModelKeys = @('UnslothPle16')
             Cases = @(
                 @{

@@ -84,3 +84,42 @@ Probe build key in ignored `tools/evox2/benchmark/configs/local.psd1`:
     R6RocmMoeAnchorProbe = @{ BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag\build-rocm-moe-anchor-probe-r6\bin\Release'; ExpectedBackend = 'ROCm' }
 
 All variants in this visibility branch's plan use this new BuildKey. Do not use the old b12161 binary for this probe.
+
+## Layer-tagged RGP anchor gate — 2026-11-07
+
+**Branch:** `investigation/r6-rocm-rgp-moe-layer-tags-20261107` (based on the successful HIP visibility experiment b12162).
+
+The b12162 RGP HIP Event Timing captured five `evox2_hip_anchor_moe_any_gate()` GPU dispatches, including Event 101 between `topk_moe_cuda` and `mm_ids_helper`. This establishes that the 128-block x 64-thread HIP marker is visible to RGP. The generic names, however, cannot resolve the layer.
+
+This gate replaces **only the all-MoE-gate probe** with `evox2_hip_anchor_moe_tagged<N>` when the source weight name gives layer `N` in the range 0..63. Each template specialization emits a different number of volatile `s_nop 0` instructions, avoiding identical GPU instruction sequences for every layer. The runtime switch instantiates all 64 tags. The old `evox2_hip_anchor_moe_any_gate` is retained as a fallback when the layer is unrecognized or >=64. Layer19/23-specific FA/MMQ probes stay unchanged. No model tensor readback or GPU synchronization is added.
+
+`GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE=1` gates all tagged launches; default OFF. The bounded host log changes from `evox2_hip_anchor_probe_v1` to `evox2_hip_anchor_probe_v2` with `layer=<N> tagged=1` or `tagged=0` for fallback. Host logs are not GPU dispatch IDs, and HIP Graph capture/replay can change their relationship to GPU events.
+
+### Build and test
+
+Use a new directory so the previous b12162 binary remains available:
+
+    git fetch origin
+    git switch --track origin/investigation/r6-rocm-rgp-moe-layer-tags-20261107
+    python .\tools\evox2\tests\test_r6_rocm_moe_rgp_anchors.py
+    & C:\TheRock\build\.venv\Scripts\Activate.ps1
+    .\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-moe-layer-tags-r6 -Parallel 4 -AmdGpuTarget gfx1151
+    .\build-rocm-moe-layer-tags-r6\bin\Release\llama-bench.exe --version
+
+Register a new key in the ignored `tools/evox2/benchmark/configs/local.psd1`:
+
+    R6RocmMoeLayerTags = @{ BinDir = 'C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag\build-rocm-moe-layer-tags-r6\bin\Release'; ExpectedBackend = 'ROCm' }
+
+### Smoke and one 64k RGP capture
+
+    $plan = '.\tools\evox2\benchmark\configs\qwen38-r6-rocm-moe-rgp-anchor-20261107.psd1'
+    .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -PlanOnly
+    .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant moe-anchor-smoke -StopOnError
+
+Check for `evox2_hip_anchor_probe_v2 ... layer=... tagged=1` in smoke stderr and that b12162 was NOT accidentally reused. Then run one 64k **code** variant and capture RGP:
+
+    .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant moe-anchor-code-layer-tags-64k -StopOnError
+
+RDP: **HIP / Dispatch range / start=181500 / count=512 / SQTT High**, shader counters and instruction tracing OFF. Previously this setting captured five generic anchors. The additional code changes GPU graph composition and timings, so the same dispatch start is only a sensible initial position, not a guaranteed exact location. Search RGP Event Timing for `evox2_hip_anchor_moe_tagged` and note `<N>` and adjacent `topk_moe_cuda`, `mm_ids_helper`, and MMQ kernel durations. If the capture includes several layer tags, it enables locating layer19/23 relative to them; do not claim a KV index until the FA KV49152 marker is also identified.
+
+After the code gate confirms the template symbols, use the same build/settings for literature in a separate run; do not preemptively perform another full sweep. Ignore PP throughput in all marker-on and RGP-on runs.

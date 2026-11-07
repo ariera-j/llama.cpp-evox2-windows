@@ -42,8 +42,24 @@ class HipRgpAnchorTests(unittest.TestCase):
         self.assertIn('std::getenv("GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE")', src)
         self.assertIn('std::strstr(src0->name, "ffn_gate_exps.weight")', src)
         self.assertIn('evox2_hip_anchor_moe_any_gate<<<128, 64, 0, stream>>>();', src)
-        self.assertIn('evox2_hip_anchor_probe_v1', src)
-        self.assertIn('moe-anchor-code-visibility-probe-64k', self.plan)
+        self.assertIn('evox2_hip_anchor_probe_v2', src)
+        self.assertIn('moe-anchor-code-layer-tags-64k', self.plan)
+
+    def test_layer_specializations_and_fallback(self):
+        src = self.mmq
+        self.assertIn('template <int layer>', src)
+        self.assertIn('static __global__ void evox2_hip_anchor_moe_tagged()', src)
+        self.assertIn('evox2_hip_anchor_moe_tagged<n><<<128, 64, 0, stream>>>();', src)
+        self.assertIn('const long layer = ggml_hip_mmq_weight_layer(src0->name);', src)
+        for layer in range(64):
+            self.assertIn(f'EVOX2_HIP_MOE_TAG_CASE({layer});', src)
+        self.assertIn('default:', src)
+        self.assertIn('evox2_hip_anchor_moe_any_gate<<<128, 64, 0, stream>>>();', src)
+        self.assertIn('layer=%ld tagged=%d', src)
+        self.assertLess(
+            src.index('switch (layer)'),
+            src.index('ggml_cuda_launch_mm_ids_helper((const int32_t *) ids->data')
+        )
 
     def test_no_new_gpu_synchronization(self):
         for src, marker in (
@@ -57,7 +73,7 @@ class HipRgpAnchorTests(unittest.TestCase):
         self.assertIn("GGML_EVOX2_MOE_TOPK_TRACE         = $null", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR               = '1'", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR_KV            = '49152'", self.plan)
-        self.assertIn("R6RocmMoeAnchorProbe", self.plan)
+        self.assertIn("R6RocmMoeLayerTags", self.plan)
 
 
 if __name__ == "__main__":
