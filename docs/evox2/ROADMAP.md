@@ -1,5 +1,8 @@
 # Evo-X2 optimization roadmap
 
+
+> **2026-11-07 NEW FOLLOW-UP (post-PP; plan only):** r6実入力`llama-bench`／RGP／QSA maskに関する**現在進行中の一連のPP調査を優先し、その完了後**に[**旧5モデル品質比較を拡張する計画**](R6-OUTPUT-QUALITY-EXTENSION-PLAN-2026-11-07.md)を再検討する。①初期試用時の**Unsloth UD-IQ1_S**を追加、②ダウンロード済みの**更新版UD-IQ3_XXS**を旧版と比較。日本語論文要約はseed差が大きかったため確認程度。検索は旧IQ3・旧IQ4・更新IQ3を主対象に、既存MH-128Kを維持したまま**新しい高難度問題と独立データseed、ROCmの同条件反復**で差の有無を調べる。ROCmFP4、Huihui、IQ1、Gemma4は選択的な参考評価。COMMON-005検証では両量子化に固有の誤答があり、**IQ4の統計的優位は未証明**。計測・日程・モデル優劣は未確定で、PP調査・source・既存releaseを変更しない。旧2026-11-03「TOOL-001を次に移植」の見出しは当時の引き継ぎスナップショットとして読む。
+
 > **2026-11-03 POST-COMMON-005 HANDOFF (latest):** [整理済みの未完了タスク・外部エンジン／upstream調査・ROCmFPx HIP移植難易度・次の実入力llama-bench移植手順](R6-POST-COMMON005-HANDOFF-AND-RESEARCH-2026-11-03.md)。COMMON-005は**64k/128k/256k速度、RGP、18runの128k IQ3/IQ4検索品質スクリーニングまで完了**し、ROCm/MTP-OFF/検証済み条件で明示的opt-in利用の限定PASS。**ソースのデフォルトはOFF**、MTP-ON/Vulkan/numeric parityは未検証。旧「品質ゲートが次」という2026-11-03冒頭記述は更新前チェックポイント。**次の実装はr5 TOOL-001実入力`llama-bench`のr6移植**。その後、r6量子化別速度比較・QSA mask/MoE expert可視化・Strata/Gufo実機比較・HIP ROCmFPx・新規最適化の順序を都度判断。旧patch・公開b11908/tagを変更しない。
 
 
