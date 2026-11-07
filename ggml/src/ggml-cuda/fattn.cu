@@ -804,7 +804,7 @@ static void ggml_hip_fa_trace_host(const ggml_tensor * dst, const best_fattn_ker
     std::call_once(first_message, [] {
         std::fprintf(stderr,
                 "evox2_hip_fa_trace_v1 enabled=1 filter_kv=%lld filter_layer=%ld"
-                " note=host_FA_submission_not_RGP_dispatch_id max_matched=256\\n",
+                " note=host_FA_submission_not_RGP_dispatch_id max_matched=256\n",
                 filter_kv, filter_layer);
     });
 
@@ -817,7 +817,7 @@ static void ggml_hip_fa_trace_host(const ggml_tensor * dst, const best_fattn_ker
     const unsigned long long match_id = matched.fetch_add(1, std::memory_order_relaxed) + 1;
     if (match_id > 256) {
         if (match_id == 257) {
-            std::fprintf(stderr, "evox2_hip_fa_trace_v1 truncated_after=256_mapped_events\\n");
+            std::fprintf(stderr, "evox2_hip_fa_trace_v1 truncated_after=256_mapped_events\n");
         }
         return;
     }
@@ -843,7 +843,7 @@ static void ggml_hip_fa_trace_host(const ggml_tensor * dst, const best_fattn_ker
             " device=%d KV=%lld N=%lld layer=%ld kernel=%s"
             " suffix_scan_candidate=%d kv_max_hint=%d"
             " q_heads=%lld k_heads=%lld seq=%lld"
-            " q_name=\\\"%s\\\" dst_name=\\\"%s\\\"\\n",
+            " q_name=\"%s\" dst_name=\"%s\"\n",
             fa_id, match_id, static_cast<long long>(host_us), device,
             static_cast<long long>(k->ne[1]), static_cast<long long>(q->ne[1]),
             layer, kernel_name, suffix_scan_candidate ? 1 : 0,
