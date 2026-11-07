@@ -159,3 +159,24 @@ Native marker-only runs completed normally on the correctly configured b12133/da
 - **Next recommended code-only RDP probe: 167,000 ms, dispatch count 512**, SQTT High, counters and instruction tracing OFF. Rationale: the desired layer19 is 16 layers after layer3 in the same KV block; distributing ~2.75s across a model's layer work yields an order-of-one-second delay. This is **heuristic**, not a measured per-layer GPU timeline. Do not change capture settings besides timer, do not rebuild the Vulkan backend. Inspect exactly labeled `KV/N/q` before selecting the literature time.
 - If next capture has KV49,152 but a layer earlier than Qcur-19, increase timer slightly (~200–400 ms); if KV49,152 but later than Qcur-19, decrease slightly; if it passes to KV50,176, step back toward166,000ms. RDP 512-dispatch window may include multiple layers; search all `EVOX2_FA_` labels in the capture before selecting a retry.
 - If `Qcur-19` and matching `MASK_OPT/MAIN` are present, save full label, GPU duration, RGP/ZIP and then begin **literature** calibration separately. The RGP marker times represent a complete 1024-Query FA dispatch, not the sampled 64 Query from the historical F16 crops.
+
+## 2026-11-07 11:39 JST — Exact-matched Qcur-19 GPU FA capture SUCCESS (code and literature)
+
+**Aligned GPU-profile capture now complete.** Following unstable elapsed-timer captures, user switched Radeon Developer Panel to **Dispatch range**, screenshot shows **start=181200, count=512**, SQTT High, counters/instruction tracing/shader instrumentation OFF. Both RGP profiles positively contain matching `KV49152, N1024, Br16/Bc64, Qcur-19` (node2876/submit13), plus a control `Qcur-23` (node3439/submit16), same shader `flash_attn_f32_f16_aligned_cm1` and main dispatch `(64,24,1)`. Profile-count settings screenshot is single, so per-run identical numeric RDP start should be considered user-reported rather than separately embedded-confirmed.
+
+| Layer | Stage | Code GPU time ms | Literature GPU time ms | Literature/Code |
+|---|---|---:|---:|---:|
+| Qcur-19 | MASK_OPT | 4.024 | 4.586 | 1.14 |
+| Qcur-19 | MAIN | **44.830** | **133.210** | **2.97** |
+| Qcur-19 | FLASH_ATTN_EXT inclusive | 48.854 | 137.797 | 2.82 |
+| Qcur-23 | MASK_OPT | 4.370 | 4.474 | 1.02 |
+| Qcur-23 | MAIN | **65.195** | **149.954** | **2.30** |
+| Qcur-23 | FLASH_ATTN_EXT inclusive | 69.566 | 154.428 | 2.22 |
+
+- Source: RGP Event timing screenshots with grouped EVOX2_FA_ user events (original binary RDF `.rgp` supplied but not programmatically decoded). Code RGP `llama-bench-20261107-113123771.rgp`, SHA256 `e8c1a9aad3a08fcab7fabfc993150d033f765a05b2f8a57ea0a496e59bc99cce`; literature `llama-bench-20261107-113813675.rgp`, SHA256 `fd966645bded470e7daeb846f40d14027552c9dbb088b2a4e5a95c2c46b647ef`.
+- Both native run directories in `20261107-112815-282-bench-vulkan-b12133-ctx65536-283633fc79f0.zip` SHA256 `29073c514643f3217276f33874c111e41847e1e0c6668f7aeb664b8175cddd79`, with code run id `20261107-112815-282-...`, literature run id `20261107-113501-717-...`. Both Status OK, ExitCode0, same b12133/da51a88c2, P-MODE Performance unchanged, QSA UNION0, gather0, RGP markers1; indexer and mask readbacks OFF. ADLX power at load ~118.88W both. Recorded PP velocities code355.578 and lit332.234 tok/s are RGP-on **not clean baselines**.
+- The independently captured **full 1024-Query layer19** FA packed mask: code **12,292 active Key tiles**, literature **31,640** (2.574×), against Qcur-19 FA MAIN time ratio **2.971×**. Directionally supports input-dependent skipping as major GPU-time factor but does **not** causally isolate shader skip policy. `Qcur-23` lacks its own exact mask tally and must not borrow the Qcur-19 counts.
+- **Next stage:** no more C++ patch or GPU rerun required to establish this matched timing pair. For optional deeper occupancy analysis, extract one *Qcur-19-only zoom* of Wavefront occupancy for **each** of the two existing RGP files (same scale, shader engine split), and optionally Pipeline State resource usage. For other backends/ROCm, run separate aligned profile controls.
+
+Detailed verified timings, conditions, SHA and limitations committed in the experiment repository:
+https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/pp-input-dependence-64k-20261104/runs/2026-11-07-rgp-vulkan-fa-kv49152-code-literature-aligned.md
