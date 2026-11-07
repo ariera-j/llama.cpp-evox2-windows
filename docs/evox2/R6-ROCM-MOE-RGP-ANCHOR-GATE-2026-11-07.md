@@ -123,3 +123,30 @@ Check for `evox2_hip_anchor_probe_v2 ... layer=... tagged=1` in smoke stderr and
 RDP: **HIP / Dispatch range / start=181500 / count=512 / SQTT High**, shader counters and instruction tracing OFF. Previously this setting captured five generic anchors. The additional code changes GPU graph composition and timings, so the same dispatch start is only a sensible initial position, not a guaranteed exact location. Search RGP Event Timing for `evox2_hip_anchor_moe_tagged` and note `<N>` and adjacent `topk_moe_cuda`, `mm_ids_helper`, and MMQ kernel durations. If the capture includes several layer tags, it enables locating layer19/23 relative to them; do not claim a KV index until the FA KV49152 marker is also identified.
 
 After the code gate confirms the template symbols, use the same build/settings for literature in a separate run; do not preemptively perform another full sweep. Ignore PP throughput in all marker-on and RGP-on runs.
+
+## Literature paired HIP RGP plan — 2026-11-07
+
+**Status:** plan and static guard added on the existing `investigation/r6-rocm-rgp-moe-layer-tags-20261107` branch. The C++ marker and ROCm binary are unchanged, so **do not rebuild**. Literature GPU capture has not yet been performed in this gate.
+
+### Matched 64k inputs / flags
+
+The new `moe-anchor-literature-layer-tags-64k` Variant shares the Plan's existing `UnslothPle16` model and `R6RocmMoeLayerTags` build key with the code `moe-anchor-code-layer-tags-64k` variant. Both run with 61,777 prompt tokens, context 65,536, `PromptSlice=head`, B2048, UBatch1024, f16 KV, Threads4, no-warmup, repetitions1, zero generation, Gather OFF and the original MTP feature settings. The literary input is `wagahaiwa_nekodearu_utf8.txt` (same path used for prior literary samples).
+
+Crucially, the literature Variant enables `GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE=1`, just like the code Variant, to include the same **per-layer tagged MoE Gate marker for every layer**. The shared defaults also enable `GGML_HIP_RGP_ANCHOR=1`, `GGML_HIP_RGP_ANCHOR_KV=49152`, `GGML_HIP_FA_TRACE=1`, `GGML_HIP_MMQ_TRACE=1`. The callback-based `GGML_EVOX2_MOE_TOPK_TRACE` remains disabled because it synchronizes the GPU. Host diagnostic IDs do not replace RGP GPU event alignment.
+
+### Run one literary capture at a time
+
+From the existing checked-out branch, after a `git pull --ff-only`:
+
+    python .\tools\evox2\tests\test_r6_rocm_moe_rgp_anchors.py
+    $plan = '.\tools\evox2\benchmark\configs\qwen38-r6-rocm-moe-rgp-anchor-20261107.psd1'
+    .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -PlanOnly
+    .\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant moe-anchor-literature-layer-tags-64k -StopOnError
+
+RDP is configured separately from the PSD1. Keep **API HIP / Dispatch range / count 512 / SQTT High / counters OFF / instruction tracing OFF** as in the successful code profiles. First try **start=197540** for literary KV49152, Layer23 only, since the code trace at that start captured its FA and all Gate/Up/Down MMQs with subsequent `moe_weighted_reduction`. **This is a starting estimate**, not proof that dispatch ordinals are identical between input texts. If the literary trace's `evox2_hip_anchor_fa_layer23` is absent, use the visible tagged layer numbers to adjust the start. Once captured, log the three MMQ durations and next `moe_weighted_reduction_f32`.
+
+For literary Layer19, make a separate capture (run same Variant again) initially at **start=197240**. In the code trace at that start, Layer19 FA and its three MMQs plus `moe_weighted_reduction` were recorded. Layer19's FA marker is `evox2_hip_anchor_fa_layer19`, restricted to KV49152. Do not infer the KV location from tagged MoE layer names alone.
+
+Previous code captures near start 197200/197230/197240 ended during Layer23 Down MMQ, showing truncated GPU times. Several RGP files were near 275MiB, consistent with (but not proof of) SQTT size pressure. Prefer layer-specific captures over trying to fit Layers19+23 in a single trace. **Only trust a Down MMQ timing when the subsequent barrier and reduction are also recorded.** Do not reuse the prior RGP event ordinal in the literature trace.
+
+Check the native ZIP (`Status=OK`, `ExitCode=0`, model SHA, input SHA, flags, P-MODE) and keep `.rgp` files separate and named by corpus/layer. The presence of FA layer19/23 markers indicates KV49152 under this plan, but check the run log as well. Marker/RGP PP tok/s are diagnostic only, not clean throughput comparison. The Expert histograms from the old callback gate are independent data and should not be treated as simultaneous with the no-callback RGP measurements.

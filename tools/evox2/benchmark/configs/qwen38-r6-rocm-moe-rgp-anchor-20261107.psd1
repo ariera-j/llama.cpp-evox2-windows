@@ -110,7 +110,15 @@
                     }
                 }
             )
-            Variants = @( @{ Name = 'moe-anchor-literature-64k' } )
+            Variants = @(
+                @{ Name = 'moe-anchor-literature-64k' }
+                @{
+                    Name = 'moe-anchor-literature-layer-tags-64k'
+                    Environment = @{
+                        GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE = '1'
+                    }
+                }
+            )
         }
     )
 }

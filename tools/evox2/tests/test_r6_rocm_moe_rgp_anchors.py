@@ -69,6 +69,26 @@ class HipRgpAnchorTests(unittest.TestCase):
             for forbidden in ("hipDeviceSynchronize(", "cudaDeviceSynchronize(", "cudaStreamSynchronize("):
                 self.assertNotIn(forbidden, probe)
 
+    def test_literature_rgp_variant_matches_code(self):
+        # Keep the existing non-probe variant, but enable exactly the same
+        # all-MoE layer tags for both 64k code and literature RGP captures.
+        parts = self.plan.split("            Name = 'rocm-moe-anchor-literature'", 1)
+        self.assertEqual(len(parts), 2)
+        literature = parts[1]
+        code = parts[0].split("            Name = 'rocm-moe-anchor-code'", 1)[1]
+        self.assertIn("Name = 'moe-anchor-code-layer-tags-64k'", code)
+        self.assertIn("Name = 'moe-anchor-literature-layer-tags-64k'", literature)
+        self.assertIn("Name = 'moe-anchor-literature-64k'", literature)
+        flag = "GGML_HIP_RGP_ANCHOR_PROBE_ALL_MOE = '1'"
+        self.assertIn(flag, code)
+        self.assertIn(flag, literature)
+        self.assertIn("BuildKeys = @('R6RocmMoeLayerTags')", literature)
+        self.assertIn("ModelKeys = @('UnslothPle16')", literature)
+        self.assertIn("wagahaiwa_nekodearu_utf8.txt", literature)
+        self.assertIn("PromptTokens     = @(61777)", self.plan)
+        self.assertIn("GGML_HIP_RGP_ANCHOR_KV            = '49152'", self.plan)
+        self.assertIn("GGML_EVOX2_MOE_TOPK_TRACE         = $null", self.plan)
+
     def test_plan_disables_topk_callback(self):
         self.assertIn("GGML_EVOX2_MOE_TOPK_TRACE         = $null", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR               = '1'", self.plan)
