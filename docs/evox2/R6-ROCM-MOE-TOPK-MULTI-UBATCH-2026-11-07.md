@@ -1,6 +1,6 @@
 # Gate MOE-TOPK-2 — 16k / 32k MoE Expert routing re-sample (2026-11-07)
 
-**計画作成済み、実行前。** 前回の [MOE-TOPK-1](R6-ROCM-MOE-TOPK-64K-GATE-2026-11-07.md) はb12156実機でsmoke + 64k code/literatureが全PASSした。今回は**既存の同一ビルド/入力/Modelを維持し、新しいUBatch位置だけ**を変更する。ソース変更・再ビルド・RGP取得不要。
+**実機検証PASS（2026-11-07）：4run追加を正常終了。詳細は本書末尾の結果参照。** 前回の [MOE-TOPK-1](R6-ROCM-MOE-TOPK-64K-GATE-2026-11-07.md) はb12156実機でsmoke + 64k code/literatureが全PASSした。今回は**既存の同一ビルド/入力/Modelを維持し、新しいUBatch位置だけ**を変更する。ソース変更・再ビルド・RGP取得不要。
 
 ## 目的と最小マトリクス
 
@@ -81,3 +81,33 @@ UBatch31も同様に実行。48k既存データ（2026-11-07 `de511770...`のcom
 ## 制約
 
 J32の`Σceil`はMoE MMQの**有効列タイル代理指標**で、GPUイベントを直接計時したデータではない。古いb12038 RGP Event91等のKV/layerが未対応であるため、J32差があってもGPU時間・PP全体に因果帰属しない。今回の目的は**Expert選択分布の位置変化を確認すること**まで。
+
+## 2026-11-07 17:13 JST — Gate MOE-TOPK-2 completed (4 runs PASS)
+
+**The combined 4run ZIP has been fully parsed; all four 64k runs PASS.** The first variant started 16:58:44 JST, and the last finished 17:13:49 JST, with non-overlapping serial execution. Same b12156/`b82a76ca6` binary SHA256 `68f7f8adc2bb8688b12525620c474e57ffbaea17c72bef215237a64d4ce63ebd`; `R6RocmMoeTopk`; exact original input SHA verified per run. P-MODE Performance preserved, GPU gfx1151 ROCm, Gather/MTP OFF; `Status=OK ExitCode=0` in each, `PossibleNoise=false`, no crash/reset indications.
+
+- ZIP `20261107-171020-102-bench-rocm-b12156-ctx65536-ddcd7a30de72.zip`, **SHA256 `26cbcf3001e6ff8cbf4e0c4447ca38212e11c3224c61e7474b92a624d630af07`**, 422,808 bytes, 52 ZIP entries including four individual run folders.
+- Code UBatch15 `20261107-165843-305-bench-rocm-b12156-ctx65536-075ad2221445`; code UBatch31 `20261107-170240-150-bench-rocm-b12156-ctx65536-c8364dc86642`.
+- Literature UBatch15 `20261107-170630-225-bench-rocm-b12156-ctx65536-a7c1265ac3a8`; literature UBatch31 `20261107-171020-102-bench-rocm-b12156-ctx65536-ddcd7a30de72`.
+- Each stderr contains two `evox2_moe_topk_hist_v1` rows (layer19/23) and **2048 raw `evox2_moe_topk_ids_v1` rows** (1024 per layer). All eight new histogram arrays were independently reconstructed from every token's top10 Expert IDs, all IDs unique and in [0,511], no missing tokens, bad_ids0. All eight `Σceil(m_e/32)` counts agree.
+
+### J32 tile comparison, 16k/32k plus existing 48k
+
+| KV / UBatch (0-based) | Layer | Code | Literature | Code−Literature |
+|---|---:|---:|---:|---:|
+| 16384 /15 | 19 | 560 | 565 | −5 |
+| 32768 /31 | 19 | 592 | 549 | **+43** |
+| 49152 /47 (from previous Gate) | 19 | 566 | 566 | 0 |
+| 16384 /15 | 23 | 556 | 572 | **−16** |
+| 32768 /31 | 23 | 572 | 573 | −1 |
+| 49152 /47 (from previous Gate) | 23 | 589 | 568 | **+21** |
+
+At Layer19 code active Expert counts for 16k/32k/48k = 351/392/348 vs literature341/321/357; at Layer23 code345/380/394 vs literature339/352/348. The sign of J32 tile difference varies with KV and layer; **expert selection distribution is input/position dependent, not invariably code-heavy**.
+
+**Adjacent token sets share (out of 10) at Layer23:** code 2.541,2.243,2.695 vs literature4.949,4.472,4.254 (KV16k/32k/48k). At Layer19: code2.762,3.057,4.467 vs literature4.740,4.768,4.302. Literature reuses Expert identity between adjacent tokens more than code in five of six comparisons, but Layer19 at48k reverses; this is a document-specific spatial observation, not a universal literature-vs-code claim.
+
+Top10 Expert share code/lit: Layer19 16k26.71/37.11%, 32k23.73/36.55%, 48k38.34/31.82%; Layer23 16k31.93/39.69%, 32k23.87/37.59%, 48k23.78/29.72%. Intra-document histogram *mass* reuse u15→u31: literature70–71%, code47–55%, again not tokenwise exact agreement.
+
+**Gate verdict:** MOE-TOPK-2 PASS with 12 source-validated spatial snapshots (8 new + 4 prior). No need to repeat 4run. **Speed from callback-on runs is not comparable** because this adds GPU sync/graph splits. This evidence doesn't assign HIP RGP Event91/465 to the same layer/KV or prove that the extra tiles cause a particular GPU-time/PP delay.
+
+[Full comparison report and 12-row CSV](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/pp-input-dependence-64k-20261104/runs/2026-11-07-rocm-moe-expert-topk-multi-ubatch-16k32k48k.md).

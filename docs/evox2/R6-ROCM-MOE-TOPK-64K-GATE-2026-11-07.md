@@ -106,3 +106,7 @@ Following MOE-TOPK-1 PASS, [matched 16k/32k follow-up plan](R6-ROCM-MOE-TOPK-MUL
 - Same original head61777 token inputs, ctx65536/UBatch1024/B2048, noWarmup, F16 KV, QSA Gather/MTP OFF, P-MODE Performance.
 - Compare using the existing `Compare-MoeTopkTrace.ps1`, then analyze Expert frequency concentration, entropy, adjacent-token overlap and `Σceil(m_e/32)` by KV and layer. **Do not use callback PP time for performance**, and do not infer RGP event-to-layer identity without a separate alignment Gate.
 - User can run one `-OnlyVariant` at a time in pairs or all 4 sequentially. `-PlanOnly` before execution verifies the intended 4 cases.
+
+## 2026-11-07 17:13 JST — UBatch15/31 extensions PASS
+
+[MOE-TOPK-2 runbook and results](R6-ROCM-MOE-TOPK-MULTI-UBATCH-2026-11-07.md): b12156 same binary; **4 additional code/literature 64k runs**, UBatch15 and31, all OK with valid 1024×10 raw IDs and histograms at layers19/23. Source combined ZIP SHA256 `26cbcf3001e6ff8cbf4e0c4447ca38212e11c3224c61e7474b92a624d630af07`. Combined with prior u47: Layer19 J32 code−lit at 16k/32k/48k **−5/+43/0**; Layer23 **−16/−1/+21**. Input dependency changes sign by location/layer. Literature neighbor-token Expert overlap is higher at Layer23 all three positions; code is not uniformly higher in live J32 tile count. All callback-on PP timings remain invalid for speed comparison; MMQ event-to-layer GPU timing correlation still open.
