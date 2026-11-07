@@ -195,3 +195,12 @@ Code/Literatureが**同一HIPカーネル・KV・layerで確認された場合�
 **No immediate 64k repeat needed.** Decide with the user whether this exploratory r6 HIP evidence suffices for a high-confidence *qualitative* conclusion or to proceed with a **minimal HIP host-side KV/layer and dispatch ordinal trace** (default-OFF; no GPU kernel modifications; validate host↔RGP correlation), then reacquire one correctly annotated code/literature pair. Do not blindly use Vulkan RDP markers on HIP, infer KV from event index, or start a broad ROCm 4x2xN matrix. Avoid unsafe Windows gfx1151 HIP broad backend test suite and forced GPU synchronization.
 
 The main ongoing technical outcome is a plausible source-backed explanation for the **Vulkan PP content sensitivity vs weak ROCm sensitivity**; strict equal-KV/source causal quantification is explicitly still open.
+
+## 2026-11-07 — HIP FA host metadata probe implemented (separate branch)
+
+Previous "optional next step" is now **implemented, not yet compiled or run**:
+- Branch: `investigation/r6-rocm-pp-fa-trace-20261107` (the current investigation branch; b11908/b12013/b12038 preserved)
+- Source `ggml/src/ggml-cuda/fattn.cu`, HIP-only `GGML_HIP_FA_TRACE=1`, optional KV49152/layer filter. Logs host FA `fa_id / KV / N / Qcur layer / mma|tile|vec / suffix_scan_candidate / host_us`. **Host id is not GPU RGP Event ID.**
+- [Gate/runbook](R6-ROCM-PP-FA-HOST-TRACE-GATE-2026-11-07.md), [dedicated 64k benchmark plan](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-hip-fa-host-trace-64k-20261107.psd1), [log-pairing helper](../../tools/evox2/benchmark/Compare-HipFaTrace.ps1).
+- Host metadata first; a future independent correlation Gate or targeted HIP GPU-event diagnostic may still be needed to prove RGP Event423 == KV49152/Qcur19. Do not mislabel this host trace as a GPU event correlation.
+- Secondary question: code has ~3.06s slower full RGP-on PP despite a ~0.447ms faster sampled HIP FA MAIN. **No hotspot attribution yet**; ask for existing RGP code/lit **Overview → Most expensive events** screenshots before deciding whether MoE, GET_ROWS, Indexer, GDN or other FA regions dominate.
