@@ -114,3 +114,23 @@ if (ids_dst) {
 一方、**各Eventが実際に`MUL_MAT_ID`なのか、どのweightとlayerなのか、および入力ごとのExpert分布が実際に異なるか**は未確認。ここを確認するまで「コードが遅いのはMoE Expert分布が原因」と断定しない。
 
 **今回はソース調査・文書化のみ。新しいC++診断機能は未実装。**
+
+## 2026-11-07 follow-up: RGP confirms MMQ is MoE, top-k observation Gate created
+
+The four new source Event timing screenshots directly confirm **top-k→MoE routing→quantize→MMQ** in both input profiles, substantially stronger than the previous pattern-only hypothesis:
+
+- Code screenshot `image(20261107-062541).png`, SHA256 `e5887e873b7a14e69ab685ed726e221c26461d5e65b81cf85f2435fc075ab081`: Event85 `topk_moe_cuda<512,false>` 17.721µs → Event87 `mm_ids_helper<10>` 224.414µs → Event89 `quantize_mmq_q8_1<...,true>` 114.004µs → Event91 `mul_mat_q<IQ2_S,32,false,Q8>` 4261.116µs, followed by ids/quant/MMQ at Events93/95/97 and 101/103/105.
+- Code screenshot `image(20261107-062559).png`, SHA256 `9bdfc525ea8778219dfd6f83f5e6a50d5f270ff1cab74586a3ee5a778fa039a6`: second MoE group starts Event459 `topk_moe_cuda` (~17.765µs), then 461/463/465 (IQ2_S), 467/469/471 (IQ2_S), 475/477/479 (IQ4_NL).
+- Literature screenshot `image(20261107-062647).png`, SHA256 `f33a330e14b4466b4743d7f5dcb5a7aa70d19e91b506604183884b59591efc78`: same Event85/87/89/91 with respectively 17.667/225.497/109.098/3799.130µs; Event93/95/97 likewise same MoE pathway, 97=3945.171µs.
+- Literature screenshot `image(20261107-062711).png`, SHA256 `8086f9e03e4c256c9aa434ac881162b08f398173db760600e25c257a6921c681`: second group 459 `topk_moe_cuda` 17.244µs, 461 `mm_ids_helper<10>` 225.622µs, 463 `quantize...` 110.883µs, 465 `mul_mat_q<IQ2_S>` 3910.555µs.
+
+**Update on interpretation:** For the shown 3-kernel groups, **the adjacent `mm_ids_helper<10>` and dedicated MoE quantize-scatter kernel mean these MMQ instances do use Expert IDs.** This is no longer speculative for the displayed events. `topk_moe_cuda<512,false>` is the Expert selector (not QSA Indexer) and `mm_ids_helper<10>` confirms **10 Experts selected per token** for these events. However none of these screenshots prints the selected Expert IDs or their per-Expert histogram; the selector/ids-helper times are nearly the same between inputs (~17µs, ~225µs), while MMQ processing differs considerably.
+
+### First actual selection-data capture implemented (not yet built)
+
+[Detailed Gate MOE-TOPK-1](R6-ROCM-MOE-TOPK-64K-GATE-2026-11-07.md) on `investigation/r6-rocm-moe-topk-diag-20261107`.
+
+- A default-OFF **llama-bench-only** evaluation callback reads `ffn_moe_topk-19` and `-23` (noncontiguous top-k view; correctly accesses underlying contiguous full argsort tensor). Capture is limited to the **48th UBatch (index47)** corresponding to the earlier confirmed `KV49152` processing schedule.
+- Saves exact selected Expert IDs per token (when RAW enabled), per-Expert assignment histograms, active Expert count, and predicted J32 live tile count = `Σ_e ceil(count_e/32)`, to `stderr.log` in benchmark ZIP. Compare with [Compare-MoeTopkTrace.ps1](../../tools/evox2/benchmark/Compare-MoeTopkTrace.ps1).
+- **Critical profiling caveat:** the built-in graph eval callback inserts GPU synchronization and changes graph splitting. Captured routing is meaningful, but PP speed from such a run is NOT comparable to clean/RGP historical runs. This is not intended for GPU timing. No HIP kernel patch was made.
+- No actual source build or runtime data yet; do not infer any histogram differences until pilot + code/literature runs pass.
