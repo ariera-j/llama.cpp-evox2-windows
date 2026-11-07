@@ -63,6 +63,6 @@ HIPのsparse disabled、suffix scan enabled condition、r5 HIP RGP、r6 TG RGP�
 
 ## Next action
 
-**まず短いROCmコード64k 1run向けプランとRDP HIP設定を作り、Gate1を確認する。** 既存バイナリ/BuildKeyとHIP runtimeを確定し、source commitの違いを残したうえでRGPのHIP dispatch取得可否を確認。これがPASSしてから文学の比較取得、次いで必要に応じて最小HIP位置合わせ診断へ進む。
+**64k ROCm 実入力RGPプランとRDP HIP設定を作成済み（未実行）。** [Runbook](R6-ROCM-PP-FA-RGP-64K-CAPTURE-RUNBOOK-2026-11-07.md) と [計測プラン](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-pp-fa-rgp-64k-realprompt-20261107.psd1) を参照。旧r6 b11908/COMMON-005 b12013の`llama-bench`は実入力未対応。既にsmokeを完走したb12038実入力対応ROCmを最初の比較に使用し、同一source比較が必要なら別Buildを検討。作業worktreeは`r6-ppdiag`、実行binは`r6/build-rocm-bench-real-r6`と分離。まずビルド確認、PlanOnly、コード64k HIP RGP。HIPカーネル取得を確認後に文学へ。
 
 この計画はVulkanの完了結果を前提としており、無断でHIP source変更や長時間計測を始めるものではない。

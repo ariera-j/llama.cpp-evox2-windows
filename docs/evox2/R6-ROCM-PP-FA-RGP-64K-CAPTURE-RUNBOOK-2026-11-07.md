@@ -20,10 +20,12 @@
 
 ## Gate0: 使うバイナリと実入力ファイルの確認
 
-PowerShellで既存r6本体（調査ドキュメントを更新するworktreeと実測バイナリの場所は異なってよい）を使用：
+**計測スクリプトはGitHub調査ブランチを持つ `r6-ppdiag` worktreeから実行し、実行バイナリだけ別のr6本体ビルドディレクトリを指定する。** 以下はそれを分離した手順：
 
 ```powershell
-Set-Location 'C:\llama-build\llama.cpp-evox2-windows-r6'
+Set-Location 'C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag'
+git branch --show-current
+git pull --ff-only
 
 $binDir = 'C:\llama-build\llama.cpp-evox2-windows-r6\build-rocm-bench-real-r6\bin\Release'
 $exe = Join-Path $binDir 'llama-bench.exe'
