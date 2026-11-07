@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <numeric>
 #include <regex>
 #include <sstream>
@@ -41,6 +42,185 @@
 static uint64_t get_time_ns() {
     using clock = std::chrono::high_resolution_clock;
     return std::chrono::nanoseconds(clock::now().time_since_epoch()).count();
+}
+
+// Optional one-UBatch MoE expert selection capture for llama-bench ONLY.
+// This uses the existing llama_context_params.cb_eval, not a HIP kernel patch.
+// Note: the GGML scheduler executes callback runs with extra graph splits
+// and backend synchronizations. NEVER use traced PP numbers as performance.
+struct evox2_moe_topk_trace {
+    int ubatch_index = 0;                 // zero-based occurrence for each named layer
+    bool emit_raw = false;                // one line per token, opt-in
+    std::set<int> layers;
+    std::map<int, int> seen_by_layer;
+    int captured = 0;
+};
+
+static int evox2_moe_layer_from_name(const char * name) {
+    constexpr const char * prefix = "ffn_moe_topk-";
+    constexpr size_t prefix_len = 13;
+    if (std::strncmp(name, prefix, prefix_len) != 0) {
+        return -1;
+    }
+    const char * p = name + prefix_len;
+    if (*p < '0' || *p > '9') {
+        return -1;
+    }
+    char * end = nullptr;
+    const long layer = std::strtol(p, &end, 10);
+    return end && *end == '\0' && layer >= 0 && layer <= INT32_MAX ? (int) layer : -1;
+}
+
+static bool evox2_moe_topk_trace_init(evox2_moe_topk_trace & state) {
+    const char * enabled = std::getenv("GGML_EVOX2_MOE_TOPK_TRACE");
+    if (!enabled || std::strcmp(enabled, "1") != 0) {
+        return false;
+    }
+    const char * target = std::getenv("GGML_EVOX2_MOE_TOPK_UBATCH");
+    if (target && *target) {
+        char * end = nullptr;
+        const long value = std::strtol(target, &end, 10);
+        if (end && *end == '\0' && value >= 0 && value <= INT32_MAX) {
+            state.ubatch_index = (int) value;
+        } else {
+            std::fprintf(stderr, "evox2_moe_topk_error_v1 invalid_ubatch=%s\n", target);
+            return false;
+        }
+    }
+    const char * layer_text = std::getenv("GGML_EVOX2_MOE_TOPK_LAYERS");
+    if (!layer_text || !*layer_text) {
+        layer_text = "19,23";
+    }
+    std::istringstream input(layer_text);
+    std::string token;
+    while (std::getline(input, token, ',')) {
+        char * end = nullptr;
+        const long layer = std::strtol(token.c_str(), &end, 10);
+        if (!end || *end != '\0' || layer < 0 || layer > INT32_MAX) {
+            std::fprintf(stderr, "evox2_moe_topk_error_v1 invalid_layer=%s\n", token.c_str());
+            return false;
+        }
+        state.layers.insert((int) layer);
+    }
+    if (state.layers.empty()) {
+        std::fprintf(stderr, "evox2_moe_topk_error_v1 empty_layers\n");
+        return false;
+    }
+    const char * raw = std::getenv("GGML_EVOX2_MOE_TOPK_RAW");
+    state.emit_raw = raw && std::strcmp(raw, "1") == 0;
+
+    std::fprintf(stderr,
+            "evox2_moe_topk_trace_v1 enabled=1 ubatch=%d layers=%s raw=%d "
+            "warning=graph_callback_forces_synchronization_PP_not_comparable\n",
+            state.ubatch_index, layer_text, state.emit_raw ? 1 : 0);
+    return true;
+}
+
+static bool evox2_moe_topk_trace_callback(ggml_tensor * t, bool ask, void * user_data) {
+    auto & state = *static_cast<evox2_moe_topk_trace *>(user_data);
+    const int layer = evox2_moe_layer_from_name(t->name);
+    if (layer < 0 || state.layers.find(layer) == state.layers.end()) {
+        return false; // only meaningful for ask=true; scheduler ignores non-matching nodes
+    }
+
+    if (ask) {
+        const int ordinal = state.seen_by_layer[layer]++;
+        return ordinal == state.ubatch_index;
+    }
+
+    // This is called after the scheduler has synchronized the graph region.
+    // ggml_argsort_top_k returns a VIEW of the full descending argsort result.
+    // Crucial: the view's stride between tokens is the full expert count,
+    // NOT k, so an ordinary contiguous tensor_get(t) would corrupt the sample.
+    const int64_t k = t->ne[0];
+    const int64_t n_tokens = t->ne[1];
+    const ggml_tensor * full = t->view_src;
+    if (t->type != GGML_TYPE_I32 || !full || full->type != GGML_TYPE_I32 ||
+        k <= 0 || k > 128 || n_tokens <= 0 || n_tokens > 4096 ||
+        full->ne[0] < k || full->ne[1] != n_tokens ||
+        full->ne[2] != 1 || full->ne[3] != 1) {
+        std::fprintf(stderr,
+                "evox2_moe_topk_error_v1 ubatch=%d layer=%d unexpected_tensor="
+                "\"%s\" k=%lld tokens=%lld\n",
+                state.ubatch_index, layer, t->name,
+                (long long) k, (long long) n_tokens);
+        return true;
+    }
+
+    const int64_t n_experts = full->ne[0];
+    if (n_experts <= 0 || n_experts > 16384) {
+        std::fprintf(stderr, "evox2_moe_topk_error_v1 layer=%d bad_n_experts=%lld\n",
+                layer, (long long) n_experts);
+        return true;
+    }
+
+    std::vector<int32_t> ids((size_t) k * n_tokens);
+    if (ggml_is_contiguous(full)) {
+        // Single read of the underlying [n_experts,n_tokens] argsort buffer,
+        // from which each token's first k indices are selected.
+        std::vector<int32_t> all_ids((size_t) n_experts * n_tokens);
+        ggml_backend_tensor_get(full, all_ids.data(), 0, all_ids.size()*sizeof(int32_t));
+        for (int64_t token = 0; token < n_tokens; token++) {
+            std::copy_n(all_ids.data() + token*n_experts, k, ids.data() + token*k);
+        }
+    } else {
+        // Correct 2D view stride, if parent is not contiguous.
+        ggml_backend_tensor_get_2d(t, ids.data(), 0, (size_t) k*sizeof(int32_t),
+                (size_t) n_tokens, t->nb[1], (size_t) k*sizeof(int32_t));
+    }
+
+    std::vector<int64_t> counts((size_t) n_experts, 0);
+    int64_t bad_ids = 0;
+    for (const int32_t expert : ids) {
+        if (expert >= 0 && expert < n_experts) {
+            counts[(size_t) expert]++;
+        } else {
+            bad_ids++;
+        }
+    }
+    int64_t active = 0, max_count = 0, active_tiles32 = 0;
+    int64_t selected_sum = 0;
+    for (const int64_t count : counts) {
+        selected_sum += count;
+        if (count == 0) { continue; }
+        active++;
+        max_count = std::max(max_count, count);
+        active_tiles32 += (count + 31)/32;
+    }
+    // Counts are nonzero expert_id:frequency pairs; missing ids mean zero.
+    // Print as one line for reproducible comparisons and compact ZIP logs.
+    std::ostringstream csv;
+    bool first = true;
+    for (int64_t i = 0; i < n_experts; i++) {
+        if (counts[(size_t) i] == 0) { continue; }
+        if (!first) { csv << ','; }
+        csv << i << ':' << counts[(size_t) i];
+        first = false;
+    }
+
+    std::fprintf(stderr,
+            "evox2_moe_topk_hist_v1 ubatch=%d layer=%d tokens=%lld k=%lld "
+            "experts=%lld assignments=%lld active=%lld max=%lld "
+            "active_tiles32=%lld bad_ids=%lld counts=%s\n",
+            state.ubatch_index, layer, (long long) n_tokens, (long long) k,
+            (long long) n_experts, (long long) selected_sum,
+            (long long) active, (long long) max_count,
+            (long long) active_tiles32, (long long) bad_ids, csv.str().c_str());
+    if (state.emit_raw) {
+        for (int64_t token = 0; token < n_tokens; token++) {
+            std::ostringstream row;
+            for (int64_t j = 0; j < k; j++) {
+                if (j != 0) { row << ','; }
+                row << ids[(size_t) (token*k + j)];
+            }
+            std::fprintf(stderr,
+                    "evox2_moe_topk_ids_v1 ubatch=%d layer=%d token=%lld ids=%s\n",
+                    state.ubatch_index, layer, (long long) token, row.str().c_str());
+        }
+    }
+    state.captured++;
+    std::fflush(stderr);
+    return true;
 }
 
 static bool tensor_buft_override_equal(const llama_model_tensor_buft_override& a, const llama_model_tensor_buft_override& b) {
@@ -2549,6 +2729,14 @@ int llama_bench(int argc, char ** argv) {
                     __func__, run_inst.n_ctx, n_ctx_needed);
             llama_model_free(lmodel);
             return 1;
+        }
+
+        // Deliberately attached only to llama-bench (not llama-cli/server).
+        // Lifetime covers llama_init_from_model -> llama_free below.
+        evox2_moe_topk_trace evox2_moe_trace_state;
+        if (evox2_moe_topk_trace_init(evox2_moe_trace_state)) {
+            cparams.cb_eval = evox2_moe_topk_trace_callback;
+            cparams.cb_eval_user_data = &evox2_moe_trace_state;
         }
 
         llama_context * ctx = llama_init_from_model(lmodel, cparams);
