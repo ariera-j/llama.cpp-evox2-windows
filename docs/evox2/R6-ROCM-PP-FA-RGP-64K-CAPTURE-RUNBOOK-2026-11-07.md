@@ -136,3 +136,30 @@ Code/Literatureが**同一HIPカーネル・KV・layerで確認された場合�
 - **今回の成果：計測Plan + RDP値 + Runbook作成のみ。** 新GPU計測なし。古い2バイナリは保全。
 - 最初は `--help` 実入力確認・バイナリSHAと `-PlanOnly` を実施し、成功すればコード1回のROCm HIP RGP（`.rgp`またはイベント一覧スクショ）＋実行ZIPを提出。
 - ビルドキーやb12038バイナリが見つからない場合、旧バイナリへの単純差し替えはせず、その情報で計測対象を再決定する。
+
+## 2026-11-07 13:10 — HIP code capture PASS (unmatched KV/layer, exploratory)
+
+**First ROCm code RGP successfully captured** without replacing existing frozen r6/COMMON-005 binary. User intentionally tried the **Vulkan RDP Dispatch range start=181200/count=512** in **API=HIP**; this happened to catch an FA kernel on HIP. This does **not** prove the same Vulkan dispatch ordinal, KV=49152 or Qcur-19. Initial calibration step from the Runbook is now fulfilled for the existence of HIP FA kernels, *not* for position matching.
+
+### Original evidence and source identity
+
+- Native ZIP `20261107-130748-235-bench-rocm-b12038-ctx65536-d5705f57f05b.zip` SHA256 **`5c5e10b70faadc5e677abe5a273326aff5c72b8ade71de92bfa1d3ee738aa1af`**.
+- HIP RGP `llama-bench-20261107-131042215.rgp` SHA256 **`bdd4f8282dbf06fc7f6377157db1a0524d4407d043ca1f63977515c96067a997`**; original binary retained off Git.
+- Actual program `C:\llama-build\llama.cpp-evox2-windows-r6\build-rocm-bench-real-r6\bin\Release\llama-bench.exe`, embedded **b12038/d321e7ff3**, exact executable SHA256 **`a46e512cdc78ab2475b52d5d1d694ec968edade16c9229f95ced3380d559298a`**; verified source commit **`d321e7ff38052be311fde9392598fe02c7548956`**. Log collection Git branch/head is separate: `investigation/r6-pp-fa-mask-rgp-20261105` / `557044b2...`.
+- Inputs: `llamacpp-inference-code.txt`, SHA256 **`249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`**, `--prompt-slice head`, 61,777 tokens. Model `UnslothPle16` IQ3_XXS, ROCm Radeon8060S gfx1151 Wave32, ctx65536, batch2048, ubatch1024, f16 K/V, no generation, repetitions1, **no warmup**, Gather `QWEN4EXP_QSA_GATHER=0`. No Vulkan-only markers.
+- Native result **OK / ExitCode=0**, PP **368.838634 tok/s** for one RGP-on run, wall 225.619s, GPU/ADLX high-load average **119.805 W**, authoritative P-MODE **Performance→Performance** with no warning and no GPU reset reported. PP figure is not a clean baseline.
+- RGP Event timing screenshot, filter `fla`: event **421** `flash_attn_mask_to_KV_max<16>` **55.474 µs**; event **423** `flash_attn_ext_f16<256,256,16,4,false,false,false>` **98,000.337 µs = 98.000337 ms**. Both appear in one 512-dispatch window.
+- Wavefront occupancy screenshot has a relatively steady low-to-moderate wave band through the long FA dispatch and no obvious large zero-occupancy gap in that interval; no numerical average occupancy or memory bottleneck proven. Other kernels and phases exist in the sampled range. This specialization mirrors earlier r5 PP HIP traces (previous ~105ms literature and ~111ms code at unknown KV).
+- **The missing live progress is expected**: `Measure-LlamaBench.ps1` sends stderr into `stderr.log`, stdout to `llama-bench.json`; the native binary in these settings emits backend startup messages but **no per-UBatch/PP token-progress lines**. `Get-Content -Tail 20 -Wait` cannot show KV progress when the application doesn't log it. `--progress`, even if passed, only reports test/prompt start and not each 1,024-token update.
+
+### Next smallest evidence-producing action
+
+1. Keep **the same b12038 binary**/source model/context/UBatch/F16/Gather OFF, process and RDP **HIP / Auto Dispatch range / start=181200 / count=512 / SQTT High** for **one literature 64k run**, no code edits or warmup changes. The same HIP index across corpora is an **initial approximate GPU program-location comparison only**, NOT validated KV/layer matching. RDP must be set for the executable actually used, not Vulkan.
+2. Execute `Invoke-BenchmarkMatrix.ps1 -Plan .\tools\evox2\benchmark\configs\qwen38-r6-rocm-pp-fa-rgp-64k-realprompt-20261107.psd1 -OnlyVariant rocm-literature-64k -StopOnError`. Save RGP and run ZIP. Compare event 421/423 kernel specialization and time with literature kernel in its own trace, but **do not call the pair KV49152/Qcur-19** without external proof. If same HIP start index fails to cover the same GPU-graph region due to content-dependent differences, record capture mismatch explicitly.
+3. If the HIP code/literature FA time ratio is already close to unity, we have a strong *exploratory* indication corroborating earlier r5, but next decide whether strict per-layer position calibration warrants source change. For strong cross-backend claims require the latter. Only then consider default-OFF host-side per-UBatch/layer dispatch tracer, without assuming HIP supports Vulkan user debug markers. **Do not enable broad HIP FA backend tests**.
+4. To see at least the **beginning** of prompt testing in future, a proposed `--progress` flag requires checking wrapper support/behavior; it does not solve KV pinpointing and need not be added for this exploratory pair.
+
+### Interpretational cautions
+
+- HIP `flash_attn_mask_to_KV_max<16>` detects suffix and is not identical to Vulkan `EVOX2_FA_MASK_OPT` tile-classification stage; do not compare 55µs vs Vulkan 4ms as same operation.
+- HIP code FA MAIN98.0ms and Vulkan code FA MAIN44.83ms cannot be interpreted as direct speed ratio: the HIP event has **unknown KV/layer** and is a separate source revision. Need comparable totals, not a single chosen dispatch, to explain whole-run ROCm/Vulkan PP.
