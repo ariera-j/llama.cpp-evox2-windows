@@ -134,3 +134,11 @@ The four new source Event timing screenshots directly confirm **top-k→MoE rout
 - Saves exact selected Expert IDs per token (when RAW enabled), per-Expert assignment histograms, active Expert count, and predicted J32 live tile count = `Σ_e ceil(count_e/32)`, to `stderr.log` in benchmark ZIP. Compare with [Compare-MoeTopkTrace.ps1](../../tools/evox2/benchmark/Compare-MoeTopkTrace.ps1).
 - **Critical profiling caveat:** the built-in graph eval callback inserts GPU synchronization and changes graph splitting. Captured routing is meaningful, but PP speed from such a run is NOT comparable to clean/RGP historical runs. This is not intended for GPU timing. No HIP kernel patch was made.
 - No actual source build or runtime data yet; do not infer any histogram differences until pilot + code/literature runs pass.
+
+## 2026-11-07 16:10 JST — MoE top-k real-data gate PASS
+
+The isolated b12156 `llama-bench` callback passed three consecutive runs (smoke/code64k/literature64k; all ExitCode0). See [MOE-TOPK-1 results](R6-ROCM-MOE-TOPK-64K-GATE-2026-11-07.md) and the original combined ZIP SHA256 `de511770b92a48ab9788310f01fa272e26e55654abb6634044393f88a5203b56`.
+
+At UBatch47, both inputs have 512 possible Experts and k10 chosen per token. **Layer19** active Expert counts code348/literature357 but **J32 tile proxies are equal (566/566)**. **Layer23** code394 vs literature348 active Experts, and **J32 proxy is code589 vs literature568 (+21, 3.70%)**. Average overlap of Expert sets across adjacent tokens layer23 code2.695/literature4.254 (of 10). All 4 raw 1024×10 ID arrays were checked for completeness, valid unique IDs, and exact agreement with histogram totals.
+
+These are real **Expert-routing distribution** differences, not direct proof of the source of PP's speed difference. GPU callback profiling adds synchronization; instrumented PP rates are not comparable to uninstrumented runs or prior RGP timings. The old RGP kernel event IDs have not been mapped to these layers.

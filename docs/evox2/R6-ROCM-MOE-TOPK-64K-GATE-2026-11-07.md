@@ -61,3 +61,38 @@ CSVにはUBatch、Layer、Expert IDごとのコード/文学の選択数と差�
 - 出力のPP速度は有効なベンチマークではない。コードと文学のモデル・入力SHA256等はベンチZIPで検証する。
 
 **このGateで終了後、ソース変更と計測の安全性を評価し、必要があればGPU内ヒストグラム版を別Gateで検討する。**
+
+## 2026-11-07 16:10 JST — MOE-TOPK-1 first real device run PASS (3 sequential)
+
+**Validated with user-supplied build manifest and combined ZIP.** The accidental use of the whole plan caused **three sequential, NON-OVERLAPPING runs**: 16:01:54–16:02:58 smoke; 16:03:20–16:06:51 code64k; 16:07:12–16:10:42 literature64k (JST). All `Status=OK / ExitCode=0 / NativeRowCount=1`, P-MODE Performance→Performance, `BackgroundActivitySummary.PossibleNoise=false`, no reported TDR/OOM. **No rerun required for routing data.**
+
+- Build `(rocm-moe)evox2-build.json` sha256 `90753bb782f7b100b1088f662c5e0d70e08c502b7beee05a91bbedfed2b03fc5`; build number **12156**, branch `investigation/r6-rocm-moe-topk-diag-20261107`, source **`b82a76ca663b0b81e231211e6882ebac1b193dab`**; `BuildIdentity.Status=Verified`; ROCm10.0.0 (TheRock), gfx1151, Clang23. `Dirty=true` due exclusively to **four unrelated untracked legacy Vulkan mask plan PSD1**, no tracked-source edit. Same `llama-bench.exe` sha256 `68f7f8adc2bb8688b12525620c474e57ffbaea17c72bef215237a64d4ce63ebd` in all three runs.
+- Combined ZIP `20261107-160711-663-bench-rocm-b12156-ctx65536-23f1e78b3ed8.zip` sha256 `de511770b92a48ab9788310f01fa272e26e55654abb6634044393f88a5203b56`, bytes 240308. It actually contains **3 independent run folders** (1 smoke, 2 full); do not treat name of outer ZIP as a single case. Exact per-run IDs:
+  - Smoke code `20261107-160153-538-bench-rocm-b12156-ctx2048-c4189f4be6f9`; input SHA `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`; UBatch0, Layer19 only, `RAW=0`. **One** `evox2_moe_topk_hist_v1` record, 1024tokens, 512 experts, k10, 10240 assignments, 416 active experts, max count591, J32 effective tiles614, bad_ids0. Correct histogram checksums.
+  - Code64k `20261107-160320-015-bench-rocm-b12156-ctx65536-923a3d6c27cd`; input SHA same original code; head61777, ctx65536, UBatch1024, no warmup, MTP/gather OFF. UBatch47 Layers19/23 with **two histograms and 2048 selected-token rows**.
+  - Literature64k `20261107-160711-663-bench-rocm-b12156-ctx65536-23f1e78b3ed8`; input SHA `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`; identical configurations and selected UBatch/layers, **two histograms and 2048 selected-token rows**.
+- All four 64k layer histogram sums and tile counts were **independently recomputed from the raw IDs** (1024 distinct 10-ID values per layer, all IDs in [0,511]) and match the log exactly. All four `bad_ids=0`. No duplicate raw-token IDs within a given top-k list and no skipped token indexes.
+
+### Actual selection frequency data at UBatch47 (maps to the prior KV49152 schedule)
+
+| Metric | Code layer19 | Literature layer19 | Code layer23 | Literature layer23 |
+|---|---:|---:|---:|---:|
+| `tokens × k` assignments | 10,240 | 10,240 | 10,240 | 10,240 |
+| Distinct selected Experts (512 possible) | **348** | **357** | **394** | **348** |
+| Max assignments to single Expert | **735** | **671** | **460** | **582** |
+| `Σ_e ceil(m_e/32)` J32 effective tile proxy | **566** | **566** | **589** | **568** |
+| Top-10 most used Experts: assignments/share | 3926 / 38.34% | 3258 / 31.82% | 2435 / 23.78% | 3043 / 29.72% |
+| Average shared Expert IDs between **adjacent** tokens (two unordered size-10 sets) | 4.467 | 4.302 | **2.695** | **4.254** |
+| Shannon effective selected Expert count `2^H` | 94.79 | 120.66 | 170.97 | 117.02 |
+
+- Layer19: histogram **strongly differs** (frequency overlap sum(min counts)/10240 = **12.87%**, normalized histogram L1/2 = **87.13%**), yet the J32 active-tile count is **exactly identical: 566 vs566**. More concentrated code frequency (top10 38.34%) does not imply fewer actual J32 tiles. Expert-ID frequency differences alone do not explain a putative layer19 MMQ-time gap.
+- Layer23: code chooses **46 more distinct Experts**, and **21 additional J32 live tiles** (+3.70%) than literature. It also has markedly lower adjacent-token shared selection (**2.70 vs4.25 / 10**), suggesting less local semantic/routing continuity in this UBatch; memory locality implications remain speculative since HIP MMQ uses Expert grouping. Histogram overlap **23.37%**, total variation 76.63%.
+- The two inputs show almost entirely different top selected Expert IDs, but **same token index represents different text**; per-position identity matches are not an interpretable quality metric. No logits or loss data gathered.
+- The **RGP b12038** 512-dispatch expensive-event rows are **not** verified to be the same layer/KV as this isolated **b12156** topk data. The `Σceil` proxy is neither GPU kernel time nor an exact executed-wave count; **do not claim the 21 tiles caused the historical 3.315ms local RGP gap or whole PP 2.259s difference**.
+- Diagnostic-ON `avg_ts` code **393.957** vs literature **389.242** tok/s reverses historical no-callback PP direction. This comparison is **INVALID** because `cb_eval` synchronizes GPU and restructures graph execution, raw IDs are also written to stderr, and a new build is used. Do NOT use this result to refute the historical normal-PP tendency.
+
+### Gate verdict and next research
+
+**MOE-TOPK-1 PASS as a correct, bounded, host-observed GPU top-k readback.** Dataset contains exact selected Expert IDs, per-Expert counts, and tile-work proxies. Runtime overhead/instrumentation neutrality **not** validated and is deliberately excluded from claims.
+
+Next decision: for studying *Expert selection* as an independent research topic, analyze 512-Expert frequency/adjacent-token continuity (and eventually several UBatch positions). For testing *the MMQ slowdown mechanism*, collect a bounded set of matched **kernel→layer/KV** GPU times on the same source revision, or first extend top-k capture to other layers and ubatch positions while retaining source SHA and masks. Do not write a GPU timing explanation solely from this one UBatch.
