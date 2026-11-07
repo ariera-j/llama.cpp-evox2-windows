@@ -150,3 +150,9 @@ For literary Layer19, make a separate capture (run same Variant again) initially
 Previous code captures near start 197200/197230/197240 ended during Layer23 Down MMQ, showing truncated GPU times. Several RGP files were near 275MiB, consistent with (but not proof of) SQTT size pressure. Prefer layer-specific captures over trying to fit Layers19+23 in a single trace. **Only trust a Down MMQ timing when the subsequent barrier and reduction are also recorded.** Do not reuse the prior RGP event ordinal in the literature trace.
 
 Check the native ZIP (`Status=OK`, `ExitCode=0`, model SHA, input SHA, flags, P-MODE) and keep `.rgp` files separate and named by corpus/layer. The presence of FA layer19/23 markers indicates KV49152 under this plan, but check the run log as well. Marker/RGP PP tok/s are diagnostic only, not clean throughput comparison. The Expert histograms from the old callback gate are independent data and should not be treated as simultaneous with the no-callback RGP measurements.
+
+## 2026-11-07 evening — final MoE gate result / archived
+
+The code/literature matched RGP study at KV49152 is complete. Both Layer19 and Layer23 FA KV-filtered anchors and all three routed Gate/Up/Down MMQs were aligned; the final captures include the Down MMQ's following reduction (not an SQTT-window-truncated tail). Layer23 two reverse-order pairs: code MMQ total avg **15.966451ms**, literature **15.465054ms**, code slower **+3.242%**. Previous Expert histogram T32 proxy: code **589** vs literature **568** (+3.70%). Layer19 T32 566/566 and MMQ code/lit 15.194580/15.325027ms (~−0.85% code). The tile proxy supports a local-workload hypothesis but does **not** establish causality or total PP time attribution.
+
+**Final write-up, verified tables, caveats, ZIP provenance, and closure decision:** [ROCm MoE Expert routing and matched RGP summary](R6-ROCM-MOE-EXPERT-ROUTING-RGP-SUMMARY-2026-11-07.md). No more MoE RGP runs are planned for this gate.

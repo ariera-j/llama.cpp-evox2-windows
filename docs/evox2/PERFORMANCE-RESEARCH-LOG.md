@@ -1069,3 +1069,9 @@ From [the exact compiled Qwen4Exp source](https://github.com/ariera-j/llama.cpp-
 - **Independent non-blocking checks:** intermittent ROCm host-submit/GPU-idle gaps, ROCm same-seed output variation, Draft K/V numerical parity, ROCmFPx HIP, Gemma4 PP/FA reason, MH-Hard, Nanbeige4.3, Qiita drafts, and potential future Vulkan ZIP/runtime sidecar release testing. See handoff for statuses and caveats.
 
 No changes to frozen b11908 distributed ZIP, 2026-10-29 tag, b12013 test binary or COMMON-005 switch default were made in this documentation snapshot.
+
+## 2026-11-07 — ROCm PP / MoE Expert routing → RGP matched timing: closed as local evidence
+
+The independent MoE routing callback study (b12156) validated 12 Layer19/23 × KV16k/32k/48k Expert histograms, 1024 tokens × 10 Expert IDs each. The HIP anchor study (b12161/12162/12164) established real RGP marker visibility, unique Layer-number GPU tags, and KV49152 FA-to-MoE Gate/Up/Down alignment. Truncated SQTT-window captures were excluded. At KV49152, Layer23 J32 live-tile proxy code/lit **589/568 (+3.70%)**, RGP Gate+Up+Down MMQ mean **15.966451/15.465054ms** (code **+3.242%** in two opposite-order pairs); Layer19 proxy **566/566** and MMQ **15.194580/15.325027ms** (code −0.85% single pair). **Strong local consistency but not causal proof**: distinct callback/RGP builds and GPU scheduling/cache effects remain. Neither callback-on nor RGP-on PP rates are valid clean throughput comparisons. This does not quantify full PP input-dependence.
+
+**Full results and next-step handoff:** [2026-11-07 ROCm MoE Expert + RGP summary](R6-ROCM-MOE-EXPERT-ROUTING-RGP-SUMMARY-2026-11-07.md). **MoE-specific follow-up paused**; resume broader ROCm FA / Vulkan QSA analysis when ready.
