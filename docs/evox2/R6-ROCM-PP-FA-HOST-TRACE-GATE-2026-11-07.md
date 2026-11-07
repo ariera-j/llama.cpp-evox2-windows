@@ -1,0 +1,109 @@
+# Gate HIP-TRACE-1 — ROCm/HIP 64k FA host metadata instrumentation (2026-11-07)
+
+**State: implemented and committed on a dedicated branch; not built or runtime-tested on Windows gfx1151 yet.** New source remains default-OFF and does **not** change the Flash Attention mathematical algorithm, kernel launch dimensions, K/V tensors, memory copies or GPU synchronization.
+
+Branch `investigation/r6-rocm-pp-fa-trace-20261107` branched from `investigation/r6-pp-fa-mask-rgp-20261105`. All old b11908 / b12013 / b12038 binaries and the Vulkan benchmark worktree are preserved.
+
+## 1. What was implemented
+
+- File: `ggml/src/ggml-cuda/fattn.cu` inside `#if defined(GGML_USE_HIP)` only, immediately before the selected FA backend path dispatch.
+- Off by default. Set `GGML_HIP_FA_TRACE=1` to log a line per **host-side GGML_OP_FLASH_ATTN_EXT invocation**, not one per low-level HIP GPU dispatch.
+- Optional `GGML_HIP_FA_TRACE_KV=49152` and `GGML_HIP_FA_TRACE_LAYER=19`. An unset filter allows all. **Select KV first without a layer filter** to discover exact graph names and any layers whose Q name lacks a predictable `Qcur-<layer>`.
+- Each line has `fa_id` (monotonic host FA call count, across all KV/layers), `matched` (filtered sequence), `host_us` (monotonic CPU timestamp relative to first *logged match*, not absolute wall clock), device, `KV=K->ne[1]`, `N=Q->ne[1]`, `layer` derived from `Qcur-N` in Q tensor name or `-1` if absent, selected FA backend path `mma_f16/tile/vec`, `suffix_scan_candidate` derived from the same MMA condition, `kv_max_hint` and head and sequence dimensions, raw Q/dst names. All logged fields are host metadata.
+- Limit **256 matching events**, truncation explicitly reported (no giant log); all calls continue unmodified after the logging limit.
+- No extra `hipEvent*`/device synchronization, no readback, no benchmark model/input modifications. The `ggml_cuda_flash_attn_ext` code performs the same existing best-kernel selection once and then follows the same dispatch switch.
+- **Important**: this *does not* produce an RGP Event ID nor capture a GPU timestamp, and HIP does not support Vulkan's RGP user debug markers. In CUDA/HIP graph-captured execution, one host graph-build call need not correspond to one GPU replay. Exact GPU event attribution requires its own calibration Gate. Never claim HIP Event423==Qcur19 based on `fa_id` alone.
+
+### Example `stderr.log` record (illustrative, not an observed run)
+
+```text
+evox2_hip_fa_trace_v1 fa_id=... matched=... host_us=... device=0 KV=49152 N=1024 layer=19 kernel=mma_f16 suffix_scan_candidate=1 kv_max_hint=... q_heads=... k_heads=... seq=... q_name="Qcur-19 (view) (permuted)" dst_name="..."
+```
+
+## 2. Build (isolated output; Windows user performs the build)
+
+Source root is the **diagnostic worktree**:
+
+```powershell
+Set-Location 'C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag'
+git status --short
+git fetch origin
+git switch -c investigation/r6-rocm-pp-fa-trace-20261107 --track origin/investigation/r6-rocm-pp-fa-trace-20261107
+# If the local branch already exists, switch to it instead. Preserve any local changes.
+git status --short
+
+& C:\TheRock\build\.venv\Scripts\Activate.ps1
+.\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-pp-fa-trace-r6 -Parallel 4 -AmdGpuTarget gfx1151
+$bin = '.\build-rocm-pp-fa-trace-r6\bin\Release\llama-bench.exe'
+& $bin --version
+& $bin --help
+Get-FileHash $bin -Algorithm SHA256
+```
+
+Do not use the unsafe broad `-RunBackendTest` suite on Windows HIP gfx1151. Check b/source revision, expected backend, device gfx1151, and TheRock runtime from `--version`, `--list-devices`, build manifest and stderr. The new build *may* have version b12133 or later based on this source branch; do not label it b12038. The new version includes subsequent source changes and thus is **not source-identical** to the baseline b12038 used for prior HIP RGP samples.
+
+In the **Git-ignored** `tools/evox2/benchmark/configs/local.psd1`, append to the existing `Builds` hashtable:
+
+```powershell
+R6RocmFaTrace = @{
+    BinDir          = 'C:\llama-build\llama.cpp-evox2-windows-r6-ppdiag\build-rocm-pp-fa-trace-r6\bin\Release'
+    ExpectedBackend = 'ROCm'
+}
+```
+
+## 3. Minimal tests — smoke then 64k host trace
+
+Plan: [qwen38-r6-rocm-hip-fa-host-trace-64k-20261107.psd1](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-hip-fa-host-trace-64k-20261107.psd1)
+
+```powershell
+$plan = '.\tools\evox2\benchmark\configs\qwen38-r6-rocm-hip-fa-host-trace-64k-20261107.psd1'
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -PlanOnly
+
+# First very small run: confirm e.g. fa_id=... KV=1024 N=1024 and correct Qcur name.
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant hip-trace-smoke-code -StopOnError
+
+# After smoke and RGP/PP safety checks, one run each, separately:
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant hip-trace-code-64k -StopOnError
+.\tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1 -Plan $plan -OnlyVariant hip-trace-literature-64k -StopOnError
+```
+
+Use exactly the same `llama.cpp` input SHA `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345` and novel SHA `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`, model `UnslothPle16` IQ3 PLE16, no-warmup, 61777 head, ctx65536, UBatch1024, F16 KV, MTP OFF, Gather OFF, P-MODE Performance. **Do not run both 64k experiments at once**. The RDP panel is not needed for this first metadata Gate.
+
+After the run ends, inspect the saved `stderr.log` only; live `Get-Content -Wait` is unnecessary. Filter:
+
+```powershell
+Select-String -Path '<run_dir>\stderr.log' -Pattern 'evox2_hip_fa_trace_v1' |
+    Select-Object -First 80
+```
+
+**Acceptance:**
+1. Stable b/source/backend and no TDR/OOM/exception; HIP device detected.
+2. Smoke prints at least one FA trace when enabled; no trace when `GGML_HIP_FA_TRACE` unset.
+3. At 64k at least one `KV=49152 N=1024 layer=19 kernel=mma_f16` line per corpus; **layer23** if present. If this is absent, inspect the full Q names/KV metadata before changing the code; do not silently call RGP Event423 layer19.
+4. Data records grouped from the same original inputs and versions; code/lit layer19/23 matched by `KV/N/layer` not by host sequence count.
+5. This validates host-side *graph op metadata only*, not GPU timing or RGP event mapping.
+
+Compare the two saved stderr files:
+
+```powershell
+.\tools\evox2\benchmark\Compare-HipFaTrace.ps1 `
+    -CodeStderr 'C:\PATH\CODE-RUN\stderr.log' `
+    -LiteratureStderr 'C:\PATH\LITERATURE-RUN\stderr.log' `
+    -OutCsv '.\hip-fa-kv49152-code-literature.csv'
+```
+
+## 4. Where the code input may spend more PP time
+
+The earlier b12038 RGP-on full prompt calculation is about **167.49 seconds (code)** versus **164.43 seconds (novel)**, ~**3.06 s longer for code**. Yet the one **unmatched-KV/layer** HIP Event423 in code was **98.000ms**, literature **98.447ms**, a **0.447ms longer FA for the novel**. This is not contradictory: full PP totals include **all layers/UBatches**, GDN, Lightning Indexer/top-k, GET_ROWS, MoE expert MM/FFN, CONCATS, quantized GEMMs and CPU launch/graph overhead; the chosen FA event is one small component. Other FA calls might also have different timings.
+
+**Do not attribute the 3.06s to a specific kernel from these two trace screenshots.** For a bounded actual bottleneck comparison:
+- Reopen the saved pair `llama-bench-20261107-131042215.rgp` (code) and `llama-bench-20261107-132609191.rgp` (literature).
+- In each RGP **Overview → Most expensive events**, collect top ~15 dispatches including GPU Duration, full shader name, Event ID, and grouped context. Also retain **Event timing** screenshots around `Event423` and prominent MoE/Indexer/GET_ROWS dispatches; same HIP 181200/512 profiles already exist. This is a **sample window**, not full-run attribution.
+- Compare durations of like-for-like **kernel families** and event order; distinguish `MUL_MAT_ID` expert kernels, `GET_ROWS`, `CONCAT`, Indexer, GDN, and FA. Determine whether any non-FA kernel in code is consistently slower. A single top-dispatch screenshot cannot establish aggregate full-run PP contributions.
+- If necessary, create an independent **per-UBatch GPU category timing** design rather than interpret host `host_us` gaps as GPU kernel durations. The current FA source instrumentation is deliberately **not** an invasive all-op timer.
+
+## 5. Subsequent HIP event↔layer correlation Gate (not implemented here)
+
+HIP RGP Event ID is unrelated to `fa_id`. Matching source tensor names and identical query shape alone prove **a host op exists** but not that Event423 represents it. Determine whether the sequence of RGP `flash_attn_ext_f16` events within the 512-dispatch window and the trace order, plus a stable PP UBatch anchor, uniquely identify target Qcur19; if not, investigate a **separate** opt-in layer-targeted GPU timing or dispatch-ordinal probe with an explicit instrumentation overhead/correctness gate.
+
+A minimal first milestone is **KV/layer metadata and correspondence between model graph calls**, not "ROCm exact RGP matching PASS". A new GPU synchro or broad backend test is **not authorized by this Gate**.
