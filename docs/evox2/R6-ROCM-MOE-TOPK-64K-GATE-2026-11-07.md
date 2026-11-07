@@ -96,3 +96,13 @@ CSVにはUBatch、Layer、Expert IDごとのコード/文学の選択数と差�
 **MOE-TOPK-1 PASS as a correct, bounded, host-observed GPU top-k readback.** Dataset contains exact selected Expert IDs, per-Expert counts, and tile-work proxies. Runtime overhead/instrumentation neutrality **not** validated and is deliberately excluded from claims.
 
 Next decision: for studying *Expert selection* as an independent research topic, analyze 512-Expert frequency/adjacent-token continuity (and eventually several UBatch positions). For testing *the MMQ slowdown mechanism*, collect a bounded set of matched **kernel→layer/KV** GPU times on the same source revision, or first extend top-k capture to other layers and ubatch positions while retaining source SHA and masks. Do not write a GPU timing explanation solely from this one UBatch.
+
+## Gate MOE-TOPK-2 — additional UBatch15/31 prepared (2026-11-07)
+
+Following MOE-TOPK-1 PASS, [matched 16k/32k follow-up plan](R6-ROCM-MOE-TOPK-MULTI-UBATCH-2026-11-07.md) and [four-variant PSD1](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-moe-topk-multi-ubatch-20261107.psd1) were added on the *same branch*.
+
+- Reuse **exactly b12156** / `R6RocmMoeTopk`; **no rebuild or additional smoke**.
+- Add zero-based UBatch **15 (KV16384)** and **31 (KV32768)**, code and literature each, layers19/23, 4 independent runs. The already-complete UBatch47 (KV49152) pair is reused, not rerun.
+- Same original head61777 token inputs, ctx65536/UBatch1024/B2048, noWarmup, F16 KV, QSA Gather/MTP OFF, P-MODE Performance.
+- Compare using the existing `Compare-MoeTopkTrace.ps1`, then analyze Expert frequency concentration, entropy, adjacent-token overlap and `Σceil(m_e/32)` by KV and layer. **Do not use callback PP time for performance**, and do not infer RGP event-to-layer identity without a separate alignment Gate.
+- User can run one `-OnlyVariant` at a time in pairs or all 4 sequentially. `-PlanOnly` before execution verifies the intended 4 cases.
