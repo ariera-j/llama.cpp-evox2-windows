@@ -73,3 +73,21 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r6-rocm-fa-kvmax-diag-20261108.p
 - **新しいROCm実行物は未ビルド・未GPU検証。** 今回のソース変更自体の安全性/ビルド結果は実機Gateで確認すること。
 - 専用ブランチ・専用buildに分離しているため、前日のRGPキャプチャで使用したb12164・モニタリング環境は変更しない。
 - 解析用ZIP・stderrのhashと要約値をGitへ記録し、生の大きいRGP/ZIPは追加しない。
+
+
+---
+
+## Gate1 actual result — code KV32768 / Layer19 (2026-11-08 15:18–15:20 JST)
+
+**PASS (one code-input diagnostic run); literature comparison is pending.** This section supersedes the earlier "not yet run" status for Gate1 only; no performance result is inferred.
+
+- Run ZIP: `20261108-151814-178-bench-rocm-b12170-ctx65536-03ff3c649845.zip`, SHA256 `9c4a4ee9990ec01532fcb3e444d127f5a149cfec4c491343a3f4bd2cdb9ae570`.
+- Status OK / ExitCode0 / NativeRowCount1, runtime b12170, source commit `405d284a01f8e7f40854b704e431f7bcfe9ca795` (only untracked local benchmark plans; no tracked source modifications), executable SHA256 `59ebebb2b91b776f85166f0f6cf6d9d251c399429be3bac0b9d205e2b27a7b4d`.
+- Input code SHA256 `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`, head32768 tokens, ctx65536, UB1024, Batch2048, P-MODE Performance throughout, no detected P-MODE change or reported benchmark error.
+- Env `GGML_CUDA_DISABLE_GRAPHS=1`, `GGML_HIP_KVMAX_DIAG=1`, KV32768, Layer19, Gather OFF. One `evox2_hip_kvmax_diag_v1` line in stderr, `Qcur-19`, `N1024`, `mma_f16`, `query_tiles=64`.
+- Actual 64 GPU-computed bounds: **16×32000, 16×32256, 16×32512, 16×32768**, in ascending query-tile order. `min=32000, median=32384, max=32768, full_count=16, truncated_count=48, invalid_count=0, skipped_tiles256_total=96`. All independently recalculated from the logged raw 64 integers.
+- Mean truncation: **384 Key per tile** = 1.5×256; (96/(64×(32768/256))=1.171875%\) of full-KV 256-Key tile work in this coarse geometry. It is **not** an exactly measured FA runtime percentage.
+
+**Important source-grounded interpretation:** On zero-based UBatch31, Q positions are 31744..32767 (1024 tokens). Grouping into 16-Query tiles, a plain causal mask with a 256-Key coarse suffix cutoff predicts exactly the observed 16 repetitions each of `32000,32256,32512,32768`. Thus **the code sample's GPU `KV_max` has no additional tail cutoff beyond causal masking**. This does *not* mean QSA interior mask is dense: internal sparse masked regions remain in HIP's non-compact FA loop. This is one layer, one UBatch and one corpus. Literature matched diagnostic remains the next single run.
+
+For correct attribution, this diagnostic disables HIP graphs and synchronizes the stream at the selected FA. Do not compare its `llama-bench` 482.924 tok/s or GPU timing with clean RGP/PP runs.
