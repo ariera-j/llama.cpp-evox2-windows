@@ -6,6 +6,16 @@
 
 #include <cstdint>
 
+#if defined(GGML_USE_HIP)
+#include <algorithm>
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+#endif
+
+
 #define FATTN_KQ_STRIDE       256
 #define HALF_MAX_HALF         __float2half(65504.0f/2) // Use neg. of this instead of -INFINITY to initialize KQ max vals to avoid NaN upon subtraction.
 #define SOFTMAX_FTZ_THRESHOLD -20.0f                   // Softmax exp. of values smaller than this are flushed to zero to avoid NaNs.
@@ -1130,6 +1140,76 @@ void launch_fattn(
         ggml_cuda_kernel_launch(flash_attn_mask_to_KV_max<ncols1>, launch_params,
             (const half2 *) mask->data, KV_max.ptr, iter_k, s31, s33);
         CUDA_CHECK(cudaGetLastError());
+#if defined(GGML_USE_HIP)
+        // Diagnostic-only readback of the ACTUAL GPU-computed suffix bound.
+        // Do not enable in timing runs. Reading 64 ints (N=1024,ncols1=16)
+        // synchronizes the stream and is intentionally incompatible with HIP graphs.
+        static const bool kvmax_diag_enabled = [] {
+            const char * const env = std::getenv("GGML_HIP_KVMAX_DIAG");
+            return env != nullptr && std::strcmp(env, "1") == 0;
+        }();
+        if (kvmax_diag_enabled) {
+            static const long long filter_kv = [] {
+                const char * const env = std::getenv("GGML_HIP_KVMAX_DIAG_KV");
+                return env && *env ? std::strtoll(env, nullptr, 10) : -1LL;
+            }();
+            static const long filter_layer = [] {
+                const char * const env = std::getenv("GGML_HIP_KVMAX_DIAG_LAYER");
+                return env && *env ? std::strtol(env, nullptr, 10) : -1L;
+            }();
+            const char * const name = std::strstr(Q->name, "Qcur-");
+            const long layer = name ? std::strtol(name + 5, nullptr, 10) : -1L;
+            if (filter_kv > 0 && filter_layer >= 0 && K->ne[1] == filter_kv &&
+                    layer == filter_layer && Q->ne[1] == 1024 && Q->ne[3] == 1 &&
+                    ntiles_x == 64 && ncols1 == 16) {
+                static std::atomic<bool> captured { false };
+                if (!captured.exchange(true, std::memory_order_relaxed)) {
+                    // common.cuh honors this flag in ggml_cuda_graph::is_enabled().
+                    // Fail closed rather than enqueueing an illegal memcpy during capture.
+                    if (std::getenv("GGML_CUDA_DISABLE_GRAPHS") == nullptr) {
+                        GGML_ABORT("GGML_HIP_KVMAX_DIAG requires GGML_CUDA_DISABLE_GRAPHS=1");
+                    }
+                    std::vector<int> host_kv_max(size_t(ne_KV_max), -1);
+                    CUDA_CHECK(cudaMemcpyAsync(host_kv_max.data(), KV_max.ptr,
+                            host_kv_max.size()*sizeof(int), cudaMemcpyDeviceToHost, main_stream));
+                    CUDA_CHECK(cudaStreamSynchronize(main_stream));
+
+                    std::vector<int> sorted = host_kv_max;
+                    std::sort(sorted.begin(), sorted.end());
+                    const int full_kv = int(K->ne[1]);
+                    int full_count = 0;
+                    int truncated_count = 0;
+                    int invalid_count = 0;
+                    long long skipped_tiles256 = 0;
+                    for (const int bound : host_kv_max) {
+                        if (bound < 0 || bound > full_kv || bound % FATTN_KQ_STRIDE != 0) {
+                            ++invalid_count;
+                            continue;
+                        }
+                        full_count += bound == full_kv;
+                        truncated_count += bound < full_kv;
+                        skipped_tiles256 += (full_kv - bound)/FATTN_KQ_STRIDE;
+                    }
+                    const int median = (sorted[(sorted.size() - 1)/2] + sorted[sorted.size()/2])/2;
+                    std::fprintf(stderr,
+                        "evox2_hip_kvmax_diag_v1 layer=%ld KV=%d N=%lld query_tiles=%zu"
+                        " min=%d median=%d max=%d full_count=%d truncated_count=%d"
+                        " invalid_count=%d skipped_tiles256_total=%lld"
+                        " note=GPU_readback_stream_synced_not_performance",
+                        layer, full_kv, static_cast<long long>(Q->ne[1]),
+                        host_kv_max.size(), sorted.front(), median, sorted.back(),
+                        full_count, truncated_count, invalid_count, skipped_tiles256);
+                    std::fprintf(stderr, " values=[");
+                    for (size_t i = 0; i < host_kv_max.size(); ++i) {
+                        std::fprintf(stderr, "%s%d", i ? "," : "", host_kv_max[i]);
+                    }
+                    std::fprintf(stderr, "]\\n");
+                    std::fflush(stderr);
+                }
+            }
+        }
+#endif // GGML_USE_HIP
+
     }
 
     const dim3 block_dim(warp_size, nwarps, 1);
