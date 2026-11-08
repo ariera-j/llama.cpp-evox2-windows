@@ -1203,7 +1203,7 @@ void launch_fattn(
                     for (size_t i = 0; i < host_kv_max.size(); ++i) {
                         std::fprintf(stderr, "%s%d", i ? "," : "", host_kv_max[i]);
                     }
-                    std::fprintf(stderr, "]\\n");
+                    std::fprintf(stderr, "]\n");
                     std::fflush(stderr);
                 }
             }
