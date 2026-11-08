@@ -1,5 +1,7 @@
 # r6 COMMON-005完了後：未完了タスク／最新動向／ROCmFPx HIP移植の引き継ぎ（2026-11-03）
 
+> **後日更新（2026-11-08）：この文書の「次に移植」等は11/03当時の作業順の記録。** 最新状態と後続着手順は[2026-11-08優先順位・外部更新](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)を参照。実入力llama-benchはr6へ移植済み、QSA Mask/Indexer・MoE・FA・GPU KV_max調査は完了。次は旧IQ1/更新IQ3を動作確認→PLE16 preflight/変換→品質比較、Strata公式Windows試用準備を並行。以下の過去計測値や当時の優先判断は、再現性確保のため保持。
+
 > **状態：調査・作業整理のみ。新しい推論ソース変更、Windowsビルド、実機計測、上流へのrebase、release変更は行っていない。**
 > ここは2026-11-03 JSTに確認できたGitHub公開資料および当リポジトリの既存実測記録のスナップショットである。最新開発版や外部開発者の測定値を、EVO-X2のr6実測と混同しない。今後の作業順はユーザー指定の**調査後 → r5実入力 `llama-bench` のr6移植**を第一とする。
 
@@ -15,11 +17,11 @@
 
 | 暫定順 | トピック | 状態・作業内容 | 依存／注意 |
 | --- | --- | --- | --- |
-| **次に着手** | **r5 TOOL-001 実入力 `llama-bench` をr6/mainへ移植** | r5で実装・Windowsスモーク合格、**r6へ未移植**。native `-f/--prompt-file`、`--prompt-slice head-tail|head`、`-c/--ctx-size`、PowerShellの`-InputKey/-InputFile/-PromptSlice/-Context`とrun provenanceを揃える | 新ブランチ、現行r6 APIへ適応。native `llama-bench` に `-f/-c` がない従来b11908の前提を保持 |
-| **続いて** | **量子化別PP/TG再比較（r6）** | Vulkanで**IQ3_XXS、元IQ4_XS、Huihui IQ4_XS、Agention ROCmFP4 FAST v2**を同一ビルド/入力/サンプラ/MTP OFFで比較。ROCmはまずIQ3と元IQ4 | 先にTOOL-001を移植すると実文書／ランダム統制が容易。通常の量子化差と高速化フラグ差は別実験 |
-| 後続 | QSA実マスク／selected-ID位置可視化 | r5では64k・128kのunion統計まで実施。文章（日本語技術・文学・コード）／ランダムで**実際にどのKV位置が選ばれるか**を観察 | 統計CSVのユニーク数と実マスク画像は異なる。診断同期のため速度結果と分離 |
-| 後続 | MoE Expert選択の入力依存性 | 上記と同じ入力ジャンル・トークン範囲でExpert ID・頻度・分布／偏りを比較 | モデル層、MTP OFF/ON、実験条件を固定して観察。単なる選択の違いを速度改善とは扱わない |
-| 後続 | 他推論エンジンの**実機比較** | 調査は本書で更新。Windows gfx1151でStrataを第一候補、Gufoを第二候補とし、モデル互換・必要RAM・PP/TG・品質を調べる | 外部エンジンのbenchmark数値はr6との直接比較不可。正式導入やソース移植は未決 |
+| **11/08完了** | **r5 TOOL-001 実入力 `llama-bench` をr6/mainへ移植** | 11/03時点ではr6未移植だったが、**11/08現在はr6へ移植・実入力64k計測完了**。native `-f/--prompt-file`、`--prompt-slice head-tail|head`、`-c/--ctx-size`、PowerShellの`-InputKey/-InputFile/-PromptSlice/-Context`とrun provenanceを揃える | 新ブランチ、現行r6 APIへ適応。native `llama-bench` に `-f/-c` がない従来b11908の前提を保持 |
+| **11/08現在別途保留** | **量子化別PP/TG再比較（r6）** | Vulkanで**IQ3_XXS、元IQ4_XS、Huihui IQ4_XS、Agention ROCmFP4 FAST v2**を同一ビルド/入力/サンプラ/MTP OFFで比較。ROCmはまずIQ3と元IQ4 | 先にTOOL-001を移植すると実文書／ランダム統制が容易。通常の量子化差と高速化フラグ差は別実験 |
+| **11/08完了** | QSA実マスク／selected-ID位置可視化 | r5では64k・128kのunion統計まで実施。文章（日本語技術・文学・コード）／ランダムで**実際にどのKV位置が選ばれるか**を観察 | 統計CSVのユニーク数と実マスク画像は異なる。診断同期のため速度結果と分離 |
+| **11/08完了** | MoE Expert選択の入力依存性 | 上記と同じ入力ジャンル・トークン範囲でExpert ID・頻度・分布／偏りを比較 | モデル層、MTP OFF/ON、実験条件を固定して観察。単なる選択の違いを速度改善とは扱わない |
+| **11/08現在優先2（準備）** | 他推論エンジンの**実機比較** | 調査は本書で更新。Windows gfx1151でStrataを第一候補、Gufoを第二候補とし、モデル互換・必要RAM・PP/TG・品質を調べる | 外部エンジンのbenchmark数値はr6との直接比較不可。正式導入やソース移植は未決 |
 | 後続 | 次の最適化テーマ決定 | 実際のr6 bottleneckに基づきMMVQのN幅、Vulkan CONCAT、FA、HIP FA/GDN、host sync、MoE dispatchなどを再順位付け | 旧2026-10-21順位は調査スナップショット。COMMON-005の長文TG改善を反映して再選定 |
 | **独立候補** | ROCmFPxの**ROCm/HIPバックエンド対応** | 共通型とVulkanは既存。HIP専用演算は未移植。下記§4で実装難易度・ドナーを分離調査済み | 着手はTOOL-001と量子化比較後に再判断。必要なら独立ブランチと限定テスト |
 | 条件付き | 次回upstream refresh | b12061/#29510等を別ブランチで比較 | COMMON-005のQSA/KV前提が変わる可能性。現行タグとb12013検証済みバイナリは固定 |
