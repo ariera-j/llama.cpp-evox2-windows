@@ -11,6 +11,19 @@ It is intentionally separate from `ROADMAP.md` and the implementation/measuremen
 
 ---
 
+## 2026-11-08 — latest upstream, forks and inference engines（research-only）
+
+**現行の優先順位・詳細・出典：** [2026-11-08外部動向・後続計画](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)。r6の実入力ベンチ移植とPP/Mask/Indexer/ROCm FA・MoE・GPU KV_maxの一連の調査が完了したため、今後の比較対象を再選定した。外部のGPU性能値は全て**作者報告・別条件**でありEVO-X2実測ではない。mainソース・build・公開tag・ドライバは変更していない。
+
+- **llama.cpp upstream:** release [b12202](https://github.com/ggml-org/llama.cpp/releases/tag/b12202)（11/08）。QSA/KV系[#31243](https://github.com/ggml-org/llama.cpp/pull/31243)と[#29510](https://github.com/ggml-org/llama.cpp/pull/29510)、HIP MoE融合[#31188](https://github.com/ggml-org/llama.cpp/pull/31188)、Vulkan[#30146](https://github.com/ggml-org/llama.cpp/pull/30146)/[#31266](https://github.com/ggml-org/llama.cpp/pull/31266)、MTP MoE cache[#31497](https://github.com/ggml-org/llama.cpp/pull/31497)はmerged。Vulkan MMVQ[#31196](https://github.com/ggml-org/llama.cpp/pull/31196)、CM1 FA[#31197](https://github.com/ggml-org/llama.cpp/pull/31197)、external PLE[#31185](https://github.com/ggml-org/llama.cpp/pull/31185)はこの日open。次のrefreshはまずCOMMON-001/005/QSA/MTPとの互換性監査。
+- **Unsloth mix:** [b12189-mix](https://github.com/unslothai/llama.cpp/releases/tag/b12189-mix-725acdc)（11/08）。HIP/CUDA MoE prompt、shared MTP、Vulkan FAの差分は個別監査。**新Unsloth GGUF:** 11/04 Dynamic v3.1 revision`d9620119`（[Strata 0.2.11](https://github.com/Niko1221/Strata/releases/tag/v0.2.11)に明記）をモデル品質追加比較のrevision確認項目へ。
+- **Strata:** [v0.2.12](https://github.com/Niko1221/Strata/releases/tag/v0.2.12)（11/07）。Windows gfx1151 prebuiltが同梱するROCm runtime/hipBLASLt tuningを用いて実機比較を優先（自前ビルドは後回し）。Strix Halo UD-IQ4_XS-v31 PP改善4k 690→1220、32k1107→1377 tok/sは**0.2.11→0.2.12の作者検証値**、r6との比較でない。
+- **Gufo:** [v0.31.0](https://github.com/gufo-org/gufo/releases/tag/v0.31.0)（11/05）。v0.29のIQ1_S/IQ3_XXS認識、v0.30のQwen prefill処理改善を確認。Windows実機互換は未検証。
+- **Project Maya:** [v1.1.56](https://github.com/mw00/project-maya/releases/tag/v1.1.56)（11/06）、Qwen3.8 Unsloth GGUF対応範囲は1.1.54時点で拡大。**s1-fork:** v75（11/05、推論数値はv73）。**SelfRef**：Vulkan/ROCmFPxドナー、exllamav3は異なるモデル/OS条件。**ROCmFPX HIP移植**：工数と依存度から今回は延期。
+- **優先度:** (1) 旧IQ1/新IQ3元GGUF smoke→必要ならPLE16変換→MH-Hard品質評価、(2) Strata prebuilt試用準備を並行、(3) upstream互換性監査、(4) Gufo、(5) 量子化×UBatch速度再比較、(6) 他fork候補、(7) ROCmFPx HIP、(8) 他の独立確認項目。過去の日付付きログは歴史として維持する。
+
+---
+
 ## 2026-10-07
 
 ### Context at time of research
