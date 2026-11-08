@@ -1,7 +1,6 @@
 # r6 出力品質比較の追加計画 — IQ1・更新IQ3・高難度検索（2026-11-07）
 
-> **状態：今後の予定として登録のみ。未着手・測定未実施。**
-> 現在進行中の実入力PP／QSA mask／RGP等の一連の調査を終えた後に検討する。現在のPP調査を中断しない。実験設計・実行順・実行数の確定は着手時に行う。既存の5モデル比較やCOMMON-005品質ゲートを再オープンするものではない。
+> **状態更新（2026-11-08）：PP／Mask／Indexer／ROCm MoE・FA／RGP調査は一区切り。こちらが次に着手する最優先課題。実機での新しいIQ1/更新IQ3のロード・PLE16変換・品質測定はまだ未実施。** [最新外部調査と着手順](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)。まず**旧IQ1_S・更新版IQ3_XXSの元GGUF 4k短文smoke → メタデータ・PLE16変換PreflightOnly → 必要なモデルだけ変換・検証 → 品質pilot**。GGUF revision／shard数／tensor型を分けて管理し、旧GGUFは保持する。Strata v0.2.12公式Windows版試用準備は**並行する別トラック**。既存の5モデル比較やCOMMON-005品質ゲートを再オープンするものではない。
 
 ## 1. 背景と目的
 
@@ -40,8 +39,8 @@
 
 ## 5. 再開時の順序と成果物
 
-1. 現在の一連のPP／RGP調査を完了し、その時点でほかの積み残しと優先度を調整。
-2. 旧5モデル実験キット・スコア・元の入力manifest・COMMON-005 IQ3/IQ4の誤答例を再確認し、新旧GGUFのハッシュとロード可否をチェック。
+1. **完了済み（11/08）**：PP／RGP／Mask／MoE／FA調査を整理し、後続の優先順位を確定。
+2. **次に着手**：旧5モデル実験キット・スコア・入力manifest・COMMON-005のIQ3/IQ4誤答例を再確認。特に旧IQ1_Sと更新IQ3_XXSの**元GGUF**を4k/短文でロード・出力し、新旧GGUFのhash、split/PLEメタデータ、モデルrevision・tokenizer・各量子化tensorを確認。PLE16コンバータの`-DryRun`、`-PreflightOnly`に合格したモデルのみ、原本を残して別ファイルへ変換・検証。新IQ3が既にsplit PLEの場合は再変換しない。
 3. 新しいMH-Hardデータセットの採点仕様、難度、独立seed数、ROCm反復、pilot停止条件を作成。
 4. 小規模pilotで天井効果／出力フォーマット／モデル適合性を確認してから主比較へ。全モデル全条件の大規模計測を最初から計画しない。
 5. 元の実験キット・結果は[**evox2-llm-experiments**](https://github.com/ariera-j/evox2-llm-experiments)側で再現可能な形で管理し、こちらのroadmapには実施結果と判断をリンク。
