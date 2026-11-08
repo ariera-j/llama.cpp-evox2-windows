@@ -1,6 +1,6 @@
 # ROCm HIP Flash Attention 実 `KV_max` 限定診断（2026-11-08）
 
-**STATUS: default-OFFの診断用ソースと32k Layer19専用2バリアントを準備。ROCm実機のコンパイル・実行は未検証。** 既存b12164実測値に対して性能結果を追加・置換するものではない。
+**STATUS（2026-11-08更新）: KV32768 / Layer19 のコードと文学、計2runがPASS。両者の実GPU `KV_max[64]` は64/64で完全一致し、因果マスクのみの256-Key末尾短縮と一致。予定した最小Gateは完了。** 既存b12164実測値に対して性能結果を追加・置換するものではない。
 
 - 前段の結果・ソース監査：[R6 ROCm PP FA input dependence（2026-11-08 results）](R6-ROCM-PP-FA-INPUT-DEPENDENCE-PLAN-2026-11-07.md)
 - 実装箇所：`ggml/src/ggml-cuda/fattn-common.cuh`、`flash_attn_mask_to_KV_max<ncols1>` のGPU launch後、FA MAIN発行前。
@@ -86,8 +86,35 @@ $plan = '.\tools\evox2\benchmark\configs\qwen38-r6-rocm-fa-kvmax-diag-20261108.p
 - Input code SHA256 `249511db693de1092696fa46a6b8d3369c8f5d1a167ec854c4a4ace95717b345`, head32768 tokens, ctx65536, UB1024, Batch2048, P-MODE Performance throughout, no detected P-MODE change or reported benchmark error.
 - Env `GGML_CUDA_DISABLE_GRAPHS=1`, `GGML_HIP_KVMAX_DIAG=1`, KV32768, Layer19, Gather OFF. One `evox2_hip_kvmax_diag_v1` line in stderr, `Qcur-19`, `N1024`, `mma_f16`, `query_tiles=64`.
 - Actual 64 GPU-computed bounds: **16×32000, 16×32256, 16×32512, 16×32768**, in ascending query-tile order. `min=32000, median=32384, max=32768, full_count=16, truncated_count=48, invalid_count=0, skipped_tiles256_total=96`. All independently recalculated from the logged raw 64 integers.
-- Mean truncation: **384 Key per tile** = 1.5×256; (96/(64×(32768/256))=1.171875%\) of full-KV 256-Key tile work in this coarse geometry. It is **not** an exactly measured FA runtime percentage.
+- Mean truncation: **384 Key per tile** = 1.5×256; `96/(64×(32768/256)) = 1.171875%` of full-KV 256-Key tile work in this coarse geometry. It is **not** an exactly measured FA runtime percentage.
 
 **Important source-grounded interpretation:** On zero-based UBatch31, Q positions are 31744..32767 (1024 tokens). Grouping into 16-Query tiles, a plain causal mask with a 256-Key coarse suffix cutoff predicts exactly the observed 16 repetitions each of `32000,32256,32512,32768`. Thus **the code sample's GPU `KV_max` has no additional tail cutoff beyond causal masking**. This does *not* mean QSA interior mask is dense: internal sparse masked regions remain in HIP's non-compact FA loop. This is one layer, one UBatch and one corpus. Literature matched diagnostic remains the next single run.
 
 For correct attribution, this diagnostic disables HIP graphs and synchronizes the stream at the selected FA. Do not compare its `llama-bench` 482.924 tok/s or GPU timing with clean RGP/PP runs.
+
+
+---
+
+## Gate2 actual result — literature KV32768 / Layer19 (2026-11-08 15:27–15:29 JST)
+
+**PASS; Gate1（コード）とGate2（文学）のmatched `KV_max`比較完了。**
+
+- 文学Run ZIP: `20261108-152749-051-bench-rocm-b12170-ctx65536-d70e4919d82f.zip`; SHA256 `6c4b6b13c159c189c81ef719a6ebe7eed0669dd869c7dcfa2496b68cf0a3fd4b`.
+- `Status=OK`、`ExitCode=0`、`NativeRowCount=1`。ROCm b12170、source commit `405d284a0`、`llama-bench.exe` SHA256 `59ebebb2b91b776f85166f0f6cf6d9d251c399429be3bac0b9d205e2b27a7b4d`、実行環境とbinary SHAは先行コードrunと一致。文学入力SHA256 `8db20100f2244509b2ef13104691bb91650e98476bd5609f19e15ae91e79d143`。
+- Input head32768、Context65536、UB1024、Batch2048、f16 KV、no warmup、Gather OFF、MTP flags OFF、Performance P-MODE不変。HIP Graph OFF `GGML_CUDA_DISABLE_GRAPHS=1`、`GGML_HIP_KVMAX_DIAG=1`、`KV=32768`、`Layer=19`。stderr中の診断行はちょうど1つで、`N=1024`、`query_tiles=64`、ホストFA traceは `Qcur-19` /`mma_f16`。
+- ログ64整数を個別にパース・再集計した結果：**32000×16、32256×16、32512×16、32768×16**。`min=32000`、`median=32384`、`max=32768`、`full_count=16`、`truncated_count=48`、`invalid_count=0`、`skipped_tiles256_total=96`。全項目がログ記録と一致。
+
+### 64 Query tile全件一致（コード vs 文学 vs causal-only予測）
+
+| KV_max | 0-based Query tile ID | コード | 文学 | causal-only予測 | KV末尾削減 |
+|---:|---|---:|---:|---:|---:|
+| 32000 | 0–15 | 16 | 16 | 16 | 768 |
+| 32256 | 16–31 | 16 | 16 | 16 | 512 |
+| 32512 | 32–47 | 16 | 16 | 16 | 256 |
+| 32768 | 48–63 | 16 | 16 | 16 | 0 |
+
+結果：**64/64のQuery groupで両入力の計算された `KV_max` が完全一致し、同じ64/64でcausal-only期待値に一致**。平均384 Key、96個の256-Key区間（フルKV幾何に対し約1.171875%）を末尾で削減。差の追加量 **0**。これは削減対象の幾何学的割合であり、FAの実GPU時間が1.17%短縮されると測定したものではない。
+
+**推論と範囲:** QSA Indexer top-kの選択箇所・内部mask形状がコードと文学で異なっても、このLayer19/u31では **causal maskを超える末尾短縮は両方ともゼロ**。HIP非compact経路は途中の無効領域を個別に飛ばさないので、48k/32k/16kの局所RGPでFA MAINが概ねKV長に比例し入力差が小さいことと機構的に整合する。一方、ほかのLayer・KV・入力全体の `KV_max` の状態、数%の残差の由来、64k PP差の全カーネル寄与は依然未検証。追加の位置やRGP採取は本Gateでは不要。
+
+**速度注意:** HIP Graphを無効化しGPU->CPU転送後に同期した診断用runなので、文学 `llama-bench` 491.251 tok/s とコード診断runのtok/sを通常性能の比較に使用しない。RGP用b12164実行物とは別のdefault-OFF診断branchでのみ使用。
