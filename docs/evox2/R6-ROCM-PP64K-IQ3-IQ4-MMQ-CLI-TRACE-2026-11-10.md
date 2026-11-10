@@ -4,7 +4,7 @@
 
 Branch: [investigation/r6-rocm-pp64k-iq3-iq4-mmq-trace-20261110](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r6-rocm-pp64k-iq3-iq4-mmq-trace-20261110)
 
-Parent branch: investigation/r6-rocm-pp-fa-trace-20261107. The parent already includes a host-only, default-OFF FA KV/layer trace. The new MMQ trace does not change kernels or introduce synchronization.
+Parent branch: investigation/r6-rocm-pp-fa-trace-20261107. The parent already includes a host-only, default-OFF FA KV/layer trace. The default-OFF MMQ host trace does not change model kernels or introduce synchronization. An independent default-OFF RGP-anchor variant reuses the previously GPU-verified HIP marker kernels. It deliberately inserts extra marker dispatches only when enabled.
 
 ## Motivation
 
@@ -15,8 +15,8 @@ ROCm b12013 with identical MH-Hard 110k input: old IQ3 PP ub512=296.48 vs ub1024
 - ggml/src/ggml-cuda/mmq.cu implements **GGML_HIP_MMQ_TRACE=1**. When enabled, it emits host MMQ call ordinal, selected tile width J, weight type, tensor shapes/names, layer (from blk.N), logical physical token count N, and routed MoE versus dense.
 - Optional GGML_HIP_MMQ_TRACE_LAYER=19 and GGML_HIP_MMQ_TRACE_N=512 or 1024 narrow output. At most 2048 matched events per process.
 - Existing ggml/src/ggml-cuda/fattn.cu uses GGML_HIP_FA_TRACE=1, GGML_HIP_FA_TRACE_KV=49152 and GGML_HIP_FA_TRACE_LAYER=19 to supply a host-side FA KV anchor.
-- No GPU copy, event, kernel, new stream synchronization, graph mutation or weight change.
-- Both traces are disabled in the RGP-clean matrix variant. Logging is HOST metadata, **not** a HIP RGP user marker. HIP RGP cannot display the Vulkan debug-utils marker labels; MMQ host IDs and FA host IDs are not RGP dispatch IDs or RGP Event IDs.
+- The **host-trace** mode has no GPU readback, new kernel or synchronization. The **rgp-anchor** mode launches previously validated same-stream layer19/23 marker kernels (128 blocks x 64 threads) before FA at filtered KV and before routed MoE MMQ at ub512 or ub1024. Their extra dispatches can perturb GPU execution; they are only for locating the relevant RGP region.
+- Three variants per job: **host-trace** (host metadata only), **rgp-anchor** (GPU-visible marker kernels, host metadata flags OFF), and **rgp-clean** (no trace or marker). HIP RGP cannot display Vulkan VK_EXT_debug_utils labels; it **can** show the distinguishable GPU marker-kernel names from the previous successfully tested HIP anchor gate. Host IDs are not GPU dispatch/Event IDs. See [previous validated HIP anchor results](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r6-rocm-rgp-moe-layer-tags-20261107/docs/evox2/R6-ROCM-MOE-RGP-ANCHOR-GATE-2026-11-07.md).
 - GGML_HIP_MMQ_TRACE captures only the MMQ branch, not alternative MMF/cublas or non-MMQ kernels.
 
 ## Files
@@ -100,23 +100,29 @@ Check stderr.log for **evox2_hip_mmq_trace_v1** layer=19, N=512 or 1024, moe=1 a
 
 Printed host lines provide prefill activity information; the CLI output and generation are preserved by Measure-LlamaCli. They do not provide a guaranteed real-time progress percentage or an exact RGP GPU-dispatch ordinal.
 
-## 4. HIP RGP: old IQ3 only, 512 then 1024
+## 4. HIP RGP: old IQ3, location anchor first, clean timing second
 
 ~~~powershell
+# First: anchored location scan, not throughput data.
+& $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-anchor' -MaxRuns 1 -PlanOnly
+# Arm RDP HIP capture first.
+& $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-anchor' -MaxRuns 1 -StopOnError
+
+# Then: separate no-anchor RGP time capture.
 & $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-clean' -MaxRuns 1 -PlanOnly
 # First arm Radeon Developer Panel: API HIP, target llama-cli.exe,
 # capture mode Dispatch range, SQTT High, bounded count (initially 512).
 & $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-clean' -MaxRuns 1 -StopOnError
 ~~~
 
-Calibrate the start index for this **CLI diagnostic binary**. The previous HIP start=181200 came from a different 64k llama-bench and cannot be reused as a proved matching position. Find candidate mul_mat_q, quantize, mm_ids_helper, FA and GPU-gap groups; associate with the host sequence and FA KV anchor only when independently justified. If GPU event ↔ exact KV/layer mapping is ambiguous, document as exploratory and stop; do not invent an offset.
+Calibrate the start index for this **CLI diagnostic binary** in the anchored variant. Find evox2_hip_anchor_fa_layer19 at KV49152 (the stderr anchor log confirms KV when launched) and the subsequent evox2_hip_anchor_moe_layer19 markers alongside quantize / mm_ids_helper / mul_mat_q. Their names are separate GPU dispatch kernels, NOT HIP user-event strings. The previous successful HIP study captured these markers around RDP starts 197240 / 197540, but those offsets belong to a different llama-bench binary and are NOT portable to this CLI build. Once you know the nearby kernel sequence, capture the **rgp-clean** variant to measure without extra marker kernels; offsets will shift when markers are removed, so realign by the neighboring GPU kernel sequence, not by copying Event IDs. If alignment remains ambiguous, document as exploratory and stop.
 
 After a useful first capture, repeat the rgp-clean variant for old IQ3 ub1024. When comparing the physical region 49152..50175, use **two ub512 microbatches versus one ub1024 microbatch**, not one of each. Add old IQ4 only when the IQ3 local kernel difference identifies a plausible candidate.
 
 ## 5. Safety and interpretation
 
-- Neither HIP host trace nor source labels appear in the RGP GPU user-event tree like Vulkan debug-utils markers.
-- Trace enabled changes CPU logging overhead. RGP itself perturbs timings. Do not put host-trace/RGP-on PP tok/s into ordinary speed baselines; retain previous uninstrumented figures.
+- HIP marker **kernels** are visible as named RGP dispatches, not as Vulkan debug-utils user-event labels. Only the rgp-anchor variant inserts them; the rgp-clean variant has no markers.
+- Host trace adds CPU logging; rgp-anchor additionally adds 128x64-thread GPU dispatches, which can affect graph capture/replay and timings. RGP itself perturbs timings. Do not put host-trace/RGP-on PP tok/s into ordinary speed baselines; retain previous uninstrumented figures.
 - A profile can include FA/QSA/MMQ/kernel waits but never proves a full-PP explanation from one isolated kernel.
 - Stop on OOM, TDR, driver reset, model fallback to CPU, heavy sustained paging, input SHA mismatch, truncated input, or an unverified binary.
 - Large ZIP/RGP/model/prompt data remain off Git. Store results and hashes under the dedicated experiment folder in evox2-llm-experiments.
