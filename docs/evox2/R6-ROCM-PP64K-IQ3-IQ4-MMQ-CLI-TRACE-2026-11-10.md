@@ -126,3 +126,32 @@ After a useful first capture, repeat the rgp-clean variant for old IQ3 ub1024. W
 - A profile can include FA/QSA/MMQ/kernel waits but never proves a full-PP explanation from one isolated kernel.
 - Stop on OOM, TDR, driver reset, model fallback to CPU, heavy sustained paging, input SHA mismatch, truncated input, or an unverified binary.
 - Large ZIP/RGP/model/prompt data remain off Git. Store results and hashes under the dedicated experiment folder in evox2-llm-experiments.
+
+
+## 2026-11-11: Windows native Gate A PASS (old IQ3 ub512/1024 host trace)
+
+Received two-run ZIP `20261111-003942-051-cli-rocm-b12165-ctx65536-a75ae1fb0c8f.zip`, SHA256 `d1a81c0b49b004570d7facf5b217bf3e8f7c721f5d01a8883e525ea4f503aa47`. Both runs used ROCm b12165, source `ba1ccc53a3182fdb92e811334bcc0baf51286906`, executable SHA `51f065c25e9ac504261a81d07866daf99a9dff6054abe73daebe829f516eb2da`, runtime artifact **Verified** / digest `137c2d7d5967b07b541a0338c47f2e1bfcbd51d9839890b3bfbcf836cbc36e37`. Both are Status OK/ExitCode0. The user has therefore successfully **compiled and executed** the diagnostic on Windows ROCm; separate RGP marker visibility and GPU timings are not yet validated for this branch.
+
+The two runs share the original old IQ3 PLE16 file path/size (GGUF full SHA not calculated), a new frozen code input `qwen38-code-64k-20261110.prompt.txt`, exact input SHA256 `a8289b8e6f5c2cabf0d85940874c3c80e39f4c1c879c3766f98f0b8946b26d9a`, real prompt **61788 tokens**, ctx65536, batch2048, MTP/Gather OFF, f16 KV, UMA96GB, Performance P-MODE unchanged. `truncated=0` in both. CLI generated 256 tokens and captured outputs. `GGML_HIP_RGP_ANCHOR=0`, so both are host-only, not GPU marker runs.
+
+| Field | UBatch512 | UBatch1024 |
+| --- | ---: | ---: |
+| Run ID suffix | `a75ae1fb0c8f` | `bd065d714c5c` |
+| PP tok/s (diagnostic ON) | **360.66** | **409.03** |
+| Prompt eval milliseconds | 171318.99 | 151061.32 |
+| TG tok/s | 21.75 | 21.87 |
+| layer19 MMQ trace rows | **960 = 120 full ubatches x 8 ops** | **480 = 60 full ubatches x 8 ops** |
+| MoE Gate/Up/Down J | **16/16/16** | **32/32/32** |
+| Dense MMQ J | 128 | 128 |
+| FA layer19 KV/N | 49152 / 512 | 49152 / 1024 |
+| FA kernel | mma_f16 | mma_f16 |
+| FA suffix_scan_candidate | **0** | **1** |
+| high-load GPU VRAM clock mean MHz | 976.46 | 990.63 |
+
+**Main finding:** MMQ J selection shifts 16 to 32 for three MoE weights at layer19. These correspond to `blk.19.ffn_gate_exps.weight` and `ffn_up_exps.weight` (iq2_s), and `ffn_down_exps.weight` (iq4_nl). Each selected J is consistent in all filtered full ubatches. All five remaining dense weight calls (q8_0) choose J128 in both configurations. Previous 64k b12038 RGP identified analogous IQ2_S and IQ4_NL `mul_mat_q` kernel specializations, but these new CLI runs have not yet measured GPU kernel duration. J selection may affect the work distribution and execution efficiency; it does not by itself establish the reason for the +13.41% PP throughput difference.
+
+FA host metadata independently confirms layer19 at KV49152 (FA ids 1169/593, **host IDs not dispatch IDs**). `suffix_scan_candidate=0` at N512, `1` at N1024 is another path difference, not proof of a scan's executed duration. There is **no requirement to modify the diagnostic source** to proceed from Gate A on these logs. Both runs' high-GPU-load VRAM clock means differ by about +1.45% and available Windows RAM briefly approached zero; page-read telemetry is active. Clock, memory and other resource effects remain possible.
+
+**Next Gate B:** start with only the old IQ3 ub512 `rgp-anchor` variant, one run, on the **same built b12165**. RDP HIP / `llama-cli.exe` / bounded Dispatch range, SQTT High; find named `evox2_hip_anchor_fa_layer19` at `KV=49152` and adjacent `evox2_hip_anchor_moe_layer19`, then `mul_mat_q<...16...>` Gate/Up/Down. Recalibrate dispatch start for CLI rather than copying older `llama-bench` starts. Run ub1024 after successful anchor visibility; compare two adjacent 512-token batches with one 1024-token batch covering the same 1024-token range. Use separate `rgp-clean` variants for GPU timing (anchors add dispatches and can perturb timings). If markers cannot be located in one or two bounded captures, stop and inspect RDP settings/host anchor lines rather than repeatedly guessing offsets.
+
+Full measurements and provenance are archived in [experiment run report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-rocm-pp64k-oldiq3-hosttrace-ub512-1024.md).
