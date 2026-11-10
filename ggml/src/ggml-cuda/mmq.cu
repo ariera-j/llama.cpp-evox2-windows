@@ -10,6 +10,46 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+static __global__ void evox2_hip_anchor_moe_layer19() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static __global__ void evox2_hip_anchor_moe_layer23() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static bool ggml_hip_rgp_mmq_anchor_enabled() {
+    static const bool enabled = [] {
+        const char * const value = std::getenv("GGML_HIP_RGP_ANCHOR");
+        return value != nullptr && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+static long ggml_hip_mmq_weight_layer(const char * name) {
+    const char * const blk = std::strstr(name, "blk.");
+    if (blk != nullptr) {
+        char * end = nullptr;
+        const long layer = std::strtol(blk + 4, &end, 10);
+        if (end != blk + 4 && *end == '.' && layer >= 0) {
+            return layer;
+        }
+    }
+    const char * const suffix = std::strrchr(name, '-');
+    if (suffix != nullptr && std::strstr(name, "ffn_") != nullptr) {
+        char * end = nullptr;
+        const long layer = std::strtol(suffix + 1, &end, 10);
+        if (end != suffix + 1 && (*end == '\0' || *end == ' ') && layer >= 0) {
+            return layer;
+        }
+    }
+    return -1;
+}
 #endif
 
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream, const ggml_prec prec_src1) {
@@ -163,8 +203,7 @@ static void ggml_hip_mmq_trace_host(
         return value && *value ? std::strtoll(value, nullptr, 10) : -1LL;
     }();
 
-    const char * const layer_start = std::strstr(src0->name, "blk.");
-    const long layer = layer_start ? std::strtol(layer_start + 4, nullptr, 10) : -1;
+    const long layer = ggml_hip_mmq_weight_layer(src0->name);
     const long long n = static_cast<long long>(ids ? src1->ne[2] : src1->ne[1]);
     if ((filter_layer >= 0 && filter_layer != layer) || (filter_n >= 0 && filter_n != n)) {
         return;
@@ -356,6 +395,20 @@ void ggml_cuda_mul_mat_q(
     // gate/up activations are broadcast across experts (ne11 == 1): quantize each token once and
     // scatter to its slots. ids_src1 then holds the inverse map (token slot -> compact row).
     const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;
+
+#if defined(GGML_USE_HIP)
+    if (ggml_hip_rgp_mmq_anchor_enabled() && (ne12 == 512 || ne12 == 1024)) {
+        const long layer = ggml_hip_mmq_weight_layer(src0->name);
+        if (layer == 19 || layer == 23) {
+            if (layer == 19) {
+                evox2_hip_anchor_moe_layer19<<<128, 64, 0, stream>>>();
+            } else {
+                evox2_hip_anchor_moe_layer23<<<128, 64, 0, stream>>>();
+            }
+            CUDA_CHECK(cudaGetLastError());
+        }
+    }
+#endif
 
     {
         GGML_ASSERT(ids->nb[0] == ggml_element_size(ids));
