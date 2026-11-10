@@ -853,12 +853,61 @@ static void ggml_hip_fa_trace_host(const ggml_tensor * dst, const best_fattn_ker
 }
 #endif // defined(GGML_USE_HIP)
 
+
+#if defined(GGML_USE_HIP)
+static __global__ void evox2_hip_anchor_fa_layer19() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static __global__ void evox2_hip_anchor_fa_layer23() {
+#if defined(__HIP_PLATFORM_AMD__)
+    asm volatile("s_nop 0");
+#endif
+}
+
+static bool ggml_hip_rgp_fa_anchor_enabled() {
+    static const bool enabled = [] {
+        const char * const value = std::getenv("GGML_HIP_RGP_ANCHOR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+static int64_t ggml_hip_rgp_fa_anchor_kv() {
+    static const int64_t value = [] {
+        const char * const env = std::getenv("GGML_HIP_RGP_ANCHOR_KV");
+        return env && *env ? std::strtoll(env, nullptr, 10) : -1LL;
+    }();
+    return value;
+}
+#endif
+
 void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     ggml_cuda_set_device(ctx.device);
     const best_fattn_kernel kernel = ggml_cuda_get_best_fattn_kernel(ggml_cuda_get_device(), dst);
 #if defined(GGML_USE_HIP)
     if (ggml_hip_fa_trace_enabled()) {
         ggml_hip_fa_trace_host(dst, kernel, ctx.device);
+    }
+    if (ggml_hip_rgp_fa_anchor_enabled()) {
+        const ggml_tensor * const q = dst->src[0];
+        const ggml_tensor * const k = dst->src[1];
+        const char * const tag = std::strstr(q->name, "Qcur-");
+        const long layer = tag ? std::strtol(tag + 5, nullptr, 10) : -1;
+        const int64_t kv = ggml_hip_rgp_fa_anchor_kv();
+        if ((layer == 19 || layer == 23) && (kv < 0 || kv == k->ne[1])) {
+            if (layer == 19) {
+                evox2_hip_anchor_fa_layer19<<<128, 64, 0, ctx.stream()>>>();
+            } else {
+                evox2_hip_anchor_fa_layer23<<<128, 64, 0, ctx.stream()>>>();
+            }
+            CUDA_CHECK(cudaGetLastError());
+            std::fprintf(stderr, "evox2_hip_rgp_anchor_v1 kind=fa layer=%ld KV=%lld N=%lld"
+                    " note=host_launch_not_RGP_event_id\n",
+                    layer, (long long) k->ne[1], (long long) q->ne[1]);
+        }
     }
 #endif
     switch (kernel) {
