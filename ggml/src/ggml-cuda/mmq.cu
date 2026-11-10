@@ -5,6 +5,13 @@
 
 #include <cstdint>
 
+#if defined(GGML_USE_HIP)
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#endif
+
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream, const ggml_prec prec_src1) {
     switch (args.type_x) {
         case GGML_TYPE_Q1_0:
@@ -131,6 +138,61 @@ static ggml_prec ggml_cuda_mmq_get_prec_src1(const ggml_tensor * src0, const ggm
     return GGML_PREC_Q4;
 }
 
+
+#if defined(GGML_USE_HIP)
+static bool ggml_hip_mmq_trace_enabled() {
+    static const bool enabled = [] {
+        const char * const value = std::getenv("GGML_HIP_MMQ_TRACE");
+        return value != nullptr && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+static void ggml_hip_mmq_trace_host(
+        const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids,
+        const ggml_tensor * dst, const int device, const int J, const bool fallback, const ggml_prec prec) {
+    static std::atomic<unsigned long long> next_id { 0 };
+    const unsigned long long mmq_id = next_id.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    static const long filter_layer = [] {
+        const char * const value = std::getenv("GGML_HIP_MMQ_TRACE_LAYER");
+        return value && *value ? std::strtol(value, nullptr, 10) : -1L;
+    }();
+    static const long long filter_n = [] {
+        const char * const value = std::getenv("GGML_HIP_MMQ_TRACE_N");
+        return value && *value ? std::strtoll(value, nullptr, 10) : -1LL;
+    }();
+
+    const char * const layer_start = std::strstr(src0->name, "blk.");
+    const long layer = layer_start ? std::strtol(layer_start + 4, nullptr, 10) : -1;
+    const long long n = static_cast<long long>(ids ? src1->ne[2] : src1->ne[1]);
+    if ((filter_layer >= 0 && filter_layer != layer) || (filter_n >= 0 && filter_n != n)) {
+        return;
+    }
+
+    static std::atomic<unsigned long long> matched { 0 };
+    const unsigned long long match_id = matched.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (match_id > 2048) {
+        if (match_id == 2049) {
+            std::fprintf(stderr, "evox2_hip_mmq_trace_v1 truncated_after=2048_matches\\n");
+        }
+        return;
+    }
+
+    std::fprintf(stderr,
+            "evox2_hip_mmq_trace_v1 mmq_id=%llu matched=%llu device=%d"
+            " layer=%ld N=%lld moe=%d J=%d fallback=%d prec=%d"
+            " weight_type=%s x_ne=%lld,%lld,%lld,%lld"
+            " y_ne=%lld,%lld,%lld,%lld n_expert_used=%lld"
+            " weight=\\\"%s\\\" activation=\\\"%s\\\" dst=\\\"%s\\\"\\n",
+            mmq_id, match_id, device, layer, n, ids != nullptr ? 1 : 0, J, fallback ? 1 : 0, (int) prec,
+            ggml_type_name(src0->type),
+            (long long) src0->ne[0], (long long) src0->ne[1], (long long) src0->ne[2], (long long) src0->ne[3],
+            (long long) src1->ne[0], (long long) src1->ne[1], (long long) src1->ne[2], (long long) src1->ne[3],
+            ids ? (long long) ids->ne[0] : 0LL, src0->name, src1->name, dst->name);
+}
+#endif
+
 void ggml_cuda_mul_mat_q(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst) {
     GGML_ASSERT(        src1->type == GGML_TYPE_F32);
@@ -223,6 +285,12 @@ void ggml_cuda_mul_mat_q(
         }
     }
     GGML_ASSERT(J_best > 0);
+
+#if defined(GGML_USE_HIP)
+    if (ggml_hip_mmq_trace_enabled()) {
+        ggml_hip_mmq_trace_host(src0, src1, ids, dst, id, J_best, fallback, prec_src1);
+    }
+#endif
 
     // A tile of size J can read in at most J - 1 extra columns.
     // For simplicity, round up the padding of a full tile to a multiple of the number of bytes that nthreads can load in parallel.
