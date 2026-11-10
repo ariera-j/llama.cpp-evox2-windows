@@ -43,6 +43,19 @@ class RocmMmqHostTraceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, helper)
 
+    def test_rgp_anchor_is_explicit_and_layer_specific(self):
+        self.assertIn('GGML_HIP_RGP_ANCHOR', self.mmq)
+        self.assertIn('GGML_HIP_RGP_ANCHOR', self.fa)
+        self.assertIn('GGML_HIP_RGP_ANCHOR_KV', self.fa)
+        self.assertIn('evox2_hip_anchor_moe_layer19<<<128, 64, 0, stream>>>();', self.mmq)
+        self.assertIn('evox2_hip_anchor_fa_layer19<<<128, 64, 0, ctx.stream()>>>();', self.fa)
+        self.assertIn('if (ggml_hip_rgp_mmq_anchor_enabled() && (ne12 == 512 || ne12 == 1024))', self.mmq)
+        self.assertIn('std::strcmp(value, "1") == 0', self.mmq)
+        self.assertIn('std::strcmp(value, "1") == 0', self.fa)
+        self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
+        self.assertEqual(self.plan.count("Name = 'rgp-anchor'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 4)
+
     def test_reuses_existing_fa_trace(self):
         self.assertIn('GGML_HIP_FA_TRACE_KV', self.fa)
         self.assertIn('GGML_HIP_FA_TRACE_LAYER', self.fa)
@@ -52,6 +65,7 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r"Name = 'pp64k-oldiq[34]-ub(?:512|1024)'", self.plan)), 4)
         self.assertEqual(self.plan.count("Name = 'host-trace'"), 4)
         self.assertEqual(self.plan.count("Name = 'rgp-clean'"), 4)
+        self.assertEqual(self.plan.count("Name = 'rgp-anchor'"), 4)
         self.assertEqual(self.plan.count("GGML_HIP_MMQ_TRACE = '1'"), 4)
         self.assertIn("GGML_HIP_MMQ_TRACE = '0'", self.plan)
         self.assertIn("GGML_HIP_FA_TRACE = '0'", self.plan)
