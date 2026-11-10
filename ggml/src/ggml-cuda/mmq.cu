@@ -174,7 +174,7 @@ static void ggml_hip_mmq_trace_host(
     const unsigned long long match_id = matched.fetch_add(1, std::memory_order_relaxed) + 1;
     if (match_id > 2048) {
         if (match_id == 2049) {
-            std::fprintf(stderr, "evox2_hip_mmq_trace_v1 truncated_after=2048_matches\\n");
+            std::fprintf(stderr, "evox2_hip_mmq_trace_v1 truncated_after=2048_matches\n");
         }
         return;
     }
@@ -184,7 +184,7 @@ static void ggml_hip_mmq_trace_host(
             " layer=%ld N=%lld moe=%d J=%d fallback=%d prec=%d"
             " weight_type=%s x_ne=%lld,%lld,%lld,%lld"
             " y_ne=%lld,%lld,%lld,%lld n_expert_used=%lld"
-            " weight=\\\"%s\\\" activation=\\\"%s\\\" dst=\\\"%s\\\"\\n",
+            " weight=%s activation=%s dst=%s\n",
             mmq_id, match_id, device, layer, n, ids != nullptr ? 1 : 0, J, fallback ? 1 : 0, (int) prec,
             ggml_type_name(src0->type),
             (long long) src0->ne[0], (long long) src0->ne[1], (long long) src0->ne[2], (long long) src0->ne[3],
