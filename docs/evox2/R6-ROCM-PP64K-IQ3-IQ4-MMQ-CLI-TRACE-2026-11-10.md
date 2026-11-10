@@ -37,7 +37,7 @@ $diag = 'C:\llama-build\llama.cpp-evox2-windows-r6-pp64k-mmq'
 $branch = 'investigation/r6-rocm-pp64k-iq3-iq4-mmq-trace-20261110'
 Set-Location $main
 git fetch origin
-git worktree add $diag "origin/$branch"
+git worktree add -b $branch $diag "origin/$branch"
 Set-Location $diag
 git log -1 --oneline
 
@@ -67,9 +67,9 @@ if ((Get-FileHash -LiteralPath $code -Algorithm SHA256).Hash.ToLowerInvariant() 
 $local = Join-Path $main 'tools\evox2\benchmark\configs\local.psd1'
 $cfg = Import-PowerShellDataFile -LiteralPath $local
 $model = [string] $cfg.Models.MHHOldIQ3.Path
-$input = 'C:\pp-rgp\qwen38-code-64k-20261110.prompt.txt'
-python (Join-Path $diag 'tools\evox2\benchmark\prepare-code-64k-cli-prompt.py') --source $code --tokenizer (Join-Path $bin 'llama-tokenize.exe') --model $model --out $input --max-tokens 61777
-Get-Content "$input.meta.json"
+$promptFile = 'C:\pp-rgp\qwen38-code-64k-20261110.prompt.txt'
+python (Join-Path $diag 'tools\evox2\benchmark\prepare-code-64k-cli-prompt.py') --source $code --tokenizer (Join-Path $bin 'llama-tokenize.exe') --model $model --out $promptFile --max-tokens 61777
+Get-Content "$promptFile.meta.json"
 ~~~
 
 Register the following aliases INSIDE existing ignored config tables in $local (do not overwrite Builds/Inputs, MHHOldIQ3 or MHHOldIQ4):
