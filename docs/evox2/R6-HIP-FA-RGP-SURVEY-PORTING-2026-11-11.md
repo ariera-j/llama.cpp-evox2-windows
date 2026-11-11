@@ -390,3 +390,29 @@ Both are **later in layer sequence than layer19**, so retarget to a **lower** di
 IQ4のJ16 slot2を**仮に単純2倍**したMMQ17769.204µsとIQ4 J32実測21885.110µsの比較は、仮換算で**J32が23.16%長い**が、前半512トークンの実測がなく正式比較ではない。**残りの1窓**は旧IQ4/ub512 **KV49664・N512・band12/slot1・layer19**、処理位置49152..49663。今回start356600と以前IQ4 start358000のlayer35/39アンカーから、約48レイヤー分の推定退行を踏まえて**RDP start353000/count1024**を次の**未検証探索値**とする。同じ`pp64k-oldiq4-ub512`＋`rgp-survey-fine`、SQTT High、再ビルド不要。band/layer/slotとstderrで正確な位置を照合してからpaired J16×2/J32を集計。ユーザー予定どおり`rgp-clean`とGPU idleは後段。
 
 ADLXの本run：高GPU負荷（≥95%、n83）平均GPU core約2889MHz、VRAM約834MHz（ファイル時刻付近2秒間隔サンプルは800MHz）、消費電力約119W。個別RGPイベントとの厳密同期はない。詳細： [旧IQ4 J16 slot2検証レポート](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-oldiq4-ub512-slot2-layer19-rgp.md)。
+
+
+## 2026-11-11: Final old IQ3/IQ4 layer19 matched-1024-token MMQ RGP J16/J32 comparison — marker ON complete
+
+**Final required slot obtained:** old IQ4 / ub512 at RDP HIP **start353000/count1024**, `llama-cli-20261111-235659870.rgp`. Coarse survey Event581 `kv_band<12>` and fine Event583 `kv_slot<1>` at **9472 threads→layer19**. Same capture shows layer19 MoE anchors Events619/627/637 and **Gate E625 `mul_mat_q<ggml_type21,16>` 2489.574µs, Up E633 same 2465.947µs, Down E643 `mul_mat_q<ggml_type20,16>` 4090.038µs**, plus reduction E645 599.148µs. This is **KV49664/N512/layer19**, contiguous query-token positions **49152..49663**. Other IQ4 J16 slot2 was already captured at **KV50176/N512**, query positions49664..50175. IQ3's two slots and both models' J32/KV50176/N1024 had also already been captured. **All four matched-condition coverage gates PASS.**
+
+Execution archive `20261111-235357-680-cli-rocm-b12188-ctx65536-42367a061f58.zip` SHA256 `ef94621a9dcd1a767a50bd26dedd25eb87a0b9821f632bbf7722daa7b8832e30`, independently read: **Status OK/ExitCode0**, old IQ4_XS, ROCm b12188/commit832f0c5e7, executable SHA `543bf88826a9fe362815a9503e3cdaeda041eb40e52aafbbe5e6d1c569dd15a5`, runtime artifacts Verified with matching digest, 61788-token same code input SHA `a8289b8e6f5c2cabf0d85940874c3c80e39f4c1c879c3766f98f0b8946b26d9a`, ctx65536/ub512, f16 KV, MTP OFF, P-MODE Performance/UMA96GB. Host stderr exactly `band=12 slot=1 KV=49664 N=512 layer=19`. Diagnostic-on PP **364.29 tok/s**, TG20.44 tok/s, not marker-free PP baseline.
+
+**MMQ3 GPU event durations (microseconds), actual measured same query token region positions49152..50175**:
+
+| Model / GPU kernel | J16 ub512 first slot1 | J16 ub512 second slot2 | J16×2 actual sum | J32 ub1024 full | J32 versus J16×2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IQ3 Gate IQ2_S | 3191.040 | 3136.757 | 6327.797 | 4180.587 | **−33.93%** |
+| IQ3 Up IQ2_S | 3172.109 | 3138.728 | 6310.837 | 4192.739 | **−33.56%** |
+| IQ3 Down IQ4_NL | 4091.872 | 3989.207 | 8081.079 | 7615.959 | −5.76% |
+| **IQ3 3 MMQ sum** | **10455.021** | **10264.692** | **20719.713** | **15989.285** | **−22.83% (−4.730ms)** |
+| IQ4 Gate IQ4_XS | 2489.574 | 2441.401 | 4930.975 | 7120.513 | **+44.40%** |
+| IQ4 Up IQ4_XS | 2465.947 | 2442.065 | 4908.012 | 7177.947 | **+46.25%** |
+| IQ4 Down IQ4_NL | 4090.038 | 4001.136 | 8091.174 | 7586.650 | −6.24% |
+| **IQ4 3 MMQ sum** | **9045.559** | **8884.602** | **17930.161** | **21885.110** | **+22.06% (+3.955ms)** |
+
+**Direct local MMQ inversion observed:** IQ4's J16×2 sum **17.930ms** is **13.46% shorter** than IQ3's **20.720ms**, but IQ4's J32 sum **21.885ms** is **36.87% longer** than IQ3's **15.989ms**. Difference originates chiefly in Gate/Up: IQ3 uses `ggml_type22` IQ2_S and IQ4 uses `ggml_type21` IQ4_XS, while Down `ggml_type20` IQ4_NL is about equal and improves moderately with larger J in both models. This matches the *direction* of the prompt PP speed crossover, but **is NOT a whole-PP or causal attribution**: these are **SQTT captured, GPU diagnostic marker ON, cross-session event-time sums** omitting helper and host scheduling. Other layers/positions, CPU/GPU overlap, FA, kernel clocks and marker-free runs must be considered for attribution. FA sum for this 1024-token interval: IQ3 J16×2 116.558ms vs J32 107.971ms; IQ4 J16×2 117.118ms vs J32 108.118ms. Reduction sums: IQ3 1.199ms vs1.278ms; IQ4 1.191ms vs1.287ms. No evidence that all operations improve with larger ubatch.
+
+Newest ZIP ADLX at high GPU usage≥95%: n83, core clock mean~2886.9MHz, VRAM mean~834.5MHz and median800MHz, power mean~119W. Near RGP file time 23:56:59 JST, 2s sampling showed ~800MHz VRAM at high GPU load. **No calibrated per-event RGP-to-ADLX clock correlation**; cannot assign individual kernel clock states or rule out profiling/thermal or scheduling confounds.
+
+**Scope gate for `rgp-survey-fine` is now CLOSED for both IQ3 and IQ4.** User preference: do marker-OFF tests **together afterwards** (don't chase GPU idle right now). If proceeding, use `rgp-clean` or plain marker-free run across IQ3/IQ4×ub512/1024, verify variant flags really remove survey and anchor dispatch kernels, independently remap RDP capture starts (marker-on indexes are invalid after removing extra dispatches), and avoid claiming clean captures match exact K/layer without separate proof. Detailed evidence: [final paired 4-condition RGP report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-iq3-iq4-matched-1024-token-j16-j32-final-rgp.md). GPU idle and CmdBarrier root causes remain a separate deferred investigation.
