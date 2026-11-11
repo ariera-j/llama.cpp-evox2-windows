@@ -119,3 +119,10 @@ Store bulky RGP/ZIP files outside Git. Do not merge this instrumentation branch 
 **Next targeted exploration:** one rgp-survey capture at start405000/count512 to inspect band and layer. This is a search point, not a guaranteed band12 location. If still band11, move forward; if band13, backward; if band12, grid X=148 identifies layer19. Validate exact KV49152 separately via the existing narrower anchor and/or host FA metadata. Use marker-free rgp-clean for performance timings; the survey adds a kernel before every FA.
 
 Screenshot-derived details and idle/barrier follow-up are stored in the [experiment report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-rgp-survey-kv-band11-and-barrier-observation.md).
+
+
+## 2026-11-11 follow-up: band12 / layer31 captured
+
+User screenshot of `llama-cli-20261111-135305683.rgp` confirms RDP HIP **start405000/count512** returned `evox2_hip_fa_survey_kv_band<12>()` at **Event499** (0.297us). RGP reports **10240 total threads**; with 64 threads/block, grid X=160; 160-129=**layer31**. Band12 is KV **[49152,53248)**. This is not yet exact KV49152 or layer19. The nearby FA Event501 is **60460.161us** and following CmdBarrier Event502 is **10842.386us** (causal meaning and GPU-idle attribution not established).
+
+Next search probe: start**403000**, count512, unchanged survey binary/model/input, to find band12 layer19. This is a heuristic probe, not a fixed offset. Use marker's band + grid X to adjust. If exact band12/layer19 is found, move to the selective anchor and later marker-OFF clean RGP to measure timing. Keep GPU idle/barrier cause inquiry deferred separately.
