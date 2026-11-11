@@ -38,28 +38,14 @@ static bool enabled() {
     return value;
 }
 
-static long get_layer(const char * name) {
-    const char * const tag = std::strstr(name, "Qcur-");
-    if (tag == nullptr) {
-        return -1;
-    }
-    char * end = nullptr;
-    const long layer = std::strtol(tag + 5, &end, 10);
-    return end != tag + 5 && layer >= 0 && layer <= 126 ? layer : -1;
-}
-
-static void submit(const ggml_tensor * dst, cudaStream_t stream) {
-    const ggml_tensor * const q = dst->src[0];
-    const ggml_tensor * const k = dst->src[1];
-    if (q == nullptr || k == nullptr || k->ne[1] < 0) {
+static void submit(int64_t kv, int64_t n, long layer, cudaStream_t stream) {
+    if (kv < 0) {
         return;
     }
 
-    const int64_t kv = k->ne[1];
     const int64_t band_index = kv / kv_band_tokens;
     const int band = band_index <= max_kv_band ? (int) band_index : -1;
-    const long layer = get_layer(q->name);
-    const int blocks = layer >= 0 ? layer_grid_base + (int) layer : unknown_layer_blocks;
+    const int blocks = layer >= 0 && layer <= 126 ? layer_grid_base + (int) layer : unknown_layer_blocks;
 
     switch (band) {
 
@@ -138,7 +124,7 @@ static void submit(const ggml_tensor * dst, cudaStream_t stream) {
                 "evox2_hip_fa_survey_v1 band=%d band_tokens=%lld KV=%lld N=%lld layer=%ld grid_blocks=%d"
                 " note=host_submission_not_RGP_event\n",
                 band, (long long) kv_band_tokens, (long long) kv,
-                (long long) q->ne[1], layer, blocks);
+                (long long) n, layer, blocks);
     }
 }
 
