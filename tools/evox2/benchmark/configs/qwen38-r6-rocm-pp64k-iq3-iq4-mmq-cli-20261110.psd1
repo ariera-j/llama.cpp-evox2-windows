@@ -81,6 +81,14 @@
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
                 },
+                @{
+                    Name = 'rgp-survey-anchor'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
                 @{ Name = 'rgp-clean' }
             )
         },
@@ -115,6 +123,14 @@
                 @{
                     Name = 'rgp-anchor'
                     Environment = @{
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
+                @{
+                    Name = 'rgp-survey-anchor'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
                         GGML_HIP_RGP_ANCHOR = '1'
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
@@ -157,6 +173,14 @@
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
                 },
+                @{
+                    Name = 'rgp-survey-anchor'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
                 @{ Name = 'rgp-clean' }
             )
         },
@@ -191,6 +215,14 @@
                 @{
                     Name = 'rgp-anchor'
                     Environment = @{
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
+                @{
+                    Name = 'rgp-survey-anchor'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
                         GGML_HIP_RGP_ANCHOR = '1'
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
