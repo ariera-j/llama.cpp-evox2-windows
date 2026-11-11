@@ -65,7 +65,9 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertIn('std::strcmp(env, "1") == 0', self.survey)
         self.assertIn('#include "evox2-hip-fa-survey.cuh"', self.fa)
         self.assertIn('evox2_hip_fa_survey::enabled()', self.fa)
-        self.assertIn('evox2_hip_fa_survey::submit(dst, ctx.stream());', self.fa)
+        self.assertIn('evox2_hip_fa_survey::submit(k->ne[1], q->ne[1], layer, ctx.stream());', self.fa)
+        self.assertIn('static void submit(int64_t kv, int64_t n, long layer, cudaStream_t stream)', self.survey)
+        self.assertNotIn('ggml_tensor', self.survey)
 
     def test_fa_survey_kv_bands_and_layer_grid(self):
         self.assertIn('kv_band_tokens = 4096', self.survey)
@@ -74,7 +76,7 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertIn('layer_grid_base = 129', self.survey)
         self.assertIn('unknown_layer_blocks = 128', self.survey)
         self.assertIn('layer_grid_base + (int) layer', self.survey)
-        self.assertIn('std::strstr(name, "Qcur-")', self.survey)
+        self.assertIn('std::strstr(q->name, "Qcur-")', self.fa)
         cases = re.findall(r'case (\d+): evox2_hip_fa_survey_kv_band<(\d+)>', self.survey)
         self.assertEqual(cases, [(str(n), str(n)) for n in range(65)])
         self.assertIn('evox2_hip_fa_survey_kv_overflow', self.survey)
