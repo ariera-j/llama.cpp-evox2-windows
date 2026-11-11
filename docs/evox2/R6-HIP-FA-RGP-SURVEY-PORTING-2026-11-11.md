@@ -179,3 +179,50 @@ $plan = Join-Path $diag 'tools\evox2\benchmark\configs\qwen38-r6-rocm-pp64k-iq3-
 ~~~
 
 Interpretation: (1) band12+grid148 and immediate FA anchor implies exact layer19/KV49152; (2) band12+grid148 without FA exact anchor indicates some other KV within band12, or anchor not present in captured sequence; (3) any other band gives true search position; (4) no survey markers despite FA means inspect executable/plan/RDP rather than infer KV. Only **rgp-clean** marker-OFF profiling is suitable for evaluating MMQ/FA time. All source code is unchanged by this new combined plan mode, so **no rebuild** is needed. Do not copy the combined-mode start index into clean mode.
+
+
+## 2026-11-11: combined capture had band12/layer19 + MoE, but not the exact-KV FA marker
+
+From `llama-cli-20261111-193140056.rgp`, the **rgp-survey-anchor** variant with RDP start404500/count1024 yielded **Event621** `evox2_hip_fa_survey_kv_band<12>`; total threads9472 => gridX148 => **layer19**; next FA Event623 duration **59768.004us**. Layer19 MoE anchor kernels were **Event661/669/679** (three routed MMQ operations, not three ubatches). The exact `evox2_hip_anchor_fa_layer19` marker was not visible. This is consistent with a KV in band12 but **not exact KV49152**, or with the exact marker falling outside the limited capture; the screenshots cannot distinguish these cases. No `stderr.log`/binary RGP was provided to verify all source-level marker submissions in this specific run.
+
+### Fine-grained survey enhancement
+
+The portable header [evox2-hip-fa-survey.cuh](../../ggml/src/ggml-cuda/evox2-hip-fa-survey.cuh) now supports **optional 512-token sub-bands**, without replacing or reinterpreting the original 4096-token marker:
+
+- `GGML_HIP_RGP_FA_SURVEY_FINE_BAND=12` selects the coarse band. Default unset disables all extra fine-marker dispatches.
+- `GGML_HIP_RGP_FA_SURVEY_FINE_LAYER=19` optionally limits the additional marker to one layer (unset means any layer in the selected band).
+- For a matching FA only, **one extra named GPU marker** `evox2_hip_fa_survey_kv_slot<0..7>` is launched after the coarse band marker, in the same HIP stream before the FA. Each slot covers **512 KV tokens** within the band. This does not add a new synchronization/readback or change real FA kernel args.
+- At band12: slot0=KV49152..49663, slot1=49664..50175, ..., slot7=52736..53247. A slot marker identifies a **range**; `evox2_hip_anchor_fa_layer19` still provides the exact KV49152 check.
+- GridX=129+layer is retained for both marker types. A selected slot marker therefore also reports 9472 total threads (148 workgroups) when layer19.
+- The new `rgp-survey-fine` matrix variant enables coarse survey, fine band12/layer19, and the exact-KV FA/MoE anchors together. Other variants (`rgp-survey`, `rgp-survey-anchor`, `rgp-anchor`, `rgp-clean`, `host-trace`) retain their behavior. The header itself needs only `kv,n,layer,stream`; no GGUF/model naming dependency was introduced.
+
+### Next RGP gate: rebuild and capture one fine-marked window
+
+The `.cuh` source changed, so **a Windows HIP rebuild is mandatory**; `git pull` by itself is insufficient. Earlier RGP binaries do not emit any `kv_slot` kernel. On the already configured Windows worktree:
+
+~~~powershell
+$diag = 'C:\llama-build\llama.cpp-evox2-windows-r6-pp64k-mmq'
+$main = 'C:\llama-build\llama.cpp-evox2-windows-r6'
+Set-Location $diag
+git status --short
+git pull --ff-only
+python -m unittest discover -s .\tools\evox2\tests -p 'test_rocm_mmq_host_trace.py' -v
+.\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-pp64k-mmq -BuildOnly -Parallel 4 -SkipSmoke
+$bin = Join-Path $diag 'build-rocm-pp64k-mmq\bin\Release'
+& (Join-Path $bin 'llama-cli.exe') --version
+Get-FileHash (Join-Path $bin 'llama-cli.exe') -Algorithm SHA256
+$matrix = Join-Path $diag 'tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1'
+$local = Join-Path $main 'tools\evox2\benchmark\configs\local.psd1'
+$plan = Join-Path $diag 'tools\evox2\benchmark\configs\qwen38-r6-rocm-pp64k-iq3-iq4-mmq-cli-20261110.psd1'
+& $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-survey-fine' -MaxRuns 1 -PlanOnly
+~~~
+
+RDP: HIP `llama-cli.exe`, auto capture Dispatch range **start404500/count1024**, SQTT High, shader instrumentation/counters OFF. This is **only a first exploration window** anchored to the preceding combined-mode capture; new fine-marker dispatches can shift absolute indices. After arming RDP:
+
+~~~powershell
+& $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-survey-fine' -MaxRuns 1 -StopOnError
+~~~
+
+Inspect the RGP Event filter `evox2`: the coarse `kv_band<12>` and **adjacent** `kv_slot<N>` with total threads 9472 identify the specific 512-token position at layer19. If slot0 and `evox2_hip_anchor_fa_layer19` both appear, **exact KV49152 is verified**; if only slot1..7 appears, use the slot number to determine where to move the capture and stop trying uncalibrated offsets. The host `evox2_hip_fa_survey_fine_v1` lines also record exact KV but are not RGP Event IDs. Keep existing b12013/b12038 speed baselines frozen. `rgp-survey-fine` timing and PP throughput are instrumentation-heavy and cannot serve as the baseline; use `rgp-clean` in a separate run after locating a matched region.
+
+Native rebuild, Python tests, and RGP marker visibility for **this new fine mode** are currently **NOT verified**.
