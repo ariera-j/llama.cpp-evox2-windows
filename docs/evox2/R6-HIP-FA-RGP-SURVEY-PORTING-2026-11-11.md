@@ -153,3 +153,29 @@ For exact KV49152 and uncontaminated GPU time, the next measurement gate remains
 
 More detailed logged result: [research results](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/RESULTS.md).
 
+
+
+## 2026-11-11: narrowed anchor-only capture missed - use combined survey+anchor
+
+User's HIP `llama-cli-20261111-190427633.rgp` was captured at **start403500/count512**, with exactly three `evox2_hip_anchor_moe_layer19` Event275/283/293 and three `evox2_hip_anchor_moe_layer23` Event961/969/979. The same capture contained two FA kernels, but **no `evox2_hip_anchor_fa_layer19`**. The three MoE markers are Gate/Up/Down **per layer, not evidence for three separate ubatches**. MoE has no KV filter, whereas FA anchor is only emitted when the caller's KV equals49152.
+
+The subsequent **start400000/count512** anchor-only capture contained neither FA nor MoE anchor. The first-order subtraction of static dispatch counts was not accurate enough to predict the matching GPU window. No more uninformed start-index guessing.
+
+Updated [CLI plan](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-pp64k-iq3-iq4-mmq-cli-20261110.psd1) adds **rgp-survey-anchor** to all four jobs without touching C++ sources: GGML_HIP_RGP_FA_SURVEY=1, GGML_HIP_RGP_ANCHOR=1, GGML_HIP_RGP_ANCHOR_KV=49152, all host trace flags remain off. In the **same RGP run**, a band12 marker with gridX=148 identifies layer19 in KV49152..53247, while the adjacent `evox2_hip_anchor_fa_layer19` marks **exact KV49152**. The MoE anchors show the routed MMQ group.
+
+**Recommended one-shot exploratory capture:** RDP HIP target llama-cli.exe, Dispatch range **start=404500/count1024**, SQTT High, counters/instruction tracing OFF, old IQ3 ub512. This is a *wide search window*, not a known target index. Derivation: in previous survey-only RGP start404000, band12/layer19 was Event453, so absolute dispatch about404453; combined mode additionally inserts up to roughly 6 MoE markers per previous full512-token ubatch (96 x 6 ~576), placing the goal heuristically near405029. A 1024-dispatch window centered around this region is much less brittle than a new 512-dispatch point guess. HIP Graph scheduling and numbering can differ: the estimate has no validity guarantee. If RDP rejects count1024 or RGP SQTT resources fail, stop to choose a smaller verified window rather than assuming the event was captured.
+
+~~~powershell
+$diag = 'C:\llama-build\llama.cpp-evox2-windows-r6-pp64k-mmq'
+$main = 'C:\llama-build\llama.cpp-evox2-windows-r6'
+Set-Location $diag
+git pull --ff-only
+$matrix = Join-Path $diag 'tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1'
+$local = Join-Path $main 'tools\evox2\benchmark\configs\local.psd1'
+$plan = Join-Path $diag 'tools\evox2\benchmark\configs\qwen38-r6-rocm-pp64k-iq3-iq4-mmq-cli-20261110.psd1'
+& $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-survey-anchor' -MaxRuns 1 -PlanOnly
+# Only after checking exact job, model, input, build, flags and enabling RDP:
+& $matrix -Plan $plan -LocalConfig $local -OnlyJob 'pp64k-oldiq3-ub512' -OnlyVariant 'rgp-survey-anchor' -MaxRuns 1 -StopOnError
+~~~
+
+Interpretation: (1) band12+grid148 and immediate FA anchor implies exact layer19/KV49152; (2) band12+grid148 without FA exact anchor indicates some other KV within band12, or anchor not present in captured sequence; (3) any other band gives true search position; (4) no survey markers despite FA means inspect executable/plan/RDP rather than infer KV. Only **rgp-clean** marker-OFF profiling is suitable for evaluating MMQ/FA time. All source code is unchanged by this new combined plan mode, so **no rebuild** is needed. Do not copy the combined-mode start index into clean mode.
