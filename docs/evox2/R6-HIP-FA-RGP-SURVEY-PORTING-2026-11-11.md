@@ -126,3 +126,12 @@ Screenshot-derived details and idle/barrier follow-up are stored in the [experim
 User screenshot of `llama-cli-20261111-135305683.rgp` confirms RDP HIP **start405000/count512** returned `evox2_hip_fa_survey_kv_band<12>()` at **Event499** (0.297us). RGP reports **10240 total threads**; with 64 threads/block, grid X=160; 160-129=**layer31**. Band12 is KV **[49152,53248)**. This is not yet exact KV49152 or layer19. The nearby FA Event501 is **60460.161us** and following CmdBarrier Event502 is **10842.386us** (causal meaning and GPU-idle attribution not established).
 
 Next search probe: start**403000**, count512, unchanged survey binary/model/input, to find band12 layer19. This is a heuristic probe, not a fixed offset. Use marker's band + grid X to adjust. If exact band12/layer19 is found, move to the selective anchor and later marker-OFF clean RGP to measure timing. Keep GPU idle/barrier cause inquiry deferred separately.
+
+
+## 2026-11-11: start403000 captured band12 / layer7 (range narrowed)
+
+Screenshot of `llama-cli-20261111-152111785.rgp`, HIP, survey, RDP Dispatch start403000 count512: Event407 `evox2_hip_fa_survey_kv_band<12>`, GPU duration 0.358us; 8704 threads at 64 threads/block = 136 X workgroups; 136-129=**layer7**. Adjacent Event409 FA `flash_attn_ext_f16`=60177.043us and Event410 `CmdBarrier`=10612.167us. Band12=KV [49152,53248), not an exact 512-token batch.
+
+Earlier start405000 showed band12/layer31, so target band12/layer19 is plausibly between the two captured positions. Next survey probe **start404000/count512**, a heuristic interpolation. Check marker band and grid per capture, do not reuse Event IDs across captures.
+
+Overview shows **GPU idle 0.26% / GPU bound**, with no conspicuous GPU-wide idle stretch in the user's occupancy/system activity screenshots even though an ~10.6ms CmdBarrier exists. Barrier elapsed duration does not directly measure full-GPU inactivity; separate idle investigation deferred.
