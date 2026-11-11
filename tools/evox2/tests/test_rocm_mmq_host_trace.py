@@ -56,7 +56,7 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertIn('std::strcmp(value, "1") == 0', self.fa)
         self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
         self.assertEqual(self.plan.count("Name = 'rgp-anchor'"), 4)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 8)
 
     def test_fa_survey_is_independent_opt_in(self):
         self.assertIn('#pragma once', self.survey)
@@ -91,9 +91,17 @@ class RocmMmqHostTraceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, self.survey)
 
+    def test_survey_and_exact_kv_anchor_can_be_enabled_together(self):
+        self.assertEqual(self.plan.count("Name = 'rgp-survey-anchor'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 8)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 8)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR_KV = '49152'"), 8)
+        self.assertIn("GGML_HIP_MMQ_TRACE = '0'", self.plan)
+        self.assertIn("GGML_HIP_FA_TRACE = '0'", self.plan)
+
     def test_fa_survey_matrix_variant_is_separate(self):
         self.assertEqual(self.plan.count("Name = 'rgp-survey'"), 4)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 8)
         self.assertIn("GGML_HIP_RGP_FA_SURVEY = '0'", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
         self.assertIn("GGML_HIP_FA_TRACE = '0'", self.plan)
