@@ -75,7 +75,7 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertIn('unknown_layer_blocks = 128', self.survey)
         self.assertIn('layer_grid_base + (int) layer', self.survey)
         self.assertIn('std::strstr(name, "Qcur-")', self.survey)
-        cases = re.findall(r'case (\\d+): evox2_hip_fa_survey_kv_band<(\\d+)>', self.survey)
+        cases = re.findall(r'case (\d+): evox2_hip_fa_survey_kv_band<(\d+)>', self.survey)
         self.assertEqual(cases, [(str(n), str(n)) for n in range(65)])
         self.assertIn('evox2_hip_fa_survey_kv_overflow', self.survey)
         self.assertIn('evox2_hip_fa_survey_v1 band=%d', self.survey)
