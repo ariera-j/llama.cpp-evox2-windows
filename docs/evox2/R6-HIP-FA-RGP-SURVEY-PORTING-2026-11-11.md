@@ -226,3 +226,14 @@ RDP: HIP `llama-cli.exe`, auto capture Dispatch range **start404500/count1024**,
 Inspect the RGP Event filter `evox2`: the coarse `kv_band<12>` and **adjacent** `kv_slot<N>` with total threads 9472 identify the specific 512-token position at layer19. If slot0 and `evox2_hip_anchor_fa_layer19` both appear, **exact KV49152 is verified**; if only slot1..7 appears, use the slot number to determine where to move the capture and stop trying uncalibrated offsets. The host `evox2_hip_fa_survey_fine_v1` lines also record exact KV but are not RGP Event IDs. Keep existing b12013/b12038 speed baselines frozen. `rgp-survey-fine` timing and PP throughput are instrumentation-heavy and cannot serve as the baseline; use `rgp-clean` in a separate run after locating a matched region.
 
 Native rebuild, Python tests, and RGP marker visibility for **this new fine mode** are currently **NOT verified**.
+
+
+## 2026-11-11: fine survey slot2 observed at band12 layer19
+
+User RGP screenshot `llama-cli-20261111-194656970.rgp`, HIP `rgp-survey-fine`, RDP start404500/count1024, shows Event625 coarse `evox2_hip_fa_survey_kv_band<12>` and Event627 fine `evox2_hip_fa_survey_kv_slot<2>`, **layer19** (9472 threads /64=148 blocks, 148-129=19). The fine marker conclusively establishes **KV subrange [50176,50688)** at this particular FA, not exact KV50176. The goal is slot0 [49152,49664), two 512-token sub-bands earlier. No `evox2_hip_anchor_fa_layer19` exact-KV49152 marker was visible in this window, consistent with the later KV location.
+
+Neighboring Event629 FA took 60003.634us, Event630 barrier 10603.584us. Layer19 MoE markers Event667/675/685 indicate Gate/Up/Down work in this same captured block.
+
+**Next single probe**: RDP **start396500/count1024**, same `rgp-survey-fine` model and binary (no rebuild). This is **a rough estimate only**, based on earlier survey-only captures suggesting about 1000 dispatches per 12 layers, and 48-layer ubatch ~4000 dispatch; moving two ubatches backward might require ~8000 dispatches. Different modes, HIP Graph behavior and marker overhead invalidate direct transfer of these numbers: do **not** interpret 396500 as a verified exact global offset. Inspect any coarse band and fine slot obtained; if slot0 appears, also look for the exact FA anchor in the same local sequence. If the window lacks a survey marker, reconsider the coordinate estimate before taking repeated long runs.
+
+The source survey's portability and 512-token specialization are now demonstrated by RGP for slot2; exact KV49152 validation and clean RGP timing remain pending.
