@@ -135,3 +135,21 @@ Screenshot of `llama-cli-20261111-152111785.rgp`, HIP, survey, RDP Dispatch star
 Earlier start405000 showed band12/layer31, so target band12/layer19 is plausibly between the two captured positions. Next survey probe **start404000/count512**, a heuristic interpolation. Check marker band and grid per capture, do not reuse Event IDs across captures.
 
 Overview shows **GPU idle 0.26% / GPU bound**, with no conspicuous GPU-wide idle stretch in the user's occupancy/system activity screenshots even though an ~10.6ms CmdBarrier exists. Barrier elapsed duration does not directly measure full-GPU inactivity; separate idle investigation deferred.
+
+
+## 2026-11-11: start404000 verified band12 / layer19 (survey location gate PASS)
+
+The user supplied RGP screenshots from `llama-cli-20261111-162802120.rgp`, HIP, survey variant, RDP Dispatch start=404000 and count=512:
+
+- Event **453**: `evox2_hip_fa_survey::evox2_hip_fa_survey_kv_band<12>()`, duration **0.337us**. Total threads **9472**, divided by 64 threads/block = **148 workgroups**; workgroups X minus 129 = **layer19**.
+- Event **455**: `flash_attn_ext_f16`, **59846.840us**. Event **456**: `CmdBarrier()`, **10639.969us**.
+- **band12 corresponds to KV [49152,53248)**. Neither this special marker nor its layer grid encodes the *exact* 512-token KV position. Do not call this a verified exact KV49152 capture.
+- Prior survey captures of the same region had band12/layer7 at start403000 and band12/layer31 at start405000. The interpolation established a useful location for this instrumented CLI build.
+- Survey marker names and grid values are now **verified in RGP for the intended band/layer**. Additional survey-start probing is not needed for this gate.
+
+**Proceed without another run first:** open the existing `start404000` RGP and inspect Events after the layer19 FA (Event455), especially `mm_ids_helper`, `quantize_mmq_q8_1`, `mul_mat_q<iq2_s,16>`, `mul_mat_q<iq4_nl,16>`, and the subsequent MoE reduction. Capture names and durations only if present in the same valid SQTT window. This verifies MoE coverage/operation ordering, not unbiased clean timings.
+
+For exact KV49152 and uncontaminated GPU time, the next measurement gate remains **separate**: narrow `rgp-anchor` (GPU anchor at exact KV plus layer), then `rgp-clean` for kernel timings. Both variants alter global dispatch numbering relative to survey, so recalculate the RDP window and verify by independent event-sequence matching. Do not assume that start404000 in the non-survey run captures layer19.
+
+More detailed logged result: [research results](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/RESULTS.md).
+
