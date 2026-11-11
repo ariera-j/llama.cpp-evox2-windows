@@ -56,7 +56,7 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertIn('std::strcmp(value, "1") == 0', self.fa)
         self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
         self.assertEqual(self.plan.count("Name = 'rgp-anchor'"), 4)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 8)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 12)
 
     def test_fa_survey_is_independent_opt_in(self):
         self.assertIn('#pragma once', self.survey)
@@ -93,15 +93,31 @@ class RocmMmqHostTraceTests(unittest.TestCase):
 
     def test_survey_and_exact_kv_anchor_can_be_enabled_together(self):
         self.assertEqual(self.plan.count("Name = 'rgp-survey-anchor'"), 4)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 8)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 8)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR_KV = '49152'"), 8)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 12)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 12)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR_KV = '49152'"), 12)
         self.assertIn("GGML_HIP_MMQ_TRACE = '0'", self.plan)
         self.assertIn("GGML_HIP_FA_TRACE = '0'", self.plan)
 
+    def test_fa_survey_fine_mode_is_opt_in_and_portable(self):
+        self.assertIn('GGML_HIP_RGP_FA_SURVEY_FINE_BAND', self.survey)
+        self.assertIn('GGML_HIP_RGP_FA_SURVEY_FINE_LAYER', self.survey)
+        self.assertIn('fine_slot_tokens = 512', self.survey)
+        self.assertIn('band >= 0 && band == fine_band()', self.survey)
+        self.assertIn('layer == fine_layer()', self.survey)
+        self.assertIn('evox2_hip_fa_survey_fine_v1', self.survey)
+        cases = re.findall(r'case (\d+): evox2_hip_fa_survey_kv_slot<(\d+)>', self.survey)
+        self.assertEqual(cases, [(str(n), str(n)) for n in range(8)])
+        self.assertNotIn('ggml_tensor', self.survey)
+        self.assertEqual(self.plan.count("Name = 'rgp-survey-fine'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY_FINE_BAND = '12'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = '19'"), 4)
+        self.assertIn('GGML_HIP_RGP_FA_SURVEY_FINE_BAND = $null', self.plan)
+        self.assertIn('GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = $null', self.plan)
+
     def test_fa_survey_matrix_variant_is_separate(self):
         self.assertEqual(self.plan.count("Name = 'rgp-survey'"), 4)
-        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 8)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 12)
         self.assertIn("GGML_HIP_RGP_FA_SURVEY = '0'", self.plan)
         self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
         self.assertIn("GGML_HIP_FA_TRACE = '0'", self.plan)
