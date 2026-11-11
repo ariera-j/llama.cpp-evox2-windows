@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 MMQ = ROOT / "ggml" / "src" / "ggml-cuda" / "mmq.cu"
 FA = ROOT / "ggml" / "src" / "ggml-cuda" / "fattn.cu"
+SURVEY = ROOT / "ggml" / "src" / "ggml-cuda" / "evox2-hip-fa-survey.cuh"
 PLAN = ROOT / "tools" / "evox2" / "benchmark" / "configs" / "qwen38-r6-rocm-pp64k-iq3-iq4-mmq-cli-20261110.psd1"
 PREPARE = ROOT / "tools" / "evox2" / "benchmark" / "prepare-code-64k-cli-prompt.py"
 
@@ -17,6 +18,7 @@ class RocmMmqHostTraceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.mmq = MMQ.read_text(encoding="utf-8")
         cls.fa = FA.read_text(encoding="utf-8")
+        cls.survey = SURVEY.read_text(encoding="utf-8")
         cls.plan = PLAN.read_text(encoding="utf-8")
         cls.prepare = PREPARE.read_text(encoding="utf-8")
 
@@ -55,6 +57,45 @@ class RocmMmqHostTraceTests(unittest.TestCase):
         self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
         self.assertEqual(self.plan.count("Name = 'rgp-anchor'"), 4)
         self.assertEqual(self.plan.count("GGML_HIP_RGP_ANCHOR = '1'"), 4)
+
+    def test_fa_survey_is_independent_opt_in(self):
+        self.assertIn('#pragma once', self.survey)
+        self.assertIn('#if defined(GGML_USE_HIP)', self.survey)
+        self.assertIn('GGML_HIP_RGP_FA_SURVEY', self.survey)
+        self.assertIn('std::strcmp(env, "1") == 0', self.survey)
+        self.assertIn('#include "evox2-hip-fa-survey.cuh"', self.fa)
+        self.assertIn('evox2_hip_fa_survey::enabled()', self.fa)
+        self.assertIn('evox2_hip_fa_survey::submit(dst, ctx.stream());', self.fa)
+
+    def test_fa_survey_kv_bands_and_layer_grid(self):
+        self.assertIn('kv_band_tokens = 4096', self.survey)
+        self.assertIn('max_kv_band = 64', self.survey)
+        self.assertEqual(49152 // 4096, 12)
+        self.assertIn('layer_grid_base = 129', self.survey)
+        self.assertIn('unknown_layer_blocks = 128', self.survey)
+        self.assertIn('layer_grid_base + (int) layer', self.survey)
+        self.assertIn('std::strstr(name, "Qcur-")', self.survey)
+        cases = re.findall(r'case (\\d+): evox2_hip_fa_survey_kv_band<(\\d+)>', self.survey)
+        self.assertEqual(cases, [(str(n), str(n)) for n in range(65)])
+        self.assertIn('evox2_hip_fa_survey_kv_overflow', self.survey)
+        self.assertIn('evox2_hip_fa_survey_v1 band=%d', self.survey)
+
+    def test_fa_survey_does_not_sync_or_read_gpu_data(self):
+        for forbidden in (
+            'cudaStreamSynchronize', 'cudaDeviceSynchronize',
+            'cudaMemcpy', 'hipMemcpy', 'cudaEvent', 'hipEvent',
+            'cudaMalloc', 'hipMalloc',
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, self.survey)
+
+    def test_fa_survey_matrix_variant_is_separate(self):
+        self.assertEqual(self.plan.count("Name = 'rgp-survey'"), 4)
+        self.assertEqual(self.plan.count("GGML_HIP_RGP_FA_SURVEY = '1'"), 4)
+        self.assertIn("GGML_HIP_RGP_FA_SURVEY = '0'", self.plan)
+        self.assertIn("GGML_HIP_RGP_ANCHOR = '0'", self.plan)
+        self.assertIn("GGML_HIP_FA_TRACE = '0'", self.plan)
+        self.assertIn("GGML_HIP_MMQ_TRACE = '0'", self.plan)
 
     def test_reuses_existing_fa_trace(self):
         self.assertIn('GGML_HIP_FA_TRACE_KV', self.fa)
