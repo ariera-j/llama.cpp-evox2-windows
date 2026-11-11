@@ -1,6 +1,6 @@
 # HIP FA RGP survey - portable KV-band location markers
 
-**Status (2026-11-11): implemented; Windows native HIP rebuild, run, and RGP visibility not yet verified.** Survey-only instrumentation, not a speed optimization.
+**Status (2026-11-11): implemented; first Windows HIP RGP survey marker visualized at band11/layer47. Exact target band12/layer19 alignment still pending.** Survey-only instrumentation, not a speed optimization.
 
 ## Background and objective
 
@@ -103,3 +103,19 @@ Once the KV/layer window is located, use the existing narrower rgp-anchor mode t
 4. Only after location mapping, compare a matched 1024-token region (two ub512 batches versus one ub1024) using separate marker-OFF RGP captures.
 
 Store bulky RGP/ZIP files outside Git. Do not merge this instrumentation branch into main for normal deployment.
+
+
+## 2026-11-11 native RGP result: first survey marker visible
+
+**First GPU-visible marker PASS.** Based on user screenshots from llama-cli-20261111-132944141.rgp, HIP / Radeon GPU Profiler 2.7.0.32, RDP Dispatch start390000 count512. This confirms one marker visualization, NOT precise band12/layer19 alignment.
+
+- Event531: evox2_hip_fa_survey::evox2_hip_fa_survey_kv_band<11>(), GPU duration 0.328us.
+- Event531 total threads=11264. At 64 threads/block, grid X=176; survey layer =176-129=**47**.
+- Band11 represents KV [45056,49152), not the exact KV or an individual microbatch.
+- Event532 CmdBarrier was immediately followed by Event533 flash_attn_ext_f16 taking 58213.388us (~58.213ms).
+- Event534 CmdBarrier took 10618.542us (~10.619ms). Wavefront occupancy dropped nearby. Overview reports GPU idle=1.80%, profile duration=219559.674us, and GPU bound.
+- Official RGP documentation distinguishes queue-based GPU idle from SQTT shader wavefront occupancy. HIP CmdBarrier is driver scheduling/dependency instrumentation and is not proof of explicit hipStreamSynchronize or a GPU-wide idle interval. Do not equate barrier duration with fully idle GPU duration.
+
+**Next targeted exploration:** one rgp-survey capture at start405000/count512 to inspect band and layer. This is a search point, not a guaranteed band12 location. If still band11, move forward; if band13, backward; if band12, grid X=148 identifies layer19. Validate exact KV49152 separately via the existing narrower anchor and/or host FA metadata. Use marker-free rgp-clean for performance timings; the survey adds a kernel before every FA.
+
+Screenshot-derived details and idle/barrier follow-up are stored in the [experiment report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-rgp-survey-kv-band11-and-barrier-observation.md).
