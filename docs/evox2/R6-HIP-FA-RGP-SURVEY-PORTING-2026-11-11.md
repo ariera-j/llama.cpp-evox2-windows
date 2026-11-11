@@ -277,3 +277,27 @@ The user submitted screenshots `llama-cli-20261111-205048935.rgp` and the succes
 **Resource caveat:** ADLX monitoring shows high GPU usage/normal ~2880MHz GPU clock with VRAM clock at 800MHz for much of the run, moving toward 950–1000MHz around 20:50:52 local. RGP file timestamp is close to that transition, but there is no event-level cross-timestamp calibration. Track VRAM clock alongside subsequent PP and RGP comparisons. The pending GPU-idle/CmdBarrier causality remains a separate investigation.
 
 Detailed numerical analysis: [experiment report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-iq3-ub1024-rgp-kv50176-j32-and-kv-range-correction.md).
+
+## 2026-11-11: RGP ub512 slot1 captured; real 1024-token J16/J32 MMQ comparison complete
+
+**RGP fine-survey alignment and matched 1024-token marker-on IQ3 MoE comparison PASS.** The missing old IQ3 **ub512 FA K extent KV49664 / N512 / slot1 / layer19** was captured in `llama-cli-20261111-212440046.rgp` at **RDP start400500/count1024**. Event437 coarse `kv_band<12>` and Event439 `kv_slot<1>` (RGP **9472 total threads** → 148 workgroups → layer19) precede FA Event441=56554.591us. Three MoE anchors Event479/487/497 and MMQ Gate **Event485 IQ2_S/J16=3191.040us**, Up **Event493 IQ2_S/J16=3172.109us**, Down **Event503 IQ4_NL/J16=4091.872us**, and reduction Event505=597.872us all occurred in the same captured frame.
+
+Run ZIP `20261111-212112-355-cli-rocm-b12188-ctx65536-db84c4f27fa6.zip` SHA256 `8ce37842e620f6f5bcdb99f54016332635da5192365d31467cf6930392aad43e`: **Status OK, ExitCode0, no truncation**; old IQ3/61788-token frozen input, b12188 commit832f0c5e7, same executable SHA and runtime digest as earlier matched diagnostic runs, ctx65536/ub512. Host log states `band=12 slot=1 KV=49664 N=512 layer=19`. This is an exact FA K extent, not the query-token start. Diagnostic-on PP329.17 tok/s is not a baseline.
+
+**Correct, matched query token positions [49152,50176), with FA KV being right-edge length inclusive of active microbatch**:
+
+| Condition (same old IQ3, layer19) | K length and N | Gate IQ2_S J | Up IQ2_S J | Down IQ4_NL J | 3 MMQ kernel time (us) |
+| --- | --- | --- | --- | --- | ---: |
+| ub512 first half | KV49664/N512 | J16 | J16 | J16 | **10455.021** |
+| ub512 second half | KV50176/N512 | J16 | J16 | J16 | **10264.692** |
+| **ub512 two-batch total** | **same tokens** | 6327.797us | 6310.837us | 8081.079us | **20719.713** |
+| **ub1024 one batch** | **KV50176/N1024** | 4180.587us J32 | 4192.739us J32 | 7615.959us J32 | **15989.285** |
+| ub1024 vs ub512 sum | | **−33.93% Gate** | **−33.56% Up** | **−5.76% Down** | **−22.83%** |
+
+**This is a real pair of observed J16 microbatches**, not the earlier hypothetical 2×slot2 estimate. It is still a **GPU marker ON, distinct-RGP-session event-duration sum**, not marker-free profiling, not whole PP improvement, and not evidence for the complete cause of the old IQ3/IQ4 inversion. For these same query tokens, `moe_weighted_reduction_f32` sum in 2xub512 was1198.975us versus ub1024 1277.590us (a slight regression); FA event sums were116558.225us versus107970.800us (cross-session caveat).
+
+ADLX high-utilization VRAM frequency was mostly 800MHz in all three runs (ub512 slot1, ub512 slot2, ub1024 slot2), with later increases toward 900–1000MHz, GPU clock broadly 2.88–2.89GHz. Near each RGP filename timestamp the nearest 2-second ADLX sample recorded 800MHz, **but RGP per-event GPU timestamps are not synchronized to ADLX sampling**. Do not ascribe the GPU event-duration delta exclusively to J without a matched marker-free, clock-controlled test.
+
+**Next decision:** stop the fine-survey IQ3 measurements for the scoped local question. If continuing, use `rgp-clean` for both ub512 and ub1024, with separately calibrated RDP ranges (marker-on dispatch start 400500/404500/205000 MUST NOT be reused as if mapped), or study IQ4 in equivalent conditions to investigate the ranking inversion. If the next priority is Strata, archive the above as a completed exploratory marker-ON finding. The earlier reference to ub512 slot2+slot3 remains superseded by correct **slot1+slot2** mapping.
+
+Full verified report: [evox2-llm-experiments](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-iq3-ub512-slot1-slot2-vs-ub1024-slot2-layer19.md).
