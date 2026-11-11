@@ -155,3 +155,18 @@ FA host metadata independently confirms layer19 at KV49152 (FA ids 1169/593, **h
 **Next Gate B:** start with only the old IQ3 ub512 `rgp-anchor` variant, one run, on the **same built b12165**. RDP HIP / `llama-cli.exe` / bounded Dispatch range, SQTT High; find named `evox2_hip_anchor_fa_layer19` at `KV=49152` and adjacent `evox2_hip_anchor_moe_layer19`, then `mul_mat_q<...16...>` Gate/Up/Down. Recalibrate dispatch start for CLI rather than copying older `llama-bench` starts. Run ub1024 after successful anchor visibility; compare two adjacent 512-token batches with one 1024-token batch covering the same 1024-token range. Use separate `rgp-clean` variants for GPU timing (anchors add dispatches and can perturb timings). If markers cannot be located in one or two bounded captures, stop and inspect RDP settings/host anchor lines rather than repeatedly guessing offsets.
 
 Full measurements and provenance are archived in [experiment run report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-rocm-pp64k-oldiq3-hosttrace-ub512-1024.md).
+
+
+## 2026-11-11: RGP all-FA location survey added
+
+**Motivation:** IQ3 ub512 HIP RGP captures using the previous selective rgp-anchor mode at start dispatch indices 386000, 390000, and 394000, count512, each showed ordinary FA kernels but no evox2_hip_anchor_fa_layer19/23 symbol. The ZIP from the start=390000 run had host FA launch records for KV49152/layer19 and layer23, confirming the run's flag selection; those records do not prove the same GPU dispatches appeared inside the limited capture. Rather than guessing more starts, the same branch now contains a **default-OFF all-FA survey**.
+
+- Portable helper: [evox2-hip-fa-survey.cuh](../../ggml/src/ggml-cuda/evox2-hip-fa-survey.cuh)
+- Standalone build/run/portability guide: [R6-HIP-FA-RGP-SURVEY-PORTING-2026-11-11.md](R6-HIP-FA-RGP-SURVEY-PORTING-2026-11-11.md)
+- Environment: GGML_HIP_RGP_FA_SURVEY=1. Other anchor and host-trace flags remain 0 in the new **rgp-survey** matrix variant.
+- GPU kernel symbols: evox2_hip_fa_survey_kv_band<N>, where N=floor(KV/4096) for 0..64 (up to 256k). The kernel's X workgroup count=129+layer for layer0..126; 128 indicates an unrecognized layer. For KV49152, band12; for layer19, 148 workgroups; for layer23, 152 workgroups.
+- The call is made at every ggml_cuda_flash_attn_ext host submission, independent of FA variant/kernel. Each launch is in the same HIP stream before the real FA. There are additional GPU dispatches throughout PP; **do not use survey-on performance for speed conclusions**. The existing rgp-clean mode remains marker-free.
+
+**Windows gate:** pull the branch into the existing r6-pp64k-mmq checkout; run the 11 static tests, rebuild the ROCm diagnostic binary in the existing separate build directory, then use -OnlyJob pp64k-oldiq3-ub512 -OnlyVariant rgp-survey -MaxRuns 1. First RDP trial can reuse start=390000,count512 ONLY as a place that previously contained FA, not as an estimate of KV49152. Read the KV band in the RGP kernel name and the layer from grid dimensions. Record even a non-target band: it gives the first direct dispatch-index-to-location observation. If the log reports survey band transitions but no survey markers appear despite ordinary FA in the RGP window, investigate binary identity/HIP-graph behavior before further offset search.
+
+**Status:** new code and plan committed; Windows ROCm rebuild, real survey log and RGP visibility still **PENDING**.
