@@ -41,6 +41,8 @@
             GGML_HIP_FA_TRACE_LAYER = $null
             GGML_HIP_RGP_ANCHOR = '0'
             GGML_HIP_RGP_FA_SURVEY = '0'
+            GGML_HIP_RGP_FA_SURVEY_FINE_BAND = $null
+            GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = $null
             GGML_HIP_RGP_ANCHOR_KV = $null
             LLAMA_EVOX2_RGP_SSE_TRACE = '0'
         }
@@ -85,6 +87,16 @@
                     Name = 'rgp-survey-anchor'
                     Environment = @{
                         GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
+                @{
+                    Name = 'rgp-survey-fine'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_BAND = '12'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = '19'
                         GGML_HIP_RGP_ANCHOR = '1'
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
@@ -135,6 +147,16 @@
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
                 },
+                @{
+                    Name = 'rgp-survey-fine'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_BAND = '12'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = '19'
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
                 @{ Name = 'rgp-clean' }
             )
         },
@@ -181,6 +203,16 @@
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
                 },
+                @{
+                    Name = 'rgp-survey-fine'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_BAND = '12'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = '19'
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
                 @{ Name = 'rgp-clean' }
             )
         },
@@ -223,6 +255,16 @@
                     Name = 'rgp-survey-anchor'
                     Environment = @{
                         GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_ANCHOR = '1'
+                        GGML_HIP_RGP_ANCHOR_KV = '49152'
+                    }
+                },
+                @{
+                    Name = 'rgp-survey-fine'
+                    Environment = @{
+                        GGML_HIP_RGP_FA_SURVEY = '1'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_BAND = '12'
+                        GGML_HIP_RGP_FA_SURVEY_FINE_LAYER = '19'
                         GGML_HIP_RGP_ANCHOR = '1'
                         GGML_HIP_RGP_ANCHOR_KV = '49152'
                     }
