@@ -365,3 +365,15 @@ IQ4 captured FA Event415=**108117.744µs**, `CmdBarrier` Event416=**8838.715µs*
 **Next** old IQ4 **ub512 `rgp-survey-fine`**: collect layer19 **KV50176/N512/slot2** then **KV49664/N512/slot1** for the same query positions49152..50175. Start with exploratory RDP **start358000/count1024** for slot2: rough estimate from IQ4/IQ3 ub1024 target dispatch ratio (181250/205000) applied to IQ3 ub512 slot2 start404500 (~357600), **not validated by any IQ4 ub512 RGP**. Read coarse band, total threads→layer, and fine slot; recalibrate after the first result. Use plan job `pp64k-oldiq4-ub512`, variant `rgp-survey-fine`, no code changes. Existing IQ3 J16×2/J32 marker-on MMQ improvement **−22.83%** is the comparison baseline for the **IQ4 J16×2/J32 speedup**, not the cross-model +36.87% figure above. Marker-OFF `rgp-clean` and unrelated GPU idle remain deferred.
 
 Full report: [old IQ4 KV50176/layer19 RGP](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-oldiq4-ub1024-slot2-layer19-rgp.md).
+
+
+## 2026-11-11: old IQ4 ub512 RGP start358000 shows band12 layer35 and layer39
+
+User-supplied RGP screenshots `llama-cli-20261111-233317228.rgp`, old IQ4 / ub512, HIP / `rgp-survey-fine`, RDP **start358000/count1024**. Two FA coarse survey markers in one captured trace:
+
+| Event | `evox2_hip_fa_survey_kv_band` | Total threads | Workgroups (=threads/64) | Layer (=workgroups−129) | Duration |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 191 | **band12** | **10496** | 164 | **35** | 0.330µs |
+| 789 | **band12** | **10752** | 168 | **39** | 0.371µs |
+
+Both are **later in layer sequence than layer19**, so retarget to a **lower** dispatch start. Neither event identifies the precise KV slot because fine survey is restricted to layer19. These two markers are 598 **RGP events**, not 598 GPU dispatches: the event stream includes `CmdBarrier` and other entries. A very rough model of ~2 RGP events per dispatch gives ~300 dispatch for 4 layers, ~1200 dispatch for 16 layers. **Next exploratory setting start356600/count1024** to place layer19 away from the capture edge; this is an unverified heuristic, not calibrated global dispatch mapping and may miss due to varying graph/event patterns. Reuse the same IQ4/ub512 `rgp-survey-fine` build/model/inputs, no rebuild. Seek `kv_band<12>` with Total threads9472 (layer19), then fine `kv_slot<2>` (K extent50176/N512); only after that collect the Gate/Up/Down J16 MMQ/reduction. Subsequently capture `kv_slot<1>` (K extent49664/N512) for exact same 1024 query tokens as the existing IQ4 ub1024 slot2. No CLI ZIP included with this message, so exact host KV and run status were not independently reverified.
