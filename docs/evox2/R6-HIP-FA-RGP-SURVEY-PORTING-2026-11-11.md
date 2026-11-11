@@ -416,3 +416,25 @@ Execution archive `20261111-235357-680-cli-rocm-b12188-ctx65536-42367a061f58.zip
 Newest ZIP ADLX at high GPU usage≥95%: n83, core clock mean~2886.9MHz, VRAM mean~834.5MHz and median800MHz, power mean~119W. Near RGP file time 23:56:59 JST, 2s sampling showed ~800MHz VRAM at high GPU load. **No calibrated per-event RGP-to-ADLX clock correlation**; cannot assign individual kernel clock states or rule out profiling/thermal or scheduling confounds.
 
 **Scope gate for `rgp-survey-fine` is now CLOSED for both IQ3 and IQ4.** User preference: do marker-OFF tests **together afterwards** (don't chase GPU idle right now). If proceeding, use `rgp-clean` or plain marker-free run across IQ3/IQ4×ub512/1024, verify variant flags really remove survey and anchor dispatch kernels, independently remap RDP capture starts (marker-on indexes are invalid after removing extra dispatches), and avoid claiming clean captures match exact K/layer without separate proof. Detailed evidence: [final paired 4-condition RGP report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-11-iq3-iq4-matched-1024-token-j16-j32-final-rgp.md). GPU idle and CmdBarrier root causes remain a separate deferred investigation.
+
+## 2026-11-12: Planned marker-OFF PP-only six-condition sweep (including updated IQ3)
+
+The **marker-ON** RGP layer19 IQ3/IQ4 J16/J32 matching gate is complete; the next requested measurement is a **normal PP-only throughput sweep without opening/capturing RGP**, before any clean RGP location remapping. Includes updated/new IQ3 PLE16 (but **not** any updated/new IQ4, which is not downloaded). The logical MoE matrix/tensor dimensions are shared for the same architecture, ubatch and layer, but physical compressed weight layouts, GGML type, effective expert assignment distribution, and per-type MMQ config differ. The `J=16/32` shown by RGP is **column tile width**, not the complete matrix dimension. Source: `ggml/src/ggml-cuda/mmq.cu` sets `ncols_opt` from MoE activations / expert counts and selects `ggml_cuda_mmq_get_config(src0->type, J,...)`; `mmq.cuh` defines config including SRAM tile width I/J, K tile and threads. Therefore local timing crossover is **not just identical instruction sequences executing at different speeds**.
+
+**New complete 6-job matrix plan:** [qwen38-r6-rocm-pp64k-marker-off-oldiq3-oldiq4-newiq3-6run-20261112.psd1](../../tools/evox2/benchmark/configs/qwen38-r6-rocm-pp64k-marker-off-oldiq3-oldiq4-newiq3-6run-20261112.psd1). Same 61788-token frozen `PPCode64kRgp` input, ctx65536, ROCm **R6RocmPp64kMmqTrace** b12188 executable, `-b2048 -ub{512,1024} -t4 -tb4 -ngl999 -ncmoe0 -fa auto`, f16 KV, MTP disabled, 256 generation tokens (unchanged from RGP tests; evaluate **PP metric only**), one run per job, 45s cooldown, 96GB UMA/P-MODE Performance. The only variant is `rgp-clean`; all survey, anchor, MMQ trace, FA trace and SSE trace env flags are explicitly zero or null. RDP/SQTT capture must also be disabled for this PP-only measurement.
+
+**Order balanced by ubatch:** old IQ3/512 → old IQ4/512 → **new IQ3/512** → **new IQ3/1024** → old IQ4/1024 → old IQ3/1024. Local model key `MHHNewIQ3` is the converted updated Unsloth PLE16 model; it was used in the earlier quality comparison. Other model keys `MHHOldIQ3`, `MHHOldIQ4` and build key `R6RocmPp64kMmqTrace` are shared with the RGP plan. Input `PPCode64kRgp` must be present in local.psd1 as it was for recent RGP captures.
+
+PowerShell (execute in installed diagnostic worktree, but reuse main r6 local.psd1):
+```powershell
+$diag  = 'C:\llama-build\llama.cpp-evox2-windows-r6-pp64k-mmq'
+$main  = 'C:\llama-build\llama.cpp-evox2-windows-r6'
+git -C $diag pull --ff-only
+$matrix = Join-Path $diag 'tools\evox2\benchmark\Invoke-BenchmarkMatrix.ps1'
+$local  = Join-Path $main 'tools\evox2\benchmark\configs\local.psd1'
+$plan   = Join-Path $diag 'tools\evox2\benchmark\configs\qwen38-r6-rocm-pp64k-marker-off-oldiq3-oldiq4-newiq3-6run-20261112.psd1'
+& $matrix -Plan $plan -LocalConfig $local -MaxRuns 6 -PlanOnly
+& $matrix -Plan $plan -LocalConfig $local -MaxRuns 6 -StopOnError
+```
+
+**Must verify first:** dry-run six expected jobs and `MHHNewIQ3` resolved to **updated PLE16** file, not old IQ3 nor pre-conversion shards; all six use same input SHA and executable SHA. Compare PP tok/s and ADLX clock history; do **not** claim a 6-run comparison yet because this is a plan only. Clean RGP capture may be done later and requires new dispatch coordinates; old marker-on RDP starts are invalid without markers.
