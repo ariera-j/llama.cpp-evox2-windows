@@ -10,6 +10,7 @@
 namespace evox2_hip_fa_survey {
 
 static constexpr int64_t kv_band_tokens = 4096;
+static constexpr int64_t fine_slot_tokens = 512;
 static constexpr int max_kv_band = 64;
 static constexpr int layer_grid_base = 129;
 static constexpr int unknown_layer_blocks = 128;
@@ -22,6 +23,43 @@ static __global__ void evox2_hip_fa_survey_kv_band() {
         asm volatile("s_nop 0");
     }
 #endif
+}
+
+// Optional per-512-token sub-band marker; only launched in the requested band/layer.
+template <int slot>
+static __global__ void evox2_hip_fa_survey_kv_slot() {
+#if defined(__HIP_PLATFORM_AMD__)
+#pragma unroll
+    for (int i = 0; i <= slot; ++i) {
+        asm volatile("s_nop 0");
+    }
+#endif
+}
+
+static long fine_band() {
+    static const long value = [] {
+        const char * const env = std::getenv("GGML_HIP_RGP_FA_SURVEY_FINE_BAND");
+        if (env == nullptr || *env == '\0') {
+            return -1L;
+        }
+        char * end = nullptr;
+        const long parsed = std::strtol(env, &end, 10);
+        return end != env && *end == '\0' && parsed >= 0 && parsed <= max_kv_band ? parsed : -1L;
+    }();
+    return value;
+}
+
+static long fine_layer() {
+    static const long value = [] {
+        const char * const env = std::getenv("GGML_HIP_RGP_FA_SURVEY_FINE_LAYER");
+        if (env == nullptr || *env == '\0') {
+            return -1L;
+        }
+        char * end = nullptr;
+        const long parsed = std::strtol(env, &end, 10);
+        return end != env && *end == '\0' && parsed >= 0 && parsed <= 126 ? parsed : -1L;
+    }();
+    return value;
 }
 
 static __global__ void evox2_hip_fa_survey_kv_overflow() {
@@ -117,6 +155,32 @@ static void submit(int64_t kv, int64_t n, long layer, cudaStream_t stream) {
         default: evox2_hip_fa_survey_kv_overflow<<<blocks, 64, 0, stream>>>(); break;
     }
     CUDA_CHECK(cudaGetLastError());
+
+    // This second dispatch is absent unless an explicitly selected band is reached.
+    // The first survey marker and its layer/grid encoding remain unchanged.
+    if (band >= 0 && band == fine_band() && (fine_layer() < 0 || layer == fine_layer())) {
+        const int slot = (int) ((kv % kv_band_tokens) / fine_slot_tokens);
+        switch (slot) {
+
+            case 0: evox2_hip_fa_survey_kv_slot<0><<<blocks, 64, 0, stream>>>(); break;
+            case 1: evox2_hip_fa_survey_kv_slot<1><<<blocks, 64, 0, stream>>>(); break;
+            case 2: evox2_hip_fa_survey_kv_slot<2><<<blocks, 64, 0, stream>>>(); break;
+            case 3: evox2_hip_fa_survey_kv_slot<3><<<blocks, 64, 0, stream>>>(); break;
+            case 4: evox2_hip_fa_survey_kv_slot<4><<<blocks, 64, 0, stream>>>(); break;
+            case 5: evox2_hip_fa_survey_kv_slot<5><<<blocks, 64, 0, stream>>>(); break;
+            case 6: evox2_hip_fa_survey_kv_slot<6><<<blocks, 64, 0, stream>>>(); break;
+            case 7: evox2_hip_fa_survey_kv_slot<7><<<blocks, 64, 0, stream>>>(); break;
+            default: break;
+        }
+        CUDA_CHECK(cudaGetLastError());
+        static std::atomic<int64_t> last_logged_kv { -1 };
+        if (last_logged_kv.exchange(kv, std::memory_order_relaxed) != kv) {
+            std::fprintf(stderr,
+                    "evox2_hip_fa_survey_fine_v1 band=%d slot=%d KV=%lld N=%lld layer=%ld"
+                    " grid_blocks=%d note=host_submission_not_RGP_event\n",
+                    band, slot, (long long) kv, (long long) n, layer, blocks);
+        }
+    }
 
     static std::atomic<int> last_band { -2 };
     if (last_band.exchange(band, std::memory_order_relaxed) != band) {
