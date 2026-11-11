@@ -893,7 +893,11 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         ggml_hip_fa_trace_host(dst, kernel, ctx.device);
     }
     if (evox2_hip_fa_survey::enabled()) {
-        evox2_hip_fa_survey::submit(dst, ctx.stream());
+        const ggml_tensor * const q = dst->src[0];
+        const ggml_tensor * const k = dst->src[1];
+        const char * const tag = std::strstr(q->name, "Qcur-");
+        const long layer = tag ? std::strtol(tag + 5, nullptr, 10) : -1;
+        evox2_hip_fa_survey::submit(k->ne[1], q->ne[1], layer, ctx.stream());
     }
     if (ggml_hip_rgp_fa_anchor_enabled()) {
         const ggml_tensor * const q = dst->src[0];
