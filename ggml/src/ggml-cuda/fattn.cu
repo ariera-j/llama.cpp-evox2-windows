@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include "evox2-hip-fa-survey.cuh"
 #endif // defined(GGML_USE_HIP)
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
@@ -890,6 +891,9 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
 #if defined(GGML_USE_HIP)
     if (ggml_hip_fa_trace_enabled()) {
         ggml_hip_fa_trace_host(dst, kernel, ctx.device);
+    }
+    if (evox2_hip_fa_survey::enabled()) {
+        evox2_hip_fa_survey::submit(dst, ctx.stream());
     }
     if (ggml_hip_rgp_fa_anchor_enabled()) {
         const ggml_tensor * const q = dst->src[0];
