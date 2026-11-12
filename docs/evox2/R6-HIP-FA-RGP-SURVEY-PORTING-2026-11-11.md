@@ -438,3 +438,22 @@ $plan   = Join-Path $diag 'tools\evox2\benchmark\configs\qwen38-r6-rocm-pp64k-ma
 ```
 
 **Must verify first:** dry-run six expected jobs and `MHHNewIQ3` resolved to **updated PLE16** file, not old IQ3 nor pre-conversion shards; all six use same input SHA and executable SHA. Compare PP tok/s and ADLX clock history; do **not** claim a 6-run comparison yet because this is a plan only. Clean RGP capture may be done later and requires new dispatch coordinates; old marker-on RDP starts are invalid without markers.
+
+
+## 2026-11-12: 64k code PP marker-OFF — 12run (RDPあり6 / RDPなし6)
+
+受領ZIP `20261112-012850-438-cli-rocm-b12188-ctx65536-a84871ff3d62.zip` SHA256 `c43d69cd23e6f099dae48e0e5399e49dc8f3778c7228c9f35d8f7386d5d8b6be` に**12run（前半Radeon Developer Panel/RDP起動・start353000自動capture設定6run、後半RDP終了6run）**が含まれる。全部Status OK/ExitCode0、ROCm b12188同一exe/runtime、同一コード入力61788tok/SHA、ctx65536、f16 KV/MTP OFF、P-Mode Performance、UMA96GB。前後ともHIP survey/anchor/MMQ trace/FA trace/SSE traceはすべて環境変数OFF。RDPなし後半6runを**正式PP値**とする。
+
+| モデル | ub512 RDPあり | ub512 RDPなし | ub1024 RDPあり | ub1024 RDPなし |
+| --- | ---: | ---: | ---: | ---: |
+| 旧IQ3 | 330.88 | **351.48** | 359.84 | **405.49** |
+| 旧IQ4 | 364.57 | **393.69** | 341.68 | **387.97** |
+| 新IQ3（更新版PLE16） | 339.75 | **364.16** | 363.00 | **405.29** |
+
+**マーカーOFFかつRDPなしで逆転再現：ub512は旧IQ4が旧IQ3比+12.01%、ub1024は旧IQ3が旧IQ4比+4.52%。** IQ3自身のub512→1024は旧版+15.37%、新IQ3+11.30%；旧IQ4は−1.45%。新IQ3はub1024で旧IQ3とほぼ同速（405.29/405.49）。ただし各1runで、反復の統計精度を保証するものではない。
+
+**RDPありは参考用**：RDPあり高GPU使用率サンプルのVRAMクロックは平均800〜844MHz、RDPなしでは平均929〜999MHz。GPUコアクロックは概ね2874〜2896MHzと近い。RDPあり→なしで全6条件PPが+6.2〜13.6%上がった。シーケンシャル比較のため**RDP起動／RGPキャプチャがVRAMクロック低下の原因と断定は不可**。非計測時のRGP開放を推奨。RDPはRadeon Developer Panelで、Windowsのリモートデスクトップではない。
+
+**start353000のマーカーOFF RGP×6の再利用可否**：各ファイル内でGPUカーネル列、FA/MoE、barrier/idle等を**予備分析・粗い位置推定**する材料にはなる。**同じstart番号が同じKV/layerを保証しない**（survey/anchor OFFによるdispatch数変化、IQ3/IQ4/新IQ3の処理差、ub512/1024差）；特にub1024は過去のmarker-ON layer19アタリ位置（旧IQ3≈205000、旧IQ4≈181250）を大きく越えるので後半／TGの可能性あり。マーカーOFFのRGPデータ自体は**今回ZIPに含まれておらず**、各RGPのイベント内容は未確認。前半RDPありのクロック条件が後半RDPなしと異なるため、RGPイベント時間を後半PPの絶対的な内訳として換算しないこと。必要なら既存6 RGPのうちold IQ4 ub512から確認、FA/MoEの並び・イベント・末尾を見てから狙う位置を再校正。マーカーONで一致済みのMMQ3 J16/J32局所速度逆転も引き続き有効な機序候補。
+
+詳細： [2026-11-12・RDPあり/なし12run解析](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-12-rocm-64k-marker-off-12run-rdp-on-off.md)。**マーカーOFFのPP確認ゲートは完了**、新IQ4は未入手につき対象外、GPU idleの詳細解析は別途保留。
