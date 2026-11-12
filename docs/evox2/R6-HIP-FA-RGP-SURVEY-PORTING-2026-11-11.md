@@ -475,3 +475,24 @@ Adjacent run ADLX samples around RGP timestamp 2026-11-12 00:42:03 local: at 00:
 Full report: [old IQ4 ub512 marker-OFF RGP start353000](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-12-rgp-clean-oldiq4-ub512-start353000-two-fa.md).
 
 **Positioning next gate**: if an exact clean K/layer comparison is essential, a separate calibration is needed (count FA occurrences from a known ubatch start or use CPU-side-only K/layer instrumentation). Existing six clean files may still be useful for qualitative kernel sequence/barrier comparisons, but `start353000` by itself cannot align IQ3/IQ4/ub variants. Hold unrelated GPU idle investigation per user.
+
+
+## 2026-11-12: rgp-clean old IQ3 ub512 start353000, two FA→MoE groups
+
+User-provided four Event timing screenshots of `llama-cli-20261112-003653622.rgp`, RDP HIP **start353000/count1024**, old IQ3_XXS / ub512, **markers OFF**. The corresponding **`.rgp` binary was NOT uploaded** in this message (unlike the earlier old IQ4 `.rgp`); event times were transcribed from screenshots. Associated earlier verified RDP-open PP run `20261112-003344-380` recorded **330.88 tok/s**; RDP-closed counterpart **351.48 tok/s**. GPU-high-load ADLX mean VRAM clock for former ~840.7MHz but no per-event synchronization.
+
+| | First FA group | Second FA group |
+| --- | --- | --- |
+| FA | **E229 52766.965µs** | **E909 52930.341µs** |
+| CmdBarrier after FA | E230 9297.721µs | E910 9332.860µs |
+| Gate `mul_mat_q<ggml_type22,16>` IQ2_S | **E271 3139.622µs** | **E951 2910.971µs** |
+| Up same IQ2_S/J16 | **E277 3185.156µs** | **E957 2893.999µs** |
+| Down `mul_mat_q<ggml_type20,16>` IQ4_NL | **E285 4089.146µs** | **E965 3654.267µs** |
+| **3 MMQ sum** | **10413.924µs** | **9459.237µs** |
+| `moe_weighted_reduction_f32` | E287 639.805µs | screenshot not shown after E965 |
+
+Both Gate/Up/Down sets **complete on screenshots**. Fourth screenshot viewport ends at E965; this does **not prove RGP event truncated**, only subsequent event(s) not displayed. If desired, scroll to E967–E973 to record reduction, but no new capture required.
+
+The two FA and matching MoE events are **680 Event IDs apart**, while old IQ4/ub512 `rgp-clean` at same global start353000 had **596 event IDs** between its FA/MoE groups (FA E43/E639, Gate E81/E677). Previous marker-on IQ4 4-layer-spaced survey had 598 IDs between layer35→39. Hence the two FA groups within each clean RGP **likely represent four-layer-separated FA operations in one ubatch, NOT two consecutive ubatches at fixed layer**; exact K/layer unproven with markers OFF. IQ3's extra 84 displayed events may reflect different intermediate scheduling/dispatch structure, not proven to be quantization alone.
+
+**Do NOT directly compare IQ3 vs IQ4 based solely on the shared RDP start353000**: removing earlier GPU markers shifts absolute dispatch indices, and quantization/model type also shifts position, so not guaranteed same KV or layer. In particular do not add the two FA-linked MMQ groups as a J16×2 same-layer result. The previously correctly paired marker-ON J16×2/J32 result remains the valid position-matched comparison. Source report: [old IQ3 ub512 clean RGP](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-12-rgp-clean-oldiq3-ub512-start353000-two-fa.md). No need to repeat six-run PP; keep GPU idle analysis deferred.
