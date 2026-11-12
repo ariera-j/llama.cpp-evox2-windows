@@ -457,3 +457,21 @@ $plan   = Join-Path $diag 'tools\evox2\benchmark\configs\qwen38-r6-rocm-pp64k-ma
 **start353000のマーカーOFF RGP×6の再利用可否**：各ファイル内でGPUカーネル列、FA/MoE、barrier/idle等を**予備分析・粗い位置推定**する材料にはなる。**同じstart番号が同じKV/layerを保証しない**（survey/anchor OFFによるdispatch数変化、IQ3/IQ4/新IQ3の処理差、ub512/1024差）；特にub1024は過去のmarker-ON layer19アタリ位置（旧IQ3≈205000、旧IQ4≈181250）を大きく越えるので後半／TGの可能性あり。マーカーOFFのRGPデータ自体は**今回ZIPに含まれておらず**、各RGPのイベント内容は未確認。前半RDPありのクロック条件が後半RDPなしと異なるため、RGPイベント時間を後半PPの絶対的な内訳として換算しないこと。必要なら既存6 RGPのうちold IQ4 ub512から確認、FA/MoEの並び・イベント・末尾を見てから狙う位置を再校正。マーカーONで一致済みのMMQ3 J16/J32局所速度逆転も引き続き有効な機序候補。
 
 詳細： [2026-11-12・RDPあり/なし12run解析](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-12-rocm-64k-marker-off-12run-rdp-on-off.md)。**マーカーOFFのPP確認ゲートは完了**、新IQ4は未入手につき対象外、GPU idleの詳細解析は別途保留。
+
+
+## 2026-11-12: rgp-clean old IQ4 ub512 start353000 binary RGP, two FA groups
+
+Received raw AMD RDF/RGP file `llama-cli-20261112-004203560.rgp` (**285455832 bytes**, SHA256 `2e7ff430a2fa8fac6132dbf960c487df7f1065742d896ad48610590a4d215433`) and five event screenshots, Radeon GPU Profiler 2.7.0.32, **RDP start353000/count1024**, old IQ4_XS/ub512/`rgp-clean`. Corresponds to preliminary RDP-open PP run `20261112-003905-914` (**364.57 tok/s**, original 61788tok frozen code, ROCm b12188, successful execution, all in-app GPU markers off). User screenshots give **FA E43=55664.055µs**, **FA E639=57196.743µs**, and following `CmdBarrier` E44=9870.983µs/E640=10500.385µs. Corresponding three J16 MoE MMQ operations:
+
+| | Gate IQ4_XS | Up IQ4_XS | Down IQ4_NL | 3 MMQ sum | Reduction |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FA E43 group | E81 2492.452µs | E87 2527.682µs | E95 4168.614µs | **9188.748µs** | E97 606.262µs |
+| FA E639 group | E677 2568.534µs | E683 2569.896µs | E691 4208.512µs | **9346.942µs** | E693 601.473µs |
+
+The **596-event separation** between FA events and also between corresponding MoE events is very close to previous marker-ON survey observations (**598 RGP events** separated FA **layer35→layer39**, hence 4 layers). **Strong hypothesis: two FA events come from neighboring FA layers four layers apart within a single ubatch, NOT from consecutive ubatches of one layer.** But **actual layer and K cannot be uniquely identified without markers or calibrated host trace**. Do not combine these two MMQ groups as if they were J16×2 for a single fixed layer (the marker-ON paired J16×2/J32 investigation already had proper KV/layer alignment). Marker-on start353000=IQ4 ub512 KV49664/layer19 does **not** imply identical marker-free start353000=KV49664/layer19; removal of thousands of earlier marker GPU launches shifts global dispatch mapping. Earlier marker-free PP crossover remains unaffected.
+
+Adjacent run ADLX samples around RGP timestamp 2026-11-12 00:42:03 local: at 00:42:01 GPU100%/core2894MHz/VRAM800MHz; 00:42:03 GPU99%/core2886MHz/VRAM800MHz; 00:42:05 GPU99%/core2838MHz/VRAM800MHz. RGP event clock not calibrated to ADLX individual samples. The RGP binary was verified to start `AMD_RDF ` but **full binary SQTT event decoding was not performed**; timings are transcribed from user's screenshots. CmdBarrier event duration is not automatically whole-GPU idle.
+
+Full report: [old IQ4 ub512 marker-OFF RGP start353000](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/runs/2026-11-12-rgp-clean-oldiq4-ub512-start353000-two-fa.md).
+
+**Positioning next gate**: if an exact clean K/layer comparison is essential, a separate calibration is needed (count FA occurrences from a known ubatch start or use CPU-side-only K/layer instrumentation). Existing six clean files may still be useful for qualitative kernel sequence/barrier comparisons, but `start353000` by itself cannot align IQ3/IQ4/ub variants. Hold unrelated GPU idle investigation per user.
