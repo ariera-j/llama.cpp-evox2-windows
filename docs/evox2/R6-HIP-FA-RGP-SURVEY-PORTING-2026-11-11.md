@@ -487,11 +487,11 @@ User-provided four Event timing screenshots of `llama-cli-20261112-003653622.rgp
 | CmdBarrier after FA | E230 9297.721µs | E910 9332.860µs |
 | Gate `mul_mat_q<ggml_type22,16>` IQ2_S | **E271 3139.622µs** | **E951 2910.971µs** |
 | Up same IQ2_S/J16 | **E277 3185.156µs** | **E957 2893.999µs** |
-| Down `mul_mat_q<ggml_type20,16>` IQ4_NL | **E285 4089.146µs** | **E965 3654.267µs** |
-| **3 MMQ sum** | **10413.924µs** | **9459.237µs** |
+| Down `mul_mat_q<ggml_type20,16>` IQ4_NL | **E285 4089.146µs** | **E965 3654.267µs（参考値・集計除外）** |
+| **3 MMQ sum（採用値）** | **10413.924µs** | **—（E965除外で算出しない）** |
 | `moe_weighted_reduction_f32` | E287 639.805µs | screenshot not shown after E965 |
 
-Both Gate/Up/Down sets **complete on screenshots**. Fourth screenshot viewport ends at E965; this does **not prove RGP event truncated**, only subsequent event(s) not displayed. If desired, scroll to E967–E973 to record reduction, but no new capture required.
+**品質上の注記（ユーザー指摘で修正）：** E965 DownはRGP最後の表示イベントであり、過去にRGP末尾イベントの実行時間が不自然に短くなった事例があるため、**3654.267µsは参考値のみ、すべてのMMQ3合計・%変化・IQ3/IQ4比較から除外する**。E965が本当に切断されたかはスクショだけでは未確定。旧記載の二回目「9459.237µs」および「前半比−9.17%」は採用しない。E951 Gate2910.971µs、E957 Up2893.999µsは個別の参考GPUイベントとして維持。2回目MoEの完全な合計値を確定させるための追加撮影は現段階で必須ではない。位置合わせ済みmarker-ONのIQ3/IQ4 J16×2/J32比較には影響なし。
 
 The two FA and matching MoE events are **680 Event IDs apart**, while old IQ4/ub512 `rgp-clean` at same global start353000 had **596 event IDs** between its FA/MoE groups (FA E43/E639, Gate E81/E677). Previous marker-on IQ4 4-layer-spaced survey had 598 IDs between layer35→39. Hence the two FA groups within each clean RGP **likely represent four-layer-separated FA operations in one ubatch, NOT two consecutive ubatches at fixed layer**; exact K/layer unproven with markers OFF. IQ3's extra 84 displayed events may reflect different intermediate scheduling/dispatch structure, not proven to be quantization alone.
 
