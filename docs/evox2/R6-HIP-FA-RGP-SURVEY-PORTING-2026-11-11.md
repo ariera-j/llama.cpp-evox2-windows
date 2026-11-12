@@ -1,6 +1,14 @@
 # HIP FA RGP survey - portable KV-band location markers
 
-**Status (2026-11-11): implemented; first Windows HIP RGP survey marker visualized at band11/layer47. Exact target band12/layer19 alignment still pending.** Survey-only instrumentation, not a speed optimization.
+**Status (2026-11-12): DIAGNOSTIC IMPLEMENTATION AND INVESTIGATION COMPLETED.** The all-FA survey, 512-token fine marker and selective anchor were validated on Windows HIP RGP; matching layer19 and the identical 1024-query-token interval was achieved for old IQ3/IQ4 × ub512/ub1024. Marker-free PP confirmed the rank reversal. Keep this feature opt-in and on the experimental branch; it is not a production optimization. GPU idle root-cause analysis is deferred. Earlier chronological entries retain their original provisional status.
+
+## Final research summary (2026-11-12)
+
+- **[Japanese research summary: old IQ3/IQ4 ROCm PP inversion, matched RGP J16/J32, clean PP, caveats](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/qwen38-rocm-iq3-iq4-pp-20261110/INVESTIGATION-SUMMARY-2026-11-12.md)**
+- 110k old IQ3/old IQ4 PP speed rank crossover reproduced; 64k marker-OFF, RDP-closed reproduced again.
+- At **layer19** and **query positions [49152,50176)**: old IQ3 J16×2 MMQ3 20.720ms vs J32 15.989ms (−22.83%); old IQ4 17.930ms vs21.885ms (+22.06%). Four samples are **marker ON, separate RGP sessions**, not the full-PP causal breakdown.
+- RGP marker-OFF captures were obtained for old IQ3/IQ4 at both ub512 and ub1024; exact KV/layer matching is **not established** in clean traces, so compare only qualitative tendencies. RDP-open sessions also showed different VRAM clocks than RDP-closed.
+- Original raw RGP snapshots and ZIP logs are not all stored in Git; see per-run reports linked by the summary. Survey header is portable via the thin fattn.cu adapter; do **not** merge into production r6 automatically.
 
 ## Background and objective
 
