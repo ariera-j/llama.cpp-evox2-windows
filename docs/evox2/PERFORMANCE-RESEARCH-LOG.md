@@ -11,6 +11,71 @@ It is intentionally separate from `ROADMAP.md` and the implementation/measuremen
 
 ---
 
+## 2026-11-12 — Strata試用前の最新動向確認（research-only）
+
+**位置付け：** [2026-11-08の前回調査](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)からの更新差分。今回の目的は**Strata初回試用の可否・EVO-X2への実用上の影響**を判断することであり、**r6 upstream更新／ドライバー入替／ソース変更は行わない**。確認日2026-11-12 JST。外部ベンチは必ず**作者報告・別のモデル/設定**として扱い、llama.cpp r6との優劣を推定しない。
+
+### 1. 結論と直近の方針
+
+- **最優先：Strata v0.2.13 prebuiltのWindows/gfx1151初回試用**。v0.2.12からStrix Halo起動・メモリ予約問題が改善され、prebuilt HIP engineが利用可能。**初回から自前ビルドしない**。
+- EVO-X2のUMAを**96GB→64GB**に変更して試す計画（ユーザーの試用計画／公式EVO-X2ベンチでの64GB BIOS carve-outを参照）。**64GBが必須の仕様とは断定しない**。ユーザーの現在のAdrenalin 26.8.1は、公式ベンチの26.10.1と異なる。ドライバーは初回は固定し、問題が起きた場合にだけ差分を検討。
+- **llama.cpp r6／常用モデルは据え置き**。upstreamには確認候補があるが、今すぐ再ベースやパッチ取り込みを始める根拠はない。直近の旧IQ3/旧IQ4 ROCm PP逆転・MH-Hardの計測結果も固定参照。
+- Strata初回は対応済みQwen3.8 Flash Nextの**起動・短文品質・TG・PP 32k/64k・メモリ配置**を確認。Strataモデルpackの量子化、KV型、speculative drafting、expert placement、実行バージョンを記録。PLE16変換済みGGUFがそのまま読めるかは**未確認**で、既存モデルとの数値比較条件が一致したと仮定しない。
+- WindowsのRadeon Developer Panel / RGP、計測用HIPマーカー、RDP（Remote Desktop）など、常用計測に影響し得るプロセスは停止し、PP速度は通常運用条件で測る。**Strataの初回動作確認にRGPは不要**。
+- **次点のwatch：Qwen4のローカルウェイト公開、llama.cppのVulkan CM2/KVやFP8 KV、Ollama Vulkan iGPU mmap**。GPU idle/CmdBarrierの別調査は引き続き保留。
+
+### 2. Strata v0.2.13（2026-11-09）
+
+- [公式Release v0.2.13](https://github.com/Niko1221/Strata/releases/tag/v0.2.13) / [公式Windows導入](https://github.com/Niko1221/Strata/blob/main/docs/AI_SETUP.md) / [公式Strix Halo Windowsベンチ](https://github.com/Niko1221/Strata/blob/main/docs/STRIX_HALO_WINDOWS.md) / [gfx1151最適化設定](https://github.com/Niko1221/Strata/blob/main/docs/STRIX_HALO.md)。
+- 配布はApp/Terminal **0.2.13**、Control/engine **0.1.59**、feed sequence **124**。Windowsアプリ、Terminal、gfx1151向けHIPエンジンを利用可能。作者のリリース検証に**Windows Strix Halo**が含まれる。
+- **DFlash2既定値更新**：Strix Halo上のUD-Q4_K_XLで**TG 46.6→49.1 tok/s (+5.2%)**、UD-IQ4_XS-v31で**+2.0%**と作者報告。これはDFlash2/ドラフト設定変更を含む比較で、**PP加速ではなくTGである**。生成内容が変わり得るモデルあり。
+- **Windows Strix Halo expert-cache/起動修正**：TerminalのUD-Q4_K_XL起動でengineが適用していた**2,560MiBのiGPU予約下限を撤廃**（保存設定のreserve 700MBを尊重）。expert-cache slots **17,556→22,991**、不成功/長時間だった起動が作者環境で**60〜85秒**になった。
+- **gfx1151 hipBLASLt tableは既定ON**（gfx1201/gfx1100では既定利用を撤回）。[v0.2.12](https://github.com/Niko1221/Strata/releases/tag/v0.2.12)ではStrix Haloのfused prefill・grouped decode既定有効化。個別設定を試す場合の戻しスイッチは \`STRATA_GFX1151_DEFAULTS=0\`。通常の初回試用は既定のまま。
+- **自前ビルドの依存軽減**：engine/backendソースを \`cmake/backends\` に分割し、engineがビルドするggmlは \`third_party/strata-ggml\` に配置。作者は **llama.cppの別ダウンロード不要** と説明。
+- **Qwen4は groundwork のみ**。新しいshape向け別エンジンをsigned update feedで配信できる基盤を追加したが、**v0.2.13 feedにQwen4モデルリストやshape engineは未掲載**。対応済みと誤読しない。
+- **known issue**：Windows Strix Haloのfresh installで一度だけの「Preparing your model」が作者測定で**337〜411秒**かかるケースあり（原因未確定）。初回起動の所要時間と次回以降を分ける。
+
+**公式EVO-X2同機種ベンチの条件差：**
+[STRIX_HALO_WINDOWS.md](https://github.com/Niko1221/Strata/blob/main/docs/STRIX_HALO_WINDOWS.md) は2026-10-26の**GMKtec NucBox EVO-X2 / Ryzen AI Max+ 395 / 128GB物理RAM（BIOS割当64GB）/ Win11 Pro / Adrenalin 26.10.1 / Strata 0.2.7 RC (ROCm 10.2.0a20260930)** で、Qwen3.8 Flash Next **IQ3_S / ctx131072 / int8 KV / image ON**を測定。作者例：TG短文**44 tok/s**、PP 4k**755**、16k**821**、32k**792 tok/s**。**自機の旧IQ3_XXS PLE16、r6、f16 KVとは量子化・KV・engine・計測方法が異なる**ため直接優劣は比較不可。gfx1151の後続最適化の作者測定値も、まず同Strata内の変更比較として扱う。
+
+**試用時の確認ゲート：**
+1. BIOS設定/OS可視RAM/driverを記録。最初は現ドライバーを変えない。
+2. Windows公式配布版からインストールし、必要なダウンロードとモデル互換性・展開領域を確認。
+3. launchのdry-planが利用可能なら先に内容を確認し、対応モデルと engine/backend を同定。
+4. 4kなど短文でモデルload→推論→再起動を確認後、32k/64kのPP/TG/メモリを採取。
+5. Strata vs r6は、同じファイルが使える場合でも**モデル量子化・KV・draft/FA、プレフィル方式の一致を必ず確認**。不足するなら「参考比較」に留める。
+
+### 3. llama.cpp upstream（11/12時点の開発ビルド b12318）
+
+- [開発ビルド b12318](https://github.com/ggml-org/llama.cpp/releases/tag/b12318) は2026-11-12公開。**通常のlatest GitHub Release APIがstable v0.9.0を返す場合がある**ので、「最新開発ビルド」と「stableタグ」を混同しない。11/08調査はb12202。
+- [b12274 / #28392](https://github.com/ggml-org/llama.cpp/releases/tag/b12274)：**scaled FP8 KV cache**を追加。現行運用のf16 KVから変える候補ではあるが、ROCm gfx1151 / Qwen3.8 Flash Nextでの速度・品質・長文安定性は**未検証**。
+- [b12291 / #31526](https://github.com/ggml-org/llama.cpp/releases/tag/b12291)：**Vulkan coopmat2 (CM2)でのKV dequant最適化**とhead size alignment判定の修正。公開PR内の性能値をRadeon 8060Sへ外挿しない。現行f16 KV/QSA/FA経路への適用可能性をソースで確認してから独立A/B。
+- [b12304 / #32089](https://github.com/ggml-org/llama.cpp/releases/tag/b12304)：scheduler reserveの**graph-result再利用**（構築/予約のメモリ・処理効率）。実入力PPの明示的改善値はここでは確認できていない。
+- [b12318 / #31919](https://github.com/ggml-org/llama.cpp/releases/tag/b12318)：**CUDA debug buffer pool**。Windows ROCm/Vulkanの直近の速度優先候補には含めない。
+- 直近の更新でr6既存パッチ（COMMON-001/005、QSA、MTP）を急いで廃止・移植できると判断しない。upstream再統合時は別ブランチ・差分監査・同一モデル/入力A/Bを継続。
+
+### 4. Qwen4の公式プレビュー（11/11）
+
+- [Alibaba Cloud Model Studio: Qwen4-Max-Preview](https://www.alibabacloud.com/help/ja/model-studio/qwen4-max-preview) によれば、モデルIDは \`qwen4-max-preview\`、**2026-11-11 10:00〜11-25 24:00 (UTC+8)** 限定の**Token Plan専用プレビュー**。プレビュー終了後はその提供を終了すると公式に記載。
+- これは**API提供のプレビュー**であり、Qwen4オープンウェイト/ローカルGGUF公開の証拠ではない。**新ウェイトの公開を確認するまで、EVO-X2/Strata/llama.cppの実装計画には組み込まない**。
+- Strata 0.2.13のQwen4の「shape engine配信準備」とも区別する。
+
+### 5. その他のエンジンとfork
+
+- **Ollama [v0.40.17-rc0](https://github.com/ollama/ollama/releases/tag/v0.40.17-rc0)**（2026-11-10公開）：[PR #19640](https://github.com/ollama/ollama/pull/19640)で**Vulkan integrated GPUにmmapを使う変更**。Strix Haloでのモデルロード・UMA配置に関係する可能性があるが、Windows Radeon 8060Sの改善率／安定性は未測定、**RCであることを明記**。Strataの次の独立候補。
+- **SGLang [v0.5.23](https://github.com/sgl-project/sglang/releases/tag/v0.5.23)**（2026-11-02）：MoE/LoRA、prefill/graph等の更新は活発。ROCmの公式配布経路は主に**LinuxのMI30x/MI35x用**。v0.5.20時点でgfx1151イメージの言及もあるが、**Windows 8060Sでの手軽な直接試用を意味しない**。本件は優先度低。
+- **Gufo / Project Maya / s1-fork / Unsloth mix / ik_llama.cpp**：11/08の監視記録を維持。今回の照合だけで優先順位をStrataより上げる新情報は確定しなかった。公開日やブランチstatusは実作業時に再点検。
+
+### 6. 決定境界（2026-11-12）
+
+1. **今やる**：Strata v0.2.13のWindows prebuilt / gfx1151初回試用（次の独立チャットで運用、設定・ログは別に残す）。
+2. **保留**：r6のb12318再ベース、Strata自前ビルド、ROCmFPx HIP移植、GPU idle根本原因、RDP/クロックの厳密な因果追跡。
+3. **Watch**：Qwen4オープンウェイト版、llama.cpp FP8 KV/Vulkan CM2、Ollama iGPU mmap、Strata修正リリース。
+
+**証拠の境界**：ここに記載したStrata／llama.cpp／Ollama等の性能値・仕様はリリースノートと作者の別環境の測定結果で、ユーザーEVO-X2で新たに試験したものではない。**mainソース、既存の測定・バイナリ・README/ROADMAP・GPUドライバは無変更**。本コミットはこの調査ログの追記のみ。
+
+---
+
 ## 2026-11-08 — latest upstream, forks and inference engines（research-only）
 
 **現行の優先順位・詳細・出典：** [2026-11-08外部動向・後続計画](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)。r6の実入力ベンチ移植とPP/Mask/Indexer/ROCm FA・MoE・GPU KV_maxの一連の調査が完了したため、今後の比較対象を再選定した。外部のGPU性能値は全て**作者報告・別条件**でありEVO-X2実測ではない。mainソース・build・公開tag・ドライバは変更していない。
