@@ -96,3 +96,31 @@ Remove-Item Env:\GGML_EVOX2_PP_TIMING -ErrorAction SilentlyContinue
 ~~~
 
 If the same target fails, rebuild \`ggml-hip\` only with \`--parallel 1\` and collect errors in the usual local \`ggml-hip-build-debug.log\`, then report the first \`error:\` with context. Do not mistake the numerous \`__declspec dllimport\` or \`unused parameter\` warnings for a fatal error. This is not a claim that the fix has already been compile-tested on the user's machine.
+
+## 2026-11-15 required logging level (-lv 4)
+
+First smoke completed an inference but produced no `evox2 pp timing:` lines because the CLI filters GGML info logs by default. Source verification:
+
+- `tools/cli/cli.cpp` sets default `params.verbosity = LOG_LEVEL_ERROR`.
+- `common/log.cpp` maps `GGML_LOG_LEVEL_INFO` to `LOG_LEVEL_TRACE`, numeric **4**; `-lv 3` will not show these lines.
+- Our experimental logger uses `GGML_LOG_INFO()`, so pass **`-lv 4`** (or `--log-verbosity 4`) while also setting `GGML_EVOX2_PP_TIMING=1`.
+- Use **`-st`** (single turn) with a `-p` prompt to exit after one answer; otherwise CLI may wait for `/exit`.
+- The missing line in the initial smoke is not proof that HIP events failed. This is a logging-only fix and **requires no rebuild**.
+
+Example:
+
+```powershell
+$env:GGML_EVOX2_PP_TIMING = '1'
+try {
+    & "$bin\llama-cli.exe" -m $model -p "GPU timing smoke test." `
+      -c 4096 -n 8 -t 4 -tb 4 -b 2048 -ub 1024 `
+      -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 `
+      -lv 4 -st 2>&1 | Tee-Object -FilePath $log
+    $exitCode = $LASTEXITCODE
+} finally {
+    Remove-Item Env:\GGML_EVOX2_PP_TIMING -ErrorAction SilentlyContinue
+}
+Select-String -Path $log -Pattern 'evox2 pp timing:' | Select-Object -First 10
+```
+
+If no timings are logged after applying both flags, investigate backend dispatch or log forwarding, rather than treating times as zero.
