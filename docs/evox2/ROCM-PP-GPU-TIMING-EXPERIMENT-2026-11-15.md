@@ -71,3 +71,28 @@ The classification is currently based on the GGML op at the **first node of a fu
 For the underlying Strata observations and research plan, see [evox2-llm-experiments (PP investigation)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/engines/strata/PP_ROOT_CAUSE_INVESTIGATION_PLAN_20261114.md) and [128K Strata breakdown](https://github.com/ariera-j/evox2-llm-experiments/blob/main/engines/strata/runs/2026-11-15-strata-128k-prefill-breakdown-and-llama-rocm-profiling-plan.md).
 
 **Scope rule:** experimental local fork only; never merge into \`main\` automatically. The source change was AI-assisted and requires human review, ROCm compilation, short smoke, and CPU/GPU resource logging before interpreting profiling data.
+
+
+## 2026-11-15 Windows HIP compilation fix (first real build log)
+
+The first real Windows gfx1151 HIP build **failed inside the newly added diagnostic code** in \`ggml-cuda.cu\` (not in \`lightning-indexer.cu\`, whose unused-parameter messages were warnings). Six compiler errors identified by the user's complete \`ggml-hip-build-debug.log\`:
+
+- \`cudaEventCreate\` not declared in this ggml HIP compatibility configuration (four sites; \`hipEventCreate\` is available).
+- \`cudaEventElapsedTime\` not declared (two sites; \`hipEventElapsedTime\` is available).
+
+Fix: compile-time selection \`EVOX2_PP_EVENT_CREATE\` / \`EVOX2_PP_EVENT_ELAPSED_TIME\`, using **HIP functions under \`GGML_USE_HIP\`** and original CUDA functions otherwise. No engine mathematical kernels, inference flags, or measurement categories were changed. **This correction is source-reviewed, but the actual Windows rebuild is still pending.** No conclusion about ROCm runtime event timing can be drawn until the next compile and short smoke succeed.
+
+Update the existing detached diagnostic worktree, then reuse the same build directory:
+
+~~~powershell
+cd C:\llama-build\llama.cpp-evox2-pp-profile
+git status --short
+git fetch origin r6/rocm-pp-timing-20261115
+git merge --ff-only FETCH_HEAD
+
+# The existing configured build is preserved. Keep the diagnostic off by default.
+Remove-Item Env:\GGML_EVOX2_PP_TIMING -ErrorAction SilentlyContinue
+.\tools\evox2\build\Build-ROCm.ps1 -BuildDir .\build-rocm-pp-timing -ExpectedRocmSdkVersion '10.0.0' -AmdGpuTarget gfx1151 -Parallel 4
+~~~
+
+If the same target fails, rebuild \`ggml-hip\` only with \`--parallel 1\` and collect errors in the usual local \`ggml-hip-build-debug.log\`, then report the first \`error:\` with context. Do not mistake the numerous \`__declspec dllimport\` or \`unused parameter\` warnings for a fatal error. This is not a claim that the fix has already been compile-tested on the user's machine.
