@@ -4596,8 +4596,60 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     return 0;
 }
 
+
+// Opt-in GPU-op event timing for local ROCm prefill investigations.
+static bool evox2_pp_timing_enabled() {
+    static const bool enabled = [] {
+        const char * value = std::getenv("GGML_EVOX2_PP_TIMING");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
+enum evox2_pp_bucket {
+    EVOX2_PP_FA = 0,
+    EVOX2_PP_QSA_SELECT,
+    EVOX2_PP_MOE,
+    EVOX2_PP_GDN,
+    EVOX2_PP_HC,
+    EVOX2_PP_BUCKET_COUNT,
+};
+
+struct evox2_pp_mark {
+    int bucket;
+    cudaEvent_t begin;
+    cudaEvent_t end;
+};
+
+static int evox2_pp_bucket_for(const ggml_op op) {
+    switch (op) {
+        case GGML_OP_FLASH_ATTN_EXT: return EVOX2_PP_FA;
+        case GGML_OP_LIGHTNING_INDEXER:
+        case GGML_OP_TOP_K_MASK:
+        case GGML_OP_TOP_K:
+        case GGML_OP_ARGSORT:        return EVOX2_PP_QSA_SELECT;
+        case GGML_OP_MUL_MAT_ID:     return EVOX2_PP_MOE;
+        case GGML_OP_SSM_CONV:
+        case GGML_OP_SSM_SCAN:
+        case GGML_OP_GATED_DELTA_NET: return EVOX2_PP_GDN;
+        case GGML_OP_DSV4_HC_COMB:
+        case GGML_OP_DSV4_HC_PRE:
+        case GGML_OP_DSV4_HC_POST:   return EVOX2_PP_HC;
+        default:                     return -1;
+    }
+}
+
 static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, const bool use_cuda_graph, const bool cuda_graph_update_required, const void * graph_key) {
     bool graph_evaluated_or_captured = false;
+    const bool evox2_profile = evox2_pp_timing_enabled() && !use_cuda_graph;
+    std::vector<evox2_pp_mark> evox2_marks;
+    cudaEvent_t evox2_total_begin = nullptr;
+    cudaEvent_t evox2_total_end = nullptr;
+    if (evox2_profile) {
+        CUDA_CHECK(cudaEventCreate(&evox2_total_begin));
+        CUDA_CHECK(cudaEventCreate(&evox2_total_end));
+        CUDA_CHECK(cudaEventRecord(evox2_total_begin, cuda_ctx->stream()));
+    }
 
     // flag used to determine whether it is an integrated_gpu
     const bool integrated            = ggml_cuda_info().devices[cuda_ctx->device].integrated;
@@ -4752,9 +4804,26 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     continue;
                 }
 
+                const int evox2_bucket = evox2_profile ? evox2_pp_bucket_for(node->op) : -1;
+                cudaEvent_t evox2_begin = nullptr;
+                if (evox2_bucket >= 0) {
+                    CUDA_CHECK(cudaEventCreate(&evox2_begin));
+                    CUDA_CHECK(cudaEventRecord(evox2_begin, cuda_ctx->stream()));
+                }
+                const auto evox2_finish = [&]() {
+                    if (evox2_bucket < 0) {
+                        return;
+                    }
+                    cudaEvent_t evox2_end = nullptr;
+                    CUDA_CHECK(cudaEventCreate(&evox2_end));
+                    CUDA_CHECK(cudaEventRecord(evox2_end, cuda_ctx->stream()));
+                    evox2_marks.push_back({evox2_bucket, evox2_begin, evox2_end});
+                };
+
                 int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
 
                 if (nodes_to_skip != 0) {
+                    evox2_finish();
 #ifdef GGML_CUDA_DEBUG
                     const int last_fused = i + nodes_to_skip;
                     GGML_LOG_INFO("nodes_fused: %d, first: %s (%s), last: %s (%s)\n",
@@ -4786,6 +4855,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     GGML_LOG_ERROR("%s: op not supported %s (%s)\n", __func__, node->name, ggml_op_name(node->op));
                 }
                 GGML_ASSERT(ok);
+                evox2_finish();
 
                 if (!is_concurrent_event_active) {
                     try_launch_concurrent_event(node);
@@ -4823,6 +4893,39 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         graph_evaluated_or_captured = true;
 #endif  // USE_CUDA_GRAPH
     }
+    if (evox2_profile) {
+        CUDA_CHECK(cudaEventRecord(evox2_total_end, cuda_ctx->stream()));
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        float total_ms = 0.0f;
+        CUDA_CHECK(cudaEventElapsedTime(&total_ms, evox2_total_begin, evox2_total_end));
+        double ms[EVOX2_PP_BUCKET_COUNT] = {};
+        int counts[EVOX2_PP_BUCKET_COUNT] = {};
+        for (const auto & mark : evox2_marks) {
+            float elapsed_ms = 0.0f;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, mark.begin, mark.end));
+            ms[mark.bucket] += elapsed_ms;
+            ++counts[mark.bucket];
+            CUDA_CHECK(cudaEventDestroy(mark.begin));
+            CUDA_CHECK(cudaEventDestroy(mark.end));
+        }
+        CUDA_CHECK(cudaEventDestroy(evox2_total_begin));
+        CUDA_CHECK(cudaEventDestroy(evox2_total_end));
+
+        // This is an operator subtotal, not a full phase breakdown.
+        // Fused ops with an unclassified root are not counted.
+        GGML_LOG_INFO("evox2 pp timing: nodes=%d gpu_total_ms=%.3f "
+                      "fa_ms=%.3f fa_n=%d qsa_select_ms=%.3f qsa_select_n=%d "
+                      "moe_id_ms=%.3f moe_id_n=%d gdn_core_ms=%.3f gdn_core_n=%d "
+                      "hc_fused_ms=%.3f hc_fused_n=%d concurrent=%d\n",
+                      cgraph->n_nodes, (double) total_ms,
+                      ms[EVOX2_PP_FA], counts[EVOX2_PP_FA],
+                      ms[EVOX2_PP_QSA_SELECT], counts[EVOX2_PP_QSA_SELECT],
+                      ms[EVOX2_PP_MOE], counts[EVOX2_PP_MOE],
+                      ms[EVOX2_PP_GDN], counts[EVOX2_PP_GDN],
+                      ms[EVOX2_PP_HC], counts[EVOX2_PP_HC],
+                      (int) !stream_ctx.concurrent_events.empty());
+    }
 }
 
 #ifdef USE_CUDA_GRAPH
@@ -4857,7 +4960,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     ggml_cuda_graph_set_enabled(cuda_ctx, graph_key);
 
     ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
-    if (graph->is_enabled()) {
+    if (graph->is_enabled() && !evox2_pp_timing_enabled()) {
         const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
         if (graph_compatible) {
             const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
