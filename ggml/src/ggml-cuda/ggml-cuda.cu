@@ -4598,6 +4598,15 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
 
 
 // Opt-in GPU-op event timing for local ROCm prefill investigations.
+// ggml's HIP CUDA-compat layer does not alias these two event APIs.
+#if defined(GGML_USE_HIP)
+#define EVOX2_PP_EVENT_CREATE        hipEventCreate
+#define EVOX2_PP_EVENT_ELAPSED_TIME  hipEventElapsedTime
+#else
+#define EVOX2_PP_EVENT_CREATE        cudaEventCreate
+#define EVOX2_PP_EVENT_ELAPSED_TIME  cudaEventElapsedTime
+#endif
+
 static bool evox2_pp_timing_enabled() {
     static const bool enabled = [] {
         const char * value = std::getenv("GGML_EVOX2_PP_TIMING");
@@ -4646,8 +4655,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
     cudaEvent_t evox2_total_begin = nullptr;
     cudaEvent_t evox2_total_end = nullptr;
     if (evox2_profile) {
-        CUDA_CHECK(cudaEventCreate(&evox2_total_begin));
-        CUDA_CHECK(cudaEventCreate(&evox2_total_end));
+        CUDA_CHECK(EVOX2_PP_EVENT_CREATE(&evox2_total_begin));
+        CUDA_CHECK(EVOX2_PP_EVENT_CREATE(&evox2_total_end));
         CUDA_CHECK(cudaEventRecord(evox2_total_begin, cuda_ctx->stream()));
     }
 
@@ -4807,7 +4816,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 const int evox2_bucket = evox2_profile ? evox2_pp_bucket_for(node->op) : -1;
                 cudaEvent_t evox2_begin = nullptr;
                 if (evox2_bucket >= 0) {
-                    CUDA_CHECK(cudaEventCreate(&evox2_begin));
+                    CUDA_CHECK(EVOX2_PP_EVENT_CREATE(&evox2_begin));
                     CUDA_CHECK(cudaEventRecord(evox2_begin, cuda_ctx->stream()));
                 }
                 const auto evox2_finish = [&]() {
@@ -4815,7 +4824,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                         return;
                     }
                     cudaEvent_t evox2_end = nullptr;
-                    CUDA_CHECK(cudaEventCreate(&evox2_end));
+                    CUDA_CHECK(EVOX2_PP_EVENT_CREATE(&evox2_end));
                     CUDA_CHECK(cudaEventRecord(evox2_end, cuda_ctx->stream()));
                     evox2_marks.push_back({evox2_bucket, evox2_begin, evox2_end});
                 };
@@ -4898,12 +4907,12 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         CUDA_CHECK(cudaDeviceSynchronize());
 
         float total_ms = 0.0f;
-        CUDA_CHECK(cudaEventElapsedTime(&total_ms, evox2_total_begin, evox2_total_end));
+        CUDA_CHECK(EVOX2_PP_EVENT_ELAPSED_TIME(&total_ms, evox2_total_begin, evox2_total_end));
         double ms[EVOX2_PP_BUCKET_COUNT] = {};
         int counts[EVOX2_PP_BUCKET_COUNT] = {};
         for (const auto & mark : evox2_marks) {
             float elapsed_ms = 0.0f;
-            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, mark.begin, mark.end));
+            CUDA_CHECK(EVOX2_PP_EVENT_ELAPSED_TIME(&elapsed_ms, mark.begin, mark.end));
             ms[mark.bucket] += elapsed_ms;
             ++counts[mark.bucket];
             CUDA_CHECK(cudaEventDestroy(mark.begin));
