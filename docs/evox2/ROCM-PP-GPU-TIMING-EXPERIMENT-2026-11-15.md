@@ -124,3 +124,16 @@ Select-String -Path $log -Pattern 'evox2 pp timing:' | Select-Object -First 10
 ```
 
 If no timings are logged after applying both flags, investigate backend dispatch or log forwarding, rather than treating times as zero.
+
+## 2026-11-15 initial EVO-X2 smoke result (source: console excerpt, not complete log)
+
+User compiled dedicated Windows HIP build successfully at commit `9ae6f1539` (build b11933, gfx1151, ROCm SDK 10.0.0). The first short CLI inference completed but the GGML-INFO timing lines were hidden until `-lv 4` was added. With profiling env `GGML_EVOX2_PP_TIMING=1` and `-lv 4`, user confirmed **at least 10 `evox2 pp timing:` lines** in the smoke log:
+
+- Graphs had `nodes=6540`, `fa_n=12` in those ten entries.
+- `qsa_select_n` varied between `3` and `36`. Do not infer distinct layer counts from this alone; graph paths/fusion differ.
+- `gpu_total_ms` in the shown ten entries: `147.240, 46.135, 476.233, 148.201, 64.778, 41.335, 41.180, 41.376, 41.465, 41.185` ms. The final four values were near 41ms.
+- `fa_ms` in these entries was nonzero (13.654, 0.382, 10.251, 0.856, 0.517, 0.504, 0.511, 0.493, 0.478, 0.470). The displayed `Select-String` output wraps before other categories, so no unshown MoE/GDN/HC values should be inferred.
+
+**Meaning:** GPU-event instrumentation now emits nonzero per-GGML-graph timings on real Windows HIP. This establishes basic runtime smoke success but **does not yet validate long-context cumulative PP attribution, stream accuracy, graph membership or uninstrumented speed**. The first and later graph calls may be prefill/decode/warmup; the excerpt by itself cannot definitively separate them.
+
+Next: run a **single 64K paper MTP-OFF test** with the repository's existing `tools/evox2/benchmark/Measure-LlamaCli.ps1`, pass the dedicated `-LlamaCli` path, old 3-shard GGUF, original `-InputFile`, `-Context 65536`, `-UBatch 1024`, `-Batch 2048`, `-KvType f16`, `-GenerationTokens 8`, `-Verbosity 4`, and enable profiling env *only for this command*. The existing runner captures complete `stderr.log`, conditions/result and optional ADLX/Windows resources. After receiving the whole ZIP, separate PP vs TG per-graph lines before computing totals; do not extrapolate from the first ten smoke entries.
