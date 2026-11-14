@@ -4,7 +4,7 @@
 
 - **User private ZIP**: `20261115-023352-983-cli-rocm-b11933-ctx65536-61066389b549.zip`. The raw ZIP and prompt **are not committed**; only derived results appear here.
 - Run ID `20261115-023352-983-cli-rocm-b11933-ctx65536-61066389b549`; status **OK**, exit 0; 2026-11-15 02:33:54–02:37:16 JST.
-- ROCm `llama-cli` **b11933**, compiled from dedicated profiler branch commit `9ae6f153945fc9a67134732f2e5895553c3d7d23`, Windows TheRock ROCm SDK 10.0.0, Clang 23, Radeon 8060S gfx1151, manually labeled **UMA96GB**; `GGML_EVOX2_PP_TIMING=1`, `-lv 4`. GPU instrumentation is experimental.
+- ROCm `llama-cli` **b11933**, compiled from dedicated profiler branch commit `9ae6f153945fc9a67134732f2e5895553c3d7d23`, Windows TheRock ROCm SDK 10.0.0, Clang 23, Radeon 8060S gfx1151, **actual UMA configuration consistent with 64GB**; run metadata is incorrectly manually labeled `UmaLabel=96GB`; `GGML_EVOX2_PP_TIMING=1`, `-lv 4`. GPU instrumentation is experimental.
 - Original 3-shard Unsloth `Qwen3.8-Flash-Next-UD-IQ3_XXS` (old, obtained Aug 29). Input `nlp-survey-ch3-d7-b1.txt`, SHA256 `2c06456c13b9b2b60292742bbff116d234805bfe88ce5765a83721c3ce2d4751`; `61789` llama API prompt tokens, `cache_n=0`.
 - `--context 65536 -b 2048 -ub 1024 -t 4 -ngl 999 -ncmoe 0 -fa auto -ctk f16 -ctv f16 -fit off --cache-ram 0 --reasoning off --spec-type none -n 8`, MTP OFF, temp0. Model log: `offloaded 49/49 layers`, model buffers CPU **27465.95 MiB**, ROCm0 **50191.17 MiB**, ROCm host **497.31 MiB**; ROCm0 main KV **1536 MiB** and indexer KV **384 MiB** (f16, 65536 resident cells), model shared host allocations do not by themselves establish CPU MoE computation.
 - Prompt eval `155609ms` = **397.08 tok/s**, TG `366.98ms` / 8 tokens = **19.07 tok/s**. Overall process wall ~202s includes loading and setup. **Profiling-on speed is not a normal performance baseline**.
@@ -47,6 +47,10 @@ For PP microbatches numbered 0..55 (8 per row), aggregate the events in successi
 
 The last equal-sized interval's FA is **14.88×** the first, while MoE ID is **1.10×**. This supports context-length growth in **llama.cpp FA as a strong driver of long-context PP slowdown**, with MoE comparatively stable per token. `QSA select` also grows, albeit on a smaller scale, while the residual (most general GEMMs, other ops and event gaps) stays around 6.9–7.2s per 8K.
 
+## Corrected UMA identification (2026-11-15)
+
+The user's EVO-X2 BIOS UMA allocation has **not** been changed since Strata setup; it is 64GB. The 64K llama ZIP's `conditions.json` and `result.json` include a stale **manual** `UmaLabel=96GB`; the log explicitly calls it `manual label; not auto-detected`. This value is **not** a BIOS/firmware measurement. The same ZIP's `SystemIdentity.TotalPhysicalBytes=68,340,748,288` = **63.647GiB** Windows-visible system RAM, and `common_param - CPU` reports **65,174MiB**, matching a 128GB physical-RAM machine with ~64GB reserved for GPU UMA. GPU's `ROCm0: 102129 MiB` refers to the ROCm runtime-reported GPU capacity, **not a direct reading of reserved UMA**; it must not override the Windows RAM evidence. The earlier draft of this report incorrectly compared **UMA96GB vs UMA64GB**; this is corrected. The remaining substantial **KV type/capacity/engine and microbatch differences** still preclude apples-to-apples kernel attribution. For future 128K runs, pass `-UmaLabel '64GB'` explicitly to `Measure-LlamaCli.ps1` (or fix only the local config label); preserve the original source's reported value in the archived raw ZIP for provenance.
+
 ## Cross-engine interpretation: STRATA is NOT the same profiler or KV config
 
 Separate existing Strata 0.2.13/HIP engine 0.1.59 **UMA64GB**, old original 3-shard IQ3 model, 64K same frozen file:
@@ -62,7 +66,7 @@ Separate existing Strata 0.2.13/HIP engine 0.1.59 **UMA64GB**, old original 3-sh
 | GDN full | **10.087** |
 | HC full | **9.069** |
 
-llama.cpp's individual **`FA` subtotal 44.351s is even larger than Strata's *entire* 41.853s GPU timeline**, and is ~12.4× the Strata-specific `qsa attn` phase's 3.582s. **These are observations, NOT an apples-to-apples kernel speedup ratio:** Strata's timer samples broad phases, llama's samples selected backend-root GGML ops and changes synchronization; llama uses **f16 full-resident 65536-cell KV**, Strata uses **int8, 32768 GPU-resident KV** with different QSA implementation/launch strategies; environment **UMA96GB vs UMA64GB**; source architecture and microbatch differ. The full-Prefill difference is llama **155.609s** vs Strata ~**41.981s**, ~**3.71×** in these profiling runs, but cannot yet isolate that gap among mathematical work, kernels, sync, KV or host. MoE `MUL_MAT_ID` vs Strata entire MoE is likewise not directly comparable.
+llama.cpp's individual **`FA` subtotal 44.351s is even larger than Strata's *entire* 41.853s GPU timeline**, and is ~12.4× the Strata-specific `qsa attn` phase's 3.582s. **These are observations, NOT an apples-to-apples kernel speedup ratio:** Strata's timer samples broad phases, llama's samples selected backend-root GGML ops and changes synchronization; llama uses **f16 full-resident 65536-cell KV**, Strata uses **int8, 32768 GPU-resident KV** with different QSA implementation/launch strategies; **both runs appear to use UMA64GB** (llama run's manual label was stale); source architecture and microbatch differ. The full-Prefill difference is llama **155.609s** vs Strata ~**41.981s**, ~**3.71×** in these profiling runs, but cannot yet isolate that gap among mathematical work, kernels, sync, KV or host. MoE `MUL_MAT_ID` vs Strata entire MoE is likewise not directly comparable.
 
 ## Resource telemetry and alternate bottlenecks
 
