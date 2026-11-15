@@ -13443,6 +13443,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
 
+    for (int64_t n : {256, 512, 1024}) {
+        test_cases.emplace_back(new test_q6k_dense_route(12288, n, 2560));
+        test_cases.emplace_back(new test_q6k_dense_route(2560, n, 6144));
+    }
+
     for (float n : {128.0f, 4096.0f, 32768.0f, 1048576.0f}) {
         test_cases.emplace_back(new test_arange(GGML_TYPE_F32, 0.0f, n, 1.0f));
     }
