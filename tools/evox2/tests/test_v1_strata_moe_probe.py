@@ -51,7 +51,7 @@ class MoeProbeTests(unittest.TestCase):
         self.assertIn('trace_moe("mmvf");', self.cuda)
         self.assertIn('trace_moe("mmf");', self.cuda)
         self.assertIn('trace_moe("host_fallback");', self.cuda)
-        self.assertIn('evox2_moe_trace::record(src0, src1, ids, dst, ctx.device, "mmq", J_best, fallback, prec_src1);', self.mmq)
+        self.assertIn('evox2_moe_trace::record(src0, src1, ids, dst, ctx.device, path, J_best, fallback, prec_src1);', self.mmq)
         self.assertLess(self.mmq.index("GGML_ASSERT(J_best > 0);"),
                         self.mmq.index('evox2_moe_trace::record('))
 
