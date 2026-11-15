@@ -1,5 +1,8 @@
 # ROCm Qwen3.8 QSA output repeatability — 2026-10-22
 
+> **Branch-label cleanup (2026-10-29):** The two original ROCm QSA research refs were recreated under `investigation/r5-rocm-qsa-topk-baseline-20261022` (`264b839235837cac296c8ce0a8ea14cc62d566f8`) and `investigation/r5-rocm-qsa-argsort-topk-20261022` (`16c983edaf5d53666a8a3680df198fb5f920e0c6`). These are **exact-SHA aliases**, not rebases, merges or changed measurements. Prior names without `r5-` were `investigation/rocm-qsa-topk-baseline-20261022` and `investigation/rocm-qsa-argsort-topk-20261022`; old remote refs may persist until separately deleted. The 2026-10-22 provenance, data and verdict below are unchanged.
+
+
 ## Scope
 
 This note closes the focused ROCm output-repeatability investigation that followed the Windows ROCm runtime-provenance work.
@@ -95,14 +98,14 @@ Both builds used the corrected `Build-ROCm.ps1` unified TheRock 10.0 runtime pol
 Control branch:
 
 ~~~text
-investigation/rocm-qsa-topk-baseline-20261022
+investigation/r5-rocm-qsa-topk-baseline-20261022
 QSA selector: ggml_top_k(...)
 ~~~
 
 Deterministic experiment branch:
 
 ~~~text
-investigation/rocm-qsa-argsort-topk-20261022
+investigation/r5-rocm-qsa-argsort-topk-20261022
 QSA selector: ggml_cont(ggml_argsort_top_k(...))
 ~~~
 

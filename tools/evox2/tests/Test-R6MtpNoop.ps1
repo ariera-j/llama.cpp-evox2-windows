@@ -1,0 +1,226 @@
+#requires -Version 5.1
+[CmdletBinding()]
+param(
+    [string]$LocalConfig = '',
+    [string]$BuildKey = 'S6Vulkan',
+    [string]$ModelKey = 'UnslothPle16',
+    [ValidateRange(0, 9999)][int]$GpuLayers = 999,
+    [switch]$SourceOnly,
+    [switch]$RunModelTests
+)
+$ErrorActionPreference = 'Stop'
+if ($SourceOnly -and $RunModelTests) { throw 'SourceOnly cannot run the model gate.' }
+$repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
+$benchmark = Join-Path $repo 'tools\evox2\benchmark'
+Import-Module (Join-Path $repo 'tools\evox2\lib\Evox2.Common.psm1') -Force
+Import-Module (Join-Path $benchmark 'Evox2.Benchmark.psm1') -Force
+$reportDirectory = Join-Path $repo ('evox2-logs\tests\' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-qsa-noop-invalidation')
+New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
+$report = [ordered]@{
+    SchemaVersion = 1; StartedAt = (Get-Date).ToString('o'); Status = 'Incomplete'
+    SourceChecks = 'NotRun'; PolicyTest = 'NotRun'; ModelTest = 'NotRun'
+    ReportDirectory = $reportDirectory; NativeRuns = @()
+}
+
+function Assert-Check([bool]$Condition, [string]$Message) {
+    if (-not $Condition) { throw $Message }
+}
+
+function Invoke-NativeGate([string]$Executable, [string[]]$Arguments, [string]$Name, [string]$PassMarker) {
+    $runtime = Test-Evox2RuntimeArtifacts -Executable $Executable -Manifest $manifest
+    Assert-Check ($runtime.Status -eq 'Verified') "$Name executable/DLL identity is not Verified. Rebuild and refresh the manifest."
+    $stdout = Join-Path $reportDirectory ($Name + '.stdout.log')
+    $stderr = Join-Path $reportDirectory ($Name + '.stderr.log')
+    Write-Host "Running $Name; logs: $reportDirectory"
+    $startArgs = @{
+        FilePath = $Executable; WorkingDirectory = (Split-Path -Parent $Executable)
+        RedirectStandardOutput = $stdout; RedirectStandardError = $stderr
+        NoNewWindow = $true; PassThru = $true
+    }
+    if ($Arguments.Count) {
+        $startArgs.ArgumentList = (@($Arguments | ForEach-Object {
+            ConvertTo-Evox2WindowsArgument -Value $_
+        }) -join ' ')
+    }
+    $process = Start-Process @startArgs
+    try {
+        [void]$process.Handle # retain a native process handle before waiting
+        $process.WaitForExit(); $process.Refresh()
+        $exitCode = $process.ExitCode
+    } finally { $process.Dispose() }
+    $text = [IO.File]::ReadAllText($stdout)
+    $report.NativeRuns += [PSCustomObject]@{
+        Name = $Name; ExitCode = $exitCode; StdOut = $stdout; StdErr = $stderr
+        Executable = $Executable; RuntimeArtifactDigest = $runtime.Digest
+        Arguments = @($Arguments)
+    }
+    if ($null -eq $exitCode -or $exitCode -ne 0 -or -not $text.Contains($PassMarker)) {
+        $tail = @(Get-Content -LiteralPath $stderr -Tail 30)
+        $tail | ForEach-Object { Write-Host $_ }
+        $failure = @($tail | Where-Object { $_ -match '^QSA no-op (invalidation|policy): FAIL:' })
+        $detail = if ($failure.Count) { $failure[-1] } else { 'No completed gate marker; inspect the native logs.' }
+        throw "$Name failed (exit=$exitCode): $detail Logs are retained in $reportDirectory"
+    }
+    Get-Content -LiteralPath $stdout | ForEach-Object { Write-Host $_ }
+}
+
+try {
+    $parsePaths = @(
+        $PSCommandPath, (Join-Path $benchmark 'Evox2.Benchmark.psm1'),
+        (Join-Path $benchmark 'Measure-LlamaCli.ps1'),
+        (Join-Path $benchmark 'Invoke-BenchmarkMatrix.ps1'),
+        (Join-Path $repo 'tools\evox2\build\Build-Vulkan.ps1'),
+        (Join-Path $repo 'tools\evox2\build\Build-ROCm.ps1'),
+        (Join-Path $repo 'tools\evox2\build\Evox2.Build.psm1')
+    )
+    $plans = @(
+        (Join-Path $benchmark 'configs\qwen38-r6-s6-mtp-noop-smoke.psd1'),
+        (Join-Path $benchmark 'configs\qwen38-r6-s6-mtp-noop.psd1')
+    )
+    $parsePaths += $plans
+    foreach ($path in $parsePaths) {
+        $tokens = $null; $errors = $null
+        [void][Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+        Assert-Check (-not $errors.Count) "$path : $($errors.Message -join '; ')"
+    }
+    $smoke = Import-PowerShellDataFile -LiteralPath $plans[0]
+    $long = Import-PowerShellDataFile -LiteralPath $plans[1]
+    foreach ($plan in @($smoke, $long)) {
+        Assert-Check ($plan.Defaults.Environment.LLAMA_MTP_SKIP_DENSE_INDEXER -eq '1' -and
+            $plan.Defaults.Environment.GGML_VK_QSA_UNION -eq '0' -and
+            $plan.Defaults.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -eq '0' -and
+            $null -eq $plan.Defaults.Environment.LLAMA_QSA_NOOP_TRACE) 'S6 default environment changed.'
+        Assert-Check ($plan.Defaults.CliParameters.Mtp -eq $true -and
+            $plan.Defaults.CliParameters.DraftMax -eq 2 -and
+            $plan.Defaults.CliParameters.DraftPMin -eq 0 -and
+            $plan.Defaults.CliParameters.PromptCacheMiB -eq 0 -and
+            ($plan.Defaults.CliParameters.ExtraArgs -join ' ') -match '--ctx-checkpoints 0t') 'S6 MTP/sampling defaults changed.'
+    }
+    Assert-Check ($smoke.Jobs.Count -eq 3 -and $long.Jobs.Count -eq 3) 'Expected three smoke and three long jobs.'
+    foreach ($job in $smoke.Jobs) {
+        Assert-Check ($job.Cases.Count -eq 1 -and $job.Cases[0].Parameters.Context -eq 4096) 'S6 smoke context changed.'
+        $expectedBuild = if ($job.Name -eq 's6-iq3-rocm-smoke') { 'S6ROCm' } else { 'S6Vulkan' }
+        Assert-Check ($job.BuildKeys.Count -eq 1 -and $job.BuildKeys[0] -eq $expectedBuild) 'S6 smoke build changed.'
+        $labels = @($job.Variants | ForEach-Object { $_.Name })
+        $expected = if ($job.Name -eq 's6-iq3-smoke') {
+            @('A-off', 'B-on', 'A-trace', 'B-trace')
+        } else {
+            @('A-off', 'B-on')
+        }
+        Assert-Check (($labels -join ',') -eq ($expected -join ',')) 'S6 smoke variant order changed.'
+    }
+    foreach ($job in $long.Jobs) {
+        $expectedBuild = if ($job.Name -eq 's6-iq3-rocm') { 'S6ROCm' } else { 'S6Vulkan' }
+        Assert-Check ($job.BuildKeys.Count -eq 1 -and $job.BuildKeys[0] -eq $expectedBuild) "S6 long job $($job.Name) build key changed."
+        $expectedCases = if ($job.Name -eq 's6-fp4-vulkan') { @(65536) } else { @(65536, 131072) }
+        $contexts = @($job.Cases | ForEach-Object { [int]$_.Parameters.Context })
+        Assert-Check (($contexts -join ',') -eq ($expectedCases -join ',')) "S6 long job $($job.Name) context changed."
+        $names = @($job.Variants | ForEach-Object { $_.Name })
+        $expectedVariants = if ($job.Name -eq 's6-fp4-vulkan') {
+            @('A1-off', 'B1-on')
+        } else {
+            @('A1-off', 'B1-on', 'B2-on', 'A2-off')
+        }
+        Assert-Check (($names -join ',') -eq ($expectedVariants -join ',')) "S6 long job $($job.Name) variant order changed."
+        foreach ($variant in $job.Variants) {
+            $value = if ($variant.Name -like '*-off') { '0' } else { '1' }
+            Assert-Check ($variant.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -eq $value -and
+                $variant.Environment.EVOX2_ABBA_RUN -eq $variant.Name.Substring(0, 2)) 'S6 long toggle/run label changed.'
+        }
+    }
+    foreach ($job in $smoke.Jobs) {
+        foreach ($variant in $job.Variants) {
+            $value = if ($variant.Name.StartsWith('A')) { '0' } else { '1' }
+            $trace = if ($variant.Name.EndsWith('-trace')) { '1' } else { $null }
+            Assert-Check ($variant.Environment.LLAMA_QSA_SKIP_NOOP_INVALIDATION -eq $value) 'S6 smoke toggle changed.'
+            if ($trace) {
+                Assert-Check ($variant.Environment.LLAMA_QSA_NOOP_TRACE -eq '1') 'S6 trace arm changed.'
+            } else {
+                Assert-Check (-not $variant.Environment.ContainsKey('LLAMA_QSA_NOOP_TRACE')) 'S6 normal smoke has trace.'
+            }
+        }
+    }
+    $a = 'llama_memory_hybrid_idx: QSA no-op invalidation: requested=0 eligible=1 enabled=0 target=1 kpool=4 streams=1 seq_max=1 reason=disabled'
+    $b = 'llama_memory_hybrid_idx: QSA no-op invalidation: requested=1 eligible=1 enabled=1 target=1 kpool=4 streams=1 seq_max=1 reason=target_single_sequence'
+    $draft = 'llama_memory_hybrid_idx: QSA no-op invalidation: requested=1 eligible=0 enabled=0 target=0 kpool=4 streams=0 seq_max=1 reason=not_target'
+    $refused = 'llama_memory_hybrid_idx: QSA no-op invalidation: requested=1 eligible=0 enabled=0 target=1 kpool=4 streams=1 seq_max=2 reason=unsupported_cache'
+    foreach ($fixture in @(
+        @{ Text = $a; Setting = '0'; Status = 'Verified' },
+        @{ Text = $b; Setting = '1'; Status = 'Verified' },
+        @{ Text = ($b + "`n" + $draft); Setting = '1'; Status = 'Verified' },
+        @{ Text = $draft; Setting = '1'; Status = 'Missing' },
+        @{ Text = ''; Setting = '1'; Status = 'Missing' },
+        @{ Text = $a; Setting = '1'; Status = 'Mismatch' },
+        @{ Text = $b; Setting = '0'; Status = 'Mismatch' },
+        @{ Text = $refused; Setting = '1'; Status = 'NotApplied' },
+        @{ Text = ($b + "`nQSA no-op invalidation: broken"); Setting = '1'; Status = 'Malformed' },
+        @{ Text = ($b + "`n" + $b); Setting = '1'; Status = 'Malformed' },
+        @{ Text = $b.Replace('streams=1', 'streams=2'); Setting = '1'; Status = 'Mismatch' },
+        @{ Text = $b.Replace('reason=target_single_sequence', 'reason=disabled'); Setting = '1'; Status = 'Mismatch' },
+        @{ Text = ''; Setting = ''; Status = 'NotRequested' }
+    )) {
+        $evidence = @(Get-Evox2QsaNoopInvalidationEvidence -Text $fixture.Text -Setting $fixture.Setting)
+        Assert-Check ($evidence.Count -eq 1 -and $evidence[0].Status -eq $fixture.Status) 'Target evidence classification/pipeline fixture failed.'
+    }
+    # MTP OFF still has the DEFAULT target context: the parser deliberately has no Mtp parameter.
+    Assert-Check ((Get-Evox2QsaNoopInvalidationEvidence -Text $b -Setting '1').Enabled) 'MTP OFF target eligibility must remain visible.'
+    $report.SourceChecks = 'Passed'
+    if ($SourceOnly) {
+        $report.Status = 'SourceChecksPassed'
+        Write-Host 'Source checks passed. Native policy/model gates NOT RUN; rebuild before proceeding.'
+    } else {
+        if ([string]::IsNullOrWhiteSpace($LocalConfig)) { $LocalConfig = Join-Path $benchmark 'configs\local.psd1' }
+        $resolvedConfig = (Resolve-Path -LiteralPath $LocalConfig -ErrorAction Stop).ProviderPath
+        $config = Import-Evox2LocalConfig -Path $resolvedConfig -Required
+        $build = Get-Evox2ConfigEntry -Config $config -Section Builds -Key $BuildKey
+        $binDir = if ([IO.Path]::IsPathRooted($build.BinDir)) { $build.BinDir } else { Join-Path $repo $build.BinDir }
+        $binDir = (Resolve-Path -LiteralPath $binDir).ProviderPath
+        $cli = Join-Path $binDir 'llama-cli.exe'
+        $manifest = Read-Evox2BuildManifest -Executable $cli
+        Assert-Check ($null -ne $manifest -and $manifest.BuildIdentity.Status -eq 'Verified') 'Build manifest/source identity is not Verified.'
+        $report.BuildIdentity = $manifest.BuildIdentity
+        $report.PolicyTest = 'Running'
+        Invoke-NativeGate -Executable (Join-Path $binDir 'test-qsa-noop-policy.exe') -Arguments @() `
+            -Name 'policy' -PassMarker 'QSA no-op policy: PASS'
+        $report.PolicyTest = 'Passed'
+        if ($RunModelTests) {
+            $report.ModelTest = 'Running'
+            $main = Get-Evox2ConfigEntry -Config $config -Section Models -Key $ModelKey
+            $mainPath = if ([IO.Path]::IsPathRooted($main.Path)) { $main.Path } else { Join-Path $repo $main.Path }
+            $mainPath = (Resolve-Path -LiteralPath $mainPath).ProviderPath
+            $savedEnvironment = @{}
+            $clear = @(Get-ChildItem Env: | Where-Object {
+                $_.Name -match '^(LLAMA_MTP_|LLAMA_QSA_|QWEN4EXP_QSA_|GGML_VK_)' -or $_.Name -eq 'LLAMA_GRAPH_REUSE_DISABLE'
+            } | ForEach-Object { $_.Name })
+            $names = @($clear + @('GGML_VK_MOE_LEGACY_TILE_SELECTION', 'GGML_VK_GET_ROWS_128X4', 'GGML_VK_QSA_UNION') | Sort-Object -Unique)
+            foreach ($name in $names) {
+                $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+                [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+            }
+            try {
+                $env:GGML_VK_QSA_UNION = '0'
+                Invoke-NativeGate -Executable (Join-Path $binDir 'test-qsa-noop-invalidation.exe') `
+                    -Arguments @('-m', $mainPath, '-ngl', "$GpuLayers") `
+                    -Name 'model' -PassMarker 'QSA no-op invalidation: PASS ('
+            } finally {
+                foreach ($name in $savedEnvironment.Keys) {
+                    [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
+                }
+            }
+            $report.ModelTest = 'Passed'; $report.Status = 'Complete'
+            Write-Host 'Target QSA no-op policy and model/state/rollback gates passed.'
+        } else {
+            $report.Status = 'PolicyPassedModelNotRun'
+            Write-Host 'Policy gate passed; model/state/rollback gate NOT RUN. Use -RunModelTests before long measurements.'
+        }
+    }
+} catch {
+    if ($report.PolicyTest -eq 'Running') { $report.PolicyTest = 'Failed' }
+    if ($report.ModelTest -eq 'Running') { $report.ModelTest = 'Failed' }
+    $report.Status = 'Failed'; $report.Error = $_.Exception.Message
+    throw
+} finally {
+    $report.FinishedAt = (Get-Date).ToString('o')
+    Write-Evox2Json -InputObject $report -Path (Join-Path $reportDirectory 'result.json') -Depth 24
+    Write-Host "Gate report: $(Join-Path $reportDirectory 'result.json')"
+}

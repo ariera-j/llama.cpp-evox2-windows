@@ -1,5 +1,8 @@
 # Evo-X2：統合版完成後の高速化候補・最終優先順位
 
+> **2026-10-29 post-integration re-prioritization (supersedes the 2026-10-21 provisional ranking for the next task):** [New r6 S9 full speed inventory, raw run evidence and ROCm 64/128/256k comparison](R6-S9-GAPFILL-AND-ROCM-LONG-CONTEXT-PRIORITY-2026-10-29.md). The user selects **ROCm HIP long-context PP **and** TG** as the next investigation priority. Integrated ROCm IQ3 PLE16/MTP-ON (DENSE+NOOP ON) was 371.43/28.63 at 64k, 282.24/22.64 at 128k, 184.79/15.04 at 256k (PP/TG tok/s); compared with r6 clean *Original/MTP-OFF*, PP is about 7–8% lower even while TG is higher. Do **not** conflate model layout and MTP differences, or treat context scaling as an integration bug without matched controls. First preserve same-build same-model MTP OFF/ON controls, then use selected RGP/HIP/host profiling to locate the actual long-context QSA/FA/GDN/Draft/memory bottleneck; **COMMON-005 HIP compact gathered K/V is a candidate, not yet a proven fix**. Vulkan CONCAT/FA, s1/Strata, and corpus/MoE visualization stay in the backlog. No new patch, source repin, default all-ON preset, or unsafe broad ROCm FA test is approved by this research priority update.
+
+
 更新日：2026-10-21 JST  
 対象：Windows 11 / GMKtec Evo-X2 / Ryzen AI Max+ 395・gfx1151 / UMA 96GB / llama.cpp / Qwen3.8-Flash-Next / UD-IQ3_XXS・ROCmFPx / f16 KV / 長文PP・TG / dense Draft MTP。
 
