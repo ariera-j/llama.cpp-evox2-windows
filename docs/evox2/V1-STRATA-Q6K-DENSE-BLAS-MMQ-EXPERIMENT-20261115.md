@@ -108,13 +108,13 @@ Rollback: unset `GGML_HIP_Q6K_DENSE_ROUTE` before launching a new process. Exist
 ### Scope and provenance
 
 - GPU: Radeon 8060S, gfx1151, wave32; ROCm 10.0.0 (TheRock), Windows.
-- Test binary: separate \`build-rocm-strata-gemm/bin/Release/test-backend-ops.exe\`; test-case additions in b12367 (commit \`76be555297bd3883c574bb4c918adef5229ad75c\`).
-- Two repeated results per route, obtained in \`blas,mmq,mmq,blas\` order for each N. Per-operation \`test-backend-ops perf\` wall-time averages (microseconds per run). Trace was **OFF** for performance runs. Measurement includes backend dispatch, relevant conversion and scratch work; it is **not** an isolated GPU GEMM kernel timestamp.
-- A previous invocation printed only \`Backend ROCm0: OK\` because \`Q6K_DENSE_ROUTE\` was registered in \`make_test_cases_eval()\` but *not* \`make_test_cases_perf()\`. The missing cases were then added to the perf suite; the silent zero-case run is **not** a timing result. In Windows PowerShell 5.1, capturing native stderr with \`2>&1\` under \`$ErrorActionPreference = 'Stop'\` can raise \`NativeCommandError\` for normal ROCm initialization messages. Subsequent runs captured stdout without stderr redirection.
+- Test binary: separate `build-rocm-strata-gemm/bin/Release/test-backend-ops.exe`; test-case additions in b12367 (commit `76be555297bd3883c574bb4c918adef5229ad75c`).
+- Two repeated results per route, obtained in `blas,mmq,mmq,blas` order for each N. Per-operation `test-backend-ops perf` wall-time averages (microseconds per run). Trace was **OFF** for performance runs. Measurement includes backend dispatch, relevant conversion and scratch work; it is **not** an isolated GPU GEMM kernel timestamp.
+- A previous invocation printed only `Backend ROCm0: OK` because `Q6K_DENSE_ROUTE` was registered in `make_test_cases_eval()` but *not* `make_test_cases_perf()`. The missing cases were then added to the perf suite; the silent zero-case run is **not** a timing result. In Windows PowerShell 5.1, capturing native stderr with `2>&1` under `$ErrorActionPreference = 'Stop'` can raise `NativeCommandError` for normal ROCm initialization messages. Subsequent runs captured stdout without stderr redirection.
 
 ### Direct operator benchmarks
 
-Values in the two timing columns are averages of the two listed measurements (us/run). \`BLAS/MMQ\` is the relative throughput of BLAS vs MMQ: greater than 1 means BLAS is faster; less than 1 means MMQ is faster.
+Values in the two timing columns are averages of the two listed measurements (us/run). `BLAS/MMQ` is the relative throughput of BLAS vs MMQ: greater than 1 means BLAS is faster; less than 1 means MMQ is faster.
 
 | Projection | Weight K x M | N | BLAS us/run (2 samples) | MMQ us/run (2 samples) | BLAS / MMQ throughput | Faster route |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -131,21 +131,21 @@ Values in the two timing columns are averages of the two listed measurements (us
 
 ### Correctness
 
-\`test-backend-ops test -b ROCm0 -o Q6K_DENSE_ROUTE -p ...\` passed the CPU-reference tolerance check for **both** forced \`blas\` and \`mmq\` routes for:
+`test-backend-ops test -b ROCm0 -o Q6K_DENSE_ROUTE -p ...` passed the CPU-reference tolerance check for **both** forced `blas` and `mmq` routes for:
 
-1. Attention Q, \`m=12288,n=256,k=2560\`: 1/1 for BLAS, 1/1 for MMQ. The trace also confirmed \`path=blas\` vs \`path=mmq\`.
-2. Attention Output, \`m=2560,n=512,k=6144\`: 1/1 for BLAS, 1/1 for MMQ.
+1. Attention Q, `m=12288,n=256,k=2560`: 1/1 for BLAS, 1/1 for MMQ. The trace also confirmed `path=blas` vs `path=mmq`.
+2. Attention Output, `m=2560,n=512,k=6144`: 1/1 for BLAS, 1/1 for MMQ.
 
 The remaining tested perf shapes were **not** separately validated by CPU-reference correctness tests. Correctness passes do not establish bitwise equality between BLAS and MMQ, or long-context generation quality.
 
 ### Real-model 64k dispatch check
 
-- Evidence archive: \`20261115-214427-534-cli-rocm-b12367-ctx65536-52695434fb19.zip\`.
-- Run: b12367, source commit \`76be555297bd3883c574bb4c918adef5229ad75c\`, old Unsloth original 3-shard Qwen3.8 Flash Next \`UD-IQ3_XXS\` model, \`code-64k.txt\` input SHA256 \`c41624eb232ffc1ab43a8ac066b0c96ee910ccee7a129b0d957fae0329225599\`.
-- Settings: \`-c 65536\`, \`-b 2048\`, \`-ub 1024\`, KV F16, MTP OFF, 61,795 prompt tokens, 768 generated tokens, reported UMA 64GB, Performance P-MODE stable. No \`GGML_HIP_Q6K_DENSE_ROUTE\` override. Tracing enabled with \`GGML_HIP_GEMM_TRACE=1\`, \`GGML_HIP_GEMM_TRACE_LAYER=19\`, limit 2048.
+- Evidence archive: `20261115-214427-534-cli-rocm-b12367-ctx65536-52695434fb19.zip`.
+- Run: b12367, source commit `76be555297bd3883c574bb4c918adef5229ad75c`, old Unsloth original 3-shard Qwen3.8 Flash Next `UD-IQ3_XXS` model, `code-64k.txt` input SHA256 `c41624eb232ffc1ab43a8ac066b0c96ee910ccee7a129b0d957fae0329225599`.
+- Settings: `-c 65536`, `-b 2048`, `-ub 1024`, KV F16, MTP OFF, 61,795 prompt tokens, 768 generated tokens, reported UMA 64GB, Performance P-MODE stable. No `GGML_HIP_Q6K_DENSE_ROUTE` override. Tracing enabled with `GGML_HIP_GEMM_TRACE=1`, `GGML_HIP_GEMM_TRACE_LAYER=19`, limit 2048.
 - Run result OK, PP 411.42 tok/s, TG 22.30 tok/s; **not a comparable clean PP speed** because tracing/logging was enabled.
-- \`summarize-dense-gemm.py --layer 19 --strict\` reported **1,253 selected of 1,253 lines; truncated=False**.
-- For each of \`blk.19.attn_q.weight\` and \`blk.19.attn_output.weight\`: \`N=1024\` -> **60 BLAS dispatch records**, \`N=351\` -> **1 BLAS record**, and \`N=1/2/4\` -> **11/2/1 MMVQ records**. Neither tensor had any \`N=512\` or \`N=256\` dispatch record. The same N profile appears for the other layer-19 Dense projection weights in the trace.
+- `summarize-dense-gemm.py --layer 19 --strict` reported **1,253 selected of 1,253 lines; truncated=False**.
+- For each of `blk.19.attn_q.weight` and `blk.19.attn_output.weight`: `N=1024` -> **60 BLAS dispatch records**, `N=351` -> **1 BLAS record**, and `N=1/2/4` -> **11/2/1 MMVQ records**. Neither tensor had any `N=512` or `N=256` dispatch record. The same N profile appears for the other layer-19 Dense projection weights in the trace.
 - The large operator-level advantage of MMQ for Attention Output at N=512 **does not apply directly to this 64k/ubatch-1024 run**, where N=512 never occurred for that projection. The common N=1024 path favors BLAS for both Attention Q and Attention Output. N=351 was not part of the forced-route test scope.
 
 ### Decision
