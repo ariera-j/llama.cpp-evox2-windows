@@ -47,7 +47,7 @@ python -m unittest discover -s .\tools\evox2\tests -p 'test_v1_strata_dense_gemm
     -DependencyCacheRoot 'C:\llama-build\evox2-deps'
 ```
 
-Add the following to the `Builds` map in the **untracked** `tools/evox2/local.psd1`, following its existing entries:
+Add the following to the `Builds` map in the **untracked** `tools/evox2/benchmark/configs/local.psd1`, following its existing entries:
 
 ```powershell
 V1StrataGemm = @{
