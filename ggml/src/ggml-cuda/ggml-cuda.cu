@@ -65,6 +65,7 @@
 #include "ggml-cuda/gla.cuh"
 #include "ggml-cuda/gated_delta_net.cuh"
 #include "ggml-cuda/dsv4-hc.cuh"
+#include "ggml-cuda/evox2-dense-gemm-trace.cuh"
 #include "ggml-cuda/set.cuh"
 #include "ggml-cuda/set-rows.cuh"
 #include "ggml-cuda/pad_reflect_1d.cuh"
@@ -2081,6 +2082,8 @@ static void ggml_cuda_mul_mat_cublas(ggml_backend_cuda_context & ctx, const ggml
         }
     }
 
+    evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "blas", ggml_type_name(compute_type));
+
     constexpr size_t max_src0_convert_size = 512ull * 1024 * 1024;
     const size_t src0_f32_size = ggml_nelements(src0) * sizeof(float);
 
@@ -2447,6 +2450,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     GGML_TENSOR_BINARY_OP_LOCALS
 
     if (ggml_cuda_op_mul_mat_use_fwht(dst) && ggml_cuda_op_fwht(ctx, src1, dst)) {
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "fwht");
         return;
     }
 
@@ -2466,6 +2470,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     if (ggml_cuda_should_use_mmvf(src0, cc, warp_size, ne11)) {
         // The custom vector kernel can be used over batched cuBLAS GEMM.
         // But this is only faster for GPUs without tensor cores or with a thin src0 matrix (particularly KQV in attention)
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmvf");
         ggml_cuda_mul_mat_vec_f(ctx, src0, src1, nullptr, dst);
         return;
     }
@@ -2480,28 +2485,34 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         dst_vec.nb[1] = dst_vec.nb[0]*ne11;
         dst_vec.nb[2] = dst_vec.nb[1];
         dst_vec.nb[3] = dst_vec.nb[1];
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmvf_transposed");
         ggml_cuda_mul_mat_vec_f(ctx, src1, src0, nullptr, &dst_vec);
         return;
     }
     if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11, /*mul_mat_id =*/ false)) {
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmf");
         ggml_cuda_mul_mat_f(ctx, src0, src1, nullptr, dst);
         return;
     }
     // from a per-type number of src1 columns up to 24, few-row MMQ is faster than MMVQ and MMQ
     const bool use_mmq_few = ggml_cuda_should_use_mmq_few(src0, src1, cc);
     if (!use_mmq_few && ggml_cuda_should_use_mmvq(src0->type, cc, ne11)) {
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmvq");
         ggml_cuda_mul_mat_vec_q(ctx, src0, src1, nullptr, dst);
         return;
     }
     if (use_mmq_few) {
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmq_few");
         ggml_cuda_mul_mat_q_few(ctx, src0, src1, dst);
         return;
     }
     if (ggml_cuda_should_use_mmq(src0->type, cc, ne11, /*n_experts =*/ 0)) {
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmq");
         ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst);
         return;
     }
     if (src0->type == GGML_TYPE_F8_E4M3 && ggml_cuda_mul_mat_fp8(ctx, src0, src1, dst)) {
+        evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "fp8");
         return;
     }
     ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst);
