@@ -1265,9 +1265,8 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
     }
 }
 
-template <ggml_type type, int J, bool fallback> static __device__ __forceinline__ void ggml_cuda_mmq_load_tiles_iq2_s(
+template <ggml_type type, int J, bool fallback, bool has_fusion> static __device__ __forceinline__ void ggml_cuda_mmq_load_tiles_iq2_s(
         const char * __restrict__ x, const char * __restrict__ x_gate, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
-    GGML_UNUSED(x_gate);
 
     constexpr int warp_size   = ggml_cuda_get_physical_warp_size();
     constexpr int nwarps      = ggml_cuda_mmq_get_nthreads(type, J, fallback, GGML_PREC_Q8) / warp_size;
@@ -1294,7 +1293,7 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
             i = min(i, i_max);
         }
 
-        const block_iq2_s * bxi = (const block_iq2_s *) x + kbx0 + i*stride;
+        const block_iq2_s * bxi = ggml_cuda_mmq_x_row<block_iq2_s, has_fusion>(x, x_gate, kbx0, i, stride);
 
         const int       qs_packed = get_int_b2(bxi->qs, kqsx);
         const uint8_t * qs        = (const uint8_t *) &qs_packed;

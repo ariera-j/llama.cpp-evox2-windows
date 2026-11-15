@@ -262,7 +262,8 @@ void ggml_cuda_mul_mat_q(
     GGML_ASSERT(J_best > 0);
 #if defined(GGML_USE_HIP)
     if (ids) {
-        evox2_moe_trace::record(src0, src1, ids, dst, ctx.device, "mmq", J_best, fallback, prec_src1);
+        const char * path = gate && src0->type == GGML_TYPE_IQ2_S ? "mmq_iq2s_fused" : "mmq";
+        evox2_moe_trace::record(src0, src1, ids, dst, ctx.device, path, J_best, fallback, prec_src1);
     }
 #endif
 

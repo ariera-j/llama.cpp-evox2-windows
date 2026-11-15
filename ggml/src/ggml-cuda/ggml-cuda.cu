@@ -93,6 +93,7 @@
 #include <mutex>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -2401,7 +2402,19 @@ static bool ggml_cuda_mul_mat_q_fusion_matches(const ggml_tensor * up, const ggm
         return false;
     }
 
-    // NVIDIA only: the fused write-back relies on the MMA accumulator layout.
+#if defined(GGML_USE_HIP)
+    if (x_up->type == GGML_TYPE_IQ2_S) {
+        static const bool enabled = [] {
+            const char * env = std::getenv("GGML_HIP_MOE_IQ2S_FUSION");
+            return env != nullptr && std::strcmp(env, "1") == 0;
+        }();
+        return enabled && up->op == GGML_OP_MUL_MAT_ID && y->ne[1] == 1 &&
+            ggml_get_glu_op(glu) == GGML_GLU_OP_SWIGLU &&
+            ggml_cuda_info().devices[device].cc == GGML_CUDA_CC_OFFSET_AMD + 0x1151;
+    }
+#endif
+
+    // Other fused MMQ kernels rely on the NVIDIA MMA accumulator layout.
     return turing_mma_available(ggml_cuda_info().devices[device].cc);
 }
 

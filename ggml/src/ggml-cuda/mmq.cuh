@@ -437,6 +437,11 @@ static __host__ int ggml_cuda_mmq_get_nbytes_shared_x(const ggml_cuda_mmq_config
 
 // Weight types with a fused gate/up/GLU path (see ggml_cuda_mmq_get_util_funcs).
 static constexpr __host__ __device__ bool ggml_cuda_mmq_fusion_supported(const ggml_type type) {
+#if defined(GGML_USE_HIP)
+    if (type == GGML_TYPE_IQ2_S) {
+        return true;
+    }
+#endif
     return type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K || type == GGML_TYPE_Q8_0 || type == GGML_TYPE_IQ4_XS ||
         type == GGML_TYPE_NVFP4;
 }
@@ -696,7 +701,7 @@ static constexpr __device__ ggml_cuda_mmq_util_funcs ggml_cuda_mmq_get_util_func
             case GGML_TYPE_IQ2_S:
                 return ggml_cuda_mmq_util_funcs(
                     VDR_IQ2_S_Q8_1_MMQ,
-                    ggml_cuda_mmq_load_tiles_iq2_s<type, J, fallback>,
+                    ggml_cuda_mmq_load_tiles_iq2_s<type, J, fallback, false>,
                     ggml_cuda_mmq_vec_dot_q8_0_16_q8_1_dp4a<type, J, fallback>,
                     ggml_cuda_mmq_write_back_dp4a<type, J, fallback, prec_src1>);
             case GGML_TYPE_IQ3_XXS:
@@ -866,9 +871,9 @@ static constexpr __device__ ggml_cuda_mmq_util_funcs ggml_cuda_mmq_get_util_func
         case GGML_TYPE_IQ2_S:
             return ggml_cuda_mmq_util_funcs(
                 -1,
-                ggml_cuda_mmq_load_tiles_iq2_s<type, J, fallback>,
+                ggml_cuda_mmq_load_tiles_iq2_s<type, J, fallback, has_fusion>,
                 ggml_cuda_mmq_vec_dot_q8_0_16_q8_1_mma<type, J, fallback, prec_src1>,
-                ggml_cuda_mmq_write_back_mma<type, J, fallback, prec_src1, false>);
+                ggml_cuda_mmq_write_back_mma<type, J, fallback, prec_src1, has_fusion>);
         case GGML_TYPE_IQ3_XXS:
             return ggml_cuda_mmq_util_funcs(
                 -1,
@@ -1030,11 +1035,11 @@ static __global__ void mul_mat_q(
         const uint3 sample_ratio, const uint3 nsamples_y, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst,
         const uint3 ntj) {
 
-#ifdef TURING_MMA_AVAILABLE
+#if defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_256B_AVAILABLE)
     constexpr bool fusion_available = true;
 #else
     constexpr bool fusion_available = false;
-#endif // TURING_MMA_AVAILABLE
+#endif // defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_256B_AVAILABLE)
 #ifdef BLACKWELL_MMA_AVAILABLE
     constexpr bool native_fp4_available = true;
 #else
