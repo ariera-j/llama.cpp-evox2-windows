@@ -79,5 +79,47 @@ class MoeProbeTests(unittest.TestCase):
         self.assertNotIn(2, {row["layer"] for row in records})
 
 
+class Iq2sFusionSourceContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mmq_header = (ROOT / "ggml/src/ggml-cuda/mmq.cuh").read_text(encoding="utf-8")
+        cls.loader = (ROOT / "ggml/src/ggml-cuda/mmq-load-tiles.cuh").read_text(encoding="utf-8")
+        cls.cuda = CUDA.read_text(encoding="utf-8")
+        cls.mmq = MMQ.read_text(encoding="utf-8")
+        cls.backend = BACKEND.read_text(encoding="utf-8")
+
+    def test_explicit_hip_only_opt_in_and_exact_device(self):
+        self.assertIn('std::getenv("GGML_HIP_MOE_IQ2S_FUSION")', self.cuda)
+        self.assertIn('std::strcmp(env, "1") == 0', self.cuda)
+        self.assertIn('GGML_CUDA_CC_OFFSET_AMD + 0x1151', self.cuda)
+        self.assertIn('up->op == GGML_OP_MUL_MAT_ID', self.cuda)
+        self.assertIn('ggml_get_glu_op(glu) == GGML_GLU_OP_SWIGLU', self.cuda)
+        self.assertIn('y->ne[1] == 1', self.cuda)
+        self.assertIn('if (x_up->type == GGML_TYPE_IQ2_S)', self.cuda)
+        self.assertIn('#if defined(GGML_USE_HIP)', self.cuda)
+
+    def test_loader_reads_gate_and_up_interleaved(self):
+        self.assertIn('ggml_cuda_mmq_load_tiles_iq2_s<type, J, fallback, has_fusion>', self.mmq_header)
+        self.assertIn('ggml_cuda_mmq_load_tiles_iq2_s<type, J, fallback, false>', self.mmq_header)
+        self.assertIn('ggml_cuda_mmq_x_row<block_iq2_s, has_fusion>', self.loader)
+        self.assertIn('defined(AMD_WMMA_256B_AVAILABLE)', self.mmq_header)
+        self.assertIn('ggml_cuda_mmq_write_back_mma<type, J, fallback, prec_src1, has_fusion>', self.mmq_header)
+
+    def test_accumulator_pairs_up_gate_in_same_wmma256_lane(self):
+        # WMMA256 C tile is 16x16 with 8 values per lane. For J-major output,
+        # get_i(l) = 2*l + lane//16 and get_j(l) = lane%16.
+        for lane in range(32):
+            for value in range(4):
+                up_i = 2*value + lane//16
+                gate_i = 2*(value+4) + lane//16
+                self.assertEqual(gate_i, up_i+8)
+        self.assertIn('sum[sum_index + tile_C::ne/2]', self.mmq_header)
+
+    def test_fused_dispatch_logging(self):
+        self.assertIn('"mmq_iq2s_fused"', self.mmq)
+        self.assertIn('gate && src0->type == GGML_TYPE_IQ2_S', self.mmq)
+        self.assertIn('test_moe_gate_up_down(n, 512, 10)', self.backend)
+
+
 if __name__ == "__main__":
     unittest.main()

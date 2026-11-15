@@ -6087,17 +6087,18 @@ struct test_mul_mat_id_shared : public test_case {
 
 struct test_moe_gate_up_down : public test_case {
     const int64_t n_tokens;
+    const int64_t n_experts;
+    const int64_t n_used;
 
-    explicit test_moe_gate_up_down(int64_t n_tokens) : n_tokens(n_tokens) {}
+    explicit test_moe_gate_up_down(int64_t n_tokens, int64_t n_experts = 8, int64_t n_used = 2) :
+        n_tokens(n_tokens), n_experts(n_experts), n_used(n_used) {}
 
-    std::string vars() override { return VARS_TO_STR1(n_tokens); }
+    std::string vars() override { return VARS_TO_STR3(n_tokens, n_experts, n_used); }
     std::string op_desc(ggml_tensor *) override { return "MOE_GATE_UP_DOWN"; }
     bool run_whole_graph() override { return true; }
     double max_nmse_err() override { return 5e-3; }
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        constexpr int64_t n_experts = 8;
-        constexpr int64_t n_used = 2;
         constexpr int64_t n_embd = 256;
         constexpr int64_t n_ff = 128;
 
@@ -6116,7 +6117,7 @@ struct test_moe_gate_up_down : public test_case {
     }
 
     void initialize_tensors(ggml_context * ctx) override {
-        init_mul_mat_id_tensors(ctx, 8);
+        init_mul_mat_id_tensors(ctx, (int) n_experts);
     }
 };
 
@@ -12248,6 +12249,7 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 
     for (int64_t n : { 32, 128 }) {
         test_cases.emplace_back(new test_moe_gate_up_down(n));
+        test_cases.emplace_back(new test_moe_gate_up_down(n, 512, 10));
     }
 
     // gpt-oss issue with Vulkan mmq_id
