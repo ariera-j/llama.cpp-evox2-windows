@@ -130,7 +130,10 @@ function Test-Evox2BoringSslCheckout {
     }
 
     $tagRef = "$ExpectedVersion^{commit}"
-    $expected = @(& $git.Source -C $SourceDir rev-parse $tagRef 2>$null)
+    $expected = @(
+        & $git.Source -C $SourceDir rev-parse --verify --quiet $tagRef
+    )
+
     if ($LASTEXITCODE -ne 0 -or $expected.Count -eq 0) {
         return $false
     }
