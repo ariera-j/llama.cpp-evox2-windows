@@ -5623,6 +5623,17 @@ struct test_mul_mat : public test_case {
     }
 };
 
+
+struct test_q6k_dense_route : public test_mul_mat {
+    test_q6k_dense_route(int64_t m, int64_t n, int64_t k)
+        : test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, m, n, k, {1, 1}, {1, 1},
+                       {0, 1, 2, 3}, 0, 1, false, 0, 0, 0, true) {}
+
+    std::string op_desc(ggml_tensor *) override {
+        return "Q6K_DENSE_ROUTE";
+    }
+};
+
 // GGML_HINT_SRC0_IS_HADAMARD
 struct test_mul_mat_hadamard : public test_mul_mat {
     test_mul_mat_hadamard(ggml_type type_a = GGML_TYPE_F32, ggml_type type_b = GGML_TYPE_F32,
@@ -11944,6 +11955,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_mul_mat_pos(GGML_TYPE_Q5_K, GGML_TYPE_F32, 1000, 13, 4608, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 6170, 13, 4608, {1, 1}, {1, 1}, {0, 1, 2, 3}, 0, 1, false, 0, 0, 0, true));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 1000, 21, 4608, {1, 1}, {1, 1}, {0, 1, 2, 3}, 0, 1, false, 0, 0, 0, true));
+
+    for (int64_t n : {256, 512, 1024}) {
+        test_cases.emplace_back(new test_q6k_dense_route(12288, n, 2560));
+        test_cases.emplace_back(new test_q6k_dense_route(2560, n, 6144));
+    }
 
 #if 0
     {

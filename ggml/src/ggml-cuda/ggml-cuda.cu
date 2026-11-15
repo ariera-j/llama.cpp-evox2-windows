@@ -2446,6 +2446,35 @@ static bool ggml_cuda_should_fuse_mul_mat_q(const ggml_tensor * up, const ggml_t
     return ggml_cuda_mmq_fusion_is_efficient(x_up->type, ggml_prec_get_src(up, 1), x_up->ne[1], ncols, nchannels, device);
 }
 
+
+#if defined(GGML_USE_HIP)
+static int evox2_q6k_dense_route(const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * dst, int cc) {
+    static const int mode = []() {
+        const char * env = std::getenv("GGML_HIP_Q6K_DENSE_ROUTE");
+        if (env && std::strcmp(env, "blas") == 0) {
+            return 1;
+        }
+        if (env && std::strcmp(env, "mmq") == 0) {
+            return 2;
+        }
+        return 0;
+    }();
+
+    if (mode == 0 || cc != GGML_CUDA_CC_OFFSET_AMD + 0x1151 ||
+        src0->type != GGML_TYPE_Q6_K || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32 ||
+        !ggml_is_contiguous(src0) || !ggml_is_contiguous(src1) || !ggml_is_contiguous(dst) ||
+        src0->view_src || src1->view_src || dst->view_src ||
+        src0->ne[2] != 1 || src0->ne[3] != 1 || src1->ne[2] != 1 || src1->ne[3] != 1 ||
+        (src1->ne[1] != 256 && src1->ne[1] != 512 && src1->ne[1] != 1024)) {
+        return 0;
+    }
+
+    const bool attn_q   = src0->ne[0] == 2560 && src0->ne[1] == 12288;
+    const bool attn_out = src0->ne[0] == 6144 && src0->ne[1] == 2560;
+    return attn_q || attn_out ? mode : 0;
+}
+#endif // defined(GGML_USE_HIP)
+
 static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     GGML_TENSOR_BINARY_OP_LOCALS
 
@@ -2466,6 +2495,22 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
 
     const int cc        = ggml_cuda_info().devices[ctx.device].cc;
     const int warp_size = ggml_cuda_info().devices[ctx.device].warp_size;
+
+#if defined(GGML_USE_HIP)
+    const int evox2_route = evox2_q6k_dense_route(src0, src1, dst, cc);
+    if (evox2_route == 1) {
+        ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst);
+        return;
+    }
+    if (evox2_route == 2) {
+        const size_t smpbo = ggml_cuda_info().devices[ctx.device].smpbo;
+        if (smpbo >= 48 * 1024) {
+            evox2_dense_gemm_trace::record(src0, src1, dst, ctx.device, "mmq");
+            ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst);
+            return;
+        }
+    }
+#endif
 
     if (ggml_cuda_should_use_mmvf(src0, cc, warp_size, ne11)) {
         // The custom vector kernel can be used over batched cuBLAS GEMM.
