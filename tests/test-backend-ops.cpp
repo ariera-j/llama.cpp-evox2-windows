@@ -6084,6 +6084,42 @@ struct test_mul_mat_id_shared : public test_case {
     }
 };
 
+
+struct test_moe_gate_up_down : public test_case {
+    const int64_t n_tokens;
+
+    explicit test_moe_gate_up_down(int64_t n_tokens) : n_tokens(n_tokens) {}
+
+    std::string vars() override { return VARS_TO_STR1(n_tokens); }
+    std::string op_desc(ggml_tensor *) override { return "MOE_GATE_UP_DOWN"; }
+    bool run_whole_graph() override { return true; }
+    double max_nmse_err() override { return 5e-3; }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        constexpr int64_t n_experts = 8;
+        constexpr int64_t n_used = 2;
+        constexpr int64_t n_embd = 256;
+        constexpr int64_t n_ff = 128;
+
+        ggml_tensor * input = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_embd, 1, n_tokens);
+        ggml_tensor * all_ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, n_experts, n_tokens);
+        ggml_set_name(all_ids, "ids");
+        ggml_tensor * ids = ggml_view_2d(ctx, all_ids, n_used, n_tokens, all_ids->nb[1], 0);
+
+        ggml_tensor * gate = ggml_new_tensor_3d(ctx, GGML_TYPE_IQ2_S, n_embd, n_ff, n_experts);
+        ggml_tensor * up = ggml_new_tensor_3d(ctx, GGML_TYPE_IQ2_S, n_embd, n_ff, n_experts);
+        ggml_tensor * down = ggml_new_tensor_3d(ctx, GGML_TYPE_IQ4_NL, n_ff, n_embd, n_experts);
+
+        ggml_tensor * ff = ggml_swiglu_split(ctx,
+                ggml_mul_mat_id(ctx, gate, input, ids), ggml_mul_mat_id(ctx, up, input, ids));
+        return ggml_mul_mat_id(ctx, down, ff, ids);
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        init_mul_mat_id_tensors(ctx, 8);
+    }
+};
+
 // GGML_OP_OUT_PROD
 struct test_out_prod : public test_case {
     const ggml_type type_a;
@@ -12208,6 +12244,10 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         for (int64_t n : { 1, 2, 3, 4, 8, 9 }) {
             test_cases.emplace_back(new test_mul_mat_id_shared(type, n));
         }
+    }
+
+    for (int64_t n : { 32, 128 }) {
+        test_cases.emplace_back(new test_moe_gate_up_down(n));
     }
 
     // gpt-oss issue with Vulkan mmq_id

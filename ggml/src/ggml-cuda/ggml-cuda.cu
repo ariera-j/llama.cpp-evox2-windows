@@ -33,6 +33,7 @@
 #include "ggml-cuda/im2col.cuh"
 #include "ggml-cuda/mmf.cuh"
 #include "ggml-cuda/mmq.cuh"
+#include "ggml-cuda/evox2-moe-trace.cuh"
 #include "ggml-cuda/mmq-few.cuh"
 #include "ggml-cuda/mmvf.cuh"
 #include "ggml-cuda/mmvq.cuh"
@@ -2554,6 +2555,13 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     const int cc        = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
     const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
+    const auto trace_moe = [&](const char * path) {
+#if defined(GGML_USE_HIP)
+        evox2_moe_trace::record(src0, src1, ids, dst, ctx.device, path, 0, false, GGML_PREC_UNDEFINED);
+#else
+        GGML_UNUSED(path);
+#endif
+    };
 
     // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
     if (src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
@@ -2562,15 +2570,18 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
             if (ggml_is_quantized(src0->type)) {
                 const int mmvq_mmid_max = get_mmvq_mmid_max_batch(src0->type, cc);
                 if (ne2 <= mmvq_mmid_max) {
+                    trace_moe("mmvq");
                     ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
                     return;
                 }
             } else if (src0->type == GGML_TYPE_F8_E4M3 &&
                     ggml_cuda_should_use_mmvf(src0, cc, warp_size, ne2)) {
-                ggml_cuda_mul_mat_vec_f(ctx, src0, src1, ids, dst);
+                trace_moe("mmvf");
+                    ggml_cuda_mul_mat_vec_f(ctx, src0, src1, ids, dst);
                 return;
             } else {
                 if (src0->type != GGML_TYPE_F8_E4M3 && GGML_CUDA_CC_IS_AMD(cc)) {
+                    trace_moe("mmvf");
                     ggml_cuda_mul_mat_vec_f(ctx, src0, src1, ids, dst);
                     return;
                 }
@@ -2583,6 +2594,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         }
 
         if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne, src0->nb, src1->ne[2], /*mul_mat_id=*/true)) {
+            trace_moe("mmf");
             ggml_cuda_mul_mat_f(ctx, src0, src1, ids, dst);
             return;
         }
@@ -2590,6 +2602,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     // note: this path should not be reached when recording CUDA graphs, because it requires stream synchronization
     GGML_ASSERT(ggml_cuda_mul_mat_id_needs_sync(dst, cc));
+    trace_moe("host_fallback");
     cudaStream_t stream = ctx.stream();
 
     GGML_ASSERT(nb12 % nb11 == 0);

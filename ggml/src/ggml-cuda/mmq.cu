@@ -2,6 +2,7 @@
 #include "mmq.cuh"
 #include "quantize.cuh"
 #include "mmid.cuh"
+#include "evox2-moe-trace.cuh"
 
 #include <cstdint>
 
@@ -259,6 +260,11 @@ void ggml_cuda_mul_mat_q(
         J_best = ggml_cuda_mmq_get_J_best(src0->type, ncols_opt, fallback, cc, smpbo, prec_src1, &nthreads_best);
     }
     GGML_ASSERT(J_best > 0);
+#if defined(GGML_USE_HIP)
+    if (ids) {
+        evox2_moe_trace::record(src0, src1, ids, dst, ctx.device, "mmq", J_best, fallback, prec_src1);
+    }
+#endif
 
     // A tile of size J can read in at most J - 1 extra columns.
     // For simplicity, round up the padding of a full tile to a multiple of the number of bytes that nthreads can load in parallel.
