@@ -1180,6 +1180,7 @@ struct vk_context_struct {
     std::vector<vk_staging_memset> memsets;
 
     std::vector<std::string> debug_labels;
+    std::string rgp_tg_graph_label;
 
     vk_command_pool * p {};
 };
@@ -1276,6 +1277,7 @@ class vk_perf_logger {
 
 struct ggml_backend_vk_context {
     std::string name;
+    std::string rgp_tg_graph_label;
 
     vk_device device;
 
