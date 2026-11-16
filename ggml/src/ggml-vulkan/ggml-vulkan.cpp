@@ -1,5 +1,7 @@
 #include "ggml-vulkan-common.h"
 
+static bool vk_tg_rgp_markers = false;
+
 static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& device) {
     vk::PhysicalDeviceProperties props = device.getProperties();
 
@@ -5496,7 +5498,13 @@ void ggml_vk_instance_init() {
 #ifdef __APPLE__
     const bool portability_enumeration_ext = ggml_vk_instance_portability_enumeration_ext_available(instance_extensions);
 #endif
-    const bool debug_utils_ext = ggml_vk_instance_debug_utils_ext_available(instance_extensions) && getenv("GGML_VK_DEBUG_MARKERS") != nullptr;
+    const char * tg_rgp_markers = getenv("EVOX2_VK_TG_RGP_MARKERS");
+    vk_tg_rgp_markers = tg_rgp_markers != nullptr && strcmp(tg_rgp_markers, "1") == 0;
+    const bool debug_utils_ext = ggml_vk_instance_debug_utils_ext_available(instance_extensions) &&
+        (getenv("GGML_VK_DEBUG_MARKERS") != nullptr || vk_tg_rgp_markers);
+    if (vk_tg_rgp_markers) {
+        GGML_LOG_INFO("ggml_vulkan: EVOX2 TG RGP markers %s\n", debug_utils_ext ? "enabled" : "unavailable (VK_EXT_debug_utils)");
+    }
     std::vector<const char*> layers;
 
     if (layer_settings) {
@@ -14748,9 +14756,41 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
         ctx->device->debug_cmdbuf_idx = 0;
     }
 
+    const char * graph_label = "ggml_backend_vk_graph_compute";
+    std::string tg_graph_label;
+    if (vk_tg_rgp_markers && vk_instance.debug_utils_support) {
+        int64_t q_tokens = -1;
+        int fa_nodes = 0;
+        bool same_q_tokens = true;
+        for (int i = 0; i < cgraph->n_nodes; i++) {
+            const ggml_tensor * node = cgraph->nodes[i];
+            if (node->op != GGML_OP_FLASH_ATTN_EXT || node->src[0] == nullptr) {
+                continue;
+            }
+            const int64_t n = node->src[0]->ne[1];
+            if (q_tokens != -1 && q_tokens != n) {
+                same_q_tokens = false;
+            }
+            q_tokens = n;
+            fa_nodes++;
+        }
+
+        if (fa_nodes > 0 && same_q_tokens && q_tokens == 1) {
+            static std::atomic<uint64_t> tg_graph_index{0};
+            const uint64_t index = tg_graph_index.fetch_add(1, std::memory_order_relaxed) + 1;
+            tg_graph_label = "EVOX2_VK_TG_" + std::to_string(index) +
+                "_Q1_FA" + std::to_string(fa_nodes) +
+                "_N" + std::to_string(cgraph->n_nodes);
+            graph_label = tg_graph_label.c_str();
+            if (index <= 4) {
+                GGML_LOG_INFO("ggml_vulkan: %s\n", graph_label);
+            }
+        }
+    }
+
     // queue scope, so it encloses every submit this evaluation makes.
     // closed when the function returns
-    ggml_vk_debug_label queue_dbg(ctx->device->compute_queue->handle.get(), "ggml_backend_vk_graph_compute");
+    ggml_vk_debug_label queue_dbg(ctx->device->compute_queue->handle.get(), graph_label);
 
     ctx->prealloc_size_add_rms_partials_offset = 0;
     ctx->do_add_rms_partials = false;
