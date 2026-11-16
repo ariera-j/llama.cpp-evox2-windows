@@ -6101,7 +6101,10 @@ void ggml_vk_ctx_begin(vk_device& device, vk_context& subctx) {
 
     if (vk_instance.debug_utils_support) {
         // outermost region, one per command buffer, so the gaps between submits stand out
-        const std::string name = "submit " + std::to_string(device->debug_cmdbuf_idx++);
+        std::string name = "submit " + std::to_string(device->debug_cmdbuf_idx++);
+        if (vk_tg_rgp_markers && !subctx->rgp_tg_graph_label.empty()) {
+            name = subctx->rgp_tg_graph_label + " " + name;
+        }
         ggml_vk_cmd_label_begin(subctx->s->buffer->buf, name.c_str());
 
         // reopen labels left open when the previous command buffer was submitted
@@ -6117,6 +6120,9 @@ vk_context ggml_vk_get_compute_ctx(ggml_backend_vk_context * ctx) {
         result = ctx->compute_ctx.lock();
     } else {
         result = ggml_vk_create_context(ctx, ctx->compute_cmd_pool);
+        if (vk_tg_rgp_markers) {
+            result->rgp_tg_graph_label = ctx->rgp_tg_graph_label;
+        }
 
         ctx->compute_ctx = result;
         ggml_vk_ctx_begin(ctx->device, result);
@@ -14786,6 +14792,10 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
                 GGML_LOG_INFO("ggml_vulkan: %s\n", graph_label);
             }
         }
+    }
+
+    if (vk_tg_rgp_markers) {
+        ctx->rgp_tg_graph_label = tg_graph_label;
     }
 
     // queue scope, so it encloses every submit this evaluation makes.
