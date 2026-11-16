@@ -1,4 +1,4 @@
-@{
+﻿@{
     SchemaVersion = 1
     Name = 'gemma4-v1-vulkan-tg-rgp-20261116'
 
