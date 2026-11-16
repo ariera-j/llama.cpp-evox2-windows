@@ -50,6 +50,12 @@ In a verified one-token TG RGP v2.7.0.32 capture, OVERVIEW > Pipelines (15 confi
 - The user's Wavefront occupancy screenshot contained no Memory counter views. Per [official AMD RGP manual](https://gpuopen.com/manuals/rgp_manual/events_windows/), counter graphs appear only if **Radeon Developer Panel's `Collect counters` checkbox was enabled during capture**. It cannot be enabled retroactively in an existing `.rgp`. If hardware supports collection, take a new short TG capture with `Collect counters` checked; preserve the prior trace for event timing. If the option is already checked but graphs remain absent, inspect RDP logs/hardware support before claiming a counter was captured.
 - Next priority: confirm #1 pipeline identity, then decide whether memory counter recapture is needed. This evidence already strongly suggests reducing Q4_0 weight-streaming latency is more relevant than Flash Attention optimization for **short TG**.
 
+## Dominant Q4_0 matvec pipeline confirmed by hash (2026-11-16)
+
+A subsequent RGP v2.7.0.32 screenshot selected **event 471**, directly showing the user-event hierarchy `MUL_MAT ffn_gate-12` > `mul_mat_vec_q4_0_q8_1_f32 (21504,1,1)` > `vkCmdDispatch(21504,1,1)`, with event time **388.825us** and **API PSO hash `0xE6BC2B71D825E139`**. This hash is an **exact match** for the #1 pipeline in OVERVIEW > Pipelines, previously measured as **73,382.302us, 91.43% of total recorded GPU pipeline duration, 331 events**. The top cost center is now **confirmed** as Q4_0 matvec in FFN, not just inferred from workgroup size. RGP shader occupancy 16/16, VGPR36, SGPR46; these do not measure LPDDR memory-bus saturation.
+
+Implication for TG: investigating Q4_0 weight reads, bandwidth and quantized matvec is higher priority than optimizing FA. The 91.43% is a *GPU pipeline event-duration* share in one traced TG window, not a per-token end-to-end time breakdown. The first-order GPU-duration speedup ceiling from eliminating **all other** pipelines is `1/0.9143 = ~1.094x` (~9.4% faster GPU pipeline time), assuming unchanged Q4_0 cost and no overlapping event accounting; this does not predict a wall-clock speedup. A supported counter capture is still needed before claiming memory bandwidth saturation.
+
 ## Goal and boundaries
 
 Identify GPU shaders and operator groups contributing to Gemma 4 31B QAT Q4_0 single-token generation (TG), where the clean v1.0.0-dev b12363 Vulkan baseline gives about 11.41 tok/s on short Japanese text and 8.92 tok/s after a 29,379-token input.
