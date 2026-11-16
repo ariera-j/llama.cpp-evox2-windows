@@ -29,6 +29,16 @@ Rebuild the **same** `build-vulkan-gemma4-rgp` diagnostic directory after `git p
 **Validation status:** source modification pushed; compilation and the corrected RGP visibility on EVO-X2 have **not** yet been verified. A current build manifest and the next RGP screenshot will provide this evidence.
 
 
+## RGP visibility gate PASSED (2026-11-16, b12371)
+
+A fresh diagnostic Vulkan build **b12371** (commit `85105727b6b13d5b81e01bff6f384ffce068ac2b`) and run were inspected. **RGP v2.7.0.32 actually displays** `EVOX2_VK_TG_182_Q1_FA60_N2461 submit 0` and the same graph identity over several command-buffer submits, with nested `MUL_MAT` and `FLASH_ATTN_EXT` operator/pipeline labels. This resolves the previous queue-scoped marker visibility issue and confirms correct command-buffer label propagation. The run was successful (217 input, 512 generated, TG 11.52 tok/s, PP 336.13 tok/s; diagnostic mode not a speed benchmark).
+
+Some visible single-dispatch timings: `mul_mat_vec_q4_0_q8_1_f32` ffn_gate ~371us and ffn_up ~362us; `flash_attn_f32_f16_aligned_cm1` ~89us; all are **examples only**, not per-token category sums. No RGP memory traffic counters or full event aggregates were supplied, so memory-bandwidth limitation remains a hypothesis.
+
+Next use the same `.rgp` without another model run if possible: **OVERVIEW > Pipelines**, sort by **Duration descending** to show top ~10 pipelines and their `Duration / Event count / Avg event duration`; and **EVENTS > Wavefront occupancy**, show `Fetch size` / `Memory unit busy` / `Memory unit stalled` counters if present. If memory counters are absent, do not infer bus use from GPU utilization. Optionally use `OVERVIEW > Profile summary > Queue timings` to check GPU idle intervals. The full annotated local-only evidence is recorded in the private experiments repo.
+
+The only operational warning in this run is that the P-MODE **finish probe failed**, although start mode was Performance; neither P-MODE switching nor stable end mode can be inferred.
+
 ## Goal and boundaries
 
 Identify GPU shaders and operator groups contributing to Gemma 4 31B QAT Q4_0 single-token generation (TG), where the clean v1.0.0-dev b12363 Vulkan baseline gives about 11.41 tok/s on short Japanese text and 8.92 tok/s after a 29,379-token input.
