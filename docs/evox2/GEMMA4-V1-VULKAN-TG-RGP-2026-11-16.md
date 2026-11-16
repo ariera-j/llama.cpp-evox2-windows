@@ -39,6 +39,17 @@ Next use the same `.rgp` without another model run if possible: **OVERVIEW > Pip
 
 The only operational warning in this run is that the P-MODE **finish probe failed**, although start mode was Performance; neither P-MODE switching nor stable end mode can be inferred.
 
+## Pipeline summary: 91.43% in one pipeline (2026-11-16)
+
+In a verified one-token TG RGP v2.7.0.32 capture, OVERVIEW > Pipelines (15 configurations, sorted by duration) showed:
+
+- Pipeline #1 **73,382.302 us = 91.43%** of recorded pipeline-event duration, 331 events, mean 231.304us/dispatch. Hash visually appears as `0xE6BC2B71D825E139` (recheck against RGP directly).
+- Pipeline #2 **3,179.157 us = 3.96%**, 40 events, mean 79.479us.
+- Top pipeline event examples include `vkCmdDispatch(21504,1,1)` ~379–389us. Earlier nested shader labels show `mul_mat_vec_q4_0_q8_1_f32` on `ffn_gate`/`ffn_up` using the same dispatch shape and ~360–370us. **Highly likely Q4_0 quantized matvec, but verify the pipeline hash to event label** by selecting one top-pipeline event and viewing it in Event timing.
+- 91.43% is the fraction of **recorded GPU pipeline duration**, not full host+GPU TG latency; no hardware memory bandwidth was measured.
+- The user's Wavefront occupancy screenshot contained no Memory counter views. Per [official AMD RGP manual](https://gpuopen.com/manuals/rgp_manual/events_windows/), counter graphs appear only if **Radeon Developer Panel's `Collect counters` checkbox was enabled during capture**. It cannot be enabled retroactively in an existing `.rgp`. If hardware supports collection, take a new short TG capture with `Collect counters` checked; preserve the prior trace for event timing. If the option is already checked but graphs remain absent, inspect RDP logs/hardware support before claiming a counter was captured.
+- Next priority: confirm #1 pipeline identity, then decide whether memory counter recapture is needed. This evidence already strongly suggests reducing Q4_0 weight-streaming latency is more relevant than Flash Attention optimization for **short TG**.
+
 ## Goal and boundaries
 
 Identify GPU shaders and operator groups contributing to Gemma 4 31B QAT Q4_0 single-token generation (TG), where the clean v1.0.0-dev b12363 Vulkan baseline gives about 11.41 tok/s on short Japanese text and 8.92 tok/s after a 29,379-token input.
