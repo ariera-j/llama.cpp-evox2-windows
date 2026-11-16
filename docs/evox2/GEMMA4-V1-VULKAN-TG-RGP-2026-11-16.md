@@ -1,5 +1,34 @@
 # Gemma 4 31B QAT: Vulkan TG RGP marker gate (2026-11-16)
 
+## RGP screenshot validation and command-buffer label correction (2026-11-16 evening)
+
+The first instrumented b12367 Vulkan run succeeded, and stderr printed `EVOX2_VK_TG_1_Q1_FA60_N2461` through index 4, but an actual manually triggered RGP v2.7.0.32 capture showed **no `EVOX2_VK_TG_` label**. This is a placement problem, not a failed kernel capture.
+
+The screenshots showed existing Vulkan debug user events `MUL_MAT Qcur-0`, `FLASH_ATTN_EXT node_30`, shader `mul_mat_vec_q4_0_q8_1_f32` (~81–160 us in visible samples), and `flash_attn_f32_f16_aligned_cm1` (~103–117 us in visible samples). The occupancy timeline contains repeated submit 0–8 work lasting approximately 80 ms, consistent in scale with ~86 ms/token. This strongly suggests **TG**, not long prefill, although a traced output token ordinal was not independently correlated.
+
+**Root-cause hypothesis:** The first patch placed `EVOX2_VK_TG_...` in a `vkQueueBeginDebugUtilsLabelEXT` queue region, whereas the RGP tree displayed labels recorded inside Vulkan **command buffers**. RGP's visibility of queue-scoped labels should not be assumed; the screenshot does not demonstrate a command-buffer marker failure.
+
+**Fix:** Propagate the TG graph label from `ggml_backend_vk_context` into each Vulkan compute `vk_context_struct`, and prefix the existing `submit <number>` `vkCmdBeginDebugUtilsLabelEXT` label in `ggml_vk_ctx_begin` with `EVOX2_VK_TG_<ordinal>_Q1_FA<n>_N<nodes>`. The corresponding `ggml_vk_ctx_end` automatically balances the label. Existing queue-level labels and per-node/per-pipeline debug labels are left unchanged. Update `Get-Evox2RelevantEnvironment` to retain `EVOX2_` environment flags in the benchmark metadata. No shader/quantization/math changes.
+
+Expected RGP display (under Event timing, Group by user events, after rebuilding):
+
+```text
+EVOX2_VK_TG_1_Q1_FA60_N2461 submit 0
+  MUL_MAT Qcur-0
+    mul_mat_vec_q4_0_q8_1_f32 (...)
+  FLASH_ATTN_EXT node_30
+    flash_attn_f32_f16_aligned_cm1 (...)
+EVOX2_VK_TG_1_Q1_FA60_N2461 submit 1
+...
+```
+
+**Important:** Exact nesting of events in RGP depends on rendering and capture settings; the prefix should appear on the command-buffer submit label. The sequence might begin with another TG graph index if automatic capture began later. The label is not a duration by itself.
+
+Rebuild the **same** `build-vulkan-gemma4-rgp` diagnostic directory after `git pull --ff-only`, but do not touch the clean `build-vulkan-gemma4` baseline. Re-run the original 512-token marker plan. Confirm both stderr and RGP Event timing contain `EVOX2_VK_TG_`, ideally inside one 80–90ms compute graph. Then collect a limited representative event timing sample for Q4_0 and FA. Do not yet enable many hardware counters or longer capture windows.
+
+**Validation status:** source modification pushed; compilation and the corrected RGP visibility on EVO-X2 have **not** yet been verified. A current build manifest and the next RGP screenshot will provide this evidence.
+
+
 ## Goal and boundaries
 
 Identify GPU shaders and operator groups contributing to Gemma 4 31B QAT Q4_0 single-token generation (TG), where the clean v1.0.0-dev b12363 Vulkan baseline gives about 11.41 tok/s on short Japanese text and 8.92 tok/s after a 29,379-token input.
