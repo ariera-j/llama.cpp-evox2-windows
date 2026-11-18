@@ -1,5 +1,74 @@
 # 2026-11-08: r6後続タスク再順位付けとupstream/fork/他エンジン更新、IQ1・新IQ3／Strata着手準備
 
+## 2026-11-18追補：llama.cpp / fork / 他エンジン / オープンウエイトモデル最新動向と優先順位
+
+> **最新判断（2026-11-18 JST、公開ソース調査）。** ここから次の区切り線までが11/18追補。以降の11/08原記録は当時の判断として維持し、過去の「次にやる」指示は現状の予定として読み替えない。今回の更新ではEVO-X2実機ビルド・速度計測・ソース移植を行っていない。外部作者の性能値は作者報告であり、r6実測とは区別する。
+
+### A. 11/08以降の実験進捗と今回の方針
+
+- 11/08の優先度1だったIQ1・更新IQ3とMH-Hard品質比較、優先度2だったStrata試用は既に進行・評価済み。旧IQ3を常用継続、新IQ3の採用を見送り、Strataとr6・upstreamのPP/TGを比較した。これらを再び「未着手」と記載しない。
+- 現在の主テーマは **(1) Gemma 4のPP速度がVulkanとROCmで異なる理由の調査**（高速化より内部挙動の理解が目的）、**(2) CodexからEVO-X2へ接続できる環境の確立後、Strataの最適化を個別にllama.cppへ移植** の2件。
+- **判断：この2本柱は維持。** ただし移植前に、最新upstream・strix.cpp・rdna-boosts・Strataの重複実装／kernel経路を監査する工程を追加する。DeepSeek、vLLM等は別トラックで、メイン開発を遮らない範囲に限定する。
+
+### B. upstream llama.cpp（11/18時点）
+
+- [2026-11-18公開nightly b12490](https://github.com/ggml-org/llama.cpp/releases/tag/b12490) を確認。r6統合ベースb11870、11/08確認b12202より進んでいる。ビルド番号の進行はr6上の性能改善を保証しない。
+- [v1.0.0（11/13公開）](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0) はb12359相当（commit b1b770d）。公開API整理だけでなく、**外部PLE/engramシャード読み込み（#31185）**、**CPU共有可能なMoE expert cache（#30966等）**、**FP8 KV cache**、GDNの経路整理、Vulkan prefill FA、scheduler/graph再利用等を含む。
+- r6の **COMMON-001 PLE16、COMMON-005 Gather、QSA Mask・KV処理、MTP、MoE/cache、Vulkan PP** と重複・干渉する可能性がある。外部PLEの実装が入ったからといってr6の既存PLE16と機能同等とは断定しない。コード経路、量子化型、head split、モデル読み込み条件を照合する。
+- [AMDのggml-hrx RFC](https://github.com/ggml-org/llama.cpp/discussions/27219) はAMD専用backendの将来候補。Windows gfx1151での優位は未確立のため、現時点は追跡のみ。
+
+### C. 優先度が上がったfork
+
+| 対象 | 確認点 | EVO-X2での扱い |
+|---|---|---|
+| [ArtomYuan/strix.cpp](https://github.com/ArtomYuan/strix.cpp) | gfx1151特化のLinux ROCm 10.x / HIP fork。Attention shape別kernel、ROCmFP4 GEMMのK-tiling、SSM convolutionのコピー削減。作者報告でQwen3.8-27B / Q4_0_ROCMFP4_FASTのPPを約44～73%改善した比較あり（条件により別幅の報告もある）。 | **ソース差分・RGP計測手法の優先監査対象**。Qwen3.8 Flash Next、Windows ROCm、r6で同じ改善が出るとは仮定しない。 |
+| [stew675/llama-cpp-rdna-boosts](https://github.com/stew675/llama-cpp-rdna-boosts) | RDNA/HIP向け複数パッチブロックと再現性重視の計測記録。v17系列が公開。 | r6に未導入で、対象shape/active pathが一致するパッチのみ検討。一括適用しない。 |
+| [justinappler/llama.cpp-strix-halo](https://github.com/justinappler/llama.cpp-strix-halo) | 2026-10-19にforkをretireし、主要最適化はupstreamに反映された旨を記録。 | 重複実装を避けるための履歴資料として利用。 |
+
+上記の速度値は作者の環境・量子化・モデル・バッチ条件に依存。**kernel単体の改善率とPP全体の改善率、同一forkの旧版対新版とfork対upstreamを混同しない**。
+
+### D. Strata 0.2.14 / 0.2.15の更新と移植対象
+
+- [Strata v0.2.14（11/15）](https://github.com/Niko1221/Strata/releases/tag/v0.2.14) はNVIDIA/AMDのprompt処理を独自kernel中心へ変更し、engine 0.1.60になった。[v0.2.15（11/16）](https://github.com/Niko1221/Strata/releases/tag/v0.2.15) は主にapp/terminal修正で、通常engineは同じ0.1.60。以前実測したv0.2.13 / engine 0.1.59との差分を読む際はバイナリを混ぜない。
+- [Strix Halo公式説明](https://github.com/Niko1221/Strata/blob/main/docs/STRIX_HALO.md) にある STRATA_PF_GEMM、STRATA_PF_FUSED、STRATA_HIP_WMMA、STRATA_HC_UPMIX、GDN、hipBLASLt tuning、expert-cacheの選択・RAM budget等を、既存r6/upstream/strix.cppの**コードと同一shapeでのdispatch経路**に対応づける。
+- 移植順は「実装対応表を作る → 依存最小の候補を一つ選ぶ → opt-in / default OFFで独立branch → 同一モデル・GGUF版・KV dtype・UBatch・MTP設定でA/B → 数値とMH-Hard品質 → 採否」のゲート方式とする。新たな最適化が既にupstreamにある場合は、先にupstream経路での再現性を確認する。
+
+### E. DeepSeek V4.1-Flash：技術的興味は高いが本体計画と分離
+
+- **重要：現行Strataの通常経路ではDeepSeekは起動不可。** [Strataのretired.py](https://github.com/Niko1221/Strata/blob/main/strata_control/retired.py) には、**0.2.13まで動作、以降はDeepSeek設定/モデルを実行前に明示的に拒否**する実装がある。一方[v0.2.15のrelease note](https://github.com/Niko1221/Strata/releases/tag/v0.2.15) にはDeepSeek用**過去版engine 0.1.59の配布ファイルが0.2.13から供給される**と記載がある。**配布継続と実行サポート継続を混同しない**。最新Strataで動くという前提にしない。
+- 大きなモデル本体に加えて、別のEngram/n-gramテーブル（公式案内では約111 GB）等の容量・SSD帯域が必要。[Strataのモデル説明](https://github.com/Niko1221/Strata/blob/main/docs/AI_REFERENCE.md)にある2bpw前後でモデル本体が数百GB規模。UMA 64/96 GB全載せを前提にしない。
+- 試す場合は **(a) llama.cppの対応GGUFと動作ビルド確認、(b) Strata v0.2.13を別環境に固定する歴史再現、(c) SSD空き容量、mmap/キャッシュ、expert配置、OSメモリ不足時の挙動の事前見積もり** を最初のゲートとする。ダウンロード・起動はゲート通過後に判断。初期目的は実用速度より巨大MoEの実行経路・キャッシュ挙動の理解。
+
+### F. 他エンジンとモデルの候補
+
+| 項目 | 11/18時点の公開情報 | 判断 |
+|---|---|---|
+| [vLLM](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/) | ROCmの対応GPUにgfx1151/Ryzen AI MAXが明示。Linux中心で検証。 | 他エンジンを1つ試すなら第一候補。サービング重視の構造のため、単発GGUF長文PPにそのまま優位とは推定しない。 |
+| [SGLang gfx1151](https://github.com/sgl-project/sglang/blob/main/docs/docs/hardware-platforms/amd_gpu.mdx) | Strix Halo向けDocker経路。AITERを無効化する構成が示される。 | vLLMの後。wave32 kernelの数値正確性にも注意。 |
+| [Lemonade](https://github.com/lemonade-sdk/lemonade/releases) / [Halogen](https://github.com/peonist-ai/halogen-flash-server) | Strix Halo向けの複数container backend（Halogen、Gufo、ROCmFPX等）が拡充。 | Lemonade自身を1エンジンとして比べず、backend単位で評価。 |
+| [Qwen3.8-27B](https://github.com/QwenLM/Qwen3.8) | dense GEMMの性能検証に利用可能。strix.cppの測定モデルに近い。 | 常用Flash Nextとは別の**高速化検証用dense対照モデル**として検討。 |
+| [Qwen4](https://www.alibabacloud.com/en/press-room/alibaba-unveils-qwen4-max) | 11/16にQwen4-Max発表。小型オープンウエイト版は今後公開予定。 | ウエイト公開とllama.cppサポートを監視。今すぐ置き換え不要。 |
+| Kimi K3.1 Pro | 2.8T総パラメータ/約104B activeの大型MoE。v1.0.0でアーキテクチャ対応が追加。 | 単体EVO-X2での優先試用対象にはしない。 |
+
+### G. 2026-11-18の実行優先順位（11/08の順位を更新）
+
+| 順位 | 作業 | 完了条件・扱い |
+|---:|---|---|
+| **1** | **Gemma 4のVulkan/ROCm PP差をRGPで整理** | 既存profileからGEMM形状・kernel時間・dispatch/待機時間を突き合わせ、主要因を分類。高速化実装は必須としない。 |
+| **2（並行・基盤整備）** | **CodexからEVO-X2へ安全に接続** | 非管理者SSH、指定commitのbuild、同条件benchmark、品質確認、差分記録、rollback、GitHubへの結果保存を自動化。既存サービスへの影響は避ける。 |
+| **3** | **4者の差分監査**（upstream / Strata / strix.cpp / rdna-boosts） | 対応表にshape・dtype・kernel・driver/ROCm前提・r6 active path・upstream取り込み済みか否かを整理。 |
+| **4** | **個別最適化の移植・採否判定** | 1機能1branch、default OFF、性能と数値/品質を必ずA/B。 |
+| **5（独立の短い事前調査）** | **DeepSeek V4.1-Flash可動性確認** | 対応版・巨大モデル容量・SSD/UMA/キャッシュ計画を確認。モデル取得前に実施可否を判断。 |
+| **6** | **他エンジン試用** | Linux上でvLLM → 必要に応じHalogen/Gufo/SGLang。比較対象は同一モデルまたは比較可能なモデルで限定。 |
+| **7（継続監視）** | **新モデル・HRX・新upstream機能** | Qwen4小型ウエイト、Vulkan/ROCm新kernel等の公開時に順位を再判定。 |
+
+**総合判断：** Gemma 4原因調査は研究目的に沿って続行し、早めに観測事実と未解明点を整理して区切る。Codex/EVO-X2の反復ビルド・計測基盤が整った後の主開発はStrataの最適化を個別に比較・移植すること。ただし**実装の前にupstream/strix.cpp/rdna-boostsとの差分監査**を挟む。DeepSeek試用や新エンジン探索は補助テーマにして、主計画を中断しない。
+
+**変更・検証の境界：** この追補は情報収集と優先順位記録のみ。計測値、最適化の採用、上流統合、GitHubソース変更、Windowsサービス・UMA設定変更を伴わない。後続の実機ログ・条件・成果物は実験リポジトリへ記録し、採用したコードのみ本リポジトリへ反映する。
+
+---
+
+
 > **現在の基準文書（2026-11-08 JST）。** 本記録は公開GitHubリリース・PR・各公式ドキュメントの静的調査と既存EVO-X2実測の整理。**ローカルビルド・モデル動作確認・変換・外部エンジン起動・速度計測は未実施。** 以前の2026-11-03引き継ぎや2026-11-07「PP調査中」計画より新しい優先順位をこちらに記録し、古い日付付き測定値・意思決定は履歴として残す。古い実測を後から改変しない。
 
 ## 1. 現状と完了済みの調査
