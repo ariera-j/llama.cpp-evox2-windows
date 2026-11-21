@@ -1,5 +1,15 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## Pause-only + open RDP smoke PASSED (2026-11-21 17:22 JST)
+
+**The pause gate is independently validated with Radeon Developer Panel open but NO RGP capture.** Original v1 diagnostic b12366, unchanged executable (`51bb379eb`, SHA256 `7d73d9940da98a280acf795a119ae931c1f69c031b9bf63296c99327061c83eb`), processed the same 29,379-token paper **OK / ExitCode 0**. Log archive (kept privately): `20261121-171342-857-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip`, SHA256 `e7d4e274f2535e8768a23097f4444487e45a012f5bef43986dd3a90b5847ae58`.
+
+At `EVOX2_PP_G48_Q512_KVMAX24576_FA60`, the pause log occurred 5:24.145 and the resume 5:35.965, **11.820 s** apart. The run continued through G49...G58 and completed PP with **467.363s / 62.86 tok/s**. The preceding marker-only no-pause run took **454.654s / 64.62 tok/s**, only ~12.71s faster; nearly all elapsed PP time difference corresponds to intentional pausing. Thus marker code and pause/release are **not sufficient** to reproduce the prior TDR when RDP is merely open. A live RGP capture or an intermittent driver issue is the remaining likely difference, not a confirmed root cause.
+
+**Next:** original-v1 branch only, very short manual RGP capture at **KV2048**, **16 dispatches**, *Collect counters*, *Enable instruction tracing*, *Delay capture* all OFF, **Auto capture=None**, **Disable client timeout ON** in RDP Connections. Configure RDP *before launching* the test application. Arm `Capture profile` while stopped, release promptly using the helper, and check the .rgp file and visible `EVOX2_PP_` command-buffer marker. Expand to 32 or 64 dispatches only if necessary and stable. Then use KV24576, followed by the #31323 diagnostic branch.
+
+[Private test data, timings and three-way isolation table](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-pp-rgp-pause-only-smoke.md).
+
 ## Markers-only smoke after restart PASSED (2026-11-21 17:04 JST)
 
 The user rebooted EVO-X2 and ran the **original v1.0.0 PP diagnostic binary** (b12366, commit `51bb379eb`) on the same 29,379-token Japanese paper with `EVOX2_VK_PP_RGP_MARKERS=1` and `GGML_VK_DEBUG_MARKERS=1`, but **no pause and no Radeon Developer Panel capture**. Raw archive: `20261121-165633-701-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip` (private, SHA256 `abce179bbeb61f79146a6342d3f0019bc6ac41aa67cc39e6cdc9dfe95e7e09d6`).
