@@ -1,5 +1,28 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## First stable deep-PP RGP baseline captured at KV24576 (2026-11-21 ~19:16 JST)
+
+**Original v1.0.0 diagnostic b12366 PASS:** one manual RGP 16-dispatch trace at graph `EVOX2_PP_G48_Q512_KVMAX24576_FA60`. This confirms that late-context pause/release and **actual RGP capture** can be completed without a driver timeout using the now-validated matching-prefix procedure.
+
+Run archive (locally kept): `20261121-191115-138-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip` / SHA256 `0389dc6e165602d64257a3d9ee36085493fa10dc72a9a6009d57e9c450d2155f`. `Status=OK / ExitCode 0`, 29,379 prompt tokens; `PAUSED` at log time `5:24.426.677` and **`RESUMED`** at `5:33.590.012` (**9.163 s pause**), no `TIMEOUT`. End-of-run PP 63.10 tok/s includes the pause and is not a clean performance value. RGP 2.7.0.32 screenshot title `llama-cli-20261121-191649965.rgp` (binary not provided).
+
+In Event timing the recorded early FA event reads:
+
+```text
+EVOX2_PP_G48_Q512_KVMAX24576_FA60 submit 0
+  EVOX2_FA_I0_Q512_KV1536_HSK256 FLASH_ATTN_EXT node_30
+    flash_attn_f32_f16_aligned_cm1 (32,32,1)
+      vkCmdDispatch(32,32,1)  2017.884 us
+EVOX2_PP_G48_Q512_KVMAX24576_FA60 submit 1
+  ... quantized FFN matmul ...
+```
+
+**Important: the captured FA is SWA / head dimension 256 with its own KV1536, NOT global attention with KV24576.** The graph's KVMAX24576 aggregates FA nodes and must not be taken as the captured dispatch's KV. Consequently this trace alone cannot explain the observed 2.66x whole-PP speedup; first compare the same early SWA FA with the **ported #31323 diagnostic** at KV24576, then target actual `HSK512` / long-KV global-attention FA for a causal mechanism study. The visible `EVOX2_FA_I0` has the same Q512/KV1536/HSK256 shape as the prior early-G4 screenshot; observed single-shader times fluctuate, so do not infer context-depth speedups from these two independent dispatches.
+
+**Next** use the optimized RGP diagnostic at `EVOX2_VK_PP_RGP_PAUSE_KV=24576`, prefix `C:\llama-build\rgp-pp\ported-kv24576-16` **identical in both PowerShell windows**, RDP 16 dispatch with Disable client timeout ON and counters/instruction tracing OFF. Verify `RESUMED` and executable commit before attempting to compare captures. No new C++ implementation is required for this same-FA capture.
+
+[Detailed original-v1 private RGP notes](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-pp-rgp-kv24576-16-dispatch-success.md).
+
 ## Manual resume + RGP 16-dispatch capture PASS (2026-11-21, ~18:06–18:14 JST)
 
 The original v1.0.0 diagnostic b12366 (`51bb379eb`) was re-run at `EVOX2_PP_G4_Q512_KVMAX2048_FA60` with the correctly matched fresh prefix `C:\llama-build\rgp-pp\original-kv2048-16-retry` in both shells. **stderr confirms `PAUSED` at 0:11.677398 and `RESUMED` at 0:27.357863**, with no `TIMEOUT` line (gate duration **15.680 seconds**). RDP's manual **16-dispatch** capture completed promptly; user RGP 2.7.0.32 screenshot shows command-buffer marker `EVOX2_PP_G4_Q512_KVMAX2048_FA60 submit 0` and nested `EVOX2_FA_I0_Q512_KV1536_HSK256 FLASH_ATTN_EXT node_30`. **Inference also completed `Status=OK`, ExitCode=0**, all 29,379 input tokens and final G58 marker.
