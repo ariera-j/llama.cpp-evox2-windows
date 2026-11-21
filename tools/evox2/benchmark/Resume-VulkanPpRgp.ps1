@@ -29,11 +29,14 @@ Write-Host 'The target Vulkan PP graph is paused. In Radeon Developer Panel:' -F
 Write-Host '  1. Select this llama-cli application as the profiling capture target.'
 Write-Host '  2. Choose manual Dispatch capture, Render op count 16 (small initial trace).'
 Write-Host '     Disable Collect counters / instruction tracing; disable client timeout in RDP.'
-Write-Host '  3. Click Capture profile to arm capture at the next dispatch.'
-Write-Host '  4. Return here and press ENTER to allow the graph to execute.'
+Write-Host '  3. Click Capture profile in RDP to ARM the next dispatch capture.'
+Write-Host '  4. IMMEDIATELY return to this window and press ENTER to release the PP graph.'
+Write-Host '  5. Do NOT wait for the RGP trace to finish BEFORE releasing the graph.'
+Write-Host '     Without further dispatches, a pending capture can remain waiting until gate TIMEOUT.'
 Write-Host ''
-$null = Read-Host 'Press ENTER after arming RDP dispatch capture'
+$null = Read-Host 'Press ENTER now, after clicking Capture profile (do not wait for .rgp)'
 
 # Only write this after the user explicitly confirms capture is armed.
 [IO.File]::WriteAllText($goFile, "go`n", (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "Resumed: $goFile" -ForegroundColor Green
+Write-Host "Go-file written: $goFile" -ForegroundColor Green
+Write-Host 'Check llama-cli stderr for RESUMED (not TIMEOUT) and confirm the .rgp file is created.'
