@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -14788,7 +14789,8 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
     // A scoped guard prevents this name from leaking into later TG or transfer work.
     evox2_vk_pp_label_restore pp_label_restore;
     const char * global_fa_env = std::getenv("EVOX2_VK_PP_RGP_TARGET_GLOBAL_FA");
-    const bool evox2_vk_globalfa_mode = global_fa_env != nullptr && std::strcmp(global_fa_env, "1") == 0;
+    const bool evox2_vk_globalfa_mode = global_fa_env != nullptr && std::strcmp(global_fa_env, "1") == 0 &&
+        !vk_perf_logger_enabled; // PERF_LOGGER records timestamp queries across the graph: incompatible with mid-graph split.
     bool evox2_vk_globalfa_selected_graph = false;
     if (evox2_vk_pp_rgp_enabled && vk_instance.debug_utils_support) {
         int64_t q_max = 0;
