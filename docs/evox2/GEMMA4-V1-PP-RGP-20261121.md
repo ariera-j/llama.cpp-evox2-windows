@@ -112,7 +112,7 @@ An EVO-X2 RGP diagnostic build stopped at `[1020/1061] Provisioning UI assets`, 
 
 The two dedicated RGP branches now add `-DLLAMA_USE_PREBUILT_UI=OFF` to `tools/evox2/build/Build-Vulkan.ps1` **alongside the existing `-DLLAMA_BUILD_UI=OFF`**. (The latter alone does not prevent the downloaded-asset path.) These branches need no server Web UI for llama-cli RGP captures. Production benchmark branches are unchanged.
 
-If the failed build has already downloaded incompatible UI assets, delete **only** that build directory's `tools\\ui\\dist` and optional UI stamp. After `git pull --ff-only` in the corresponding diagnostic worktree, re-run the same Build-Vulkan.ps1 to reuse all other compiled objects. Example for the optimized diagnostic branch:
+If the failed build has already downloaded incompatible UI assets, delete **only** that build directory's `tools\ui\dist` and optional UI stamp. After `git pull --ff-only` in the corresponding diagnostic worktree, re-run the same Build-Vulkan.ps1 to reuse all other compiled objects. Example for the optimized diagnostic branch:
 
 ```powershell
 $root = 'C:\llama-build\llama.cpp-evox2-fa31323-pp-rgp'
@@ -128,6 +128,6 @@ if ($LASTEXITCODE -ne 0) { throw 'git pull failed' }
     -Parallel 4
 ```
 
-**PowerShell note:** use backticks, *not* the shell-agnostic backslashes printed above, when executing multiline commands. Alternatively write the `& ... -BuildDir $build -VulkanSdk ... -LlvmBin ... -Parallel 4` call on one line. An independently safe workaround without pulling branch changes is passing `-ExtraCMakeArgs @('-DLLAMA_USE_PREBUILT_UI=OFF')` to the existing build script, after clearing stale UI dist.
+If you have not pulled the updated branch yet, an equally safe workaround is passing `-ExtraCMakeArgs @('-DLLAMA_USE_PREBUILT_UI=OFF')` to the existing build script, after clearing stale UI dist.
 
 A successful UI-less build will generate an empty built-in Web UI table for llama-server; no effect on the Vulkan kernel implementation. Windows marker build and capture are still unverified until the next executable smoke/RGP trace.
