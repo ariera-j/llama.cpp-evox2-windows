@@ -1,5 +1,26 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## Paired G48 #31323 capture: short-KV SWA CM1 regresses despite faster overall PP (2026-11-21 ~19:32 JST)
+
+**#31323 diagnostic capture PASS:** `20261121-193009-279-cli-vulkan-b12369-ctx32768-f469ccd61ea7.zip` (raw ZIP private; SHA256 `1a095bcd951863b0ddeb362cf06cccb6518961c85bcf465d6737ba05cb059671`). Ported diagnostic build **b12369**, executable source commit `471738b83`, `Status=OK / ExitCode 0`, 29,379 Japanese paper prompt tokens, identical Gemma4 31B QAT/Q4_0, F16 KV, b2048 ub512, UMA64GB, Performance P-MODE. Stop at `EVOX2_PP_G48_Q512_KVMAX24576_FA60` (`2:17.499078`), **`RESUMED`** (`2:28.292122`) after **10.793 s**, no TIMEOUT/TDR. Whole-PP 160.00 tok/s **includes the pause** and is not a clean performance measurement (nominal adjusted rate ~170.0 tok/s, for sanity only). RGP file in screenshot `llama-cli-20261121-193238668.rgp`.
+
+Paired screenshot values at **identical first SWA-class FA** `EVOX2_FA_I0_Q512_KV1536_HSK256 FLASH_ATTN_EXT node_30`, **same labeled CM1 pipeline and workgroup dispatch** `flash_attn_f32_f16_aligned_cm1` / `vkCmdDispatch(32,32,1)`:
+
+| RGP event | Original-v1 G48 (b12366) | Port b12369 G48 | Observation |
+| --- | ---: | ---: | --- |
+| **CM1 GPU dispatch only** | **2017.884 µs** | **4293.574 µs** | port **2.128x longer** (single captures) |
+| `EVOX2_FA_I0` whole labeled group | 2305.651 µs | 4580.051 µs | port ~1.99x longer |
+| FFN gate Q4 matmul shown | ~4356.6 µs | ~4347.7 µs | nearly unchanged |
+| FFN up Q4 matmul shown | ~4531.6 µs | ~4498.1 µs | nearly unchanged |
+
+**Do not generalize one SWA CM1 event to all FA kernels.** `KVMAX24576` is the **graph maximum**, but **captured FA KV=1536** (SWA, 50/60 FA nodes). This profile does **not show** any `HSK512` long-KV Global Attention FA (10/60 FA nodes). Clean paired whole-PP speed was independently **64.34 → 170.83 tok/s**, so the likely substantial speedup must arise in other work not captured by this first SWA FA (Global Attention is the leading candidate, not yet measured).
+
+Source interpretation: #31323 extends existing CM1 shader (`flash_attn_cm1.comp`) to support **32-Q-row tiles on UMA RDNA3/4 where shared memory permits**, with a fallback to the 16-row tile and **`q_in_regs`** register-resident query caching in AMD PP. New flipped FA is **disabled on AMD proprietary Windows driver** by #32415 and is not the observed labeled pipeline. Same RGP dispatch geometry is consistent with a common 16-row Br for this HSK256 shape (not a proof: verify specialization parameters). The reason that the 1536-KV path slows down could be register pressure/occupancy, query caching or other new shader costs; **not yet isolated by source analysis**.
+
+**Recommended next:** measure the actual `HSK512`, FA-KV~24576 Global Attention node to resolve the contradictory whole-PP vs first SWA findings. Avoid blindly raising RDP capture count to hundreds given the earlier AMD driver timeout. The built-in **`GGML_VK_PERF_LOGGER=1`** Vulkan timestamp feature logs per GGML node and includes FA `q(...)`, `k(...)`, `v(...)`, `m(...)` shapes. This can survey all SWA and Global FA nodes without extended RGP capture, although it changes synchronization and must **not** be used as an uninstrumented throughput comparison. Code source: `ggml-vulkan.cpp` initializes `GGML_VK_PERF_LOGGER` and emits `Vulkan Timings:` blocks via `vk_perf_logger::print_timings`. Do a small timing smoke first before using the full 32k context. Subsequently use targeted RGP for specific long-KV GPU dispatch timing if needed.
+
+[Full paired RGP report, screenshots interpreted (private experiment repository)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-vs-fa31323-rgp-g48-swa-16dispatch.md).
+
 ## First stable deep-PP RGP baseline captured at KV24576 (2026-11-21 ~19:16 JST)
 
 **Original v1.0.0 diagnostic b12366 PASS:** one manual RGP 16-dispatch trace at graph `EVOX2_PP_G48_Q512_KVMAX24576_FA60`. This confirms that late-context pause/release and **actual RGP capture** can be completed without a driver timeout using the now-validated matching-prefix procedure.
