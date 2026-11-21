@@ -1,5 +1,24 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## Manual resume + RGP 16-dispatch capture PASS (2026-11-21, ~18:06–18:14 JST)
+
+The original v1.0.0 diagnostic b12366 (`51bb379eb`) was re-run at `EVOX2_PP_G4_Q512_KVMAX2048_FA60` with the correctly matched fresh prefix `C:\llama-build\rgp-pp\original-kv2048-16-retry` in both shells. **stderr confirms `PAUSED` at 0:11.677398 and `RESUMED` at 0:27.357863**, with no `TIMEOUT` line (gate duration **15.680 seconds**). RDP's manual **16-dispatch** capture completed promptly; user RGP 2.7.0.32 screenshot shows command-buffer marker `EVOX2_PP_G4_Q512_KVMAX2048_FA60 submit 0` and nested `EVOX2_FA_I0_Q512_KV1536_HSK256 FLASH_ATTN_EXT node_30`. **Inference also completed `Status=OK`, ExitCode=0**, all 29,379 input tokens and final G58 marker.
+
+Run ZIP `20261121-180602-392-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip` (private; SHA256 `d8ce3e2f2e9efcb154ef201764d8a350aa745407df3e630c2d980a3d1a3c5e6b`). PromptEvalMilliseconds=471570.47, 62.30 tok/s, including 15.68-second pause — **not** a normal benchmark result. The screenshot does not expose the nested shader-dispatch timestamp; the FA label's displayed group duration cannot be treated as a precise individual dispatch. A proper A/B FA timing requires matching actual `FA_KV`, `Q`, `HSK`, FA ordinal and shader pipeline in the two traces, **not merely graph maximum KVMAX**.
+
+**This validates the full profiling workflow** on original-v1: debug labels → GPU drain → matching .ready → RDP manually armed → matching .go → `RESUMED` → .rgp captured → successful inference. It also confirms the prior 600s timeout was caused by the wrong .go prefix, not an inherent deadlock in the capture gate.
+
+### Next matched late-PP capture
+
+Use the **same 16-dispatch** settings (RDP's `Disable client timeout` ON; counters and instruction tracing OFF) at KVMAX **24576** on the original-v1 diagnostic first and then on #31323/#32415 diagnostic:
+
+- Original: unique prefix `C:\llama-build\rgp-pp\original-kv24576-16`
+- Port: unique prefix `C:\llama-build\rgp-pp\ported-kv24576-16`
+- In each run, set `EVOX2_VK_PP_RGP_PAUSE_PREFIX`, `EVOX2_VK_PP_RGP_PAUSE_KV=24576`, and `EVOX2_VK_PP_RGP_PAUSE_TIMEOUT_MS=120000`; confirm the helper uses **the exact same prefix**, then arm RDP capture, immediately press Enter, and verify `RESUMED` rather than `TIMEOUT`.
+- Use one profiling engine at a time and keep the same model/input, F16 KV, 512-token ubatch, driver and RDP settings. Use different diagnostic executables/build manifests as appropriate. Retain both .rgp files; initial screenshots of Event timing with same `FA_I/Q/FA_KV/HSK` are sufficient for a first comparison. If a single 16-dispatch profile fails to include useful FA, raise to 32 or 64 only after the short capture proves stable.
+
+[Complete private validation report](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-pp-rgp-manual-resume-16-dispatch-success.md).
+
 ## Pause-gate mismatch identified from screenshots (2026-11-21, ~17:32 JST)
 
 The user shared a screenshot of `C:\llama-build\rgp-pp` **after** the 16-dispatch RGP test:
