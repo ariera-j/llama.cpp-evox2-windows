@@ -1,5 +1,26 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## GPU timestamps resolve PP improvement to Global Attention FA (2026-11-21, ~19:47–20:00 JST)
+
+**The source-level cause is now isolated to the Global Attention FA node family (not an individual CM1 optimization subfeature).** User ran the existing `GGML_VK_PERF_LOGGER=1` and `GGML_VK_PERF_LOGGER_FREQUENCY=1` in **both original v1.0.0 diagnostic b12366 and #31323+#32415 diagnostic b12369** with identical model/input/flags. Both `Status=OK`, `ExitCode=0`, 29,379-token Japanese paper, `-c32768 -b2048 -ub512` F16 KV, Radeon8060S UMA64GB, P-MODE Performance. No RGP capture or gate pause. The two logs contain 60 `Vulkan Timings:` graph blocks each; **exclude the first two Q2 blocks**, leaving 58 PP blocks, with 50 SWA and 10 Global FA entries per graph.
+
+| Sum of 58 PP graph GPU node times | Original b12366 | #31323 port b12369 | Change |
+| --- | ---: | ---: | ---: |
+| Global FA `HSK512` (10 nodes/graph) | **378.076 s** | **88.715 s** | **-289.362 s, 4.26x faster** |
+| SWA FA `HSK256` (50 nodes/graph) | 6.646 s | 13.036 s | +6.390 s, 1.96x slower |
+| Other GPU nodes, incl. GEMM | 71.374 s | 70.697 s | -0.677 s, essentially unchanged |
+| **Total node timing sums** | **456.096 s** | **172.448 s** | **-283.648 s** |
+
+These timestamp sums decompose almost exactly the *previous uninstrumented* same-input PP wall-time delta: **456.595 s -> 171.975 s (saves 284.620s)**. Exact G48 (Q512 / graph-KVMAX24576): SWA `FA_KV1536` mean per node **2.266 ms -> 4.356 ms** (~1.92x slower), while Global `FA_KV24576` mean per node **1086.730 ms -> 268.563 ms** (**4.05x faster**). This agrees in direction with the earlier RGP SWA dispatch difference **2017.884µs -> 4293.574µs**. In the old GPU node total, Global FA contributed **82.9%**; in the port, **51.4%**.
+
+**Caveats:** Timestamp logging changes GPU submission and synchronization, so the *instrumented PP wall rates* 63.95 and 157.95 tok/s are **not comparable to uninstrumented clean throughput**. The 58-node GPU sums are derived from printed per-op `N x avg_us = sum_us` and the per-graph `Total time` (rounded), not full shader RGP pipeline counter results. **Global FA runtime reduction is empirically established, but the per-shader reason (Br16 vs Br32, Q-in-regs, wave occupancy) remains to be proven**. Windows proprietary AMD driver forbids new flipped FA via #32415. No source changes needed for the GPU timestamp method.
+
+Archives privately retained:
+- Original `20261121-195235-883-cli-vulkan-b12366-ctx32768-82eb7837459e.zip` SHA256 `2f4a0451a8869560461084744b8fc6babdb34528888bbb2a21208e0f0343566f`.
+- Port `20261121-194719-044-cli-vulkan-b12369-ctx32768-bbdc9feb73db.zip` SHA256 `aa1e857206152a5ea132b23b316c5724e1952217e397f795fc1c342523c0fab4`.
+
+[Full calculation, provenance and KV-dependent Global FA time table (private experiment repository)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-vulkan-perf-logger-global-vs-swa-fa-32k.md).
+
 ## Paired G48 #31323 capture: short-KV SWA CM1 regresses despite faster overall PP (2026-11-21 ~19:32 JST)
 
 **#31323 diagnostic capture PASS:** `20261121-193009-279-cli-vulkan-b12369-ctx32768-f469ccd61ea7.zip` (raw ZIP private; SHA256 `1a095bcd951863b0ddeb362cf06cccb6518961c85bcf465d6737ba05cb059671`). Ported diagnostic build **b12369**, executable source commit `471738b83`, `Status=OK / ExitCode 0`, 29,379 Japanese paper prompt tokens, identical Gemma4 31B QAT/Q4_0, F16 KV, b2048 ub512, UMA64GB, Performance P-MODE. Stop at `EVOX2_PP_G48_Q512_KVMAX24576_FA60` (`2:17.499078`), **`RESUMED`** (`2:28.292122`) after **10.793 s**, no TIMEOUT/TDR. Whole-PP 160.00 tok/s **includes the pause** and is not a clean performance measurement (nominal adjusted rate ~170.0 tok/s, for sanity only). RGP file in screenshot `llama-cli-20261121-193238668.rgp`.
