@@ -197,6 +197,7 @@ try {
         '-DLLAMA_BUILD_TOOLS=ON',
         '-DLLAMA_BUILD_SERVER=ON',
         '-DLLAMA_BUILD_UI=OFF',
+        '-DLLAMA_USE_PREBUILT_UI=OFF',
         '-DGGML_RPC=ON'
     )
     if ($dependencyCache.ConfigureArgs.Count -gt 0) {
