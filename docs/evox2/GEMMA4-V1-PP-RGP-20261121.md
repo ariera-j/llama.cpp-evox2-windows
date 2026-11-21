@@ -70,7 +70,7 @@ Remove-Item Env:GGML_VK_FORCE_FA_FLIP -ErrorAction SilentlyContinue
 & "$root\tools\evox2\benchmark\Measure-LlamaCli.ps1" `
     -LocalConfig "$root\tools\evox2\benchmark\configs\local.psd1" `
     -LlamaCli "$root\build-vulkan-pp-rgp\bin\Release\llama-cli.exe" `
-    -ExpectedBackend Vulkan -ModelKey Gemma4_31B -InputKey 32k `
+    -ExpectedBackend Vulkan -ModelKey Gemma4_31B -InputKey '32k' `
     -Context 32768 -GenerationTokens 1 -Threads 4 -Batch 2048 -UBatch 512 `
     -GpuLayers 999 -CpuMoe 0 -FlashAttn auto -KvType f16 `
     -Fit on -PromptCacheMiB 0 -Reasoning off -Temperature 0.2 -TopP 0.8 `
