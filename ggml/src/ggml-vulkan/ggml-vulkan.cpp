@@ -17348,7 +17348,7 @@ ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const ggml_cgraph * c
     }
     name += " ";
     name += cgraph->nodes[node_idx]->name;
-    if (evox2_vk_pp_rgp_enabled &&
+    if (evox2_vk_pp_rgp_enabled && !evox2_vk_pp_graph_label.empty() &&
         cgraph->nodes[node_idx]->op == GGML_OP_FLASH_ATTN_EXT) {
         int fa_ordinal = 0;
         for (int j = 0; j < node_idx; ++j) {
