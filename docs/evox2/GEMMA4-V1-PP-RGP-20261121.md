@@ -105,3 +105,29 @@ Repeat for the #31323 branch with a **different prefix** (`...\ported`) and new 
 - [Prior verified Vulkan TG marker approach](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/gemma4-31b-v1-rocm-20261116/docs/evox2/GEMMA4-V1-VULKAN-TG-RGP-2026-11-16.md): queue-only labels were not visible in RGP; command-buffer submit labels were.
 - [AMD RDP Profiling capture modes](https://gpuopen.com/manuals/rdp_manual/features/)
 - [AMD RDP CLI arguments](https://gpuopen.com/manuals/rdp_manual/radeon_developer_panel_cli/)
+
+## Build fix: newer Hugging Face UI assets rejected by the old v1.0.0 asset validator (2026-11-21)
+
+An EVO-X2 RGP diagnostic build stopped at `[1020/1061] Provisioning UI assets`, **not** during Vulkan C++ compilation. `ggml-org/llama-ui` had no `b12369` matching UI release, so `scripts/ui-assets.cmake` fell back to `latest`; the downloaded UI uses modern `_app/immutable/*` files, whereas this older v1.0.0 script requires `bundle*.js`, `bundle*.css` and `workbox*.js`. This is unrelated to FA/PP markers.
+
+The two dedicated RGP branches now add `-DLLAMA_USE_PREBUILT_UI=OFF` to `tools/evox2/build/Build-Vulkan.ps1` **alongside the existing `-DLLAMA_BUILD_UI=OFF`**. (The latter alone does not prevent the downloaded-asset path.) These branches need no server Web UI for llama-cli RGP captures. Production benchmark branches are unchanged.
+
+If the failed build has already downloaded incompatible UI assets, delete **only** that build directory's `tools\\ui\\dist` and optional UI stamp. After `git pull --ff-only` in the corresponding diagnostic worktree, re-run the same Build-Vulkan.ps1 to reuse all other compiled objects. Example for the optimized diagnostic branch:
+
+```powershell
+$root = 'C:\llama-build\llama.cpp-evox2-fa31323-pp-rgp'
+$build = Join-Path $root 'build-vulkan-pp-rgp'
+Remove-Item -LiteralPath (Join-Path $build 'tools\ui\dist') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $build 'tools\ui\.ui-stamp') -Force -ErrorAction SilentlyContinue
+
+git -C $root pull --ff-only
+if ($LASTEXITCODE -ne 0) { throw 'git pull failed' }
+& (Join-Path $root 'tools\evox2\build\Build-Vulkan.ps1') -BuildDir $build `
+    -VulkanSdk 'C:\VulkanSDK\1.4.357.0' `
+    -LlvmBin 'C:\Program Files\LLVM\bin' `
+    -Parallel 4
+```
+
+**PowerShell note:** use backticks, *not* the shell-agnostic backslashes printed above, when executing multiline commands. Alternatively write the `& ... -BuildDir $build -VulkanSdk ... -LlvmBin ... -Parallel 4` call on one line. An independently safe workaround without pulling branch changes is passing `-ExtraCMakeArgs @('-DLLAMA_USE_PREBUILT_UI=OFF')` to the existing build script, after clearing stale UI dist.
+
+A successful UI-less build will generate an empty built-in Web UI table for llama-server; no effect on the Vulkan kernel implementation. Windows marker build and capture are still unverified until the next executable smoke/RGP trace.
