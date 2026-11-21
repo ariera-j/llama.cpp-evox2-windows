@@ -1,5 +1,47 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## Pause-gate mismatch identified from screenshots (2026-11-21, ~17:32 JST)
+
+The user shared a screenshot of `C:\llama-build\rgp-pp` **after** the 16-dispatch RGP test:
+
+| Filename | File modification time | Role |
+| --- | --- | --- |
+| `original-gate-only.ready` | 17:19 | stale .ready from preceding pause-only test |
+| `original-gate-only.go` | **17:32** | .go written for preceding prefix during new test |
+| `original-kv2048-16.ready` | **17:32** | .ready of the **actual new RGP test** |
+| `original-kv2048-16.go` | **ABSENT** | correct release signal never written |
+
+The user's narrative confirms they pressed Enter in a PowerShell resume window, while RDP showed **Status: Capturing**, a pending 16-dispatch request. These filenames and times provide strong evidence that PowerShell② used the **old `-Prefix ...\original-gate-only`**, creating a `.go` that the **current** `original-kv2048-16` pause gate could not see. Previous run logs indeed recorded **`TIMEOUT` after 600,000ms**, not `RESUMED`. As a result the RDP request could not collect dispatches until the program auto-resumed at timeout; capture then completed. An RDP screenshot showing a ~5-minute wait is approximate; runtime log establishes the gate waited **600 seconds**.
+
+This **explains the manual resume mismatch directly**, without needing any further driver or profiling hypothesis. It does not fully explain the *separate earlier* AMD GPU timeout from the longer capture. Note 16-dispatch capture + `Disable client timeout ON` both differ from the earlier failed RGP run; their individual effects remain unproven.
+
+### Safeguard added to `Resume-VulkanPpRgp.ps1`
+
+Both diagnostic branches now make PowerShell② **fail closed before creating .go** when:
+
+- The selected `.ready` is older than `-MaxReadyAgeSeconds` (default **300 seconds**, configurable for unusual long setups);
+- Another **newer** `*.ready` exists in the same directory, suggesting the selected prefix belongs to an old test.
+
+The script prints the selected full `.ready` and expected full `.go`, validates before showing the RDP instructions, then validates **again after Enter**. UTF-8 with BOM retained. **No C++ changes or rebuild needed; pull the branch in the worktree**. Future test: use **one fresh unique prefix variable** for both the llama-cli environment and the resume script.
+
+Example:
+
+```powershell
+# PowerShell 1: before Measure-LlamaCli.ps1
+$prefix = 'C:\llama-build\rgp-pp\original-kv2048-16-retry'
+Remove-Item "$prefix.ready", "$prefix.go" -ErrorAction SilentlyContinue
+$env:EVOX2_VK_PP_RGP_PAUSE_PREFIX = $prefix
+$env:EVOX2_VK_PP_RGP_PAUSE_KV = '2048'
+$env:EVOX2_VK_PP_RGP_PAUSE_TIMEOUT_MS = '120000'
+
+# PowerShell 2 (use exact same prefix)
+$root = 'C:\llama-build\llama.cpp-evox2-v1-pp-rgp'
+& "$root\tools\evox2\benchmark\Resume-VulkanPpRgp.ps1" -Prefix 'C:\llama-build\rgp-pp\original-kv2048-16-retry'
+```
+
+In PowerShell②: `<prefix>.ready` appears, RDP Capture profile is armed, then Enter is pressed immediately, and stderr should show `RESUMED` rather than `TIMEOUT`. No .rgp is expected before allowing dispatches to proceed. A single correct 16-dispatch/early-KV retry is enough to validate the handshake, then capture paired deep KV24576 old/ported diagnostic builds.
+
+
 ## First successful 16-dispatch RGP: manual release was TIMEOUT, not .go (2026-11-21)
 
 **Confirmed RGP capture and marker visibility on original v1.0.0** in Radeon GPU Profiler v2.7.0.32. User's screenshots show `EVOX2_PP_G4_Q512_KVMAX2048_FA60 submit 0` / `submit 1` and nested `EVOX2_FA_I0_Q512_KV1536_HSK256 FLASH_ATTN_EXT node_30` -> `flash_attn_f32_f16_aligned_cm1` / `vkCmdDispatch(32,32,1)` **2181.694 µs**. This is ONE old-v1 SWA-class FA GPU dispatch, not a whole PP graph or an A/B comparison. RDP 3.5.0.18 screenshot shows **Disable client timeout ON**; user reports capturing **16 dispatches** rather than the previous larger count. These two changes were simultaneous, so the earlier GPU timeout's cause is still not uniquely attributed.
