@@ -1,5 +1,39 @@
 #include "ggml-vulkan-common.h"
 
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <thread>
+
+// EVO-X2 PP/RGP diagnostics; gated, non-computational changes only.
+namespace {
+bool evox2_vk_pp_rgp_enabled = false;
+std::atomic<uint64_t> evox2_vk_pp_graph_counter{0};
+std::atomic<bool> evox2_vk_pp_pause_done{false};
+thread_local std::string evox2_vk_pp_graph_label;
+
+struct evox2_vk_pp_label_restore {
+    std::string saved = evox2_vk_pp_graph_label;
+    ~evox2_vk_pp_label_restore() { evox2_vk_pp_graph_label = saved; }
+};
+
+uint64_t evox2_vk_env_uint(const char * name, uint64_t default_value) {
+    const char * str = std::getenv(name);
+    if (str == nullptr || *str == '\0') {
+        return default_value;
+    }
+    char * end = nullptr;
+    const unsigned long long value = std::strtoull(str, &end, 10);
+    if (end == str || *end != '\0') {
+        GGML_LOG_WARN("evox2 pp rgp: invalid %s='%s', using default\n", name, str);
+        return default_value;
+    }
+    return static_cast<uint64_t>(value);
+}
+}  // namespace
+
 static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& device) {
     vk::PhysicalDeviceProperties props = device.getProperties();
 
@@ -5551,7 +5585,14 @@ void ggml_vk_instance_init() {
 #ifdef __APPLE__
     const bool portability_enumeration_ext = ggml_vk_instance_portability_enumeration_ext_available(instance_extensions);
 #endif
-    const bool debug_utils_ext = ggml_vk_instance_debug_utils_ext_available(instance_extensions) && getenv("GGML_VK_DEBUG_MARKERS") != nullptr;
+    const char * pp_rgp_env = getenv("EVOX2_VK_PP_RGP_MARKERS");
+    evox2_vk_pp_rgp_enabled = pp_rgp_env != nullptr && strcmp(pp_rgp_env, "1") == 0;
+    const bool debug_utils_ext = ggml_vk_instance_debug_utils_ext_available(instance_extensions) &&
+        (getenv("GGML_VK_DEBUG_MARKERS") != nullptr || evox2_vk_pp_rgp_enabled);
+    if (evox2_vk_pp_rgp_enabled) {
+        GGML_LOG_INFO("evox2 pp rgp: command-buffer markers %s\n",
+                      debug_utils_ext ? "enabled" : "unavailable (VK_EXT_debug_utils)");
+    }
     std::vector<const char*> layers;
 
     if (layer_settings) {
@@ -6148,7 +6189,10 @@ void ggml_vk_ctx_begin(vk_device& device, vk_context& subctx) {
 
     if (vk_instance.debug_utils_support) {
         // outermost region, one per command buffer, so the gaps between submits stand out
-        const std::string name = "submit " + std::to_string(device->debug_cmdbuf_idx++);
+        std::string name = "submit " + std::to_string(device->debug_cmdbuf_idx++);
+        if (evox2_vk_pp_rgp_enabled && !evox2_vk_pp_graph_label.empty()) {
+            name = evox2_vk_pp_graph_label + " " + name;
+        }
         ggml_vk_cmd_label_begin(subctx->s->buffer->buf, name.c_str());
 
         // reopen labels left open when the previous command buffer was submitted
@@ -14825,6 +14869,78 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
     VK_LOG_DEBUG("ggml_backend_vk_graph_compute(" << cgraph->n_nodes << " nodes)");
     ggml_backend_vk_context * ctx = (ggml_backend_vk_context *)backend->context;
 
+    // The PP graph label is attached to EACH recorded command buffer, not just the queue.
+    // A scoped guard prevents this name from leaking into later TG or transfer work.
+    evox2_vk_pp_label_restore pp_label_restore;
+    if (evox2_vk_pp_rgp_enabled && vk_instance.debug_utils_support) {
+        int64_t q_max = 0;
+        int64_t kv_max = 0;
+        int fa_count = 0;
+        int fa_swa = 0;
+        int fa_global = 0;
+        for (int ni = 0; ni < cgraph->n_nodes; ++ni) {
+            const ggml_tensor * node = cgraph->nodes[ni];
+            if (node->op != GGML_OP_FLASH_ATTN_EXT || node->src[0] == nullptr || node->src[1] == nullptr) {
+                continue;
+            }
+            const int64_t q_rows = node->src[0]->ne[1];
+            if (q_rows < 64) {
+                continue; // not the PP case of interest
+            }
+            q_max = std::max(q_max, q_rows);
+            kv_max = std::max(kv_max, node->src[1]->ne[1]);
+            ++fa_count;
+            if (node->src[0]->ne[0] == 256) ++fa_swa;
+            if (node->src[0]->ne[0] == 512) ++fa_global;
+        }
+        if (fa_count > 0) {
+            const uint64_t pp_graph = ++evox2_vk_pp_graph_counter;
+            evox2_vk_pp_graph_label = "EVOX2_PP_G" + std::to_string(pp_graph) +
+                "_Q" + std::to_string(q_max) + "_KVMAX" + std::to_string(kv_max) +
+                "_FA" + std::to_string(fa_count);
+            GGML_LOG_INFO("evox2 pp rgp: %s nodes=%d swa256=%d global512=%d\n",
+                evox2_vk_pp_graph_label.c_str(), cgraph->n_nodes, fa_swa, fa_global);
+
+            const char * prefix = std::getenv("EVOX2_VK_PP_RGP_PAUSE_PREFIX");
+            const uint64_t target_graph = evox2_vk_env_uint("EVOX2_VK_PP_RGP_PAUSE_GRAPH", 0);
+            const uint64_t target_kv = evox2_vk_env_uint("EVOX2_VK_PP_RGP_PAUSE_KV", 0);
+            const bool selected = target_graph > 0
+                ? pp_graph == target_graph
+                : target_kv > 0 && kv_max >= static_cast<int64_t>(target_kv);
+            if (prefix != nullptr && *prefix != '\0' && selected &&
+                !evox2_vk_pp_pause_done.exchange(true)) {
+                // Drain earlier GPU work so the next captured dispatches belong to this PP graph.
+                ctx->device->device.waitIdle();
+                const std::string ready_file = std::string(prefix) + ".ready";
+                const std::string go_file = std::string(prefix) + ".go";
+                std::remove(go_file.c_str());  // prevent a stale release from skipping the gate
+                {
+                    std::ofstream ready(ready_file, std::ios::out | std::ios::trunc);
+                    if (ready) {
+                        ready << evox2_vk_pp_graph_label << " nodes=" << cgraph->n_nodes
+                              << " swa256=" << fa_swa << " global512=" << fa_global << "\n";
+                    } else {
+                        GGML_LOG_WARN("evox2 pp rgp: cannot create ready file '%s'\n", ready_file.c_str());
+                    }
+                }
+                const uint64_t timeout_ms = evox2_vk_env_uint("EVOX2_VK_PP_RGP_PAUSE_TIMEOUT_MS", 300000);
+                GGML_LOG_INFO("evox2 pp rgp: PAUSED at %s; arm RDP dispatch capture then create '%s' (timeout=%llu ms)\n",
+                    evox2_vk_pp_graph_label.c_str(), go_file.c_str(), (unsigned long long) timeout_ms);
+                const auto start = std::chrono::steady_clock::now();
+                bool released = false;
+                while (std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - start).count() < static_cast<int64_t>(timeout_ms)) {
+                    if (std::ifstream(go_file).good()) {
+                        released = true;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                GGML_LOG_INFO("evox2 pp rgp: %s %s\n", released ? "RESUMED" : "TIMEOUT", evox2_vk_pp_graph_label.c_str());
+            }
+        }
+    }
+
     ctx->device->diag_cgraph = nullptr;
     ctx->device->diag_prev_start = -1;
     ctx->device->diag_prev_end = -1;
@@ -17232,6 +17348,21 @@ ggml_vk_debug_label::ggml_vk_debug_label(vk_context & ctx, const ggml_cgraph * c
     }
     name += " ";
     name += cgraph->nodes[node_idx]->name;
+    if (evox2_vk_pp_rgp_enabled &&
+        cgraph->nodes[node_idx]->op == GGML_OP_FLASH_ATTN_EXT) {
+        int fa_ordinal = 0;
+        for (int j = 0; j < node_idx; ++j) {
+            if (cgraph->nodes[j]->op == GGML_OP_FLASH_ATTN_EXT) {
+                ++fa_ordinal;
+            }
+        }
+        const ggml_tensor * q = cgraph->nodes[node_idx]->src[0];
+        const ggml_tensor * k = cgraph->nodes[node_idx]->src[1];
+        name = "EVOX2_FA_I" + std::to_string(fa_ordinal) +
+            "_Q" + std::to_string(q->ne[1]) +
+            "_KV" + std::to_string(k->ne[1]) +
+            "_HSK" + std::to_string(q->ne[0]) + " " + name;
+    }
     begin(ctx, name);
 }
 
