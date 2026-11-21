@@ -35,9 +35,9 @@ function Assert-Evox2ReadyTarget {
     $selected = Get-Item -LiteralPath $readyFile -ErrorAction Stop
     $age = ([DateTime]::UtcNow - $selected.LastWriteTimeUtc).TotalSeconds
     if ($age -gt $MaxReadyAgeSeconds) {
-        throw ("$Stage : stale ready file (age {0:N0}s): {1}. " +
+        throw (("$Stage : stale ready file (age {0:N0}s): {1}. " +
             "Use the -Prefix shown in the CURRENT llama-cli pause log. " +
-            "The desired file must be <prefix>.ready, not a prior test's marker.") -f $age, $readyFile
+            "The desired file must be <prefix>.ready, not a prior test's marker.") -f $age, $readyFile)
     }
 
     $readyDir = Split-Path -Parent $readyFile
