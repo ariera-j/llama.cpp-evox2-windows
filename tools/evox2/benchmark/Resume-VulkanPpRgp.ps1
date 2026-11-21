@@ -27,7 +27,8 @@ Write-Host ""
 Write-Host (Get-Content -LiteralPath $readyFile -Raw -Encoding UTF8)
 Write-Host 'The target Vulkan PP graph is paused. In Radeon Developer Panel:' -ForegroundColor Yellow
 Write-Host '  1. Select this llama-cli application as the profiling capture target.'
-Write-Host '  2. Select profiling: manual Capture profile / Dispatch count (e.g. 512).'
+Write-Host '  2. Choose manual Dispatch capture, Render op count 16 (small initial trace).'
+Write-Host '     Disable Collect counters / instruction tracing; disable client timeout in RDP.'
 Write-Host '  3. Click Capture profile to arm capture at the next dispatch.'
 Write-Host '  4. Return here and press ENTER to allow the graph to execute.'
 Write-Host ''
