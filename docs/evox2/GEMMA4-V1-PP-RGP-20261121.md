@@ -1,5 +1,21 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## First successful 16-dispatch RGP: manual release was TIMEOUT, not .go (2026-11-21)
+
+**Confirmed RGP capture and marker visibility on original v1.0.0** in Radeon GPU Profiler v2.7.0.32. User's screenshots show `EVOX2_PP_G4_Q512_KVMAX2048_FA60 submit 0` / `submit 1` and nested `EVOX2_FA_I0_Q512_KV1536_HSK256 FLASH_ATTN_EXT node_30` -> `flash_attn_f32_f16_aligned_cm1` / `vkCmdDispatch(32,32,1)` **2181.694 µs**. This is ONE old-v1 SWA-class FA GPU dispatch, not a whole PP graph or an A/B comparison. RDP 3.5.0.18 screenshot shows **Disable client timeout ON**; user reports capturing **16 dispatches** rather than the previous larger count. These two changes were simultaneous, so the earlier GPU timeout's cause is still not uniquely attributed.
+
+User archive `20261121-173218-451-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip` (local only, SHA256 `38cde0a99cbb5261486fa02a3c8f907bd3c8bbcbc3a407c9b9ad14efb2fa89bc`) has **`Status=OK`, ExitCode 0**, same Gemma 4 model, 29,379 paper tokens, original-v1 diagnostic b12366. However, `stderr.log` recorded `PAUSED` at G4 at **0:11.590**, then **`TIMEOUT` at 10:11.600** (600 seconds), and **no `RESUMED`**. `PP=27.78 tok/s` includes the entire 10-minute pause and **must not be compared with baseline performance**. Screenshot RGP filename `llama-cli-20261121-174233951.rgp` (~17:42:33) is just after the ~17:42:31 automatic gate release, consistent with the profiler **capturing only when the timeout released GPU dispatches**.
+
+### Immediate procedural correction (no new C++ build)
+
+The original helper text was ambiguous: **clicking Capture profile ARMS the capture; it does not mean the profile is complete.** The app is stalled until a `.go` file is created. Once the RDP capture request is armed, **immediately switch to the helper's PowerShell window and press Enter — do not wait for an .rgp file or completed capture before pressing Enter**. Then check llama-cli stderr for **`RESUMED`** within a second or two. If it shows `TIMEOUT`, manual gate release was NOT verified.
+
+For the next KV2048 / 16-dispatch trial, use a fresh prefix and set `EVOX2_VK_PP_RGP_PAUSE_TIMEOUT_MS=120000` instead of 600000, to avoid an unnecessary 10-minute stall if `.go` is not observed. Keep **Disable client timeout ON**, Collect counters OFF and instruction tracing OFF. The PowerShell helper was updated in both diagnostic branches to emphasize immediate release and print `Go-file written` rather than claiming process resume.
+
+Once an RGP capture and `RESUMED` occur in the **same** run, continue to KV24576 with the same small 16-dispatch capture, first on old-v1 then on the #31323 diagnostic build. Inspect corresponding **Q, FA-KV, HSK, FA ordinal, shader name**, and per-dispatch GPU durations. No renewed 32k performance benchmarking is needed.
+
+[Complete private capture analysis and log timeline](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-pp-rgp-16-dispatch-capture-and-auto-timeout.md).
+
 ## Pause-only + open RDP smoke PASSED (2026-11-21 17:22 JST)
 
 **The pause gate is independently validated with Radeon Developer Panel open but NO RGP capture.** Original v1 diagnostic b12366, unchanged executable (`51bb379eb`, SHA256 `7d73d9940da98a280acf795a119ae931c1f69c031b9bf63296c99327061c83eb`), processed the same 29,379-token paper **OK / ExitCode 0**. Log archive (kept privately): `20261121-171342-857-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip`, SHA256 `e7d4e274f2535e8768a23097f4444487e45a012f5bef43986dd3a90b5847ae58`.
