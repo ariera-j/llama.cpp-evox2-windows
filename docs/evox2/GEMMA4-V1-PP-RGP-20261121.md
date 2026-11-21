@@ -1,5 +1,16 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## Markers-only smoke after restart PASSED (2026-11-21 17:04 JST)
+
+The user rebooted EVO-X2 and ran the **original v1.0.0 PP diagnostic binary** (b12366, commit `51bb379eb`) on the same 29,379-token Japanese paper with `EVOX2_VK_PP_RGP_MARKERS=1` and `GGML_VK_DEBUG_MARKERS=1`, but **no pause and no Radeon Developer Panel capture**. Raw archive: `20261121-165633-701-cli-vulkan-b12366-ctx32768-15228ae6a84b.zip` (private, SHA256 `abce179bbeb61f79146a6342d3f0019bc6ac41aa67cc39e6cdc9dfe95e7e09d6`).
+
+- **Result: `Status=OK`, ExitCode 0**, full 29,379-token prompt, 1 generated token, `PP=64.62 tok/s`, `PP time=454.654 s`. Historical original-v1 Vulkan PP 64.34 tok/s (previous paired A/B). 1-token output means TG speed is **not measured**.
+- `stderr.log` shows `EVOX2_PP_G1` through `G58`, including `G48_Q512_KVMAX24576_FA60` and final `G58_Q195_KVMAX29440_FA60`, with no `PAUSED`/`RESUMED` and no driver error. Thus **the marker path itself can complete this whole workload**.
+- Build identity and backend verified; same paper input hash, F16 KV, ubatch512, UMA64GB, Performance P-MODE. No ADLX or OS samples requested. `conditions.json` currently retains `GGML_VK_DEBUG_MARKERS=1` but not the custom `EVOX2_` switch; the logger proves the custom switch was active.
+- **Next critical test:** enable the pause gate at **KVMAX24576** but do **not** run any RGP capture. Resume promptly using the helper from another PowerShell window and check for full completion. This exactly isolates the gate itself from the earlier G48/capture/TDR incident. **If stable, only then try RGP with 16 dispatches at KV2048** and RDP's `Disable client timeout` enabled. Do not repeat 512-dispatch long capture first.
+
+[Detailed private aggregate analysis](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-pp-rgp-markers-only-smoke.md).
+
 ## First EVO-X2 capture trial: AMD driver timeout after pause/resume (2026-11-21)
 
 **Status: capture path NOT yet validated; do not repeat the same long capture automatically.** The first run used the **original v1.0.0 diagnostic branch**, not the #31323 optimized branch. Log: `20261121-144034-630-cli-vulkan-b12366-ctx32768-15228ae6a84b`, executable commit `51bb379eb`, clean source. The helper displayed `EVOX2_PP_G48_Q512_KVMAX24576_FA60`; stderr confirmed `PAUSED` at ~5:29, `RESUMED` ~5:59 (29s later), and a 24576-token progress checkpoint. Then the llama-cli process exited ~22s later with decimal **3221226505 = 0xC0000409**; AMD Bug Report Tool reported **GPU driver timeout**. The benchmark was `FAILED` with no final PP/TG; do NOT treat as a throughput result. The resume helper exited normally because it only writes the `.go` file, not because llama-cli succeeded. RGP trace creation / dispatch count / counters settings were not supplied and remain unverified.
