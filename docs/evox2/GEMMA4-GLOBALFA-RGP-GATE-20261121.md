@@ -72,6 +72,12 @@ foreach ($case in $cases) {
 
 The inherited Build-Vulkan.ps1 disables downloading the incompatible prebuilt UI assets. These runs do **not** need the ADLX monitor exe when `-NoAdlxMonitor` is specified.
 
+## Mandatory first smoke: Global FA gate without RGP
+
+Because this new feature **splits a Vulkan command buffer partway through the PP graph**, first verify correctness in the **original v1** build **without requesting a capture**. Use the PowerShell A and B commands below, but leave RDP idle (no Capture profile). Once `.ready` reports `G48...GLOBAL_FA_I...Q512_KV24576_HSK512`, press Enter in the helper; confirm `evox2 global FA rgp: RESUMED`, all subsequent PP graphs through G58, and `Status=OK / ExitCode 0`. `TIMEOUT`, device lost, missing Global FA label, or unexpected output are failures; do **not** attempt RGP until resolved. The PP wall rate includes both a pause and altered submission grouping and is not a benchmark. The smoke avoids conflating a new command-buffer bug with an RGP/driver capture issue.
+
+If the no-capture smoke passes, repeat the original v1 run with a **new unique prefix** and a small RGP capture (4 dispatches), then repeat on the port. Do not reuse `.ready/.go` names from earlier runs.
+
 ## RGP capture — run original first, then ported
 
 Keep Radeon Developer Panel open and connected **before** starting the app; under Connection enable **Disable client timeout**. Under Capture > Profiling set **Capture mode=Dispatch**, **Render op count=4** as the first trial (increase cautiously to 6 or 8 only if FA is not included), **Auto capture=None**, counters OFF, instruction tracing OFF, Delay capture OFF. A Global FA kernel may take **~1 second** on old-v1 even without profiler overhead, so avoid large captures and watch for TDR.
