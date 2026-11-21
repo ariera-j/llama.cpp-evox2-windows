@@ -71,3 +71,18 @@ Suggested order: original clean-v1 32k one run -> patched-v1 32k one run -> patc
 - Interpretation: **#31323 with Windows #32415 is sufficient to reproduce nearly all observed b12600 Vulkan 32k PP improvement for this experiment.** The AMD proprietary driver safeguard disables flipped FA by default; the optimized original CM1 FA path is the leading explanation. Actual shader selection and per-kernel GPU timing remain unmeasured. One ported run so far; repeat once or inspect RGP before asserting individual kernel attribution.
 
 [Full private-experiment aggregate report (no raw prompt or model output)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-fa31323-port-32k-validation.md).
+
+## Matched 2-run revalidation (2026-11-21, 13:43–13:56 JST)
+
+Both original v1.0.0 Vulkan and the isolated #31323 + #32415 Vulkan build were re-measured **in sequence with exactly identical model/input identity, CLI arguments, relevant environment and hardware settings**. Binary and runtime artifact identities were independently verified; both `Status=OK`, exit 0, Clang 20.1.8, UMA64GB, Performance P-MODE, 61/61 GPU offload.
+
+| New sequential A/B: Japanese paper 29,379 prompt tokens | PP tok/s | PP seconds | TG tok/s |
+| --- | ---: | ---: | ---: |
+| Original v1 b12363 (executable `934a65747`) | 64.34 | 456.59479 | 8.92 |
+| Isolated FA port b12364 (executable `1da79f068`) | **170.83** | **171.97459** | 8.92 |
+
+The port yields **2.655x** PP throughput, with **284.62 seconds less PP time**. The last full 2,048-token native-progress interval (cumulative 28,672 prompt tokens) improved **37.99 → 116.56 tok/s** (~3.07x). Previous independent original-v1 and port values (63.56 → 170.11 tok/s) agree. Official unmodified b12600 Vulkan (169.79 and 170.42) corroborates the improvement scale. Both ADLX monitors completed normally; GPU use remained ~99.7–99.8% in estimated PP middle windows. No indication of a P-MODE transition or sustained UMA exhaustion.
+
+**Conclusion:** #31323, with the required AMD Windows guard #32415, reproduces virtually the full b12600 32k PP gain for Gemma 4 31B QAT. This is replicated in **two original-v1 and two isolated-port runs**. It is strong *package-level* evidence, but not yet per-shader GPU attribution; the flipped shader is disabled for proprietary AMD Windows drivers. No further whole-prompt A/B repetition is needed solely for confirmation. For mechanisms, profile existing coopmat1 FA variants with RGP at matched early/late ubatches, or isolate the 32-Q-row-tile and Q-register caching subfeatures.
+
+[Detailed aggregate 2-run validation (private experimental repository)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-fa31323-matched-2run-revalidation.md).
