@@ -58,3 +58,16 @@ Suggested order: original clean-v1 32k one run -> patched-v1 32k one run -> patc
 - Source review: #31323 patch matches all eight original target files on the *correct* true-v1 research base; #32415 guard added.
 - Pending: Windows compiler + shader build, Vulkan device smoke, short/32k model run, PP/TG benchmark, and RGP source attribution.
 - Never commit generated logs with source papers or model outputs to the public repo; store only safe aggregate metrics and command/commit hashes.
+
+## EVO-X2 validation result (2026-11-21, first 32k run)
+
+**Windows Vulkan build and 32k inference are now verified**, superseding the pending statements above.
+
+- Clean source commit `1da79f0689c4a963fbd032dea109e1ca015c44bc`; build `12364`; Clang20.1.8; `BuildIdentity=Verified`, runtime manifest `Verified`; Vulkan0 Radeon 8060S.
+- Run ID `20261121-132547-424-cli-vulkan-b12364-ctx32768-398319325e76`, `Status=OK`, exit 0; 61/61 GPU layers, F16 KV, `ubatch=512`, exact paper input SHA `1709ebfd6f2e005d94af03fe7029e8d4d87f66ba1a22a226d9f63da6a003b601`, actual 29,379 prompt and 512 generated tokens, UMA64GB and Performance P-MODE.
+- PP: **170.11 tok/s**, **172.704 seconds**. Old v1 b12363 same-input Vulkan PP 63.56 tok/s and 462.256 seconds; official b12600 two-run mean 170.105 tok/s and 172.713 seconds. Isolated port improved PP by **2.68x** and saves **289.55 seconds**, matching official b12600 closely.
+- Last full 2,048-token PP interval through cumulative 28,672: old v1 37.79 tok/s -> port **114.93** tok/s; official b12600 second run 114.86. The shape of the entire cumulative PP curve is consistent with b12600.
+- TG: **8.92 tok/s**, effectively unchanged from old v1. ADLX telemetry: ~99.67% mean PP GPU use, ~2,827 MHz, ~104 W (steady middle-window) and P-MODE unchanged.
+- Interpretation: **#31323 with Windows #32415 is sufficient to reproduce nearly all observed b12600 Vulkan 32k PP improvement for this experiment.** The AMD proprietary driver safeguard disables flipped FA by default; the optimized original CM1 FA path is the leading explanation. Actual shader selection and per-kernel GPU timing remain unmeasured. One ported run so far; repeat once or inspect RGP before asserting individual kernel attribution.
+
+[Full private-experiment aggregate report (no raw prompt or model output)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-fa31323-port-32k-validation.md).
