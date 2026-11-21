@@ -14872,6 +14872,9 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
     // The PP graph label is attached to EACH recorded command buffer, not just the queue.
     // A scoped guard prevents this name from leaking into later TG or transfer work.
     evox2_vk_pp_label_restore pp_label_restore;
+    const char * global_fa_env = std::getenv("EVOX2_VK_PP_RGP_TARGET_GLOBAL_FA");
+    const bool evox2_vk_globalfa_mode = global_fa_env != nullptr && std::strcmp(global_fa_env, "1") == 0;
+    bool evox2_vk_globalfa_selected_graph = false;
     if (evox2_vk_pp_rgp_enabled && vk_instance.debug_utils_support) {
         int64_t q_max = 0;
         int64_t kv_max = 0;
@@ -14907,7 +14910,9 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
             const bool selected = target_graph > 0
                 ? pp_graph == target_graph
                 : target_kv > 0 && kv_max >= static_cast<int64_t>(target_kv);
-            if (prefix != nullptr && *prefix != '\0' && selected &&
+            evox2_vk_globalfa_selected_graph = evox2_vk_globalfa_mode && selected &&
+                prefix != nullptr && *prefix != '\0';
+            if (prefix != nullptr && *prefix != '\0' && selected && !evox2_vk_globalfa_mode &&
                 !evox2_vk_pp_pause_done.exchange(true)) {
                 // Drain earlier GPU work so the next captured dispatches belong to this PP graph.
                 ctx->device->device.waitIdle();
@@ -15067,7 +15072,70 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
         submit_count++;
     };
 
+    // Opt-in: target a specific Global Attention FA, rather than the start of the whole PP graph.
+    // This deliberately changes GPU submission boundaries. Use it ONLY for RGP event timing, not PP benchmarks.
+    int evox2_vk_fa_ordinal = 0;
     for (int i = 0; i < cgraph->n_nodes; i++) {
+        const ggml_tensor * evox2_node = cgraph->nodes[i];
+        if (evox2_node->op == GGML_OP_FLASH_ATTN_EXT) {
+            const int current_fa_ordinal = evox2_vk_fa_ordinal++;
+            const ggml_tensor * q = evox2_node->src[0];
+            const ggml_tensor * k = evox2_node->src[1];
+            const uint64_t target_kv = evox2_vk_env_uint("EVOX2_VK_PP_RGP_PAUSE_KV", 0);
+            if (evox2_vk_globalfa_selected_graph && q != nullptr && k != nullptr &&
+                q->ne[0] == 512 && q->ne[1] >= 64 &&
+                target_kv > 0 && k->ne[1] >= static_cast<int64_t>(target_kv) &&
+                !evox2_vk_pp_pause_done.exchange(true)) {
+
+                // Finish the prior nodes' outstanding command buffer before blocking the recording thread.
+                // This avoids profiling SWA work that was recorded earlier but not submitted.
+                if (submitted_nodes > 0) {
+                    vk_context flush_ctx = ggml_vk_get_compute_ctx(ctx);
+                    ggml_vk_ctx_end(flush_ctx);
+                    flush_ctx->exit_tensor_idx = -1;
+                    ctx->compute_ctx.reset();
+                    ggml_vk_compute_forward(ctx, cgraph, cgraph->nodes[submit_node_idx],
+                                            submit_node_idx, false);
+                    submit_after(submit_node_idx, i - 1);
+                }
+                ggml_vk_synchronize(ctx);
+                ctx->device->device.waitIdle();
+
+                const char * prefix = std::getenv("EVOX2_VK_PP_RGP_PAUSE_PREFIX");
+                const std::string label = evox2_vk_pp_graph_label +
+                    "_GLOBAL_FA_I" + std::to_string(current_fa_ordinal) +
+                    "_Q" + std::to_string(q->ne[1]) +
+                    "_KV" + std::to_string(k->ne[1]) +
+                    "_HSK" + std::to_string(q->ne[0]);
+                const std::string ready_file = std::string(prefix) + ".ready";
+                const std::string go_file = std::string(prefix) + ".go";
+                std::remove(go_file.c_str());
+                {
+                    std::ofstream ready(ready_file, std::ios::out | std::ios::trunc);
+                    if (ready) {
+                        ready << label << " node=" << i
+                              << " (target FA before recording)\n";
+                    } else {
+                        GGML_LOG_WARN("evox2 global FA rgp: cannot create ready file '%s'\n", ready_file.c_str());
+                    }
+                }
+                const uint64_t timeout_ms = evox2_vk_env_uint("EVOX2_VK_PP_RGP_PAUSE_TIMEOUT_MS", 120000);
+                GGML_LOG_INFO("evox2 global FA rgp: PAUSED %s; arm RDP and create '%s' (timeout=%llu ms)\n",
+                              label.c_str(), go_file.c_str(), (unsigned long long) timeout_ms);
+                const auto started = std::chrono::steady_clock::now();
+                bool released = false;
+                while (std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - started).count() < static_cast<int64_t>(timeout_ms)) {
+                    if (std::ifstream(go_file).good()) {
+                        released = true;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                GGML_LOG_INFO("evox2 global FA rgp: %s %s\n",
+                              released ? "RESUMED" : "TIMEOUT", label.c_str());
+            }
+        }
         if (first_node_in_batch) {
             submit_node_idx = i;
         }
