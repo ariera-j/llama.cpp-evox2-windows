@@ -1,5 +1,20 @@
 # Gemma 4 31B: v1.0.0 vs #31323 Vulkan PP FA RGP capture (2026-11-21)
 
+## First EVO-X2 capture trial: AMD driver timeout after pause/resume (2026-11-21)
+
+**Status: capture path NOT yet validated; do not repeat the same long capture automatically.** The first run used the **original v1.0.0 diagnostic branch**, not the #31323 optimized branch. Log: `20261121-144034-630-cli-vulkan-b12366-ctx32768-15228ae6a84b`, executable commit `51bb379eb`, clean source. The helper displayed `EVOX2_PP_G48_Q512_KVMAX24576_FA60`; stderr confirmed `PAUSED` at ~5:29, `RESUMED` ~5:59 (29s later), and a 24576-token progress checkpoint. Then the llama-cli process exited ~22s later with decimal **3221226505 = 0xC0000409**; AMD Bug Report Tool reported **GPU driver timeout**. The benchmark was `FAILED` with no final PP/TG; do NOT treat as a throughput result. The resume helper exited normally because it only writes the `.go` file, not because llama-cli succeeded. RGP trace creation / dispatch count / counters settings were not supplied and remain unverified.
+
+`0xC0000409` is Windows *Fail Fast*, whose particular cause cannot be determined without an exception subcode/dump. AMD's timeout dialog strongly suggests a GPU TDR, but it is **not proved** whether the trigger was a long RGP capture, stale/disconnected RDP capture target after the 29s CPU-only pause, `vkDeviceWaitIdle` at the pause gate, or the diagnostic shader/driver interaction. There is no justification to blame the #31323 optimization (the failing build was original v1.0.0).
+
+### Conservative isolation order
+
+1. **Markers only, no pause, no RDP capture:** keep `EVOX2_VK_PP_RGP_MARKERS=1` and `GGML_VK_DEBUG_MARKERS=1`, but remove `EVOX2_VK_PP_RGP_PAUSE_PREFIX`, `EVOX2_VK_PP_RGP_PAUSE_KV`, `EVOX2_VK_PP_RGP_PAUSE_GRAPH`; run short or 32k and confirm it completes. If this fails, investigate instrumentation independent of RDP.
+2. **Pause/release without capture:** set prefix, `PAUSE_KV=2048`, resume with helper while RDP capture remains inactive, verify success. This isolates the `device.waitIdle()` + file gate from GPU profiling.
+3. **Small manual profile:** with RDP connected **before launching** llama-cli, enable **Disable client timeout**; set Profiling capture mode Dispatch, `Auto capture mode=None`, **Render op count 16** (optionally 32 after successful smoke), Delay capture OFF, Collect counters OFF, Enable instruction tracing OFF. Pause at `KVMAX>=2048`, arm `Capture profile` while paused, release with the helper. Verify a valid trace and labels.
+4. Only after step 3 is stable, repeat the **small** capture at `KVMAX>=24576`. Increase dispatch count only if necessary, in small steps (16→32→64), never assume 512 dispatches are harmless at deep context.
+
+If another driver timeout appears, **stop repeated captures** and inspect Windows System/Application event logs (Display 4101, WER 1000/1001, driver LiveKernelEvent 141) and the RDP output log. Keep the system's default TDR settings; do **not** increase `TdrDelay` as a first-line workaround. Preserve any existing RGP or RGD artifacts. AMD docs: [RDP initial setup and Disable client timeout](https://gpuopen.com/manuals/rdp_manual/initial_setup/), [Profiling capture settings](https://gpuopen.com/manuals/rdp_manual/features/), [RGD/TDR explanation](https://gpuopen.com/manuals/rgd_manual/help_manual/).
+
 ## Purpose and isolation
 
 Two **separate diagnostic branches**, preserving the production benchmark binaries:
@@ -85,7 +100,7 @@ In **PowerShell window B**, enter before starting or while window A is running:
     -Prefix 'C:\llama-build\rgp-pp\original'
 ```
 
-Window B detects `.ready`, shows the exact `G/Q/KVMAX/FA`, then asks you to click **Capture profile** in Radeon Developer Panel with **Dispatch** capture mode (try 512 dispatches initially; increase if the trace lacks the desired FA). Once RDP is armed, press Enter in window B. `.go` releases the graph. Keep `Auto capture mode=None` for this gate-driven workflow; do **not** additionally specify Dispatch timer or Dispatch range.
+Window B detects `.ready`, shows the exact `G/Q/KVMAX/FA`, then asks you to click **Capture profile** in Radeon Developer Panel with **Dispatch** capture mode (try 16 dispatches first; cautiously increase to 32 or 64 only if stable and needed). Once RDP is armed, press Enter in window B. `.go` releases the graph. Keep `Auto capture mode=None` for this gate-driven workflow; do **not** additionally specify Dispatch timer or Dispatch range.
 
 Repeat for the #31323 branch with a **different prefix** (`...\ported`) and new build directory (`build-vulkan-pp-rgp`). Prefer matching by KVMAX, FA ordinal/head dimension and shader labels, not a fixed dispatch number.
 
