@@ -86,3 +86,13 @@ The port yields **2.655x** PP throughput, with **284.62 seconds less PP time**. 
 **Conclusion:** #31323, with the required AMD Windows guard #32415, reproduces virtually the full b12600 32k PP gain for Gemma 4 31B QAT. This is replicated in **two original-v1 and two isolated-port runs**. It is strong *package-level* evidence, but not yet per-shader GPU attribution; the flipped shader is disabled for proprietary AMD Windows drivers. No further whole-prompt A/B repetition is needed solely for confirmation. For mechanisms, profile existing coopmat1 FA variants with RGP at matched early/late ubatches, or isolate the 32-Q-row-tile and Q-register caching subfeatures.
 
 [Detailed aggregate 2-run validation (private experimental repository)](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-v1-fa31323-matched-2run-revalidation.md).
+
+## Worktree retirement / port caution (2026-11-22)
+
+**Status: no longer a recommended execution baseline for new work or unattended Codex runs.**
+
+- Local worktree: `C:\llama-build\llama.cpp-evox2-v1-fa31323`.
+- The EVO-X2 operator decided to retire this isolated #31323 + #32415 port worktree because the manually ported #31323 implementation **may contain a defect**. This is a **suspicion, not a confirmed root-cause finding**; no additional defect reproduction is claimed by this note.
+- The matched successful 32k PP A/B measurements above remain historical observations for the explicitly recorded input, build and hardware settings. Their observed performance gain must **not** be interpreted as proof that the port is generally safe or correct.
+- For future work, prefer a separately validated clean upstream baseline or a fresh, independently verified port; do not silently reuse this experimental worktree as a known-good base.
+- Keep the commit/branch and research notes available on GitHub for reproducibility. The local worktree may be removed after any raw logs are archived. This branch-local status note is intended for later documentation consolidation into `main`.
