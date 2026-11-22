@@ -309,3 +309,13 @@ if ($LASTEXITCODE -ne 0) { throw 'git pull failed' }
 If you have not pulled the updated branch yet, an equally safe workaround is passing `-ExtraCMakeArgs @('-DLLAMA_USE_PREBUILT_UI=OFF')` to the existing build script, after clearing stale UI dist.
 
 A successful UI-less build will generate an empty built-in Web UI table for llama-server; no effect on the Vulkan kernel implementation. Windows marker build and capture are still unverified until the next executable smoke/RGP trace.
+
+## Worktree retirement / diagnostic caution (2026-11-22)
+
+**Status: retired from active investigation; do not use as a known-good automated Codex/RGP baseline.**
+
+- Local worktree: `C:\llama-build\llama.cpp-evox2-fa31323-pp-rgp`.
+- The EVO-X2 operator plans to stop using this #31323/#32415-port-based RGP diagnostic worktree because the underlying #31323 port **may have an issue**. This is a precautionary decision; an implementation bug or a causal relationship to any GPU timeout **has not been established**.
+- Keep earlier successful RGP traces, GPU timestamp comparisons, and PP results above as historical observations with their stated limitations. Diagnostic pause/marker/capture behavior must not be conflated with normal uninstrumented inference performance.
+- Avoid selecting this worktree for unattended profiling or future Strata patch-porting baselines. Use an independently validated clean branch if investigation resumes.
+- Source and research notes remain in the GitHub branch; archive raw logs externally before deleting the local worktree. This branch-local status note is intended for later documentation consolidation into `main`.
