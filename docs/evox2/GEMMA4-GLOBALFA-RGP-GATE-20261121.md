@@ -135,3 +135,13 @@ Compare **Global FA** `FA_I`, Q512, actual KV24576, HSK512, the shader pipeline 
 - Existing 2026-11-21 [RGP pause/resume runbook](GEMMA4-V1-PP-RGP-20261121.md).
 - [Timestamp Global-vs-SWA GPU analysis](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-vulkan-perf-logger-global-vs-swa-fa-32k.md).
 - [RDP Manual: profiling Dispatch capture](https://gpuopen.com/manuals/rdp_manual/features/).
+
+## Worktree retirement / safety status (2026-11-22)
+
+**Status: retired for routine use; do not select this branch as an automated Codex/RGP execution baseline.**
+
+- Local worktree: `C:\llama-build\llama.cpp-evox2-v1-globalfa-rgp` (original-v1 Global FA diagnostic branch).
+- The EVO-X2 operator reports a **GPU timeout during experimentation with this worktree** and has stopped using it. This is an operational retirement decision; the precise failure log and mechanism were not independently re-examined for this note.
+- The mid-graph Global FA pause/resume diagnostic changes Vulkan command-buffer submission boundaries. The timeout's cause is **unconfirmed**: do not conclude that #31323 itself is defective from this incident. This branch is built on the **original v1** diagnostic path, not the isolated #31323 port.
+- Preserve the historical capture/smoke findings documented above, but do not retry unattended RGP capture, increase dispatch counts, or alter Windows TDR configuration to make this branch run.
+- Research source/history remains on this GitHub branch; the local worktree may be removed after external raw logs are archived. This branch-local status note is intended for later documentation consolidation into `main`.
