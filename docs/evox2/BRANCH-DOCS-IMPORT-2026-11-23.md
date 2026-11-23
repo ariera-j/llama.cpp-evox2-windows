@@ -92,3 +92,8 @@ Main content is retained because branch changes may be earlier snapshots or diff
 - The import uses Git blob identities from existing branches and does not alter experimental source trees.
 - New operating procedures should be authored under `docs/evox2/automation/` after checking the imported history.
 - Git clients on EVO-X2 must fetch the updated `main` explicitly; the existing Codex smoke-test branch does not automatically follow it.
+
+
+## 2026-11-23 後続の補足
+
+初回の51件(.md/.txt)に加え、`r2/legacy` にのみ存在する `docs/evox2/backport-r1/manifest.json` を歴史的な来歴資料としてmainに取り込んだ。同名文書の差分精査後の結果・古い「未実施」の読み替えは [DOCUMENTATION-RECONCILIATION-2026-11-23.md](DOCUMENTATION-RECONCILIATION-2026-11-23.md) を参照。
