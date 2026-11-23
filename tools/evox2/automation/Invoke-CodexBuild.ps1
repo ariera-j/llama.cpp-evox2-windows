@@ -4,10 +4,23 @@ param(
     [Parameter(Mandatory)][ValidateSet('Vulkan', 'ROCm')][string]$Backend,
     [Parameter(Mandatory)][ValidatePattern('\Abuild-[A-Za-z0-9][A-Za-z0-9_-]*\z')][string]$BuildDir,
     [Parameter(ParameterSetName = 'Preflight')][switch]$PreflightOnly,
-    [Parameter(ParameterSetName = 'Configure')][switch]$ConfigureOnly
+    [Parameter(ParameterSetName = 'Configure')][switch]$ConfigureOnly,
+    [ValidateNotNullOrEmpty()][string]$VulkanLlvmBin,
+    [ValidatePattern('\A[0-9]+\.[0-9]+\.[0-9]+\z')][string]$ExpectedVulkanClangVersion
 )
 
 $ErrorActionPreference = 'Stop'
+if ([bool]$VulkanLlvmBin -ne [bool]$ExpectedVulkanClangVersion) {
+    throw 'Specify both -VulkanLlvmBin and -ExpectedVulkanClangVersion.'
+}
+if ($Backend -ne 'Vulkan' -and $VulkanLlvmBin) { throw 'Vulkan Clang options require -Backend Vulkan.' }
+if ($VulkanLlvmBin) {
+    if (![IO.Path]::IsPathRooted($VulkanLlvmBin)) { throw 'Specify an absolute Vulkan LLVM path.' }
+    $VulkanLlvmBin = (Resolve-Path -LiteralPath $VulkanLlvmBin).ProviderPath
+} else {
+    $VulkanLlvmBin = 'C:\Program Files\LLVM\bin'
+    $ExpectedVulkanClangVersion = '20.1.8'
+}
 $ProgressPreference = 'SilentlyContinue'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\..')).Path
 $mode = $PSCmdlet.ParameterSetName
@@ -20,11 +33,12 @@ $result = [ordered]@{
     ExitCode = 1
     ElapsedSeconds = $null
 }
+if ($Backend -eq 'Vulkan') { $result.Command += @('-VulkanLlvmBin', $VulkanLlvmBin, '-ExpectedVulkanClangVersion', $ExpectedVulkanClangVersion) }
 if ($mode -ne 'Build') { $result.Command += "-$($mode)Only" }
 if (!(Test-Path -LiteralPath $logRoot -PathType Container)) { throw "Missing log directory: $logRoot" }
 
 $worker = {
-    param($repo, $backend, $name, $mode)
+    param($repo, $backend, $name, $mode, $vulkanBin, $vulkanClangVersion)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -101,8 +115,8 @@ $worker = {
         }
         "TheRock 10.0.0, gfx1151: $root"
     } else {
-        $clang = 'C:\Program Files\LLVM\bin'
-        $clangVersion = '^clang version 20\.1\.8(?:\s|$)'
+        $clang = $vulkanBin
+        $clangVersion = '^clang version ' + [regex]::Escape($vulkanClangVersion) + '(?:\s|$)'
         $params.CMakeExe = $cmake
         $params.LlvmBin = $clang
         $params.VulkanSdk = 'C:\VulkanSDK\1.4.357.0'
@@ -204,7 +218,7 @@ $worker = {
 }
 
 # All phases run in one child PowerShell, with separate native output streams.
-$quoted = @($repo, $Backend, $BuildDir, $mode) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
+$quoted = @($repo, $Backend, $BuildDir, $mode, $VulkanLlvmBin, $ExpectedVulkanClangVersion) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
 $payload = "try { & {" + $worker.ToString() + "} " + ($quoted -join ' ') +
     '; exit 0 } catch { [Console]::Error.WriteLine($_.ToString()); exit 1 }'
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))
