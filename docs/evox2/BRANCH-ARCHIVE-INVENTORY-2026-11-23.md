@@ -1,6 +1,16 @@
-# 2026-11-23 GitHubブランチ棚卸しとアーカイブ候補（実行前計画）
+# 2026-11-23 GitHubブランチ棚卸しとアーカイブ進捗
 
-> **2026-11-23 JST の静的棚卸し。** 対象は `ariera-j/llama.cpp-evox2-windows` / `main`。GitHub上の全53ブランチを列挙し、各ブランチとmainの`compare_commits`（ahead/behind、変更ファイル）、公開リポジトリ内の統合・実験記録を参照した。**この文書作成時点ではタグ作成・ブランチ削除・リネーム・ソースmerge・force pushを一切実施していない。** 分類は次回作業前に再確認すること。
+## 2026-11-24 00:15 JST アーカイブタグ作成・照合結果（削除は未実施）
+
+> **この節が下記の「タグ未作成」など過去時点の状態より優先。** Codexが対象33件の注釈付きタグ `archive/2026-11-23/<original-branch>` をリモートにpushし、公開後にGitHubから参照を再取得して元branch SHAとの一致を検証した。ユーザー提供の実行結果を追記。GitHubタグによるref復元の抜き取り2件も確認。リモートbranch数は作業後も53件。
+
+- **タグ作成・プッシュ：完了33/33**。マニフェスト全33件について `commit == peeledCommit == branchAfter` を照合し、全タグ名が計画のbranch名を正しく含むこととSHA40形式・重複なしを確認。台帳の明示allowlist（33件）とも完全一致した。
+- **記録ファイル：** [33件のタグ・ブランチ先端SHA照合マニフェスト](BRANCH-ARCHIVE-TAGS-MANIFEST-2026-11-23.json)。Codexのremote検証時刻は `2026-11-23 15:15:02 UTC`（日本時間11/24 00:15:02）。マニフェストにcommit SHA、annotated tag object SHA、peeled commit SHA、branchAfter SHAを保持。
+- **未実施：** remote branch削除（53件のまま）、branch protection/rulesetのAPI照合、Codexからアクセスできない旧手動worktreeの追加検査、33件のbranch URL参照監査、r2の独立Git bundle。
+- **今後の削除ゲート：** 33件の候補を**新たに実行直前に再取得**、凍結manifestのbranch SHAが依然一致することを確認。branch protection/rulesetsとPR、旧cloneでcheckout中のbranch（別途保護一覧）を照合し、許可された名前だけを個別のexpected SHA leaseで削除。タグ存在とコミット指示は削除後も再照合する。**削除は明示的な次工程として扱う。**
+- **注意：** 33タグの保全はリモートにpush済みコミットとその祖先のGitオブジェクトについて。旧clone固有の未pushローカルbranch 13件、未コミット変更、LFS実体・submodule外部資産は含まれない。
+
+> **2026-11-23 JST の静的棚卸し（以下は作業前の履歴）。** 対象は `ariera-j/llama.cpp-evox2-windows` / `main`。GitHub上の全53ブランチを列挙し、各ブランチとmainの`compare_commits`（ahead/behind、変更ファイル）、公開リポジトリ内の統合・実験記録を参照した。**この文書作成時点ではタグ作成・ブランチ削除・リネーム・ソースmerge・force pushを一切実施していない。** 分類は次回作業前に再確認すること。
 
 
 ## 2026-11-24追補：手動側worktreeの実測一覧（ユーザー提供、取得日時未記録）
