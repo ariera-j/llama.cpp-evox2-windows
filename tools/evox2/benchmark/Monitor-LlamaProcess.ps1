@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -24,6 +24,28 @@ $ErrorActionPreference = 'Stop'
 
 # Reuse the same lightweight process classification as the start/end snapshots.
 Import-Module (Join-Path $PSScriptRoot 'Evox2.Benchmark.psm1') -Force
+
+if (-not ('Evox2ResourceMemory' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class Evox2ResourceMemory {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PerformanceInfo {
+        public uint Size;
+        public UIntPtr CommitTotal, CommitLimit, CommitPeak;
+        public UIntPtr PhysicalTotal, PhysicalAvailable, SystemCache;
+        public UIntPtr KernelTotal, KernelPaged, KernelNonpaged, PageSize;
+        public uint HandleCount, ProcessCount, ThreadCount;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetPerformanceInfo(ref PerformanceInfo info, uint size);
+}
+"@
+}
 
 function ConvertTo-GiB {
     param([double]$Bytes)
@@ -139,7 +161,12 @@ while ($true) {
     try { $processPath = $target.Path } catch {}
     try { $processStart = $target.StartTime.ToString('o') } catch {}
 
-    $os = Get-CimInstance Win32_OperatingSystem
+    $memory = New-Object 'Evox2ResourceMemory+PerformanceInfo'
+    $memory.Size = [Runtime.InteropServices.Marshal]::SizeOf($memory)
+    if (![Evox2ResourceMemory]::GetPerformanceInfo([ref]$memory, $memory.Size)) {
+        $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw "GetPerformanceInfo failed (Win32 error $errorCode)."
+    }
 
     $processCounterPaths = @(
         "\GPU Process Memory(pid_${TargetProcessId}_*)\Local Usage",
@@ -293,11 +320,11 @@ while ($true) {
         }
     }
 
-    $usedRamGiB = [math]::Round(
-        ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB,
-        3
-    )
-    $freeRamGiB = [math]::Round($os.FreePhysicalMemory / 1MB, 3)
+    $pageSize = $memory.PageSize.ToUInt64()
+    $totalRamBytes = $memory.PhysicalTotal.ToUInt64() * $pageSize
+    $freeRamBytes = $memory.PhysicalAvailable.ToUInt64() * $pageSize
+    $usedRamGiB = ConvertTo-GiB ($totalRamBytes - $freeRamBytes)
+    $freeRamGiB = ConvertTo-GiB $freeRamBytes
     $collectionMilliseconds = [math]::Round(((Get-Date) - $loopStart).TotalMilliseconds, 0)
 
     [pscustomobject]@{
