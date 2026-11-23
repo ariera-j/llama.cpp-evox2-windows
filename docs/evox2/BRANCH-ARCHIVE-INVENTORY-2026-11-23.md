@@ -5,6 +5,20 @@
 
 ## 2026-11-24追補：手動側worktreeの実測一覧（ユーザー提供、取得日時未記録）
 
+### 追加入力：branch -vv 出力から確認（2系列の管理起点）
+
+手動所有者の `git branch -vv` によって、**2系列のローカルブランチとremote-trackingの表示を確認**。ローカルの追跡ブランチに `ahead` 表示はなかった。複数の `behind N` は、取得済みの `origin/*` 参照に対する遅れを示すだけで、リモート現時点の最新状態やワークツリーのcleanを保証しない。**`git fetch` を実行していないため先端SHAの最新照合は未実施**。
+
+`[origin/xxx: gone]` と表示されるローカルブランチは次の13件。この `gone` はGitのローカルtracking情報に基づく。GitHubのリモート先端を改めて調べて確定する。古いローカルcloneの`.git`を廃棄するときには、未pushのlocal-only参照として見落とさないこと。
+
+- r6/r5側：`investigation/llama-bench-real-prompt-20261007`、`investigation/rocm-qsa-argsort-topk-20261022`、`investigation/rocm-qsa-topk-baseline-20261022`、`investigation/vulkan-qsa-union-stats-20261008`。
+- 旧r6 stage：`r6/common001-ple16-20261025`、`r6/mtp-compat-20261025`、`r6/mtp-dense-20261026`、`r6/mtp-eh-proj-flatten-20261027`、`r6/mtp-noop-20261026`、`r6/mtp-stageb-20261027`、`r6/rocmfpx-vulkan-20261025`、`r6/vulkan-qsa-union-20261025`。
+- v1側：`investigation/strata-pp-v1.0.0-20261115`。
+
+**重要：** この13件は今回のGitHubリモートブランチ33件の削除候補にそのまま追加しない。現ローカル参照は所有者のGitデータに残しておき、必要なら所有者側で先端SHAを固定した独立bundle/tagに保全する。未コミット変更・未追跡ファイルは `branch -vv` では検出できないので、既存環境を整理する場合に限り各worktreeの `git status --porcelain=v1 -b` を別確認する。今はローカルworktreeを一切変更しない。
+
+
+
 **重要：下の一覧は手動操作ユーザーが実行した `git worktree list --porcelain` と `git remote -v` の出力を保存したもの。** Codexユーザーから旧cloneの`.git`を直接読み取れたことを意味しない。実行日時、`git status`、各branchの未pushコミット、`git branch -vv`、Codex専用cloneのworktreeは未確認。EVO-X2のACLと所有者は変更しない。
 
 ### Git共通ディレクトリ系統A（r2/r5/r6）
