@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -25,9 +25,70 @@ $ErrorActionPreference = 'Stop'
 # Reuse the same lightweight process classification as the start/end snapshots.
 Import-Module (Join-Path $PSScriptRoot 'Evox2.Benchmark.psm1') -Force
 
-function ConvertTo-GiB {
-    param([double]$Bytes)
-    [math]::Round($Bytes / 1GB, 3)
+# Read physical memory and system commit page counts without WMI.
+if (-not ('Evox2ResourceMemory' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class Evox2ResourceMemory {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PerformanceInfo {
+        public uint Size;
+        public UIntPtr CommitTotal, CommitLimit, CommitPeak;
+        public UIntPtr PhysicalTotal, PhysicalAvailable, SystemCache;
+        public UIntPtr KernelTotal, KernelPaged, KernelNonpaged, PageSize;
+        public uint HandleCount, ProcessCount, ThreadCount;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetPerformanceInfo(ref PerformanceInfo info, uint size);
+}
+"@
+}
+
+function Get-MemorySnapshot {
+    $info = New-Object 'Evox2ResourceMemory+PerformanceInfo'
+    $info.Size = [Runtime.InteropServices.Marshal]::SizeOf($info)
+    if (![Evox2ResourceMemory]::GetPerformanceInfo([ref]$info, $info.Size)) {
+        $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw "GetPerformanceInfo failed (Win32 error $errorCode)."
+    }
+
+    $pageSize = $info.PageSize.ToUInt64()
+    $available = $info.PhysicalAvailable.ToUInt64() * $pageSize
+    [pscustomobject]@{
+        UsedPhysicalBytes = $info.PhysicalTotal.ToUInt64() * $pageSize - $available
+        FreePhysicalBytes = $available
+        CommittedBytes = $info.CommitTotal.ToUInt64() * $pageSize
+        CommitLimitBytes = $info.CommitLimit.ToUInt64() * $pageSize
+    }
+}
+
+function Format-Sample($Value, $Divisor = 1, $Digits = 1) {
+    if ($null -ne $Value) { [math]::Round($Value / $Divisor, $Digits) }
+}
+
+function Get-AvailableCounterSamples {
+    param([string[]]$Paths)
+
+    try {
+        (Get-Counter -Counter $Paths -ErrorAction Stop).CounterSamples
+        return
+    } catch {
+        # An unavailable path must not discard other counters in the batch.
+    }
+
+    foreach ($path in $Paths) {
+        try {
+            (Get-Counter -Counter $path -ErrorAction Stop).CounterSamples
+        } catch {
+            if ($warnedCounterPaths.Add($path)) {
+                Write-Warning "Counter unavailable: $path ($($_.FullyQualifiedErrorId)). $($_.Exception.Message)"
+            }
+        }
+    }
 }
 
 function Get-SampleSum {
@@ -39,16 +100,13 @@ function Get-SampleSum {
     $sum = (
         $Samples |
         Where-Object {
-            $_.Path -like $PathPattern -and $_.CookedValue -ge 0
+            $_.Path -like $PathPattern -and $_.Status -in 0, 1 -and
+            $_.CookedValue -ge 0 -and ![double]::IsInfinity($_.CookedValue)
         } |
         Measure-Object -Property CookedValue -Sum
     ).Sum
 
-    if ($null -eq $sum) {
-        return 0.0
-    }
-
-    return [double]$sum
+    if ($null -ne $sum) { return [double]$sum }
 }
 
 function Get-GpuEngineCounterSummary {
@@ -68,7 +126,7 @@ function Get-GpuEngineCounterSummary {
     $valid = @(
         $matched |
         Where-Object {
-            $_.CookedValue -ge 0 -and
+            $_.Status -in 0, 1 -and $_.CookedValue -ge 0 -and
             $_.CookedValue -le $MaximumCookedValue
         }
     )
@@ -78,12 +136,8 @@ function Get-GpuEngineCounterSummary {
         Measure-Object -Property CookedValue -Sum
     ).Sum
 
-    if ($null -eq $sum) {
-        $sum = 0.0
-    }
-
     return [PSCustomObject]@{
-        Sum           = [double]$sum
+        Sum           = $sum
         MatchedCount  = [int]$matched.Count
         RejectedCount = [int]($matched.Count - $valid.Count)
     }
@@ -102,9 +156,6 @@ $StaticCounterPaths = @(
     '\PhysicalDisk(_Total)\Disk Read Bytes/sec',
     '\PhysicalDisk(_Total)\Disk Write Bytes/sec',
 
-    '\Memory\% Committed Bytes In Use',
-    '\Memory\Committed Bytes',
-    '\Memory\Commit Limit',
     '\Memory\Pages Input/sec',
     '\Memory\Page Reads/sec',
     '\Memory\Page Faults/sec',
@@ -117,7 +168,7 @@ $StaticCounterPaths = @(
 
 $previousTimestamp = $null
 $sampleIndex = 0
-$warnedCounterFallback = $false
+$warnedCounterPaths = [Collections.Generic.HashSet[string]]::new()
 $warnedInvalidGpuEngineCounter = $false
 $previousBackgroundSnapshot = $null
 $backgroundSampleCount = 0
@@ -139,7 +190,7 @@ while ($true) {
     try { $processPath = $target.Path } catch {}
     try { $processStart = $target.StartTime.ToString('o') } catch {}
 
-    $os = Get-CimInstance Win32_OperatingSystem
+    $memory = Get-MemorySnapshot
 
     $processCounterPaths = @(
         "\GPU Process Memory(pid_${TargetProcessId}_*)\Local Usage",
@@ -150,40 +201,14 @@ while ($true) {
         "\GPU Engine(pid_${TargetProcessId}_*)\Utilization Percentage"
     )
 
-    $gpuProcessCountersAvailable = $false
-
-    try {
-        $samples = (
-            Get-Counter -Counter @($StaticCounterPaths + $processCounterPaths) -ErrorAction Stop
-        ).CounterSamples
-        $gpuProcessCountersAvailable = $true
-    } catch {
-        # A very common shutdown race is:
-        #   1) Get-Process succeeds at the top of the loop,
-        #   2) llama-cli exits while Get-Counter is collecting,
-        #   3) the PID-scoped GPU counter instances disappear first.
-        #
-        # That is a normal end-of-run condition, not a monitoring failure.
-        $targetStillRunning = Get-Process -Id $TargetProcessId -ErrorAction SilentlyContinue
-        if ($null -eq $targetStillRunning) {
-            break
+    $staticSamples = @(Get-AvailableCounterSamples -Paths $StaticCounterPaths)
+    $processSamples = @(Get-AvailableCounterSamples -Paths $processCounterPaths)
+    $samples = $staticSamples + $processSamples
+    $gpuProcessCountersAvailable = @(
+        $processSamples | Where-Object {
+            $_.Status -in 0, 1 -and $_.CookedValue -ge 0 -and ![double]::IsInfinity($_.CookedValue)
         }
-
-        try {
-            $samples = (
-                Get-Counter -Counter $StaticCounterPaths -ErrorAction Stop
-            ).CounterSamples
-
-            if (-not $warnedCounterFallback) {
-                Write-Warning 'GPU process counters were unavailable while the target process was still running; continuing with adapter/system counters only.'
-                $warnedCounterFallback = $true
-            }
-        } catch {
-            Write-Warning "Counter collection failed: $($_.Exception.Message)"
-            Start-Sleep -Seconds $IntervalSeconds
-            continue
-        }
-    }
+    ).Count -gt 0
 
     $cpuPercent = Get-SampleSum $samples '*\processor(_total)\% processor time'
 
@@ -191,9 +216,10 @@ while ($true) {
     $diskReadBytesPerSec = Get-SampleSum $samples '*\physicaldisk(_total)\disk read bytes/sec'
     $diskWriteBytesPerSec = Get-SampleSum $samples '*\physicaldisk(_total)\disk write bytes/sec'
 
-    $committedPercent = Get-SampleSum $samples '*\memory\% committed bytes in use'
-    $committedBytes = Get-SampleSum $samples '*\memory\committed bytes'
-    $commitLimitBytes = Get-SampleSum $samples '*\memory\commit limit'
+    $committedBytes = $memory.CommittedBytes
+    $commitLimitBytes = $memory.CommitLimitBytes
+    $committedPercent = if ($commitLimitBytes -gt 0) { 100 * $committedBytes / $commitLimitBytes }
+
     $pagesInputPerSec = Get-SampleSum $samples '*\memory\pages input/sec'
     $pageReadsPerSec = Get-SampleSum $samples '*\memory\page reads/sec'
     $pageFaultsPerSec = Get-SampleSum $samples '*\memory\page faults/sec'
@@ -203,12 +229,12 @@ while ($true) {
     $adapterSharedBytes = Get-SampleSum $samples '*\gpu adapter memory(*)\shared usage'
     $adapterCommittedBytes = Get-SampleSum $samples '*\gpu adapter memory(*)\total committed'
 
-    $gpuLocalBytes = 0.0
-    $gpuDedicatedBytes = 0.0
-    $gpuSharedBytes = 0.0
-    $gpuCommittedBytes = 0.0
-    $gpuNonLocalBytes = 0.0
-    $gpuEnginePercent = 0.0
+    $gpuLocalBytes = $null
+    $gpuDedicatedBytes = $null
+    $gpuSharedBytes = $null
+    $gpuCommittedBytes = $null
+    $gpuNonLocalBytes = $null
+    $gpuEnginePercent = $null
 
     if ($gpuProcessCountersAvailable) {
         $gpuLocalBytes = Get-SampleSum $samples "*\gpu process memory(pid_${TargetProcessId}_*)\local usage"
@@ -229,8 +255,8 @@ while ($true) {
             -MaximumCookedValue 100.5
 
         $gpuEnginePercent = $gpuEngineSummary.Sum
-        $gpuEngineMatchedCount = $gpuEngineSummary.MatchedCount
-        $gpuEngineRejectedCount = $gpuEngineSummary.RejectedCount
+        $gpuEngineMatchedCount = if ($gpuEngineSummary.MatchedCount -gt 0) { $gpuEngineSummary.MatchedCount }
+        $gpuEngineRejectedCount = if ($gpuEngineSummary.MatchedCount -gt 0) { $gpuEngineSummary.RejectedCount }
 
         if ($gpuEngineRejectedCount -gt 0 -and -not $warnedInvalidGpuEngineCounter) {
             Write-Warning (
@@ -242,8 +268,8 @@ while ($true) {
             $warnedInvalidGpuEngineCounter = $true
         }
     } else {
-        $gpuEngineMatchedCount = 0
-        $gpuEngineRejectedCount = 0
+        $gpuEngineMatchedCount = $null
+        $gpuEngineRejectedCount = $null
     }
 
     # The resource-counter timestamp is taken BEFORE optional slow WMI
@@ -293,11 +319,9 @@ while ($true) {
         }
     }
 
-    $usedRamGiB = [math]::Round(
-        ($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB,
-        3
-    )
-    $freeRamGiB = [math]::Round($os.FreePhysicalMemory / 1MB, 3)
+    $usedRamGiB = Format-Sample $memory.UsedPhysicalBytes 1GB 3
+    $freeRamGiB = Format-Sample $memory.FreePhysicalBytes 1GB 3
+
     $collectionMilliseconds = [math]::Round(((Get-Date) - $loopStart).TotalMilliseconds, 0)
 
     [pscustomobject]@{
@@ -315,36 +339,36 @@ while ($true) {
 
         UsedRAM_GiB                   = $usedRamGiB
         FreeRAM_GiB                   = $freeRamGiB
-        CommittedPercent              = [math]::Round($committedPercent, 1)
-        Committed_GiB                 = ConvertTo-GiB $committedBytes
-        CommitLimit_GiB               = ConvertTo-GiB $commitLimitBytes
+        CommittedPercent              = Format-Sample $committedPercent
+        Committed_GiB                 = Format-Sample $committedBytes 1GB 3
+        CommitLimit_GiB               = Format-Sample $commitLimitBytes 1GB 3
 
-        PagesInput_PerSec             = [math]::Round($pagesInputPerSec, 1)
-        PageReads_PerSec              = [math]::Round($pageReadsPerSec, 1)
-        PageFaults_PerSec             = [math]::Round($pageFaultsPerSec, 1)
+        PagesInput_PerSec             = Format-Sample $pagesInputPerSec
+        PageReads_PerSec              = Format-Sample $pageReadsPerSec
+        PageFaults_PerSec             = Format-Sample $pageFaultsPerSec
 
-        TargetWS_GiB                  = ConvertTo-GiB $target.WorkingSet64
-        TargetPrivate_GiB             = ConvertTo-GiB $target.PrivateMemorySize64
-        TargetVirtual_GiB             = ConvertTo-GiB $target.VirtualMemorySize64
+        TargetWS_GiB                  = Format-Sample $target.WorkingSet64 1GB 3
+        TargetPrivate_GiB             = Format-Sample $target.PrivateMemorySize64 1GB 3
+        TargetVirtual_GiB             = Format-Sample $target.VirtualMemorySize64 1GB 3
 
-        TargetGPULocal_GiB            = ConvertTo-GiB $gpuLocalBytes
-        TargetGPUDedicated_GiB        = ConvertTo-GiB $gpuDedicatedBytes
-        TargetGPUShared_GiB           = ConvertTo-GiB $gpuSharedBytes
-        TargetGPUTotalCommitted_GiB   = ConvertTo-GiB $gpuCommittedBytes
-        TargetGPUNonLocal_GiB         = ConvertTo-GiB $gpuNonLocalBytes
-        TargetGPUEngineSum_Percent    = [math]::Round($gpuEnginePercent, 1)
+        TargetGPULocal_GiB            = Format-Sample $gpuLocalBytes 1GB 3
+        TargetGPUDedicated_GiB        = Format-Sample $gpuDedicatedBytes 1GB 3
+        TargetGPUShared_GiB           = Format-Sample $gpuSharedBytes 1GB 3
+        TargetGPUTotalCommitted_GiB   = Format-Sample $gpuCommittedBytes 1GB 3
+        TargetGPUNonLocal_GiB         = Format-Sample $gpuNonLocalBytes 1GB 3
+        TargetGPUEngineSum_Percent    = Format-Sample $gpuEnginePercent
         GpuEngineCounterInstances     = $gpuEngineMatchedCount
         GpuEngineRejectedValues       = $gpuEngineRejectedCount
 
-        AdapterLocal_GiB              = ConvertTo-GiB $adapterLocalBytes
-        AdapterDedicated_GiB          = ConvertTo-GiB $adapterDedicatedBytes
-        AdapterShared_GiB             = ConvertTo-GiB $adapterSharedBytes
-        AdapterTotalCommitted_GiB     = ConvertTo-GiB $adapterCommittedBytes
+        AdapterLocal_GiB              = Format-Sample $adapterLocalBytes 1GB 3
+        AdapterDedicated_GiB          = Format-Sample $adapterDedicatedBytes 1GB 3
+        AdapterShared_GiB             = Format-Sample $adapterSharedBytes 1GB 3
+        AdapterTotalCommitted_GiB     = Format-Sample $adapterCommittedBytes 1GB 3
 
-        CPU_Percent                   = [math]::Round($cpuPercent, 1)
-        Disk_Percent                  = [math]::Round($diskPercent, 1)
-        DiskRead_MiBps                = [math]::Round($diskReadBytesPerSec / 1MB, 2)
-        DiskWrite_MiBps               = [math]::Round($diskWriteBytesPerSec / 1MB, 2)
+        CPU_Percent                   = Format-Sample $cpuPercent
+        Disk_Percent                  = Format-Sample $diskPercent
+        DiskRead_MiBps                = Format-Sample $diskReadBytesPerSec 1MB 2
+        DiskWrite_MiBps               = Format-Sample $diskWriteBytesPerSec 1MB 2
 
         BackgroundIntervalSeconds     = $BackgroundIntervalSeconds
         BackgroundSampleTaken         = $backgroundSampleTaken
@@ -373,4 +397,8 @@ while ($true) {
     if ($sleepMilliseconds -gt 0) {
         Start-Sleep -Milliseconds ([int]$sleepMilliseconds)
     }
+}
+
+if ($sampleIndex -eq 0) {
+    throw "Resource monitor collected no samples for PID $TargetProcessId."
 }

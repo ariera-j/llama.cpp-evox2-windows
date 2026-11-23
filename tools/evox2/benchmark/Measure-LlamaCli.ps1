@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [string]$LocalConfig = '',
@@ -627,6 +627,7 @@ $argumentLine = (
 $process = $null
 $processHandle = [IntPtr]::Zero
 $monitorProcess = $null
+$resourceMonitorError = $null
 $adlxMonitorProcess = $null
 $adlxMonitorHandle = [IntPtr]::Zero
 $adlxMonitorStarted = $false
@@ -700,16 +701,20 @@ try {
             ForEach-Object { ConvertTo-Evox2WindowsArgument -Value ([string]$_) }
         ) -join ' '
 
-        $monitorProcess = Start-Process `
-            -FilePath $powerShellExe `
-            -ArgumentList $monitorArgumentLine `
-            -WorkingDirectory $benchmarkDir `
-            -RedirectStandardOutput $MonitorStdOutPath `
-            -RedirectStandardError $MonitorStdErrPath `
-            -NoNewWindow `
-            -PassThru
+        try {
+            $monitorProcess = Start-Process `
+                -FilePath $powerShellExe `
+                -ArgumentList $monitorArgumentLine `
+                -WorkingDirectory $benchmarkDir `
+                -RedirectStandardOutput $MonitorStdOutPath `
+                -RedirectStandardError $MonitorStdErrPath `
+                -NoNewWindow `
+                -PassThru
 
-        Write-Host "Resource monitor PID: $($monitorProcess.Id)"
+            Write-Host "Resource monitor PID: $($monitorProcess.Id)"
+        } catch {
+            $resourceMonitorError = "Cannot start resource monitor: $($_.Exception.Message)"
+        }
     }
 
     $nextProgress = (Get-Date).AddSeconds($ProgressIntervalSeconds)
@@ -965,7 +970,22 @@ if ($Status -eq 'OK' -and $QsaNoopEvidence.Status -ne 'NotApplicable' -and
 if (Test-Path -LiteralPath $ResourcePath -PathType Leaf) {
     try {
         $resourceSampleCount = @(Import-Csv -LiteralPath $ResourcePath).Count
-    } catch {}
+    } catch {
+        $resourceMonitorError = "Cannot read resource samples: $($_.Exception.Message)"
+    }
+}
+
+$resourceMonitorStatus = 'Disabled'
+if ($ResourceMonitor) {
+    if ($resourceSampleCount -eq 0 -and !$resourceMonitorError) {
+        $resourceMonitorError = 'Resource monitor collected zero samples.'
+    }
+    if ($resourceMonitorError) {
+        $resourceMonitorStatus = 'Failed'
+        Write-Warning "$resourceMonitorError See $MonitorStdErrPath"
+    } else {
+        $resourceMonitorStatus = 'Collected'
+    }
 }
 
 if (Test-Path -LiteralPath $GpuMetricsPath -PathType Leaf) {
@@ -1067,6 +1087,8 @@ $Result = [ordered]@{
 
     ResourceMonitorEnabled      = [bool]$ResourceMonitor
     ResourceSampleCount         = $resourceSampleCount
+    ResourceMonitorStatus       = $resourceMonitorStatus
+    ResourceMonitorError        = $resourceMonitorError
     AdlxMonitorRequested        = $AdlxMonitorRequested
     AdlxMonitorStarted          = $adlxMonitorStarted
     AdlxMonitorExitCode         = $adlxMonitorExitCode
@@ -1137,6 +1159,7 @@ $Summary = [PSCustomObject]@{
     BackgroundBusyNames     = ($BackgroundActivity.BusyNames -join ';')
     BackgroundCpuPercent    = $BackgroundActivity.CpuPercentOfSystem
     ResourceSamples     = $resourceSampleCount
+    ResourceMonitorStatus = $resourceMonitorStatus
     AdlxSamples         = $adlxSampleCount
     PModeStart          = $PModeAtStart.Mode
     PModeFinish         = $PModeAtFinish.Mode
@@ -1180,7 +1203,10 @@ if (Test-Path -LiteralPath $NormalizedStdOutPath -PathType Leaf) {
     Write-Host "output SHA256   : $OutputFingerprintSha256"
 }
 if ($ResourceMonitor) {
-    Write-Host "resources.csv   : $ResourcePath"
+    Write-Host "Resource monitor: $resourceMonitorStatus ($resourceSampleCount samples)"
+    if ($resourceSampleCount -gt 0) {
+        Write-Host "resources.csv   : $ResourcePath"
+    }
 }
 if ($adlxSampleCount -gt 0) {
     Write-Host "gpu-metrics.csv : $GpuMetricsPath"
