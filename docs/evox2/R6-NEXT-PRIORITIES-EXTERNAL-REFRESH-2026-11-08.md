@@ -1,6 +1,106 @@
 # 2026-11-08: r6後続タスク再順位付けとupstream/fork/他エンジン更新、IQ1・新IQ3／Strata着手準備
 
-> **2026-11-23追補:** [文書集約・現行ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先。11/18時点の主題①だったGemma4 PP/TG/RGP調査は11/21に一区切り。11/22に疑わしいFA移植／Global FAの診断worktreeを通常・無人運用対象から除外した（原因の確証はない）。11/23はCodex→EVO-X2のモデル推論テスト中で、**まず文書とブランチを整理し、その後にStrata・strix.cpp・upstream等から1件ずつ新しい高速化候補を試す**。旧IQ3原GGUFではなく、IQ3 PLE16とROCmFP4を高速化の主モデルとする。
+> **2026-11-23追補:** [文書集約・現行ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先。11/18時点の主題①だったGemma4 PP/TG/RGP調査は11/21に一区切り。11/22に疑わしいFA移植／Global FAの診断worktreeを通常・無人運用対象から除外した（原因の確証はない）。11/23にCodex→EVO-X2の接続設定・テストが完了した。**広域の外部情報を収集・差分監査してから、ベースupstreamと最初の高速化候補を決める**。旧IQ3原GGUFではなく、IQ3 PLE16とROCmFP4を高速化の主モデルとする。
+
+
+## 2026-11-23追補：外部動向の広域再調査（upstream・fork・Strata・エンジン・モデル）
+
+> **情報収集のスナップショット：2026-11-23 JST。** この節は11/18追補と11/08原記録より新しい。CodexとEVO-X2の接続設定およびビルド・推論の接続テストは**完了**。次の段階は新たな高速化実装の着手候補を選ぶことだが、**この調査時点ではベースupstreamコミットも移植項目も未決定**。確認した公開情報と、外部作者の性能主張・未確認の仮説を区別する。今回の追記ではモデルダウンロード・実機計測・高速化コード実装はしていない。
+>
+> **履歴上の注意：** 11/18の「Gemma 4原因調査を先に進める」「Codex接続はこれから」、11/08の「IQ1/MH-HardやStrataは未着手」は**各日付時点の予定**。現在のタスク状態には適用しない。11/21までにGemma 4 PP/TG/RGP調査はいったん整理し、11/23にCodex接続テスト完了。現行の文書・ブランチ管理の基準は [2026-11-23文書集約](DOCUMENTATION-RECONCILIATION-2026-11-23.md) を参照。
+
+### A. llama.cpp upstream：更新スナップショットと移植前のリスク
+
+- [v1.0.0](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0) は11/13公開。公開APIのversioning・整理を含むため、r6旧コードの移植では単なるkernelのcherry-pickだけで済まない場合がある。
+- **11/23に確認したnightlyは [b12651 / f5e6915](https://github.com/ggml-org/llama.cpp/releases/tag/b12651)**（GitHubの公開時刻11/23 08:52 UTC、JST 17:52）。b12650からの直接のrelease差分は **WebGPU ROLL対応 (#31887)**。これだけを根拠にVulkan/ROCmの性能が上がったとは言えない。
+- r6統合元 b11870、最近検証した b12363～b12370、11/18確認 b12490のすべてより進んだ版。**nightly番号を新ベースの採用理由にはしない**。v1.0.0以降のAPI、PLE16・QSA/Indexer・GDN・KV・MTP・MoE・Vulkan FA・ROCm経路の実差分を監査する。
+- 追跡すべき技術領域：GDN/chunked prefill/state、Flash Attention（KV取得法、KV量子化、BF16、Sparse経路）、MoE fused GEMMとexpert cache、Speculative/MTPのdraft用KV、HIP scheduler/workspace、Vulkan cooperative matrix、WebGPU・マルチモーダル・サーバー/API機能。
+- **既知の回帰報告は採用前ゲート**：[Windows AMD Vulkan FAのdriverクラッシュ #32353](https://github.com/ggml-org/llama.cpp/issues/32353)（b12398～b12421周辺のFA/flip-direct経路）、[HIPでMTP有効時にPPが低下する報告 #31495](https://github.com/ggml-org/llama.cpp/issues/31495)、[Windows Strix Haloのidle時VRAM退避・TTFT問題 #32124](https://github.com/ggml-org/llama.cpp/issues/32124)。issue報告は環境限定であり、EVO-X2での再現は未確認。
+- b12651を採用すると決めたわけではない。新ベースは**ソース監査→Windows VulkanとROCmのsmoke→固定条件PP/TG→品質→回帰チェック**で選ぶ。非破壊・別worktree/branchで行う。
+
+### B. Strata：実測した0.2.13/Engine 0.1.59から0.2.20/Engine 0.1.66へ
+
+公式：[Strata releases](https://github.com/Niko1221/Strata/releases)、[v0.2.20](https://github.com/Niko1221/Strata/releases/tag/v0.2.20)、[Strix Halo解説](https://github.com/Niko1221/Strata/blob/main/docs/STRIX_HALO.md)。
+
+- 0.2.14（11/15）：AMD/NVIDIA prefillのStrata独自kernel化が大きな変更点。0.2.16前後：エンジン構成・ディレクトリ整理。0.2.18：Hy4 Flash専用family。0.2.19：Inkling 2 Mini専用family。0.2.20（11/22公開）：3エンジンfamilyの0.1.66と、共通MoE planner・カーネル改良。
+- **AMD HIP Wave32 WMMA prefill、fused dequant-to-LDS、LUT16/ v_perm_b32 / DP4A decode** を確認。作者が公表する70.7 TFLOPS、28.5～36.7 TFLOPS、451～583 GB/sは**カーネルレベルの値**であり、EVO-X2のQwen3.8 Flash Next全体PP/TGの実測値ではない。
+- **GPU VRAM + RAM/CPU SIMD + SSD**を横断する4-tier MoE/expert配置、hot/cold expert、量子化KV・host offload、SSD Engram/expert streaming等が拡充。gfx1151はUMAなのでPCIe dGPUの階層モデルをそのまま移植しない。まずrouting、expert頻度推定、cacheとCPU/GPUの負担配分を読む。
+- **Windows向け0.1.66 hip-rdna3バイナリ**がreleaseに含まれる。Inkling/Hy4用には別engine familyとWindows/HIPバイナリも存在。公開パッケージがあることと、所有するGGUF・Windows構成での動作成功は別。
+- 数値・品質・起動の不具合修正も多い。0.2.20についても [issue一覧](https://github.com/Niko1221/Strata/issues) にMTP verifyやGGUFロード・Inklingの不安定報告があり、修正済みと断定せず検証時のログとengine buildを残す。
+- 過去の比較（Strata 0.2.13／旧IQ3原GGUF／UMA64GB／MTP・DFlash2 OFF）を基準として残す。0.2.20再計測は**後日の独立課題**。同じGGUF revision、KV型、context、batch/ubatch、draft設定、起動方法でPP/TGと日本語要約/MH-Hardを対比する。
+- 以前の11/18記録どおり、**DeepSeek V4.1-Flashは0.2.13とそれ以降のサポート状態が異なる**。0.2.20の同梱リストに旧DeepSeek 0.1.59 packageへの参照があっても、最新通常経路での実行サポートとは扱わない。
+
+### C. 優先してコード差分を調べたいfork
+
+| 対象・公式参照 | 最近の特徴・研究対象 | 監査時の注意 |
+|---|---|---|
+| [stew675/llama-cpp-rdna-boosts](https://github.com/stew675/llama-cpp-rdna-boosts/blob/main/README.md) | 11/20 upstream 919794500にrebase、**公式17ブロック + 暫定0300 = デフォルト18パッチ**、任意0100/0101。GDN、FA/KV、WMMA/MMQ、MoE融合/cache、MTPなど。 | **直列パッチで前ブロックに依存**する。独立機能の単純cherry-pickとは限らない。暫定0300とoptionalは区別し、対象shapeとnumericsを監査。 |
+| [Strix-Halo/strix-llama.cpp](https://github.com/Strix-Halo/strix-llama.cpp) | adaptive speculation、Vulkan mat-vecのbatch3～8におけるregister spill、ROCmFPx、tiled concat-transpose、mul_mat_id、LDS stride padding。 | **LDS stride padは公式説明でRADV専用のdriver gate**。Windows AMD proprietary driverでは同じ改善が有効にならない。作者報告のpp +7.3%やkernel 10～20%をEVO-X2/Windows予測値にしない。 |
+| [ArtomYuan/strix.cpp](https://github.com/ArtomYuan/strix.cpp) | 前回からの継続最重要調査対象：gfx1151向けHIP、shape別attention、ROCmFP4 K-tile、SSM convolution等。 | Linux向け実測や異なるQwen3.8-27BとFlash Nextを混同しない。 |
+| [Nathanw1014/strix-halo-llamacpp](https://github.com/Nathanw1014/strix-halo-llamacpp) | Vulkan FA / MoE prefillやtiled concat-transposeの先行実装。 | 他forkへ再利用された変更を重複して数えない。 |
+| [SelfRef/llama.cpp-rdna](https://github.com/SelfRef/llama.cpp-rdna) | RDNA Vulkan、ROCmFPx、量子化・FA。 | 実装経路・型・OS・upstreamへの取り込み状況を比較。 |
+| [vahpetr/llama.cpp-s1-fork](https://github.com/vahpetr/llama.cpp-s1-fork) | Qwen3.8 Flash Nextの1M context、Sparse Attention/Indexer、prompt cache、MTP。 | 主な測定はLinux RADV、128GB UMA、特殊条件。数字はWindowsへ外挿しない。 |
+| [ikawrakow/ik_llama.cpp](https://github.com/ikawrakow/ik_llama.cpp) | 独自量子化、Sparse FA/QSA、MoE expert cache、CPU/部分offload、新モデル。 | モデル形式とkernelを切り分けて移植可能性を判断。 |
+| [justinappler/llama.cpp-strix-halo](https://github.com/justinappler/llama.cpp-strix-halo)、[halo-box/strix-llama.cpp](https://github.com/halo-box/strix-llama.cpp) | gfx1151向け歴史資料、検証・ビルド方法。 | justinappler版はretire済みの履歴があり、新規パッチの採用候補と区別。 |
+
+**調査管理方法：** fork単位で「速い/遅い」ではなく、(1) source commit・初出作者、(2) upstream取り込み済みか、(3) 変更kernel/ggml graph/dispatch、(4) dtype/量子化・M/N/K/ubatch、(5) Windows proprietary Vulkan/HIPかLinux RADVか、(6) 定量結果の測定条件、(7) 数値/KLD/MH-Hard、(8) rollbackの容易さを1件1行で管理する。
+
+### D. 他の推論エンジン・運用関連（高速化に直結しない情報も含む）
+
+- [ExLlamaV3](https://github.com/turboderp-org/exllamav3) と [exllamav3-rdna](https://github.com/SelfRef/exllamav3-rdna)：EXL3/低ビット量子化、WMMAとdecode融合の参考。ただしgfx1100の測定が多く、gfx1151/Windowsでの動作・速度は未検証。
+- [vLLM](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/index.html)：ROCm対応に**Ryzen AI MAX / gfx1151（ROCm 7.0.2以上）**が明記。Ubuntu側でモデルとAPIを試す有力候補。単発CLIのPP/TGと複数同時リクエストのserving throughputを別軸にする。
+- [SGLang](https://github.com/sgl-project/sglang)：batch scheduler、attention、MoEの比較対象。gfx1151は有効kernel/設定が限定される場合がある。
+- [Lemonade](https://github.com/lemonade-sdk/lemonade)、[Ollama](https://github.com/ollama/ollama)、[LM Studio](https://lmstudio.ai/)：モデル管理、OpenAI互換API、NPU/GPU/CPUの使い分け、エージェント連携の運用比較。Lemonadeは統合フロントであり、内側のbackendごとに性能を評価する。
+- [DeepInfer](https://github.com/deepseek-ai/DeepInfer)、DeepSeek/Engram/DSpark/DFlash2等の技術は、EVO-X2への直接導入よりも設計・メモリ管理の調査対象。
+- Codex/OpenCode利用では、TG token/sだけでなく**最初の応答までの時間、ツール呼び出し成功率、長文作業履歴、サーバー常駐中のidleメモリ挙動、処理タスク完了時間**も将来の評価指標にする。
+
+### E. オープンウェイトモデル（性能と動作互換を分けて扱う）
+
+| モデル・公開情報 | 注目点 | 記録上の扱い |
+|---|---|---|
+| [Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini)（11/20公開） | 公式model cardは**総26.4B、active 5.4B**、looped MoE、画像/テキスト。 | **先行の会話でactive約3.4Bと表記した値は訂正し5.4Bを採用**。Strata専用engineあり。GGUF/llama.cpp対応の実動作は別確認。 |
+| [Hy4 flash](https://huggingface.co/tencent/Hy4-flash) | **総220B（Engram 64B含む）、active 12B、最大1M context、DFly2 drafter**。 | Strata専用engineあり。SSD容量、expert/Engram stream、長文KV、Windows UMAを検討してから取得。 |
+| [Nemotron 3.5 Bolt 74B-A9B 24GB GGUF](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF) | 小さい圧縮量子化モデル・MoE pruningの参考。 | 速度比較だけでなく品質と推論時メモリを含める。 |
+| Qwen3.8 Flash Next（既存旧IQ3 PLE16/ROCmFP4） | QSA、GDN、MoE、MTP、長文PP/TGと既存RGP実績が最大。 | **高速化検証の主対照モデルとして維持**。 |
+| [AMD Quark Qwen3.6-35B-A3B INT4 GGUF](https://huggingface.co/amd/Qwen3.6-35B-A3B-Quark-INT4-G32-GGUF) | AMD側の量子化/変換経路とINT4 GGUFを調べられる。 | IQ3/IQ4単純比較とは別の量子化パイプライン検証。 |
+| [DeepSeek V4.1 Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) | 大規模MoE、圧縮/sparse attention、Indexer、メモリ階層。 | 専用SSD/RAM要件の見積もりが先。単体EVO-X2での実用性能を期待しない。 |
+| Gemma 4 31B / 26B A4B、Qwen3.8-27B dense、軽量MoE | GEMM、FA、MoEの比較対照。 | 11/21までのGemma 4計測資料と整合させ、必要時だけ再測定。 |
+
+新モデルの高性能ベンチマーク結果はモデル提供側・各エンジンの条件付き主張。**EVO-X2上で走ること、品質が十分なこと、速いことは独立したゲート**。モデル作者の公開値と本リポジトリの実測を同じ欄に混ぜない。
+
+### F. 候補技術一覧：ここでは順位・採否を決めない
+
+| 技術系統 | ソース調査項目 | 既存データの利用先 |
+|---|---|---|
+| Dense / MoE GEMM | Wave32 WMMA、LDS bank conflict、fused dequant、Gate/Up/Down融合、mul_mat_id | IQ3/IQ4のubatch逆転、Gemma4 Vulkan/ROCm、RGP MMQ |
+| Flash Attention | KV直接参照、quantized/BF16 KV、flip/coopmat、Sparse FA | 文学/コード64k～256k、RGP FA位置合わせ |
+| QSA / Indexer | mask/top-k/pool、sparse tile、scoreとKey対応 | 既存Mask SVGとIndexer解析 |
+| GDN / state | chunked prefill、SSM state、WMMA、graph reuse | Qwen3.8 Flash Next |
+| MTP / Speculative | adaptive draft、DFlash2、DSpark、KV共有、batch3～8 register spill | MH-Hard品質、TG、MTP有無のPP回帰 |
+| Quantization | ROCmFPx、LUT/DP4A、Quark INT4、CPU codecs | 既存IQ3/4/FP4の品質/速度 |
+| Expert/UMA | expert cache、hot/cold tier、CPU SIMD、RAM/SSD paging | UMA 32/64/96GB、ページング・TG |
+| Runtime / Serving | host-submit待ち、dispatch、graph構築、KV scheduling、MTP idle、API | ADLX、RGP、llama-cli/bench、Codex連携 |
+
+### G. ベースupstreamと最初の高速化実装を選ぶ前の判定条件
+
+1. **新規・改良・既にupstream入り・旧版のみ・Windows不可・未確認**をまず分類する。特にStrata/rdna-boosts/strix-llama.cpp/ArtomYuan間の同一実装を二重計上しない。
+2. 候補の関係する**具体的なcommit / PR / ファイル / kernelと量子化dtype、M/N/K、ubatch**を特定し、r6から新upstreamへの既存COMMON-001/005・QSA・MTP等の影響を見積もる。
+3. Windows 11 gfx1151（AMD proprietary Vulkan、HIP/ROCm）での**active path**を確かめる。Linux RADV固有最適化はまずコード調査までとし、改善幅を直接流用しない。
+4. ベース候補は独立worktree/branchでbuild・load・短文smoke・64k/128k PP/TG・数値再現性・MH-Hardの限定品質チェックを行う。driver、モデルGGUF、KV dtype、MTP、batch/ubatch、UMA値を記録。
+5. 個別最適化は**1機能1branch、default OFF/opt-in、A/B同条件、rollback可能**。性能差が誤差程度なら深追いを限定し、ボトルネック変化がRGP/計数値で説明できるか重視。
+6. Codexからのビルド、実機ベンチマーク、品質試験、結果ドキュメントの保存はGitHub上で追跡できるようにする。**この節は調査だけで、実装順・ベースコミット・最適化採用を決めていない**。
+
+### H. 一次資料・調査リンク一覧（スナップショット）
+
+- upstream: [b12651](https://github.com/ggml-org/llama.cpp/releases/tag/b12651)、[v1.0.0](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0)、[Windows Vulkan FA #32353](https://github.com/ggml-org/llama.cpp/issues/32353)、[MTP PP #31495](https://github.com/ggml-org/llama.cpp/issues/31495)、[WDDM memory #32124](https://github.com/ggml-org/llama.cpp/issues/32124)。
+- Strata: [v0.2.14](https://github.com/Niko1221/Strata/releases/tag/v0.2.14)、[v0.2.18](https://github.com/Niko1221/Strata/releases/tag/v0.2.18)、[v0.2.19](https://github.com/Niko1221/Strata/releases/tag/v0.2.19)、[v0.2.20](https://github.com/Niko1221/Strata/releases/tag/v0.2.20)、[STRIX_HALO.md](https://github.com/Niko1221/Strata/blob/main/docs/STRIX_HALO.md)。
+- fork: [stew675 README](https://github.com/stew675/llama-cpp-rdna-boosts/blob/main/README.md)、[Strix-Halo/strix-llama.cpp README](https://github.com/Strix-Halo/strix-llama.cpp)、[ArtomYuan/strix.cpp](https://github.com/ArtomYuan/strix.cpp)、[ik_llama.cpp](https://github.com/ikawrakow/ik_llama.cpp)、[s1-fork](https://github.com/vahpetr/llama.cpp-s1-fork)。
+- モデル: [Inkling 2 Mini model card](https://huggingface.co/thinkingmachines/Inkling-2-Mini)、[Hy4 flash model card](https://huggingface.co/tencent/Hy4-flash)、[Nemotron 3.5 Bolt GGUF](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF)、[AMD Quark GGUF](https://huggingface.co/amd/Qwen3.6-35B-A3B-Quark-INT4-G32-GGUF)。
+- 他エンジン: [vLLM ROCm GPU requirements](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/index.html)、[SGLang](https://github.com/sgl-project/sglang)、[ExLlamaV3](https://github.com/turboderp-org/exllamav3)、[Lemonade](https://github.com/lemonade-sdk/lemonade)。
+
+**次の作業は、ベースupstreamと候補を選ぶ前の具体的な差分・重複監査。** この11/23記録はあくまで広域の情報収集であり、正式な実装計画・実験結果・採用決定ではない。
+
+---
 
 ## 2026-11-18追補：llama.cpp / fork / 他エンジン / オープンウエイトモデル最新動向と優先順位
 
