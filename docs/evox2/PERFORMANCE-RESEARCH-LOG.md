@@ -962,7 +962,7 @@ The README's +33–38% TG comparison involves **RX7900XTX, Qwen3.8-27B, ROCmFP4-
 
 ### 8. Update to active experiment priority and acceptance gates
 
-**2026-10-12 local experiment checkpoint (new since the preceding log):** [r5 MTP-DENSE-001 report on the isolated branch](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-dense-indexer-20261011/docs/evox2/R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md) closes Windows ABBA validation: 3 context lengths × 2 backends × 4 OFF→ON→ON→OFF = **24/24 OK**. Dense-indexer omission enabled **only for eligible ratio-zero MTP indexer**. Relative *MTP ON TG* improvements:
+**2026-10-12 local experiment checkpoint (new since the preceding log):** [r5 MTP-DENSE-001 report on the isolated branch](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/0dc8672d8b9b8c81e167bc566a9d80aadfb90307/docs/evox2/R5-MTP-DENSE-INDEXER-PORT-2026-10-11.md) closes Windows ABBA validation: 3 context lengths × 2 backends × 4 OFF→ON→ON→OFF = **24/24 OK**. Dense-indexer omission enabled **only for eligible ratio-zero MTP indexer**. Relative *MTP ON TG* improvements:
 
 | Context | Vulkan: DENSE OFF → ON TG (tok/s) | Delta | ROCm: DENSE OFF → ON TG (tok/s) | Delta |
 | --- | --- | --- | --- | --- |

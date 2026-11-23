@@ -5,7 +5,7 @@
 ## Source and evidence boundary
 
 - Source inspected in `investigation/r5-mtp-pp-trace-20261013`; the last compiled native Vulkan diagnostic was **b11587 / `1453c9063`**, on the Qwen4Exp-compatible r5 base `f8d24494f`. Subsequent branch work only recorded observations. Current canonical r5 inference source is held separately in `r5/upstream-refresh-20261009`; do not merge RGP/CPU diagnostic source into stable.
-- **GPU evidence:** [RGP dispatch calibration and direct Draft GPU timing](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md). In the same b11587 64k MTP-ON RGP, Draft FA shader `flash_attn_f32_f16_aligned_cm1` at `KV=50176/51200`, `N=1024`, `Br=16/Bc=64` took **139.918/139.159 ms per GPU dispatch** plus **1.094/1.159 ms** mask prepass. An earlier unfiltered region showed Draft `mtp_eh_proj` inclusive **57.138ms** (underlying Q8_0 matmul **56.497ms**), and a complete selected Draft region **232.580ms**. These markers are nested; they are not additive, and matching individual screenshots' graph IDs must be confirmed for precise percentages. This is a **local two-microbatch measurement**, not a prompt-wide FA integral.
+- **GPU evidence:** [RGP dispatch calibration and direct Draft GPU timing](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md). In the same b11587 64k MTP-ON RGP, Draft FA shader `flash_attn_f32_f16_aligned_cm1` at `KV=50176/51200`, `N=1024`, `Br=16/Bc=64` took **139.918/139.159 ms per GPU dispatch** plus **1.094/1.159 ms** mask prepass. An earlier unfiltered region showed Draft `mtp_eh_proj` inclusive **57.138ms** (underlying Q8_0 matmul **56.497ms**), and a complete selected Draft region **232.580ms**. These markers are nested; they are not additive, and matching individual screenshots' graph IDs must be confirmed for precise percentages. This is a **local two-microbatch measurement**, not a prompt-wide FA integral.
 - **End-to-end PP reference:** original r5 **b11560 uninstrumented ABBA**, Vulkan 64k OFF→ON **361.520→333.995 tok/s**, **+14.084s** PP; 128k **335.455→303.965 tok/s**, **+38.991s** PP. ROCm same-source 64k **392.295→365.390 tok/s**, **+11.600s** PP; 128k **294.710→274.465 tok/s**, **+31.601s** PP. See [Vulkan ABBA](R5-MTP-VULKAN-64K128K-ABBA-2026-10-11.md) and [ROCm ABBA](R5-MTP-ROCM-64K128K-ABBA-2026-10-11.md). Diagnostic b11569 128k CPU time: Draft `llama_process` ~**20.023s**, Target wrapper + synchronized NextN getter difference from OFF **~15.975s**, verification hidden copy/getter ~**1.914s**; these CPU-stage wall envelopes are **NOT separately measured GPU operators**. [Source-grounded 128k trace](R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md).
 - **Counterfactual not yet tested:** The GPU latency saved by any optimization, acceptance/output equivalence, total-latency benefit at 64k/128k/256k and memory-lifetime correctness. Do not multiply the 140ms sampled late-KV GPU time by every early microbatch as a claimed speedup.
 
@@ -13,7 +13,7 @@
 
 ### 1. Target → Draft catch-up supplies *all* rows but does not use Draft outputs during prompt process()
 
-[Source: `common/speculative.cpp` L1391–1680](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/common/speculative.cpp#L1391-L1680)
+[Source: `common/speculative.cpp` L1391–1680](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/common/speculative.cpp#L1391-L1680)
 
 - MTP initialization: Target `llama_set_embeddings_nextn(ctx_tgt, true, /*masked*/ false)`; Draft `llama_set_embeddings_nextn(ctx_dft, true, /*masked*/ true)`. For this independent, one-layer Qwen4Exp sidecar, `is_mem_shared=false`, `n_mtp_layers=1`.
 - `process()` obtains **all Target NextN hidden rows** (synchronizing getter); for each prompt token it builds a Draft input token plus the prior Target hidden row (or `pending_h` across batch boundaries). Crucially, the Draft input is added with `output=false`.
@@ -22,7 +22,7 @@
 
 ### 2. The current Draft graph *always* builds complete Q/K/V, attention, FFN and output
 
-[Source: `src/models/qwen4exp.cpp` L555–644](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/models/qwen4exp.cpp#L555-L644) and [L954–1039](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/models/qwen4exp.cpp#L954-L1039)
+[Source: `src/models/qwen4exp.cpp` L555–644](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/models/qwen4exp.cpp#L555-L644) and [L954–1039](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/models/qwen4exp.cpp#L954-L1039)
 
 - `graph_mtp`: `tok_embd → mtp_hnorm/mtp_enorm → mtp_eh_proj → HC attn mix → build_layer_attn → HC combine → HC FFN mix/FFN → flat_out/h_nextn → output head/logits`.
 - `build_layer_attn` builds **`Qcur_full`, `Qcur`, `Kcur`, `Vcur` for all `n_tokens`**, then the current Unsloth ratio-zero MTP block follows **dense `build_attn()`**, not QSA. `Qcur_full` also supplies the post-attention gate; this gate is not needed if attention/output are skipped for *all* prefix rows.
@@ -30,7 +30,7 @@
 
 ### 3. K/V store is explicitly represented in the graph — key feasibility signal
 
-[Source: `src/llama-graph.cpp` L2996–3060](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/llama-graph.cpp#L2996-L3060)
+[Source: `src/llama-graph.cpp` L2996–3060](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/llama-graph.cpp#L2996-L3060)
 
 - The `llm_graph_input_attn_kv` overload executes `ggml_build_forward_expand(gf, mctx_cur->cpy_k(...))` and `cpy_v(...)` before constructing `build_attn_mha()`, so K/V cache writes are explicit graph operations, **not** an invisible side-effect of a Flash Attention shader. This creates a concrete possibility of building a distinct graph with pre-attention input/normalization/K/V projection/RoPE and K/V write nodes only.
 - **Critical limitation:** The existing `build_attn()` initially expands Q and K/V paths together, and the current `graph_mtp` then forces attention/FFN/logits via `ggml_build_forward_expand`. **A true KV-only graph requires a new, explicit path.** Simply changing `ubatch.output`, `embeddings_nextn_masked`, FA enable or the output flags is not sufficient.
@@ -38,14 +38,14 @@
 
 ### 4. Graph API can distinguish an MTP-only prefill mode, but this is not implemented
 
-[Source: `src/llama-graph.h` L40–46](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/llama-graph.h#L40-L46); [`src/llama-context.cpp` L1414–1475](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/llama-context.cpp#L1414-L1475), [L2602–2625](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/llama-context.cpp#L2602-L2625)
+[Source: `src/llama-graph.h` L40–46](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/llama-graph.h#L40-L46); [`src/llama-context.cpp` L1414–1475](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/llama-context.cpp#L1414-L1475), [L2602–2625](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/llama-context.cpp#L2602-L2625)
 
 - The existing MTP context uses `LLM_GRAPH_TYPE_DECODER_MTP`; there is **no** separate MTP-KV-only graph mode in pinned source. Graph caching includes `gtype` and topology; a future `MTP_KV_PREFILL` variant (name illustrative) must be distinguishable from full MTP generation mode. A new graph also has to integrate with `llm_graph_result::set_outputs`, scheduler reserve, input allocation and `llama_context::decode` output expectations.
 - Avoid global changes to the regular Target graph; preserve old shared MTP, multi-head and non-Qwen model paths. **Guard by context/model/explicit prefill mode**, not only `n_tokens>1` (generation verification can batch multiple tokens).
 
 ### 5. Target NextN / final-layer work is a real independent ON cost
 
-[Source: `src/llama-graph.h` L1061–1067](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/llama-graph.h#L1061-L1067); [`src/models/qwen4exp.cpp` L487–539](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/models/qwen4exp.cpp#L487-L539); [`src/llama-context.cpp` L2032–2048](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/src/llama-context.cpp#L2032-L2048)
+[Source: `src/llama-graph.h` L1061–1067](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/llama-graph.h#L1061-L1067); [`src/models/qwen4exp.cpp` L487–539](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/models/qwen4exp.cpp#L487-L539); [`src/llama-context.cpp` L2032–2048](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/src/llama-context.cpp#L2032-L2048)
 
 - MTP ON Target uses **unmasked NextN**, so it **must** produce final-layer `t_h_nextn` for **every prompt row**. This disables `crop_before_nextn` after the last attention and requires final HC combination + last MoE/FFN for all rows. `crop_after_nextn` already narrows the output-logits path after those hidden rows are made; blindly moving it earlier would break the Draft input semantics.
 - `src/llama-context.cpp::output_reserve()` allocates per-token f32 NextN output and prioritizes a device host buffer, then `ggml_backend_tensor_get_async` reads each ubatch. `llama_get_embeddings_nextn()` calls `synchronize()`, so CPU wall recorded in the getter includes **deferred GPU Target completion** as well as any transfer. **Do not equate the 128k ~15.975s target+getter CPU-envelope residual with one specific MoE, copy or DMA GPU cost**. A future device-resident target→draft handoff may reduce transfer/copy/sync, but without direct transport attribution this is a complex, uncertain candidate.
@@ -65,7 +65,7 @@
 
 ### Vulkan backend details that constrain low-hanging tuning
 
-[Source: `ggml-vulkan.cpp` L1312–1388](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L1312-L1388); [L8418–8657](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L8418-L8657); [L8800–8955](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L8800-L8955).
+[Source: `ggml-vulkan.cpp` L1312–1388](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L1312-L1388); [L8418–8657](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L8418-L8657); [L8800–8955](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L8800-L8955).
 
 - The observed shader is **`flash_attn_f32_f16_aligned_cm1`** (cooperative matrix 1). The pinned `get_fa_tuning_params_coopmat1()` fixes `Br=16`, `Bc=16×4=64`. Tuning is **not a simple existing runtime environment knob**; requires backend/shader-specific source changes and correct pipeline specialization.
 - `use_mask_opt` dispatches `fa_mask_opt` and a Vulkan buffer barrier/sync; GPU kernel itself ~1ms in observed 51k RGP. Tuning this first can at most attack a relatively small GPU component, though CPU/sync overhead should be separately assessed.
@@ -82,12 +82,12 @@
 
 **Source review verdict:** **P0: Draft prefix KV-only graph, conditional on correctness; P1: Target last-layer / NextN host handoff, conditional on specific GPU/readback attribution; P1: Vulkan CM1 tuning after ROCm check.** r2 MTP-QSA override (no PP gain), GGUF ratio rewriting, mask micro-optimization and indiscriminate Split-K are not first experiments.
 
-Related: [PP investigation policy](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md) · [RGP stage evidence](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md) · [previous 128k phase trace](R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md).
+Related: [PP investigation policy](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md) · [RGP stage evidence](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md) · [previous 128k phase trace](R5-MTP-PP-TRACE-VULKAN-128K-2026-10-13.md).
 
 
 ## Continuation checkpoint — 2026-10-14: output=false is not a KV-only execution mode
 
-**Purpose of this checkpoint:** consolidate the preceding RGP and source findings from the long chat and record new source checks before any proposed FA/FFN-elimination implementation. This is research, **not an implemented optimization**. The authoritative native Draft RGP measurements are already preserved in [the experimental dispatch-calibration record](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-pp-trace-20261013/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md); the earlier matched ON/OFF target-common-path 512-dispatch RGP comparison is in [the stable Vulkan source/RGP plan](R5-MTP-PP-VULKAN-SOURCE-RGP-PLAN-2026-10-13.md). Do not create duplicate independent RGP benchmarks.
+**Purpose of this checkpoint:** consolidate the preceding RGP and source findings from the long chat and record new source checks before any proposed FA/FFN-elimination implementation. This is research, **not an implemented optimization**. The authoritative native Draft RGP measurements are already preserved in [the experimental dispatch-calibration record](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/61c9c5ee8db1aa4f0609458234d9bddaa0151239/docs/evox2/R5-MTP-PP-RGP-DISPATCH-CALIBRATION-2026-10-14.md); the earlier matched ON/OFF target-common-path 512-dispatch RGP comparison is in [the stable Vulkan source/RGP plan](R5-MTP-PP-VULKAN-SOURCE-RGP-PLAN-2026-10-13.md). Do not create duplicate independent RGP benchmarks.
 
 **Reconfirmed RGP evidence and limitations:** At KV=50,176/51,200 the Qwen4Exp Draft's dense Vulkan CM1 FA consumes 139.918/139.159ms per 1,024 queries, plus 1.094/1.159ms mask prepass. A separately displayed nested `mtp_eh_proj` costs ~57.138ms in one region. The single-region and filter-specific GUI readouts cannot be summed as independent full-graph stages. The historical native ABBA PP ON penalties are +14.084s (64k) and +38.991s (128k) on Vulkan, +11.600s / +31.601s on ROCm. They are not automatically equal to the total removable Draft FA/FFN time.
 

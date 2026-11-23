@@ -2,7 +2,7 @@
 
 **Status: Windows Vulkan b11659-c192befce flatten-ON RGP event-tree capture completed; numeric Draft K/V equivalence NOT YET CHECKED. Documentation-only sync onto canonical r5 stable; no source port.**
 
-Canonical detailed implementation/10/16 ABBA and the complete 10/19 RGP notes remain in the [experiment report](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/investigation/r5-mtp-eh-proj-flatten-20261016/docs/evox2/R5-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-16.md) on `investigation/r5-mtp-eh-proj-flatten-20261016`. Do not mistake this stable-document snapshot for a stable source patch.
+Canonical detailed implementation/10/16 ABBA and the complete 10/19 RGP notes remain in the [experiment report](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/22e4b1f09ce35509ad2d1da0d613546676e69435/docs/evox2/R5-MTP-EH-PROJ-FLATTEN-IMPLEMENTATION-2026-10-16.md) on `investigation/r5-mtp-eh-proj-flatten-20261016`. Do not mistake this stable-document snapshot for a stable source patch.
 
 ## Fixed conditions, profiling overhead observations
 

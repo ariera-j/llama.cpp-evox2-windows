@@ -1,6 +1,6 @@
 # r5 MTP PP phase tracing — implementation and Windows validation gate (2026-10-13)
 
-**State: implementation only, Windows Vulkan/ROCm build and real model execution NOT YET VERIFIED.** Source branch: [`investigation/r5-mtp-pp-trace-20261013`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-trace-20261013) branched from **exact compatibility-only `f8d24494fcacee01f8c9858595c3e778a1698d11`**. No DENSE-001, NOOP-001 or r2 MTP-QSA implementation was ported. Pinned stable r5 continues to hold the [approved research plan](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/r5/upstream-refresh-20261009/docs/evox2/R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md).
+**State: implementation only, Windows Vulkan/ROCm build and real model execution NOT YET VERIFIED.** Source branch: [`investigation/r5-mtp-pp-trace-20261013`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/61c9c5ee8db1aa4f0609458234d9bddaa0151239) branched from **exact compatibility-only `f8d24494fcacee01f8c9858595c3e778a1698d11`**. No DENSE-001, NOOP-001 or r2 MTP-QSA implementation was ported. Pinned stable r5 continues to hold the [approved research plan](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/r5/upstream-refresh-20261009/docs/evox2/R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md).
 
 ## Scope of this diagnostic implementation
 

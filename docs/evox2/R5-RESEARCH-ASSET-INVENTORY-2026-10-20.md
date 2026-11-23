@@ -74,7 +74,7 @@ For rollback stress, `--spec-synth-rates` forces artificial accept/reject; **syn
 
 ## Source branches catalog
 
-- Latest combined rollback and Stage-B/flatten: [rollback investigation](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-rollback-diagnostic-20261019)
-- Separate target re-warmup control: [rewarmup investigation](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-target-rewarmup-30511-20261016)
-- DENSE/NOOP plans: [NOOP investigation](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-noop-20261012)
+- Latest combined rollback and Stage-B/flatten: [rollback investigation](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/33175c2bdfafc82a7ce91d2a68f982ab8bd33353)
+- Separate target re-warmup control: [rewarmup investigation](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/8a7f56c96630939f6ec01942182134f7b27684e7)
+- DENSE/NOOP plans: [NOOP investigation](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/80dd44ed90e8e199786c8c436bbb9a084bde4aa5)
 - Earlier source experiments are retained on `investigation/r5-mtp-dense-compat-20261011`, `investigation/r5-mtp-dense-indexer-20261011`, `investigation/r5-mtp-pp-trace-20261013`, `investigation/r5-mtp-pp-kv-crop-stage1-20261014`, `investigation/r5-mtp-eh-proj-flatten-20261016`, `investigation/r5-vulkan-off-fa-dispatch-20261010`, and `investigation/r5-adlx-gpu-monitor-20261015`. None was merged into stable inference source here.

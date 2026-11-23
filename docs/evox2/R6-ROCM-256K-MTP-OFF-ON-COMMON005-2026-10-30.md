@@ -42,7 +42,7 @@ Values come directly from the two archived `result.json` records; PP and TG are 
 | r6 b11908 DENSE+NOOP ON (2026-10-30) | ON | 185.00 | 14.80 | New monitor, acceptance 286/448 |
 | r6 b11908 MTP OFF (2026-10-30) | OFF | **198.95** | 12.66 | New 256k PLE16 MTP-OFF baseline |
 
-Historical r3 reference: [COMMON-005 validation](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/r3/upstream-first/docs/evox2/COMMON005-VALIDATION-2026-10-02.md), implementation commit [`d03c91b`](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/d03c91b6342b099457de3508c5d67533a9a5f0ee). r3 used MTP OFF, generation budget 1024, temperature 0.2 and earlier qwen4exp/QSA code; r6 uses generation 512, temperature 0 and a newer architecture. **17.37 is a historical research target, not an achievable-speed prediction or a directly controlled regression measurement.**
+Historical r3 reference: [COMMON-005 validation](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/0a93fcbb8e5bcf51b331275c4f4b142d822168d6/docs/evox2/COMMON005-VALIDATION-2026-10-02.md), implementation commit [`d03c91b`](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/d03c91b6342b099457de3508c5d67533a9a5f0ee). r3 used MTP OFF, generation budget 1024, temperature 0.2 and earlier qwen4exp/QSA code; r6 uses generation 512, temperature 0 and a newer architecture. **17.37 is a historical research target, not an achievable-speed prediction or a directly controlled regression measurement.**
 
 Prior b11908 256k MTP ON **15.04 → 14.80 TG** in the new run (~-1.60%), with acceptance changing from 289/441 (~65.5%) to 286/448 (~63.8%). This one historical-versus-new comparison does not establish a monitoring-related slowdown.
 

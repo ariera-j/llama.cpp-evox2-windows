@@ -2,7 +2,7 @@
 
 **Status: STAGE-B VULKAN PP IMPROVEMENT VALIDATED WITHIN BUILD; SAME-DAY ARCHIVED b11560 MTP-OFF RECHECK MATCHES b11618 (~305 tok/s), WHILE 2026-10-11 b11560 WAS ~335 tok/s. CROSS-DATE SLOWDOWN CAUSE UNKNOWN; GPU DISPATCH/KV PARITY UNVERIFIED.**
 This is a scoped experimental change only on
-[`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/investigation/r5-mtp-pp-kv-crop-stage1-20261014).
+[`investigation/r5-mtp-pp-kv-crop-stage1-20261014`](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/df74d2f221d651ce3916973819f92d37fff94ab3).
 Do **not** merge source to `r5/upstream-refresh-20261009`. This document is copied to stable for tracking; compiled experiment source remains a separate branch. The 2026-10-14 short Vulkan smoke is reported below; full K/V parity, FA dispatch elimination, and long-context ABBA are still pending.
 
 ## Provenance and why not refresh first

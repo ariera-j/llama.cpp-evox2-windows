@@ -63,7 +63,7 @@ Why the r2 trial is not a straightforward r5 patch:
 - r2 short synthetic rollback/checkpoint smokes established only bounded functional smoke results, **not** bitwise hidden/logit identity or a general model-equivalence claim.
 - Consequently **do not measure a copied r2 MTP-QSA port before phase profiling**. Only reopen a *new r5-native* sparse/draft-attention design if repeatable r5 64k/128k timing shows draft attention dominates the ON/OFF gap *and* the net indexer/gather overhead and model semantics can be addressed. Compare against the correct dense baseline, preserving target output, draft acceptance, and rollback evidence.
 
-Original evidence: [r2 log recovery](R2-MTP-LOG-RECOVERY-2026-10-11.md), [r2 prototype code](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/test/mtp-qsa-prototype), [r4 native-MTP review](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
+Original evidence: [r2 log recovery](R2-MTP-LOG-RECOVERY-2026-10-11.md), [r2 prototype code](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/dbf1ec0f869f271e86d770aa24f0a5c992e38e47), [r4 native-MTP review](R4-COMMON002-UPSTREAM-REVIEW-2026-10-04.md).
 
 ## Independent DeepSeek review triage — 2026-10-13 (incorporated with qualifications)
 
