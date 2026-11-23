@@ -1,5 +1,7 @@
 # llama.cpp Evo-X2 Windows fork
 
+> **November 23, 2026 documentation status:** See the [reconciled project status and branch-document inventory](docs/evox2/DOCUMENTATION-RECONCILIATION-2026-11-23.md). The bounded 128k COMMON-005 answer-quality gate (18 runs) was completed on November 3; numeric parity, MTP-ON and Vulkan active-path validation remain open. The November Strata, MH-Hard, Gemma4 profiling and Codex setup are tracked separately from the immutable b11908 release binary.
+
 > **November 3, 2026 — COMMON-005 source integration:** An experimental QSA selected K/V Gather path is available via `QWEN4EXP_QSA_GATHER=1` (**default OFF**). On EVO-X2 / ROCm / Qwen3.8 Flash Next / MTP OFF, 64k/128k/256k matched ABBA tests showed **+12.7%/+28.9%/+56.0% TG**, with PP broadly unchanged; 128k RGP confirmed shorter compact attention. **Additional answer-quality, MTP-ON and Vulkan-active-path checks are pending.** This is a source-only change: the previously published **b11908 Vulkan ZIP and tag are unchanged**. [Measured COMMON-005 report](docs/evox2/R6-COMMON005-IMPLEMENTATION-2026-11-02.md).
 
 

@@ -1,5 +1,7 @@
 # Evo-X2 optimization roadmap
 
+> **2026-11-23 現行判断（旧11/08冒頭を更新）:** [文書統合・現行ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を参照。旧IQ1／新IQ3追加、MH-Hard、Strata v0.2.13試用／r6・upstream比較、IQ3/IQ4 ROCm PP逆転のRGP調査、Gemma4 PP/TG調査は実施済み。**旧IQ3継続、新IQ3・IQ4への常用切替見送り**。Gemma4の診断用worktreeは11/22に通常使用を終了（原因断定なし）。11/23はCodexのモデル推論テストが進行中で、文書とブランチの整理後、IQ3 PLE16／ROCmFP4を主対象に、外部fork/Strata/upstreamの小さな高速化パッチを別ブランチで選別・検証する。下の11/08「次はIQ1/新IQ3〜」は完了前の履歴であり、現行作業順ではない。
+
 > **2026-11-08 現行の基準:** [最新外部調査・優先順位・旧IQ1/新IQ3 PLE16／Strata準備](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)。11/04〜11/08の[PP入力依存性調査](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/pp-input-dependence-64k-20261104/runs/2026-11-08-pp-input-dependence-overall-summary-ja.md)は一区切り。**r5 TOOL-001実入力llama-benchのr6移植、Vulkan Mask/Indexer、ROCm MoE/FA/KV_max、RGP時間収支は完了**。次は旧IQ1_Sと更新IQ3_XXSの元GGUF動作smoke→PLE16 preflight/必要なら変換→出力品質比較（MH-Hard）を優先し、**Strata公式Windows版の準備を並行**。upstream b12202の互換性監査、Gufo実機試用は後続。現行source/公開tag/バイナリは更新しない。以下の2026-11-07以前の「現在」「次」「latest」は**日付付き履歴**であり、現行の作業順を示さない。
 
 
@@ -1075,3 +1077,12 @@ checkpoint items explicit:
 7. written decisions for COMMON-004, COMMON-005, COMMON-006, and VULKAN-002
 
 That checkpoint becomes the basis for later MTP, grouped-union, and ROCmFPx work.
+
+
+## 2026-11-04 historical branch-only context (retrieved 2026-11-23)
+
+The two notes below were authored on the r6 real-prompt investigation branch. Their `DESIGN ONLY` and `NOT STARTED` statuses refer to **2026-11-04**; PP investigation proceeded later. The **QSA UNION ↔ VRAM clock** repeatability hypothesis is not claimed closed by the later PP work.
+
+> **2026-11-04 DESIGN ONLY — PPの4系統統合調査計画：** [入力文書差×IQ3/IQ4×UBatch512/1024×Vulkan/ROCmを統合してFA・QSA mask形状・MoE Expert routing・量子化GEMMを調べる段階的な概要設計](R6-PP-INPUT-FA-MASK-MOE-QUANT-PROFILING-DESIGN-2026-11-04.md)を作成。旧Qiita番外編5の未完部分（ROCm RGP FAの層/KV位置合わせ、Vulkan mask形状可視化）とHugging Face記事を契機とするMoE Expert分布、2026-11-04完了のMH-128K量子化/UBatch比較を同じdispatch座標で結び付ける。初動は64kでIQ3×文学/コード×2 backend、必要なセルだけ追加。**まだソース変更・RGP計測・実験は行わない**。PP本調査／VRAMクロック独立調査／Strata試用の次の着手順は**情報収集後に選択**し、どれも今は優先順位を確定しない。
+
+> **2026-11-04 DEFERRED INVESTIGATION — Vulkan QSA UNION ↔ VRAM clock:** In r6 Vulkan b12032 on GMKtec EVO-X2 (Performance P-MODE), MH-128K `llama-bench` 111,137 PP / UBatch512 / NoWarmup, QSA UNION **OFF** held high-GPU-utilization VRAM mean clocks at **995.3MHz (IQ3)** and **999.2MHz (original IQ4)**, with **0 samples below900MHz**; QSA **ON** measured **835.3MHz (IQ3; 171/214 below900)** and **859.5MHz (IQ4; 169/212 below900)**. Both ON runs still completed and their PP was faster than OFF, so low VRAM clock is **not itself evidence of a crash, failed P-MODE selection, or a QSA regression**. QSA ON and reduced VRAM clock are **associated in these single runs** but causation is unproven (workload/power-policy/RDP/driver/thermal or time effects). User requested to **record a separate, low-risk future investigation**, not to interrupt the ongoing Vulkan 128k IQ3/UBatch1024 job. Later start at **64k actual prompt occupancy (or smaller only if QSA active is proven in stderr)**, same binary, IQ3 first, fixed model/input/token count/UBatch/NoWarmup/P-MODE/UMA/RDP/session; QSA OFF/ON alternating/repeated runs with ADLX and Windows resource monitoring, timestamps, cold-start/cooldown and matched GPU core/power/VRAM clock/temp/memory; log QSA `active` and threshold/fallback. Only extend to high-memory IQ4 or 128k if the short tests warrant it; no source or BIOS/driver changes. Keep PP performance/quantization-comparison decisions separate. [Evidence and proposed test design](R6-LLAMA-BENCH-REAL-INPUT-CROSSCHECK-AND-ROCM-PLAN-2026-11-03.md#deferred-independent-vulkan-qsa-union--vram-clock-behavior-investigation-2026-11-04). **Status: DEFER / NOT STARTED.**
