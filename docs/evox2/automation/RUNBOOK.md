@@ -23,3 +23,37 @@
 | ROCm | `build-rocm-codex`。TheRock 10.0.0 / `gfx1151` で configure と build が成功し、`ROCm0` に Radeon 8060S を確認。TheRock DLL 8 本と両ランタイムデータツリーのハッシュが一致。BuildIdentity は Verified。 |
 
 文書取り込み後の `bf3026f32915a88a96f9131636820dbcd45aaeed` からの再ビルド、モデル推論、バックエンド演算テスト、ベンチマークは **未検証**。このスモークはビルドの来歴とデバイス列挙を確認する。
+
+## Codex 専用ラッパー
+
+Windows PowerShell 5.1 で Codex 専用 clone のルートから実行する。SSH セッションで必要な場合は、起動時に `-ExecutionPolicy RemoteSigned` を指定する。ラッパーは子 PowerShell 一つで VS2022 と SDK を初期化し、上記の既存ラッパーへ処理を委譲する。
+
+```powershell
+$wrapper = '.\tools\evox2\automation\Invoke-CodexBuild.ps1'
+& $wrapper -Backend Vulkan -BuildDir build-codex-vulkan-001 -PreflightOnly
+& $wrapper -Backend ROCm -BuildDir build-codex-rocm-001 -PreflightOnly
+```
+
+`-BuildDir` は clone 直下の未使用の `build-*` ディレクトリ名を指定する。`-PreflightOnly` はツールと専用キャッシュを検査し、ビルド先は作成しない。`-ConfigureOnly` は新規出力先で configure まで実行する。スイッチを省略すると、新規出力先で configure と Release ビルドを続けて実行する。configure 済みディレクトリの再利用はこのラッパーの対象外。configure と build にはクリーンな作業ツリーが必要。
+
+依存は既に準備した `C:\llama-build\automation\_deps` を使う。キャッシュが不足していたら停止する。UI 関連の両フラグを `OFF` にし、FetchContent をオフラインに固定する。ビルド後は既存ラッパーの CLI スモーク結果とマニフェスト、実行ファイルの SHA-256、Radeon 8060S の列挙を照合する。`test-backend-ops.exe` は自動実行しない。コマンド、標準出力、標準エラー、終了コード、所要時間は `C:\llama-build\_logs\codex` に保存する。
+
+2026-11-23 の実装確認では PowerShell 5.1 パーサーと UTF-8 BOM の確認が通過した。Vulkan preflight は終了コード `0`（1.88秒）、ROCm preflight は終了コード `0`（2.22秒）。両方ともビルド先を作成しなかった。この新ラッパーによる configure、ビルド、成果物検証は未実施。
+
+## 2026-11-23 旧 IQ3 推論スモーク（UMA 64 GB）
+
+BIOS UMA 64 GB は実行前に運用者が確認した。`Measure-LlamaCli.ps1` と Git 管理外の設定を使い、既存の b12037（`9de09c610`）で Vulkan、ROCm をこの順に各1回実行した。両 CLI はマニフェストの BuildIdentity が Verified で、実行前の SHA-256 は保存済みの値と一致した。モデルは Qwen3.8-Flash-Next 旧 IQ3（3シャード）。Context 4096、GPU layers 999、CPU MoE 0、batch 2048、ubatch 1024、threads 4、KV f16、Flash Attention auto、MTP OFF。AllocationOnly の固定プロンプトに両方とも `OK` と応答し、最大32トークンの設定で実測は各2トークンだった。
+
+| バックエンド | 終了コード | GPU 配置 | CLI 開始からモデル準備完了 | PP / TG (tok/s) | GPU 自プロセス使用 (MiB) | 物理空き最低 / コミット最大 (GiB) | ADLX |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Vulkan0 | 0 | 49/49 層 | 48.60 秒 | 13.19 / 5.33 | 50,737 | 27.61 / 89.27 | 終了 0、27 サンプル |
+| ROCm0 | 0 | 49/49 層 | 44.23 秒 | 38.04 / 26.68 | 50,837 | 29.81 / 88.05 | 終了 0、24 サンプル |
+
+GPU メモリ値は CLI 終了時の内訳で、ピーク値は未計測。ADLX は利用率などを記録したが VRAM 欄は欠損。付属 ResourceMonitor は WMI アクセス拒否で0サンプルだったため、別の `resources.csv` に CLI 起動前から終了後まで物理メモリ、コミット、プロセスのメモリを保存した。ページングカウンターは取得できず、ページングの有無は未判定。Vulkan 終了後にプロセスが消え、物理空き 55.78 GiB、コミット 9.87 GiB、Vulkan の空き 108,610 MiB に戻ったことを確認してから ROCm を起動した。GPU エラーやメモリ枯渇による停止は無かった。PP/TG は18トークンの入力と2トークンの生成に限った値。
+
+生ログの保存先は EVO-X2 の `C:\llama-build\_logs\codex`。
+
+| バックエンド | CLI stdout・stderr・結果・ADLX | 起動前と補完リソース記録 |
+|---|---|---|
+| Vulkan | `20261123-164740-543-cli-vulkan-b12037-ctx4096-c1033772a5a6` | `iq3-Vulkan-baseline-20261123-164655-54f786b214794740a477a46bf128f16e` |
+| ROCm | `20261123-165108-885-cli-rocm-b12037-ctx4096-0e6201be05e2` | `iq3-ROCm-baseline-20261123-165020-5813cdc0433d44cb822e2cca433ce6e7` |
