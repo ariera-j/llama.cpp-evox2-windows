@@ -1,0 +1,271 @@
+{
+  "verifiedAt": "2026-11-23 15:15:02 UTC",
+  "inventoryCommit": "49874193521e554207f3c8e671aaf5d4cd622f5a",
+  "status": "verified",
+  "entries": [
+    {
+      "branch": "codex/automation-docs-20261123",
+      "commit": "c1b455b4ab8f99cf0e868e897020f6c00ea4f589",
+      "tag": "archive/2026-11-23/codex/automation-docs-20261123",
+      "tagObject": "0f5e235db1c461c1833454d7539e4c38b985084e",
+      "peeledCommit": "c1b455b4ab8f99cf0e868e897020f6c00ea4f589",
+      "branchAfter": "c1b455b4ab8f99cf0e868e897020f6c00ea4f589"
+    },
+    {
+      "branch": "codex/main-handoff-20261123",
+      "commit": "8054fc278f0f00dce7876c78693f5d42e387ddfb",
+      "tag": "archive/2026-11-23/codex/main-handoff-20261123",
+      "tagObject": "5d8e05ea379c8843ce795615422dca47f51547f3",
+      "peeledCommit": "8054fc278f0f00dce7876c78693f5d42e387ddfb",
+      "branchAfter": "8054fc278f0f00dce7876c78693f5d42e387ddfb"
+    },
+    {
+      "branch": "integration-check/r5-noop-rocmfpx-20261021",
+      "commit": "9d4721fb8e2d3bbaeb863370ae79e01621f7351c",
+      "tag": "archive/2026-11-23/integration-check/r5-noop-rocmfpx-20261021",
+      "tagObject": "44712a1e762cb19eed9315b9578344b14030682e",
+      "peeledCommit": "9d4721fb8e2d3bbaeb863370ae79e01621f7351c",
+      "branchAfter": "9d4721fb8e2d3bbaeb863370ae79e01621f7351c"
+    },
+    {
+      "branch": "integration-check/r5-noop-rocmfpx-stageb-flatten-20261021",
+      "commit": "c9d81a311277fed13800b5f3f5c4ea0f499d1e95",
+      "tag": "archive/2026-11-23/integration-check/r5-noop-rocmfpx-stageb-flatten-20261021",
+      "tagObject": "f4e84b804c44c0ff9392b814e93e699a0d52f62d",
+      "peeledCommit": "c9d81a311277fed13800b5f3f5c4ea0f499d1e95",
+      "branchAfter": "c9d81a311277fed13800b5f3f5c4ea0f499d1e95"
+    },
+    {
+      "branch": "investigation/gemma4-fa31323-globalfa-rgp-20261121",
+      "commit": "8832336095f10047d6d0994755be8c7c06b1dc29",
+      "tag": "archive/2026-11-23/investigation/gemma4-fa31323-globalfa-rgp-20261121",
+      "tagObject": "d107446e1b2f24908928a837738a7de0632cc25b",
+      "peeledCommit": "8832336095f10047d6d0994755be8c7c06b1dc29",
+      "branchAfter": "8832336095f10047d6d0994755be8c7c06b1dc29"
+    },
+    {
+      "branch": "investigation/gemma4-fa31323-pp-rgp-20261121",
+      "commit": "af20a84c8642d0cc50dd478fb1309eab38b8e28c",
+      "tag": "archive/2026-11-23/investigation/gemma4-fa31323-pp-rgp-20261121",
+      "tagObject": "1729dd136a9dfcfc7ae0e533ab191c185101850f",
+      "peeledCommit": "af20a84c8642d0cc50dd478fb1309eab38b8e28c",
+      "branchAfter": "af20a84c8642d0cc50dd478fb1309eab38b8e28c"
+    },
+    {
+      "branch": "investigation/gemma4-v1-fa31323-20261121",
+      "commit": "2049dc53784190ae43576c880b1dbaac101ad292",
+      "tag": "archive/2026-11-23/investigation/gemma4-v1-fa31323-20261121",
+      "tagObject": "2bda724de8aba1bd74d757de68672a5277d9a735",
+      "peeledCommit": "2049dc53784190ae43576c880b1dbaac101ad292",
+      "branchAfter": "2049dc53784190ae43576c880b1dbaac101ad292"
+    },
+    {
+      "branch": "investigation/gemma4-v1-globalfa-rgp-20261121",
+      "commit": "b911c981dabe2f643f408a88a6f3cc51160d11ec",
+      "tag": "archive/2026-11-23/investigation/gemma4-v1-globalfa-rgp-20261121",
+      "tagObject": "d0d689761af5489f84705b006f64cbce8cdf278b",
+      "peeledCommit": "b911c981dabe2f643f408a88a6f3cc51160d11ec",
+      "branchAfter": "b911c981dabe2f643f408a88a6f3cc51160d11ec"
+    },
+    {
+      "branch": "investigation/r5-adlx-gpu-monitor-20261015",
+      "commit": "1b94f19fd331a2b5885d00313d27558fdf63deef",
+      "tag": "archive/2026-11-23/investigation/r5-adlx-gpu-monitor-20261015",
+      "tagObject": "514dfd169509b03d199538db7d60a5413fc5cdc6",
+      "peeledCommit": "1b94f19fd331a2b5885d00313d27558fdf63deef",
+      "branchAfter": "1b94f19fd331a2b5885d00313d27558fdf63deef"
+    },
+    {
+      "branch": "investigation/r5-mtp-dense-compat-20261011",
+      "commit": "5492421d898ceb8a86d7594e26f5086d0371dd2d",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-dense-compat-20261011",
+      "tagObject": "c4b9c9017aa5d0613a84983068ac68537ffa49c5",
+      "peeledCommit": "5492421d898ceb8a86d7594e26f5086d0371dd2d",
+      "branchAfter": "5492421d898ceb8a86d7594e26f5086d0371dd2d"
+    },
+    {
+      "branch": "investigation/r5-mtp-dense-indexer-20261011",
+      "commit": "0dc8672d8b9b8c81e167bc566a9d80aadfb90307",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-dense-indexer-20261011",
+      "tagObject": "bd8d33e12f664538f27bc3c38b8b19f1349081a5",
+      "peeledCommit": "0dc8672d8b9b8c81e167bc566a9d80aadfb90307",
+      "branchAfter": "0dc8672d8b9b8c81e167bc566a9d80aadfb90307"
+    },
+    {
+      "branch": "investigation/r5-mtp-draft-kv-parity-20261019",
+      "commit": "9040443ce8e41a094ab84811105c59789d425938",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-draft-kv-parity-20261019",
+      "tagObject": "0f3049fcc318195effb451fef13925982d859cdd",
+      "peeledCommit": "9040443ce8e41a094ab84811105c59789d425938",
+      "branchAfter": "9040443ce8e41a094ab84811105c59789d425938"
+    },
+    {
+      "branch": "investigation/r5-mtp-eh-proj-flatten-20261016",
+      "commit": "22e4b1f09ce35509ad2d1da0d613546676e69435",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-eh-proj-flatten-20261016",
+      "tagObject": "85f38d3b1494d5a67ba868783301915b4ab151d2",
+      "peeledCommit": "22e4b1f09ce35509ad2d1da0d613546676e69435",
+      "branchAfter": "22e4b1f09ce35509ad2d1da0d613546676e69435"
+    },
+    {
+      "branch": "investigation/r5-mtp-noop-20261012",
+      "commit": "80dd44ed90e8e199786c8c436bbb9a084bde4aa5",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-noop-20261012",
+      "tagObject": "aea2dcdee30b5ff3dd6a62ca2f3ff64ecfd2ccf0",
+      "peeledCommit": "80dd44ed90e8e199786c8c436bbb9a084bde4aa5",
+      "branchAfter": "80dd44ed90e8e199786c8c436bbb9a084bde4aa5"
+    },
+    {
+      "branch": "investigation/r5-mtp-pp-kv-crop-stage1-20261014",
+      "commit": "df74d2f221d651ce3916973819f92d37fff94ab3",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-pp-kv-crop-stage1-20261014",
+      "tagObject": "84b20a77c127e6d21b67cbb0a5226184d9539f4e",
+      "peeledCommit": "df74d2f221d651ce3916973819f92d37fff94ab3",
+      "branchAfter": "df74d2f221d651ce3916973819f92d37fff94ab3"
+    },
+    {
+      "branch": "investigation/r5-mtp-pp-target-rewarmup-30511-20261016",
+      "commit": "8a7f56c96630939f6ec01942182134f7b27684e7",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-pp-target-rewarmup-30511-20261016",
+      "tagObject": "81aebbd497caf35182f159c60802e9fa9580f2f0",
+      "peeledCommit": "8a7f56c96630939f6ec01942182134f7b27684e7",
+      "branchAfter": "8a7f56c96630939f6ec01942182134f7b27684e7"
+    },
+    {
+      "branch": "investigation/r5-mtp-pp-trace-20261013",
+      "commit": "61c9c5ee8db1aa4f0609458234d9bddaa0151239",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-pp-trace-20261013",
+      "tagObject": "64f18b0b734f7e3d83b6dcb3633f0c04a8d384b3",
+      "peeledCommit": "61c9c5ee8db1aa4f0609458234d9bddaa0151239",
+      "branchAfter": "61c9c5ee8db1aa4f0609458234d9bddaa0151239"
+    },
+    {
+      "branch": "investigation/r5-mtp-rollback-diagnostic-20261019",
+      "commit": "33175c2bdfafc82a7ce91d2a68f982ab8bd33353",
+      "tag": "archive/2026-11-23/investigation/r5-mtp-rollback-diagnostic-20261019",
+      "tagObject": "6d0d5eb0aade127824dd21922fe2e04f5f25e153",
+      "peeledCommit": "33175c2bdfafc82a7ce91d2a68f982ab8bd33353",
+      "branchAfter": "33175c2bdfafc82a7ce91d2a68f982ab8bd33353"
+    },
+    {
+      "branch": "investigation/r5-rocm-qsa-argsort-topk-20261022",
+      "commit": "16c983edaf5d53666a8a3680df198fb5f920e0c6",
+      "tag": "archive/2026-11-23/investigation/r5-rocm-qsa-argsort-topk-20261022",
+      "tagObject": "12abb7c39bbca5568c874af7455b43cb6804bc62",
+      "peeledCommit": "16c983edaf5d53666a8a3680df198fb5f920e0c6",
+      "branchAfter": "16c983edaf5d53666a8a3680df198fb5f920e0c6"
+    },
+    {
+      "branch": "investigation/r5-rocm-qsa-topk-baseline-20261022",
+      "commit": "264b839235837cac296c8ce0a8ea14cc62d566f8",
+      "tag": "archive/2026-11-23/investigation/r5-rocm-qsa-topk-baseline-20261022",
+      "tagObject": "6d31affee20d0b61e616d19bac13646807621d1a",
+      "peeledCommit": "264b839235837cac296c8ce0a8ea14cc62d566f8",
+      "branchAfter": "264b839235837cac296c8ce0a8ea14cc62d566f8"
+    },
+    {
+      "branch": "investigation/r5-rocmfpx-vulkan-20261020",
+      "commit": "ceb558b2acb0be388863f6d8c4c15e92193f5c0c",
+      "tag": "archive/2026-11-23/investigation/r5-rocmfpx-vulkan-20261020",
+      "tagObject": "f8f986185f947e55eecfef3ad1f0b7bbd92c384a",
+      "peeledCommit": "ceb558b2acb0be388863f6d8c4c15e92193f5c0c",
+      "branchAfter": "ceb558b2acb0be388863f6d8c4c15e92193f5c0c"
+    },
+    {
+      "branch": "investigation/r6-rocm-fa-kvmax-diag-20261108",
+      "commit": "203f82be67ff9e92b3a24a55af8b5e829cbc7fc9",
+      "tag": "archive/2026-11-23/investigation/r6-rocm-fa-kvmax-diag-20261108",
+      "tagObject": "94203963d8e0307cc9b1752f7c3fb540c80bb4b7",
+      "peeledCommit": "203f82be67ff9e92b3a24a55af8b5e829cbc7fc9",
+      "branchAfter": "203f82be67ff9e92b3a24a55af8b5e829cbc7fc9"
+    },
+    {
+      "branch": "investigation/r6-rocm-moe-topk-diag-20261107",
+      "commit": "1142fc2f87ad492497d62a9f56ab762155f4b995",
+      "tag": "archive/2026-11-23/investigation/r6-rocm-moe-topk-diag-20261107",
+      "tagObject": "8675ef525e936ccea656417168a468f87dd57faa",
+      "peeledCommit": "1142fc2f87ad492497d62a9f56ab762155f4b995",
+      "branchAfter": "1142fc2f87ad492497d62a9f56ab762155f4b995"
+    },
+    {
+      "branch": "investigation/r6-rocm-pp-fa-trace-20261107",
+      "commit": "ee8610f1f5d3dfd733fc440f2418b3f79882f61b",
+      "tag": "archive/2026-11-23/investigation/r6-rocm-pp-fa-trace-20261107",
+      "tagObject": "6f3478a3bc8be79ab886518b09820dd8ce331c53",
+      "peeledCommit": "ee8610f1f5d3dfd733fc440f2418b3f79882f61b",
+      "branchAfter": "ee8610f1f5d3dfd733fc440f2418b3f79882f61b"
+    },
+    {
+      "branch": "investigation/r6-rocm-rgp-anchor-visibility-20261107",
+      "commit": "243a92f2668d038d1676dcc6b3b349f67f81dff5",
+      "tag": "archive/2026-11-23/investigation/r6-rocm-rgp-anchor-visibility-20261107",
+      "tagObject": "e2a0d87bca391510bbd78240f4581a3e0e0f68e7",
+      "peeledCommit": "243a92f2668d038d1676dcc6b3b349f67f81dff5",
+      "branchAfter": "243a92f2668d038d1676dcc6b3b349f67f81dff5"
+    },
+    {
+      "branch": "investigation/r6-rocm-rgp-moe-layer-tags-20261107",
+      "commit": "699a51ef5ebff4ec02da01b57edfcf3a6611559c",
+      "tag": "archive/2026-11-23/investigation/r6-rocm-rgp-moe-layer-tags-20261107",
+      "tagObject": "94e7883083432e50c6763a1a5bdf4743e184c5a2",
+      "peeledCommit": "699a51ef5ebff4ec02da01b57edfcf3a6611559c",
+      "branchAfter": "699a51ef5ebff4ec02da01b57edfcf3a6611559c"
+    },
+    {
+      "branch": "r3/upstream-first",
+      "commit": "0a93fcbb8e5bcf51b331275c4f4b142d822168d6",
+      "tag": "archive/2026-11-23/r3/upstream-first",
+      "tagObject": "12801a30e6a7b320acc6a4852133c3667bdcd47a",
+      "peeledCommit": "0a93fcbb8e5bcf51b331275c4f4b142d822168d6",
+      "branchAfter": "0a93fcbb8e5bcf51b331275c4f4b142d822168d6"
+    },
+    {
+      "branch": "r4/upstream-refresh-20261002",
+      "commit": "bddf73442c24545879c9acadc078ba5b2c3cb7d8",
+      "tag": "archive/2026-11-23/r4/upstream-refresh-20261002",
+      "tagObject": "3f19725080325869ad09b0b5dae3f93f067e9f60",
+      "peeledCommit": "bddf73442c24545879c9acadc078ba5b2c3cb7d8",
+      "branchAfter": "bddf73442c24545879c9acadc078ba5b2c3cb7d8"
+    },
+    {
+      "branch": "r6/rocm-pp-timing-20261115",
+      "commit": "04e1452e111e4e1a38ec0b3c6b2bc7c7c70a8130",
+      "tag": "archive/2026-11-23/r6/rocm-pp-timing-20261115",
+      "tagObject": "78d0edbc6ef41d3dc091e9e148e041e1184f3f4e",
+      "peeledCommit": "04e1452e111e4e1a38ec0b3c6b2bc7c7c70a8130",
+      "branchAfter": "04e1452e111e4e1a38ec0b3c6b2bc7c7c70a8130"
+    },
+    {
+      "branch": "research/rocm-qsa-gather-20261030",
+      "commit": "48a3d1116dbef961132eadc0ce20c5df1bdae4dd",
+      "tag": "archive/2026-11-23/research/rocm-qsa-gather-20261030",
+      "tagObject": "81e82f4e64408c37677db6919f5f0dfa6ee985e2",
+      "peeledCommit": "48a3d1116dbef961132eadc0ce20c5df1bdae4dd",
+      "branchAfter": "48a3d1116dbef961132eadc0ce20c5df1bdae4dd"
+    },
+    {
+      "branch": "setup/strata-pp-v1-docs-tools-20261115",
+      "commit": "76e24ae9f47302a617fa7244f1f24b565e7f209c",
+      "tag": "archive/2026-11-23/setup/strata-pp-v1-docs-tools-20261115",
+      "tagObject": "b9975ec443a5063eb68096c5990fe6ec8d51bcd4",
+      "peeledCommit": "76e24ae9f47302a617fa7244f1f24b565e7f209c",
+      "branchAfter": "76e24ae9f47302a617fa7244f1f24b565e7f209c"
+    },
+    {
+      "branch": "test/mtp-qsa-prototype",
+      "commit": "dbf1ec0f869f271e86d770aa24f0a5c992e38e47",
+      "tag": "archive/2026-11-23/test/mtp-qsa-prototype",
+      "tagObject": "83def435f60a0972e35afef12fba72fad4449f48",
+      "peeledCommit": "dbf1ec0f869f271e86d770aa24f0a5c992e38e47",
+      "branchAfter": "dbf1ec0f869f271e86d770aa24f0a5c992e38e47"
+    },
+    {
+      "branch": "test/qwen35-vulkan-2gib-guard",
+      "commit": "b686a49c3c77f2d061cdfc729ba9d94092fea3df",
+      "tag": "archive/2026-11-23/test/qwen35-vulkan-2gib-guard",
+      "tagObject": "a4b220361a6821891db9874aef557220afb4dc62",
+      "peeledCommit": "b686a49c3c77f2d061cdfc729ba9d94092fea3df",
+      "branchAfter": "b686a49c3c77f2d061cdfc729ba9d94092fea3df"
+    }
+  ]
+}
