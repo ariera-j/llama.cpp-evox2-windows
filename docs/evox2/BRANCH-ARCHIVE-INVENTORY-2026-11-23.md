@@ -3,6 +3,40 @@
 > **2026-11-23 JST の静的棚卸し。** 対象は `ariera-j/llama.cpp-evox2-windows` / `main`。GitHub上の全53ブランチを列挙し、各ブランチとmainの`compare_commits`（ahead/behind、変更ファイル）、公開リポジトリ内の統合・実験記録を参照した。**この文書作成時点ではタグ作成・ブランチ削除・リネーム・ソースmerge・force pushを一切実施していない。** 分類は次回作業前に再確認すること。
 
 
+## 2026-11-24追補：手動側worktreeの実測一覧（ユーザー提供、取得日時未記録）
+
+**重要：下の一覧は手動操作ユーザーが実行した `git worktree list --porcelain` と `git remote -v` の出力を保存したもの。** Codexユーザーから旧cloneの`.git`を直接読み取れたことを意味しない。実行日時、`git status`、各branchの未pushコミット、`git branch -vv`、Codex専用cloneのworktreeは未確認。EVO-X2のACLと所有者は変更しない。
+
+### Git共通ディレクトリ系統A（r2/r5/r6）
+
+確認起点：`C:\llama-build\llama.cpp-evox2-windows-r6`。remote `origin=https://github.com/ariera-j/llama.cpp-evox2-windows.git`、`upstream=https://github.com/ggml-org/llama.cpp.git`（fetch/push各設定）。
+
+| worktree | HEAD | branch/状態 | 判断 |
+|---|---|---|---|
+| `C:\llama-build\llama.cpp-evox2-windows-r2` | `23c316fb5af67da74e614af4a7453fba9ae46189` | `r2/legacy` | 別系統。保持・bundle再現ゲート前はremote削除禁止 |
+| `C:\llama-build\llama.cpp-evox2-windows-r5` | `25004972199c68a0678c2341c155dc84a98e5da8` | `r5/upstream-refresh-20261009` | 保持 |
+| `C:\llama-build\llama.cpp-evox2-windows-r6` | `8054fc278f0f00dce7876c78693f5d42e387ddfb` | `main` | 保持。リモートmainに追随済みとは未確認 |
+| `C:\llama-build\llama.cpp-evox2-windows-r6-webui` | `b82243bf0d1d6cd995bec2952e03c9fb61a5ff1f` | detached HEAD | 既存検証済みr6 source。branchでないが参照元commitを保持 |
+
+### Git共通ディレクトリ系統B（v1.0.0研究）
+
+確認起点：`C:\llama-build\llama.cpp-evox2-v1-strata-pp`。remote `origin=https://github.com/ariera-j/llama.cpp-evox2-windows.git`（fetch/push各設定）。Aとは異なるworktree集合。
+
+| worktree | HEAD | branch/状態 | 判断 |
+|---|---|---|---|
+| `C:\llama-build\llama.cpp-evox2-v1-strata-pp` | `76be555297bd3883c574bb4c918adef5229ad75c` | `investigation/v1-strata-dense-gemm-20261115` | 保持 |
+| `C:\llama-build\llama.cpp-evox2-v1-gemma4` | `352b620aab388002ffe9b991986dcf980f3de5ca` | `investigation/gemma4-31b-v1-rocm-20261116` | **従来のarchive候補から要確認へ移す。現役worktree** |
+| `C:\llama-build\llama.cpp-evox2-v1-pp-rgp` | `010d0d3b1d9e4c78379b278a2aa95d6e3456acef` | `investigation/gemma4-v1-pp-rgp-20261121` | **従来のarchive候補から要確認へ移す。現役worktree** |
+
+### 削除ゲートと扱い
+
+- **いま観測されたworktreeは合計7個、2つの独立したworktree集合**。この記録だけでは別にあるCodex専用cloneの状態や、他の独立したcloneの不存在は証明できない。
+- 現在checkout中のbranchは、remoteを削除してもローカルworktree/branchが消えるわけではない。ただし追跡先が消えて混乱しやすくなるので**現役worktreeのremote branchは保持**。
+- 旧cloneの`.git`をCodexから読むためにACL/所有権を緩めない。Codexには**この一覧を既知の保護ブランチとして使わせる**。必要な追加確認は所有ユーザーが読み取り専用で行う。
+- 追加の最小確認（各集合の管理起点で実行）：`git -C <repo> branch -vv` と、各worktreeに対する `git -C <path> status --porcelain=v1 -b`、さらに `git ls-remote --heads origin`。必要に応じてローカルbranchとremoteのcommit比較を行う。`worktree list`だけでは未commit/未pushは分からない。
+- `r6-webui` はdetachedのため削除対象branchではないが、`b82243bf...` のcommit参照は保持。既存ソースcheckpointはタグに紐づけて追跡可能にする。
+- **修正後の暫定分類は 保持7 / 要確認13 / archive候補33（計53）**。以下の元の日付付き方針を読み替える。元の候補を機械実行せず、manifestを再生成・レビューする。
+
 ## 2026-11-23 追加の保全条件（削除作業より優先）
 
 > **重要：当初の「41件をアーカイブ候補」は保全調査の途中段階の分類だったため修正。** 実装調査で、`main` にない診断専用コードを実験ブランチ上に確認した。さらにr2はr1からの別ベース系譜であり、Codex専用アカウントから旧Windows cloneの`.git`/worktreeを検査できない可能性がある。**この追加条件を解消する前に、元ブランチのリモート削除を実行しない。** 本書はタグ作成もまだ行っていない計画文書。
@@ -44,7 +78,7 @@
 - main・運用上の基準ブランチ・作業中のCodexブランチを削除しない。リモートとローカルのworktreeは別物。稼働中のEVO-X2やCodexのローカルworktreeは一括削除しない。
 - 2026-11-23調査時点で**オープンPRは0件**。実行前にPR、branch protection、remoteの新しいcommit、実機worktreeを再確認する。
 
-## 2. 判定結果：53ブランチ → 保持7 / 要確認11 / アーカイブ候補35
+## 2. 判定結果：53ブランチ → 保持7 / 要確認13 / アーカイブ候補33
 
 ### A. 現時点で保持（7件）
 
@@ -60,7 +94,7 @@
 
 ※保持は永久保証ではない。新しいupstreamベースが安定し、基準をタグと計測マニフェストで再現できる状態になれば一部を再分類してよい。
 
-### B. 先にmainとの差分解消・保全が必要（11件）
+### B. 先にmainとの差分解消・保全が必要（13件）
 
 | ブランチ | 保留の理由 |
 |---|---|
@@ -83,9 +117,16 @@
 | `investigation/r5-vulkan-off-fa-dispatch-20261010` | Vulkan markerのr5由来ソースと実験記録。後続r6への移植依存を保全。 |
 | `r2/legacy` | r1/r2はLaurentZuijdwijk/llama.cppをベースとする別系統の歴史。Gitタグに加えて独立bundleで全到達履歴を確保。 |
 
+**追加：現在checkout中のGemma 4ブランチ2件も要確認へ移動**
+
+| ブランチ | worktree / 実行時HEAD |
+|---|---|
+| `investigation/gemma4-31b-v1-rocm-20261116` | `C:\llama-build\llama.cpp-evox2-v1-gemma4` / `352b620aab388002ffe9b991986dcf980f3de5ca` |
+| `investigation/gemma4-v1-pp-rgp-20261121` | `C:\llama-build\llama.cpp-evox2-v1-pp-rgp` / `010d0d3b1d9e4c78379b278a2aa95d6e3456acef` |
+
 **保全確認まで削除禁止。** タグ保存後でも、診断コードの所在目録・r2独立bundle・旧clone worktree確認を完了してから再分類する。
 
-### C. アーカイブ候補（35件：元41件から6件を一時除外）
+### C. アーカイブ候補（33件：元41件から8件を一時除外）
 
 次の名前を**明示allowlist**として扱う。外部refをパターン（`investigation/*`、`r5/*`、`codex/*`）で無差別に削除してはならない。
 
@@ -94,12 +135,10 @@ codex/automation-docs-20261123
 codex/main-handoff-20261123
 integration-check/r5-noop-rocmfpx-20261021
 integration-check/r5-noop-rocmfpx-stageb-flatten-20261021
-investigation/gemma4-31b-v1-rocm-20261116
 investigation/gemma4-fa31323-globalfa-rgp-20261121
 investigation/gemma4-fa31323-pp-rgp-20261121
 investigation/gemma4-v1-fa31323-20261121
 investigation/gemma4-v1-globalfa-rgp-20261121
-investigation/gemma4-v1-pp-rgp-20261121
 investigation/r5-adlx-gpu-monitor-20261015
 investigation/r5-mtp-dense-compat-20261011
 investigation/r5-mtp-dense-indexer-20261011
@@ -127,8 +166,8 @@ test/mtp-qsa-prototype
 test/qwen35-vulkan-2gib-guard
 ```
 
-- 35件中**4件はmainの祖先（ahead=0）**：`codex/automation-docs-20261123`、`codex/main-handoff-20261123`、`r4/upstream-refresh-20261002`、`research/rocm-qsa-gather-20261030`。再現用tagを作った後なら本体のrefを削除できる見込み。
-- 残り**31件はmainからdivergeして独自コミットを持つ**。**タグ保存前に絶対に消さない**（歴史的実装・診断shader、ツール・設定等はmain未統合の可能性）。ahead数が多いbranchではupstreamからの大きなimportが混在するので、ahead数をすべて独自高速化コミットと解釈しない。
+- 33件中**4件はmainの祖先（ahead=0）**：`codex/automation-docs-20261123`、`codex/main-handoff-20261123`、`r4/upstream-refresh-20261002`、`research/rocm-qsa-gather-20261030`。再現用tagを作った後なら本体のrefを削除できる見込み。
+- 残り**29件はmainからdivergeして独自コミットを持つ**。**タグ保存前に絶対に消さない**（歴史的実装・診断shader、ツール・設定等はmain未統合の可能性）。ahead数が多いbranchではupstreamからの大きなimportが混在するので、ahead数をすべて独自高速化コミットと解釈しない。
 - Gemma 4のFA #31323 / Global FA関連の6本は**危険が未解明の実験状態としてread-only archive**。GPU timeoutの原因を断定しないが、Codexの通常無人ビルド・ベンチマーク用baseに選ばない。
 - r5 MTP / r6 RGP / QSA / ROCmFPx / 旧r2・r3・r4、r6診断、旧テストbranchは研究結果として保存。下流の正本は [PATCHES](PATCHES.md)、[PERFORMANCE-RESEARCH-LOG](PERFORMANCE-RESEARCH-LOG.md)、[文書集約](DOCUMENTATION-RECONCILIATION-2026-11-23.md)、[r5/r6旧ブランチ監査](R5-R6-BRANCH-INVENTORY-AND-PRE-RELEASE-CHECKLIST-2026-10-29.md) を参照。
 
@@ -149,9 +188,9 @@ test/qwen35-vulkan-2gib-guard
 
 ## 4. 計画と実施を混同しないための状態
 
-- **済み：** 53件のbranch inventory、mainとの比較、診断実装のmain未統合確認、r2の別系統由来確認、保持7／要確認11／アーカイブ候補35の暫定分類、open PR有無確認、過去のbranch運用文書の参照。
+- **済み：** 53件のbranch inventory、mainとの比較、診断実装のmain未統合確認、r2の別系統由来確認、保持7／要確認13／アーカイブ候補33の暫定分類、open PR有無確認、過去のbranch運用文書の参照。
 - **未実施：** 診断実装の完全なコード所在目録、r2独立Git bundle・復元確認、旧clone所有者によるworktree/未push状態の照合、GitHub tag作成、remote branch削除、EVO-X2ローカルworktree/未push変更の確認、branch URL完全監査、branch archiveスクリプト作成・実行、各branch先端SHAの固定manifest作成。
-- **目的：** 保全確認を終えた35候補を対象とし、すべての安全ゲートを満たし削除承認・実行した後は53→18ブランチまで縮小可能（作業中に新しいbranchが増えていない前提）。さらに保留5件や旧baselineも後日整理できる。
+- **目的：** 保全確認を終えた33候補を対象とし、すべての安全ゲートを満たし削除承認・実行した後は53→20ブランチまで縮小可能（作業中に新しいbranchが増えていない前提）。さらに保留5件や旧baselineも後日整理できる。
 
 新upstream b12651等を取り込むCodex作業は、**このアーカイブ作業をソースmergeやモデル実験と混同せず**、新しい`codex/`または`integration/`専用branchで開始する。
 
