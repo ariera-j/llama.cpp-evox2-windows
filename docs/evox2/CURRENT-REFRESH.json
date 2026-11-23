@@ -1,0 +1,29 @@
+{
+    "schema_version":  1,
+    "series":  "r6",
+    "branch":  "r6/upstream-refresh-20261025",
+    "created_date":  "2026-10-25",
+    "upstream_repository":  "ggml-org/llama.cpp",
+    "upstream_sha":  "74bca3950054eed1795f525cb9cf06bfe796492d",
+    "upstream_title":  "model: DSV4.1 flash (#31086)",
+    "tooling_source_branch":  "r5/upstream-refresh-20261009",
+    "tooling_source_sha":  "25004972199c68a0678c2341c155dc84a98e5da8",
+    "imported_paths":  [
+                           "docs/evox2",
+                           "tools/evox2"
+                       ],
+    "housekeeping_paths":  [
+                               ".gitignore"
+                           ],
+    "inference_source_policy":  "unchanged from pinned upstream; re-evaluate downstream patches separately",
+    "validation_status":  "not_started; clean upstream b11870 baseline pending",
+    "integration_snapshot_status":  "tooling_docs_imported; downstream patches not ported",
+    "first_integration_checkpoint":  "clean Vulkan and ROCm baseline builds pending",
+    "research_refresh_policy":  "pin b11870 during r6 integration; evaluate subsequent upstream refresh separately",
+    "measurement_tooling_status":  "imported from r5; r6 build and runtime compatibility not yet validated",
+    "measurement_tooling":  [
+                                "tools/evox2/adlx-gpu-monitor",
+                                "tools/evox2/pmode",
+                                "tools/evox2/benchmark start/finish P-MODE metadata and ADLX power consistency warnings"
+                            ]
+}
