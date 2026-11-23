@@ -2,7 +2,7 @@
 
 > **2026-11-23 文書・研究状況:** [文書差分統合と現行ステータス](docs/evox2/DOCUMENTATION-RECONCILIATION-2026-11-23.md)を参照。r6の実験履歴、11月のMH-Hard／Strata／Gemma4 RGP、Codex接続・ビルドの状態を時点別に整理。**COMMON-005の128k検索品質18runは11/03に限定検証済み**（MTP-ON、Vulkan active path、数値完全一致は引き続き未検証）。実験用worktreeや文書の取り込みは公開b11908配布物の更新を意味しない。
 
-> **2026-11-03 COMMON-005ソース統合：** r6向けQSA選択K/V Gatherを実験機能として取り込みました（`QWEN4EXP_QSA_GATHER=1`で有効、**既定OFF**）。EVO-X2／ROCm／Qwen3.8 Flash Next／MTP OFFの64k・128k・256k ABBAでTG **+12.7%／+28.9%／+56.0%**、PPはおおむね維持。128kのRGPでもCompact Attentionを確認しました。**回答品質の追加比較、MTP ON・Vulkanでの有効化は未検証です。** ソースに統合しただけで、公開済みの**b11908 Vulkan ZIP／タグは変更していません**。詳細：[COMMON-005検証記録](docs/evox2/R6-COMMON005-IMPLEMENTATION-2026-11-02.md)。
+> **2026-11-03 COMMON-005ソース統合：** r6向けQSA選択K/V Gatherを実験機能として取り込みました（`QWEN4EXP_QSA_GATHER=1`で有効、**既定OFF**）。EVO-X2／ROCm／Qwen3.8 Flash Next／MTP OFFの64k・128k・256k ABBAでTG **+12.7%／+28.9%／+56.0%**、PPはおおむね維持。128kのRGPでもCompact Attentionを確認しました。**当初未検証だった128k検索品質は2026-11-03に18run限定ゲートが完了しています。MTP ON・Vulkan active path・数値完全一致は引き続き未検証です。** ソースに統合しただけで、公開済みの**b11908 Vulkan ZIP／タグは変更していません**。詳細：[COMMON-005検証記録](docs/evox2/R6-COMMON005-IMPLEMENTATION-2026-11-02.md)。
 
 
 **Language / 言語:** 日本語（このページ） · **[English README](README.en.md)**
