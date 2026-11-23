@@ -1,5 +1,7 @@
 # r6 PP入力依存・FA／QSA mask／MoE／量子化×UBatch GPUプロファイリング：概要設計（2026-11-04）
 
+> **2026-11-23結果追補（本書の DESIGN ONLY は2026-11-04時点）:** その後、r6の実入力bench、Vulkan Mask/Indexer、ROCm MoE/FA/KV_max、RGP位置合わせと全体時間収支の主調査を実施し、11/08に一区切り。IQ3/IQ4 ROCm PP逆転は追加のubatch・MMQ・FA RGP観察を行ったが、単一原因は確定していない。**QSA UNIONとVRAMクロックの独立ABBA検証は別課題であり、PP調査の完了を理由に実施済みとはしない**。下の未着手表現は設計開始日の履歴。[現行状態](DOCUMENTATION-RECONCILIATION-2026-11-23.md)。
+
 > **Status: DESIGN ONLY / DEFER — 実装・ビルド・RGP採取・追加計測は未着手。**
 > **PP調査・QSA UNIONとVRAMクロックの独立検証・Strata試用の着手順は未決定**。本書は着手時の見取り図であり、未完了作業の優先順位変更、r6の最適化フラグ変更、公開バイナリ更新を指示しない。
 

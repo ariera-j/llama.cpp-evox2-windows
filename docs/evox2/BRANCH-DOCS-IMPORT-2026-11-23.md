@@ -1,5 +1,7 @@
 # Research branch document import — 2026-11-23
 
+> **2026-11-23 追補（このページは当初インポートの履歴）:** その後の同名ファイルの差分精査・新しい実験状態の読み替えは[DOCUMENTATION-RECONCILIATION-2026-11-23.md](DOCUMENTATION-RECONCILIATION-2026-11-23.md)に記録。11/22 Gemma4の安全判断3件、11/23 Codex RUNBOOKの追記はmainへ統合済み。README/ROADMAP/PATCHES等の最新ステータスを更新し、過去のr2〜r6差分は元ブランチの時点付き記録として保存する。下記「未統合」一覧は**初回インポート時点**のものであり、11/23の最終判断ではない。
+
 This inventory records a **documents-only** import into `main` from the research branches listed below. Original source code, build scripts, and previously existing documentation remain unchanged.
 
 ## Imported files

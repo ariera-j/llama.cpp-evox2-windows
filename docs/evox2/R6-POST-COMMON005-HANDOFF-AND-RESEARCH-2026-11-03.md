@@ -1,5 +1,7 @@
 # r6 COMMON-005完了後：未完了タスク／最新動向／ROCmFPx HIP移植の引き継ぎ（2026-11-03）
 
+> **2026-11-23追補:** この11/03引き継ぎで「次」「未実施」としたTOOL-001、PP Mask/Indexer、ROCm MoE/FA調査は11/08までに実施済み。MH-Hard、IQ1/更新IQ3、Strata、ROCm IQ3/IQ4 PP差、Gemma4 PP/TG/RGPもその後検証済み（未解明の条件・因果は別途保留）。次はCodex推論接続テストと文書／ブランチ整理を経た後の個別最適化。[現行ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)。
+
 > **後日更新（2026-11-08）：この文書の「次に移植」等は11/03当時の作業順の記録。** 最新状態と後続着手順は[2026-11-08優先順位・外部更新](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)を参照。実入力llama-benchはr6へ移植済み、QSA Mask/Indexer・MoE・FA・GPU KV_max調査は完了。次は旧IQ1/更新IQ3を動作確認→PLE16 preflight/変換→品質比較、Strata公式Windows試用準備を並行。以下の過去計測値や当時の優先判断は、再現性確保のため保持。
 
 > **状態：調査・作業整理のみ。新しい推論ソース変更、Windowsビルド、実機計測、上流へのrebase、release変更は行っていない。**

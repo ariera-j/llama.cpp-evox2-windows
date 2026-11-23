@@ -1,5 +1,7 @@
 # Strata PP research: upstream v1.0.0 base and EVO-X2 r6 tooling handoff (2026-11-15)
 
+> **2026-11-23状況追補:** 本書は11/15に準備した**setup専用ブランチの引き継ぎ手順**であり、このsetupブランチ自体がupstream v1.0.0実装へ変わったわけではない。ユーザーは別途upstream v1.0.0 / r6 / Strata v0.2.13の実機比較を実施済み。これをもってここに書かれた将来の全移植候補が実装・検証されたとは扱わない。現在はCodex接続の推論ゲート／ドキュメント・ブランチ整理を優先。[現行ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)。
+
 **Status: PREPARATION BRANCH ONLY - the inference source in `setup/strata-pp-v1-docs-tools-20261115` is NOT upstream v1.0.0. Do not use this setup branch as a v1.0.0 benchmark base.**
 
 ## Goal and exact provenance

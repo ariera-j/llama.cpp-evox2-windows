@@ -1,5 +1,7 @@
 # r6 出力品質比較の追加計画 — IQ1・更新IQ3・高難度検索（2026-11-07）
 
+> **2026-11-23結果追補（本書は11/07の計画）:** 11/08記載の「IQ1/更新IQ3ロード・変換・品質測定は未実施」「次に着手」は現在の状態ではない。旧IQ1、新IQ3、IQ4、旧IQ3、ROCmFP4等の日本語要約・MH-Hard関連検証を実施。MH-Hardではモデル・seed・質問順・ROCm反復等を比較し、**旧IQ3を継続、更新版IQ3の採用とIQ4への常用切替を見送った**。実行ごとの実測・採点データは実験用privateリポジトリに保持。この計画の未実施項目をそのまま次のCodex実装タスクとして扱わない。[文書統合ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)。
+
 > **状態更新（2026-11-08）：PP／Mask／Indexer／ROCm MoE・FA／RGP調査は一区切り。こちらが次に着手する最優先課題。実機での新しいIQ1/更新IQ3のロード・PLE16変換・品質測定はまだ未実施。** [最新外部調査と着手順](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)。まず**旧IQ1_S・更新版IQ3_XXSの元GGUF 4k短文smoke → メタデータ・PLE16変換PreflightOnly → 必要なモデルだけ変換・検証 → 品質pilot**。GGUF revision／shard数／tensor型を分けて管理し、旧GGUFは保持する。Strata v0.2.12公式Windows版試用準備は**並行する別トラック**。既存の5モデル比較やCOMMON-005品質ゲートを再オープンするものではない。
 
 ## 1. 背景と目的
