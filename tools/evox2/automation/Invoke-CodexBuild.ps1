@@ -6,10 +6,12 @@ param(
     [Parameter(ParameterSetName = 'Preflight')][switch]$PreflightOnly,
     [Parameter(ParameterSetName = 'Configure')][switch]$ConfigureOnly,
     [ValidateNotNullOrEmpty()][string]$VulkanLlvmBin,
-    [ValidatePattern('\A[0-9]+\.[0-9]+\.[0-9]+\z')][string]$ExpectedVulkanClangVersion
+    [ValidatePattern('\A[0-9]+\.[0-9]+\.[0-9]+\z')][string]$ExpectedVulkanClangVersion,
+    [ValidateSet('ON', 'OFF')][string]$CpuAllVariants = 'ON'
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Backend -ne 'Vulkan' -and $PSBoundParameters.ContainsKey('CpuAllVariants')) { throw '-CpuAllVariants requires -Backend Vulkan.' }
 if ([bool]$VulkanLlvmBin -ne [bool]$ExpectedVulkanClangVersion) {
     throw 'Specify both -VulkanLlvmBin and -ExpectedVulkanClangVersion.'
 }
@@ -33,12 +35,12 @@ $result = [ordered]@{
     ExitCode = 1
     ElapsedSeconds = $null
 }
-if ($Backend -eq 'Vulkan') { $result.Command += @('-VulkanLlvmBin', $VulkanLlvmBin, '-ExpectedVulkanClangVersion', $ExpectedVulkanClangVersion) }
+if ($Backend -eq 'Vulkan') { $result.Command += @('-VulkanLlvmBin', $VulkanLlvmBin, '-ExpectedVulkanClangVersion', $ExpectedVulkanClangVersion, '-CpuAllVariants', $CpuAllVariants) }
 if ($mode -ne 'Build') { $result.Command += "-$($mode)Only" }
 if (!(Test-Path -LiteralPath $logRoot -PathType Container)) { throw "Missing log directory: $logRoot" }
 
 $worker = {
-    param($repo, $backend, $name, $mode, $vulkanBin, $vulkanClangVersion)
+    param($repo, $backend, $name, $mode, $vulkanBin, $vulkanClangVersion, $cpuVariants)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -119,6 +121,7 @@ $worker = {
         $clangVersion = '^clang version ' + [regex]::Escape($vulkanClangVersion) + '(?:\s|$)'
         $params.CMakeExe = $cmake
         $params.LlvmBin = $clang
+        $params.CpuAllVariants = $cpuVariants
         $params.VulkanSdk = 'C:\VulkanSDK\1.4.357.0'
         foreach ($file in 'Include\vulkan\vulkan.h', 'Lib\vulkan-1.lib', 'Bin\glslc.exe') {
             if (!(Test-Path -LiteralPath (Join-Path $params.VulkanSdk $file) -PathType Leaf)) {
@@ -194,6 +197,19 @@ $worker = {
     foreach ($flag in 'LLAMA_BUILD_UI:BOOL=OFF', 'LLAMA_USE_PREBUILT_UI:BOOL=OFF', 'FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON') {
         if ($configured -notcontains $flag) { throw "Unexpected cache: $flag" }
     }
+    if ($backend -eq 'Vulkan') {
+        foreach ($flag in "GGML_CPU_ALL_VARIANTS:BOOL=$cpuVariants", 'GGML_NATIVE:BOOL=OFF', 'GGML_BACKEND_DL:BOOL=ON') {
+            if ($configured -notcontains $flag) { throw "Unexpected cache: $flag" }
+        }
+        $targets = Read-Native $pins['ninja.exe'][0] @('-C', $destination, '-f', 'build-Release.ninja', '-t', 'targets', 'all')
+        $hasSapphireRapids = [bool]($targets -match 'ggml-cpu-sapphirerapids')
+        if ($cpuVariants -eq 'OFF' -and $hasSapphireRapids) { throw 'Unexpected Sapphire Rapids target.' }
+        "Verified Vulkan CPU variants: $cpuVariants, Sapphire Rapids target present: $hasSapphireRapids"
+    } else {
+        foreach ($flag in 'GGML_HIP:BOOL=ON', 'AMDGPU_TARGETS:STRING=gfx1151') {
+            if ($configured -notcontains $flag) { throw "Unexpected cache: $flag" }
+        }
+    }
     if ($mode -eq 'Configure') { return }
 
     "Build: $wrapper | $($params | ConvertTo-Json -Compress) | -BuildOnly"
@@ -218,7 +234,7 @@ $worker = {
 }
 
 # All phases run in one child PowerShell, with separate native output streams.
-$quoted = @($repo, $Backend, $BuildDir, $mode, $VulkanLlvmBin, $ExpectedVulkanClangVersion) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
+$quoted = @($repo, $Backend, $BuildDir, $mode, $VulkanLlvmBin, $ExpectedVulkanClangVersion, $CpuAllVariants) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
 $payload = "try { & {" + $worker.ToString() + "} " + ($quoted -join ' ') +
     '; exit 0 } catch { [Console]::Error.WriteLine($_.ToString()); exit 1 }'
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))

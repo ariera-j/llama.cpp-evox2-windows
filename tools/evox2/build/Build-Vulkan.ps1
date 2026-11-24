@@ -24,7 +24,8 @@ param(
     [switch]$SkipSmoke,
 
     [string[]]$ExtraCMakeArgs = @(),
-    [string[]]$ExtraTargets = @()
+    [string[]]$ExtraTargets = @(),
+    [ValidateSet('ON', 'OFF')][string]$CpuAllVariants = 'ON'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -261,7 +262,7 @@ try {
         '-DGGML_VULKAN=ON',
         '-DGGML_NATIVE=OFF',
         '-DGGML_BACKEND_DL=ON',
-        '-DGGML_CPU_ALL_VARIANTS=ON',
+        "-DGGML_CPU_ALL_VARIANTS:BOOL=$CpuAllVariants",
         '-DGGML_OPENMP=ON',
         '-DGGML_OPENMP_FETCH=ON',
         '-DLLAMA_BUILD_BORINGSSL=ON',
