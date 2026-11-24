@@ -206,9 +206,8 @@ $worker = {
         if ($cpuVariants -eq 'OFF' -and $hasSapphireRapids) { throw 'Unexpected Sapphire Rapids target.' }
         "Verified Vulkan CPU variants: $cpuVariants, Sapphire Rapids target present: $hasSapphireRapids"
     } else {
-        foreach ($flag in 'GGML_HIP:BOOL=ON', 'AMDGPU_TARGETS:STRING=gfx1151') {
-            if ($configured -notcontains $flag) { throw "Unexpected cache: $flag" }
-        }
+        if ($configured -notmatch '^AMDGPU_TARGETS:[^=]+=gfx1151$') { throw 'Unexpected AMDGPU_TARGETS cache value.' }
+        if ($configured -notcontains 'GGML_HIP:BOOL=ON') { throw 'Unexpected GGML_HIP cache value.' }
     }
     if ($mode -eq 'Configure') { return }
 
