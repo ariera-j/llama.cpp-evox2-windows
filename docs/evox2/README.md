@@ -1,5 +1,7 @@
 # Evo-X2 upstream-refresh overview
 
+> **文書ファイル名の整理（2026-11-24）:** バージョン固有の実験・計測・調査は `R2-` ～ `R6-` / `V1-` を先頭に付ける。旧ファイル名との対応、履歴ブランチとの比較方法は [DOCUMENT-NAMING.md](DOCUMENT-NAMING.md) を参照。汎用ビルド手順・運用ルール・横断ログは従来の名前を維持する。ベースラインの横断入口は [BASELINE.md](BASELINE.md)。
+
 > **現行入口（2026-11-23）:** [文書・ブランチ差分の統合状況と作業ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先して読む。r6のS8/S9・COMMON-005・PP調査、MH-Hard、Strata、Gemma4 TG/PP調査はその後進展済み。現在はCodex/EVO-X2推論接続テスト中、文書整理後にブランチ整理・高速化候補の個別実装へ進む。**下の2026-10-25「Current execution order」等は歴史的チェックポイントであり、11/23現在のToDoではない。**
 
 > **Current r6 execution order — 2026-10-25 (supersedes the historical r5/V1 'next' notice):** r6 is bootstrapped on locked upstream b11870. Follow [the fixed r6 patch and measurement-gate plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md): clean Vulkan/ROCm → COMMON-001 → ROCmFPx Vulkan → MTP compatibility → VULKAN-002 → DENSE → NOOP → Stage-B → flatten → final Qwen/Gemma checks. IQ3 original is measured only around PLE16 migration; IQ3 split PLE16 and, after support, ROCmFP4 are primary benchmarks. IQ4/huihui/Gemma4 are deferred until the integrated candidate, except a necessary clean-build compatibility probe. r5 research documents remain historical evidence; no new optimization experiments enter this first r6 integration.
@@ -153,7 +155,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md): current r4 implementation state, open gates, investigation heads and r5 validation decision
 - [PERFORMANCE-RESEARCH-LOG.md](PERFORMANCE-RESEARCH-LOG.md): upstream/model/engine research and the latest priority rationale
 - [ROADMAP.md](ROADMAP.md): current optimization order and upstream-refresh policy
-- [BASELINE.md](BASELINE.md): current pending validation gates and preserved r4/r3 measurements
+- [R4-R5-BASELINE.md](R4-R5-BASELINE.md): current pending validation gates and preserved r4/r3 measurements
 - [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md): Vulkan build procedure
 - [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md): ROCm 10.0 / TheRock build and runtime procedure
 - [BENCHMARKING.md](BENCHMARKING.md): measurement methodology and logging requirements
@@ -199,6 +201,6 @@ r5 completed baseline and follow-up PP measurements by 2026-10-10; the old check
 
 - [R4-CHECKPOINT-2026-10-09.md](R4-CHECKPOINT-2026-10-09.md) and [ROADMAP.md](ROADMAP.md): current r4 checkpoint and next r5 validation order.
 - [PERFORMANCE-RESEARCH-LOG.md](PERFORMANCE-RESEARCH-LOG.md): 2026-10-09 research, real/random PP findings and refresh priorities.
-- [BASELINE.md](BASELINE.md): completed six-run clean baseline through 256k.
+- [R4-R5-BASELINE.md](R4-R5-BASELINE.md): completed six-run clean baseline through 256k.
 - [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md): source audit, historical comparisons, and Vulkan diagnosis before optimization ports.
-- [PERFORMANCE-CANDIDATES-2026-10-03.md](PERFORMANCE-CANDIDATES-2026-10-03.md): external engine survey and additional candidates, after the existing patch decisions.
+- [R4-PERFORMANCE-CANDIDATES-2026-10-03.md](R4-PERFORMANCE-CANDIDATES-2026-10-03.md): external engine survey and additional candidates, after the existing patch decisions.

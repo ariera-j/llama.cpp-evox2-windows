@@ -81,7 +81,7 @@ A still-broader `STRATA_HIPBLASLT_TABLE=off`, `STRATA_HC_Q8=0` test can follow, 
 
 ## Associated reports
 
-- [64K r6 ROCm operator profile](ROCM-PP-PROFILE-64K-2026-11-15.md)
+- [64K r6 ROCm operator profile](R6-ROCM-PP-PROFILE-64K-2026-11-15.md)
 - [Strata 64K phase profile](https://github.com/ariera-j/evox2-llm-experiments/blob/main/engines/strata/runs/2026-11-15-strata-64k-prefill-phase-profile.md)
 - [Strata 128K phase profile](https://github.com/ariera-j/evox2-llm-experiments/blob/main/engines/strata/runs/2026-11-15-strata-128k-prefill-breakdown-and-llama-rocm-profiling-plan.md)
 - [Strata v0.2.13 architecture defaults](https://github.com/Niko1221/Strata/blob/v0.2.13/src/core/arch_defaults.cpp)

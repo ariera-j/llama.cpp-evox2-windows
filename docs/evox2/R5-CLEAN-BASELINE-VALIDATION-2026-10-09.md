@@ -70,7 +70,7 @@ The archive system identity independently reports Windows 11 Pro / `10.0.26300`;
 | Vulkan | 256k | 126.76 | 135.41 | +6.82% | 19.26 | 20.02 | +3.95% |
 | ROCm | 256k | 185.95 | 193.64 | +4.14% | 12.23 | 12.37 | +1.14% |
 
-r4 clean is original joined-PLE MTP OFF, b11372/embedded `94b877457`, same long-document inputs and basic CLI settings, as documented in [BASELINE.md](BASELINE.md). Different generations (EOS), binary/build, OS and date prevent strict isolated attribution.
+r4 clean is original joined-PLE MTP OFF, b11372/embedded `94b877457`, same long-document inputs and basic CLI settings, as documented in [R4-R5-BASELINE.md](R4-R5-BASELINE.md). Different generations (EOS), binary/build, OS and date prevent strict isolated attribution.
 
 ### Later r4 optimized reference (not a matched baseline)
 

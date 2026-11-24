@@ -1,5 +1,7 @@
 # Historical r6 investigation documents imported to v1.0.0 research branch (2026-11-15)
 
+> 2026-11-24: 以下のリンク・ファイル名は main の現行名に更新した。元ブランチでのファイル名は [DOCUMENT-NAMING.md](DOCUMENT-NAMING.md) の旧名欄を参照。
+
 **Documentation only.** The source of this branch's inference code remains clean upstream v1.0.0 `b1b770d90d94cad9e9ea5b993bdbc383a522fb28`. These files describe experiments on separate r6 investigation/test branches, with different executables and patch sets. Their commands and recorded run results **must not** be treated as validated for the v1.0.0 branch.
 
 ## Import scope and provenance
@@ -54,9 +56,9 @@
 - [`R6-ROCM-MOE-TOPK-MULTI-UBATCH-2026-11-07.md`](R6-ROCM-MOE-TOPK-MULTI-UBATCH-2026-11-07.md)
 
 ### PP GPU timing
-- [`ROCM-PP-GPU-TIMING-EXPERIMENT-2026-11-15.md`](ROCM-PP-GPU-TIMING-EXPERIMENT-2026-11-15.md)
-- [`ROCM-PP-PROFILE-128K-2026-11-15.md`](ROCM-PP-PROFILE-128K-2026-11-15.md)
-- [`ROCM-PP-PROFILE-64K-2026-11-15.md`](ROCM-PP-PROFILE-64K-2026-11-15.md)
+- [`R6-ROCM-PP-GPU-TIMING-EXPERIMENT-2026-11-15.md`](R6-ROCM-PP-GPU-TIMING-EXPERIMENT-2026-11-15.md)
+- [`R6-ROCM-PP-PROFILE-128K-2026-11-15.md`](R6-ROCM-PP-PROFILE-128K-2026-11-15.md)
+- [`R6-ROCM-PP-PROFILE-64K-2026-11-15.md`](R6-ROCM-PP-PROFILE-64K-2026-11-15.md)
 
 ### Other
 - [`R6-S9-GATE5-ROCM-ROUTER-RESULTS-2026-10-29.md`](R6-S9-GATE5-ROCM-ROUTER-RESULTS-2026-10-29.md)

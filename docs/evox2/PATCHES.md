@@ -195,7 +195,7 @@ The following 2026-10-14/15 lead notices and 2026-10-13 matrix were accurate **a
 | **MTP-NOOP-001** — suppress target QSA no-op invalidation | Not ported | Ported / Vulkan verified; ROCm long output gate open | **Not ported (stable only)** | r4 Vulkan 256k TG **20.205→22.830 (+12.99%)** with dense omission already ON ([report](R4-COMMON002-QSA-NOOP-ABBA-VALIDATION-2026-10-04.md)); ROCm 256k attribution/equivalence not established |
 | **COMMON-003** — ROCmFPx loader/core | Not ported | Not ported | Not ported | **Planned for first integrated snapshot preparation**: AgentionAI ROCmFP4-FAST GGUF loader/core + HIP correctness and model inference; not yet implemented or validated, no r5 speed claim |
 | **COMMON-004** — incremental pooled-key cache | Ported / verified | Upstream functionally covered; old patch not ported | Upstream functionally covered; old patch not ported | Major pooled-key path revised via [#29751](https://github.com/ggml-org/llama.cpp/pull/29751), graph stability via [#29958](https://github.com/ggml-org/llama.cpp/pull/29958). Avoid treating this as source-identical port |
-| **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | **Not ported; adaptation required; deferred** | r3 ROCm 256k TG **11.68→17.37 (+48.7%)** ([ABBA/RGP](COMMON005-ROCM-VALIDATION-2026-10-02.md)). [r5 source review](R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md): same gather *principle*, but `top_k` replaced with additive `sel` + `selected_rows` including dump ids; old text cannot be cherry-picked safely. Not a normal MTP-verification optimization; defer until non-MTP deep decode/integration. |
+| **COMMON-005** — compact selected-K/V decode | **Ported / ROCm verified** | Not ported | **Not ported; adaptation required; deferred** | r3 ROCm 256k TG **11.68→17.37 (+48.7%)** ([ABBA/RGP](R3-COMMON005-ROCM-VALIDATION-2026-10-02.md)). [r5 source review](R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md): same gather *principle*, but `top_k` replaced with additive `sel` + `selected_rows` including dump ids; old text cannot be cherry-picked safely. Not a normal MTP-verification optimization; defer until non-MTP deep decode/integration. |
 | **COMMON-006** — block-domain QSA select | Proposed; not ported | Upstream-covered | Upstream-covered | Direction implemented in [#29751](https://github.com/ggml-org/llama.cpp/pull/29751); retain semantic checks, not a standing port |
 | **VULKAN-001** — ROCmFPx Vulkan kernels | Not ported | Not ported | Not ported | **Conditional** on target model/Vulkan path during first integration; separate compatibility and backend decision from COMMON-003 |
 | **VULKAN-002** — grouped-union prefill QSA | Not ported (r2 donor existed) | **Ported / verified** | **Ported / verified, opt-in** | r5 PLE16 64k **+25.61%**, 128k **+71.27%**, 256k **+105.54% PP** with f16 K/V; native Vulkan FA OFF/ON 18/18, real runs 12/12 ([report](R5-VULKAN002-VALIDATION-2026-10-09.md)); model-level quality/default ON not certified |
@@ -239,7 +239,7 @@ The public upstream status labels above are a **dated snapshot**, not claims of 
 
 | When / series | Observation | Local patch disposition and evidence |
 | --- | --- | --- |
-| r3 baseline (b11247) | COMMON-004 pooled-key and COMMON-005 compact selected-KV decode locally implemented | COMMON-005's ROCm long-context benefit **measured on r3 only**; [record](COMMON005-VALIDATION-2026-10-02.md) |
+| r3 baseline (b11247) | COMMON-004 pooled-key and COMMON-005 compact selected-KV decode locally implemented | COMMON-005's ROCm long-context benefit **measured on r3 only**; [record](R3-COMMON005-VALIDATION-2026-10-02.md) |
 | r4 refresh (2026-10-02) | [#29751](https://github.com/ggml-org/llama.cpp/pull/29751) changed QSA pool-domain selection/caching | COMMON-004 and COMMON-006 **not automatically re-ported**; review by behavioral overlap ([COMMON-006 notes](#common-006---block-domain-qsa-selection-upstream-evaluation)) |
 | r4 experiments (2026-10-03–05) | Local MoE tile selection and Vulkan grouped-union independently accelerated PP; MTP-DENSE / MTP-NOOP TG improved on their tested paths | r4 exact measurements preserved below and in dated reports; not a blanket commitment to future ports |
 | r5 upstream pin (2026-10-09, SHA `de7fa0a3`) | [#29936](https://github.com/ggml-org/llama.cpp/pull/29936) MoE tile revert (merged 2026-10-05) reproduces r4 legacy selector behavior; [#29958](https://github.com/ggml-org/llama.cpp/pull/29958) k-pool graph-stability work present | VULKAN-MOE-001 **retired from r5 port list** after source audit; older r4 measurements preserved. COMMON-005 still not ported, VULKAN-002 ported and measured |
@@ -351,7 +351,7 @@ See [R4-COMMON002-SHORT-VALIDATION-2026-10-04.md](R4-COMMON002-SHORT-VALIDATION-
 [R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md](R4-COMMON002-OVERNIGHT-ANALYSIS-2026-10-04.md) and
 [R4-VULKAN002-VALIDATION-2026-10-04.md](R4-VULKAN002-VALIDATION-2026-10-04.md).
 
-See [BASELINE.md](BASELINE.md) for the current r4 gates.
+See [R4-R5-BASELINE.md](R4-R5-BASELINE.md) for the current r4 gates.
 
 ## Provisional r4 decisions through 256k (updated 2026-10-04)
 
@@ -722,7 +722,7 @@ design. The refresh branch should compare this r3 implementation with the newer
 upstream k-pool path rather than blindly re-applying COMMON-004.
 
 Detailed RGP and source-trace notes are recorded in
-[ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
+[R3-ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md](R3-ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md).
 
 > **r5 migration assessment (2026-10-11):** [R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md](R5-COMMON005-PORT-FEASIBILITY-2026-10-11.md). The r3 compact-K/V **concept** remains usable, but the old patch is not source-portable: r5's `selected_rows` contains invalid dump rows, and `build_qsa_sel` constructs an additive mask rather than passing per-cell top-k IDs. Separate correctness-first r5 adaptation needed; deferred for now. The historical validation below remains r3-only.
 
@@ -862,7 +862,7 @@ Flash Attention, so ROCm remains the highest-value place to look for a residual
 need for this downstream compact-K/V path.
 
 Detailed final results are recorded in
-[COMMON005-VALIDATION-2026-10-02.md](COMMON005-VALIDATION-2026-10-02.md).
+[R3-COMMON005-VALIDATION-2026-10-02.md](R3-COMMON005-VALIDATION-2026-10-02.md).
 
 ## COMMON-006 - block-domain QSA selection upstream evaluation
 

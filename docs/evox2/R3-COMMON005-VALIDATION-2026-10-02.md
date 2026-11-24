@@ -125,8 +125,8 @@ COMMON-005 ON 128k -> 256k latency increase.
 
 Detailed pre/post ROCm profiling is retained in:
 
-- `ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md`
-- `COMMON005-ROCM-VALIDATION-2026-10-02.md`
+- `R3-ROCM-QSA-PROFILING-SOURCE-TRACE-2026-10-01.md`
+- `R3-COMMON005-ROCM-VALIDATION-2026-10-02.md`
 
 ## Vulkan validation
 

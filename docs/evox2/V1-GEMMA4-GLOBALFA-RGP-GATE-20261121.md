@@ -132,7 +132,7 @@ Compare **Global FA** `FA_I`, Q512, actual KV24576, HSK512, the shader pipeline 
 
 ## Source/docs references
 
-- Existing 2026-11-21 [RGP pause/resume runbook](GEMMA4-V1-PP-RGP-20261121.md).
+- Existing 2026-11-21 [RGP pause/resume runbook](V1-GEMMA4-PP-RGP-20261121.md).
 - [Timestamp Global-vs-SWA GPU analysis](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/gemma4-31b-pp-tg-20261115/runs/2026-11-21-vulkan-perf-logger-global-vs-swa-fa-32k.md).
 - [RDP Manual: profiling Dispatch capture](https://gpuopen.com/manuals/rdp_manual/features/).
 

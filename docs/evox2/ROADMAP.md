@@ -847,7 +847,7 @@ Interpretation:
 - keep the r3 runtime A/B control as part of the reference checkpoint
 
 Detailed final validation is recorded in
-[COMMON005-VALIDATION-2026-10-02.md](COMMON005-VALIDATION-2026-10-02.md).
+[R3-COMMON005-VALIDATION-2026-10-02.md](R3-COMMON005-VALIDATION-2026-10-02.md).
 
 ## Why the plan changes here
 

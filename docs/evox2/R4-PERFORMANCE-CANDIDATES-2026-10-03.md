@@ -14,7 +14,7 @@ GitHub上のPATCHES.md/ROADMAP.mdも取得し、ローカル資料と照合す�
 現在の実測条件は Original UD-IQ3_XXS、Windows、UMA 96GB、MTP OFF、
 batch 2048 / ubatch 1024、f16 KV、temperature 0.2。
 64kではVulkan 248.38/24.61、ROCm 369.72/20.98 tok/s（PP/TG）。
-追記: 128k/256kも完了。全結果はBASELINE.md、既存パッチを優先する最新判断は
+追記: 128k/256kも完了。全結果はR4-R5-BASELINE.md、既存パッチを優先する最新判断は
 [R4-PATCH-PRIORITIES-2026-10-03.md](R4-PATCH-PRIORITIES-2026-10-03.md)を参照。
 以下の新規候補より先にVulkanのr3比PP/TG低下を診断する。
 
