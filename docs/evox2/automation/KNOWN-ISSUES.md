@@ -45,3 +45,13 @@ PowerShell 5.1 の構文検証と UTF-8 BOM を確認した。10秒の PowerShel
 - Vulkan / UnslothPle16 `20261123-184639-993-cli-vulkan-b12037-ctx4096-311ea7675402`
 - ROCm / UnslothPle16 `20261123-184929-142-cli-rocm-b12037-ctx4096-0af5622c8dad`
 - Vulkan / AgentionRocmFp4FastPle16 `20261123-185200-026-cli-vulkan-b12037-ctx4096-5fb75dac2f5b`
+
+## b12651 Vulkan で確認したビルド上の制約
+
+| 症状 | 対応 |
+|---|---|
+| OpenMP 22.1.8 と Clang 20.1.8 の組み合わせを configure が拒否 | VS2022 x64 Native Tools は維持し、Vulkan のコンパイラに VS2026 付属 Clang 22.1.3 を明示する。 |
+| CPU 全バリアント ON で Sapphire Rapids の AMX `mmq.cpp` が約7時間32分継続 | 当該ジョブは停止済み。初期ベースラインは `-CpuAllVariants OFF` とし、Ninja に Sapphire Rapids がないことを確認した。長時間化を検出したら実行中のコマンド、Ninja 進捗、PID、CPU 時間、メモリ、ログを保存して原因を調べる。 |
+| 長いディレクトリ名で Vulkan シェーダー生成ツールの入れ子の MSVC テストがパス長制限を超過 | clone のパスを維持し、短い未使用のビルド名を選ぶ。`build-b12651-vk` への短縮で解消した。 |
+
+詳細な失敗と成功の記録は [b12651 ベースライン](UPSTREAM-B12651-20261124.md) にある。

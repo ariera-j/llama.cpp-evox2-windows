@@ -7,7 +7,8 @@ param(
     [Parameter(ParameterSetName = 'Configure')][switch]$ConfigureOnly,
     [ValidateNotNullOrEmpty()][string]$VulkanLlvmBin,
     [ValidatePattern('\A[0-9]+\.[0-9]+\.[0-9]+\z')][string]$ExpectedVulkanClangVersion,
-    [ValidateSet('ON', 'OFF')][string]$CpuAllVariants = 'ON'
+    [ValidateSet('ON', 'OFF')][string]$CpuAllVariants = 'ON',
+    [switch]$Offline
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,15 +38,17 @@ $result = [ordered]@{
 }
 if ($Backend -eq 'Vulkan') { $result.Command += @('-VulkanLlvmBin', $VulkanLlvmBin, '-ExpectedVulkanClangVersion', $ExpectedVulkanClangVersion, '-CpuAllVariants', $CpuAllVariants) }
 if ($mode -ne 'Build') { $result.Command += "-$($mode)Only" }
+if ($Offline) { $result.Command += '-Offline' }
 if (!(Test-Path -LiteralPath $logRoot -PathType Container)) { throw "Missing log directory: $logRoot" }
 
 $worker = {
-    param($repo, $backend, $name, $mode, $vulkanBin, $vulkanClangVersion, $cpuVariants)
+    param($repo, $backend, $name, $mode, $vulkanBin, $vulkanClangVersion, $cpuVariants, $offline)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
     $env:VSLANG = '1033'
     $env:GIT_OPTIONAL_LOCKS = '0'
+    $env:GIT_TERMINAL_PROMPT = '0'
     $env:PYTHONDONTWRITEBYTECODE = '1'
     if ($repo -ine 'C:\llama-build\automation\llama.cpp-evox2-windows') { throw 'Use the EVO-X2 Codex clone.' }
     Set-Location -LiteralPath $repo
@@ -65,7 +68,7 @@ $worker = {
 
     $parent = Split-Path -Parent $repo
     $cache = Join-Path $parent '_deps'
-    foreach ($path in 'C:\llama-build', $parent, $repo, $cache, "$cache\fetchcontent") { Assert-Directory $path }
+    foreach ($path in 'C:\llama-build', $parent, $repo) { Assert-Directory $path }
     $destination = Join-Path $repo $name
     if (Test-Path -LiteralPath $destination) { throw "Build directory already exists: $destination" }
     $head = Read-Native git @('rev-parse', 'HEAD')
@@ -151,37 +154,9 @@ $worker = {
     if ($msvcVersion -notmatch '^14\.44\.') { throw "Unexpected MSVC version: $msvcVersion" }
     "$cl : $msvcVersion"
 
-    $module = Import-Module .\tools\evox2\build\Evox2.DependencyCache.psm1 -PassThru
-    & $module {
-        param($repo, $cache, $backend)
-        $versions = Get-Evox2DependencyVersions -RepoRoot $repo
-        if (!$versions.BoringSsl) { throw 'BoringSSL version is missing from source.' }
-        $source = Join-Path $cache "fetchcontent\boringssl-$($versions.BoringSsl)-src"
-        foreach ($path in $source, "$source\.git") {
-            $item = Get-Item -LiteralPath $path -Force
-            if (!$item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-                throw "Invalid private BoringSSL checkout: $path"
-            }
-        }
-        if ((Test-Path -LiteralPath "$source\.git\objects\info\alternates") -or
-            !(Test-Evox2BoringSslCheckout -SourceDir $source -ExpectedVersion $versions.BoringSsl)) {
-            throw "Invalid private BoringSSL checkout: $source"
-        }
-        "Cached BoringSSL: $source"
-        if ($backend -eq 'Vulkan') {
-            if (!$versions.OpenMp) { throw 'OpenMP version is missing from source.' }
-            $runtime = Join-Path $cache "openmp\llvm-openmp-$($versions.OpenMp)-x64"
-            foreach ($path in "$cache\openmp", $runtime) {
-                if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                    throw "Unexpected cache reparse point: $path"
-                }
-            }
-            if (!(Test-Evox2OpenMpLayout -Root $runtime) -or !(Test-Path -LiteralPath "$runtime\LICENSE.TXT" -PathType Leaf)) {
-                throw "Incomplete private OpenMP cache: $runtime"
-            }
-            "Cached OpenMP: $runtime"
-        }
-    } $repo $cache $backend
+    Import-Module .\tools\evox2\build\Evox2.DependencyCache.psm1
+    $allowDownload = $mode -ne 'Preflight' -and $offline -eq 'False'
+    Initialize-Evox2CodexDependencies -RepoRoot $repo -CacheRoot $cache -Backend $backend -AllowDownload:$allowDownload
 
     if ($mode -eq 'Preflight') {
         if ($backend -eq 'Vulkan') { & $wrapper @params -PreflightOnly }
@@ -233,7 +208,7 @@ $worker = {
 }
 
 # All phases run in one child PowerShell, with separate native output streams.
-$quoted = @($repo, $Backend, $BuildDir, $mode, $VulkanLlvmBin, $ExpectedVulkanClangVersion, $CpuAllVariants) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
+$quoted = @($repo, $Backend, $BuildDir, $mode, $VulkanLlvmBin, $ExpectedVulkanClangVersion, $CpuAllVariants, $Offline.IsPresent.ToString()) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
 $payload = "try { & {" + $worker.ToString() + "} " + ($quoted -join ' ') +
     '; exit 0 } catch { [Console]::Error.WriteLine($_.ToString()); exit 1 }'
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))

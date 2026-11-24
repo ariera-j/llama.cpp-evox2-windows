@@ -14,3 +14,5 @@ Codex、OpenCode などが ThinkPad から EVO-X2 の専用 clone を操作す�
 - 既存のブランチを保持する。`git reset --hard`、`git clean`、force push は使用しない。commit と push は明示的に依頼された範囲でのみ行う。レビュー前は diff と status を提示する。
 - ソースやビルドスクリプトの変更、configure・ビルド、依存の取得、ベンチマーク、モデル推論は、それぞれ依頼で認められた範囲で行う。モデル推論の際はバックエンド、モデル、入力、実行規模を個別に確認する。
 - 両バックエンドとも自動検証は CLI のバージョン、デバイス列挙、マニフェスト照合まで。`test-backend-ops.exe` はビルド対象に含められる。自動実行と `-RunBackendTest` は禁止する。GPU 異常時の扱いは [既知の問題](KNOWN-ISSUES.md) を参照する。
+- Codex 専用ラッパーの通常ビルドと configure-only は、レビュー済み b12651 の公式 BoringSSL / LLVM OpenMP が専用キャッシュにない場合に限り自動取得できる。preflight は検査のみで、`-Offline` は依存取得を禁止する。破損、取得元・ハッシュ・SHA 不一致、取得不能、未レビューの upstream 入力は configure 前に停止する。SDK や開発ツールの自動導入・更新は行わない。
+- Codex 専用 clone のパスを維持し、ビルド先には短い未使用のディレクトリ名を選ぶ。長時間コンパイル時は Ninja の進捗、コンパイラのコマンドと PID、CPU 時間、メモリ、ログを保存する。変更を判断する前に同じ条件での再実行を避ける。

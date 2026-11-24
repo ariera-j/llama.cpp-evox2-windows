@@ -1,5 +1,16 @@
 # Evo-X2 build wrappers
 
+## Codex b12651 builds
+
+Use the fixed Codex clone and a short, unused output name. The [runbook](../../../docs/evox2/automation/RUNBOOK.md#b12651-の再現コマンド) has executable Vulkan and ROCm commands, the verified compiler and SDK combinations, and build times. The [b12651 record](../../../docs/evox2/automation/UPSTREAM-B12651-20261124.md) has artifact SHA-256 values and historical failure details.
+
+The Codex wrapper validates BoringSSL and, for Vulkan, LLVM OpenMP under `C:\llama-build\automation\_deps`. Normal build and configure-only runs prepare missing entries from official sources. `-Offline` and `-PreflightOnly` require existing verified entries. Configure always uses the prepared cache, disables both UI options and sets `FETCHCONTENT_FULLY_DISCONNECTED=ON`. A change to the reviewed b12651 source inputs requires a dependency review before the Codex wrapper will continue. Existing invalid cache entries are preserved for diagnosis.
+
+Both Vulkan wrappers accept `-CpuAllVariants ON|OFF` and default to `ON`. The b12651 Vulkan baseline passes `OFF` to omit the Sapphire Rapids AMX target and builds one CPU plugin. `GGML_NATIVE=OFF` and `GGML_BACKEND_DL=ON` are retained. The Codex wrapper accepts the explicit pair `-VulkanLlvmBin` and `-ExpectedVulkanClangVersion`. For b12651 use VS2026 Clang 22.1.3 with LLVM OpenMP 22.1.8 under the VS2022 x64 host environment.
+
+The cache fallback and capture behavior described in older sections applies to direct use of the historical backend wrappers. The Codex entry point prepares and verifies its private cache first.
+
+
 ## 2026-10-29: confirmed r6 Vulkan toolchain pin (corrected after Windows preflight)
 
 **The measured b11908 Vulkan and ROCm builds both used VS2022 Build Tools CMake `3.31.6-msvc6`, *not* `4.3.1`.** The original `4.3.1` description came from the earlier **r3** Windows build guide. This was confirmed by inspecting the previously uploaded **G8-6 verification archive** (Vulkan and ROCm `evox2-build.json` manifests, both with verified build identities) plus the independent Vulkan manifest from 2026-10-28. The CMake executable path in all three manifests was:

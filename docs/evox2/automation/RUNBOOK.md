@@ -5,7 +5,7 @@
 ## 実行順序
 
 1. Git のブランチ、HEAD、作業ツリーを記録する。承認済みのビルド先を明示し、Vulkan と ROCm で分ける。成功済みの出力を保持する場合は新しい専用ディレクトリを使う。VS2022 x64 とバックエンドの SDK を同一 PowerShell 5.1 プロセスに準備する。
-2. ソースから BoringSSL と、Vulkan の場合は LLVM OpenMP の要求版を読む。共有キャッシュを読み取り専用で検証し、足りないものだけ `C:\llama-build\automation\_deps` にコピーする。BoringSSL は `.git` を含む独立した checkout とし、要求タグと HEAD の一致、クリーンな状態をコピー後にも確認する。OpenMP はヘッダー、インポートライブラリ、DLL、`LICENSE.TXT` を確認する。いずれかの必須キャッシュが不足したら configure の前に停止し、依存名と版を報告する。追加取得は明示承認後に専用領域で行う。ROCm の成功時は `-DFETCHCONTENT_FULLY_DISCONNECTED=ON` も指定した。
+2. Codex 専用キャッシュ C:\llama-build\automation\_deps を検証する。通常ビルドと ConfigureOnly は不足分だけ公式配布元から取得する。BoringSSL はタグ・HEAD・固定 SHA・取得元・作業ツリーを照合し、OpenMP は配布ファイルとライセンスの upstream SHA-256、および展開済みの必要ファイルを検証する。一時領域で準備して検証後に公開し、同じ依存に対する並行取得はロックで直列化する。破損キャッシュ、取得失敗、未レビューの upstream 入力は configure 前に停止する。
 3. 既存の `Build-Vulkan.ps1` または `Build-ROCm.ps1` に専用 `-BuildDir`、`-DependencyCacheRoot`、`-Parallel 4` を渡す。Vulkan は確認済みの `-CMakeExe`、`-VulkanSdk`、`-LlvmBin` を指定する。ROCm は TheRock を有効化済みの環境で `-ExpectedRocmSdkVersion '10.0.0'` と `-AmdGpuTarget gfx1151` を指定する。
 4. `-ConfigureOnly` と `-ExtraCMakeArgs @('-DLLAMA_BUILD_UI=OFF', '-DLLAMA_USE_PREBUILT_UI=OFF')` で再現する。終了コード `0` とキャッシュ上の UI 両フラグ `OFF`、選択されたコンパイラ、SDK、依存の出所を確認する。ROCm の場合は `GGML_HIP=ON` と `AMDGPU_TARGETS=gfx1151` も確認する。
 5. 同じ PowerShell とビルド先で `-BuildOnly` を実行する。このモードは既存 CMake キャッシュを使ってメタデータを更新し、configure と生成を再実行する。更新後も UI が `OFF` で、UI 取得処理がログに現れていないことを確認する。
@@ -24,19 +24,33 @@
 
 文書取り込み後の `bf3026f32915a88a96f9131636820dbcd45aaeed` からの再ビルド、モデル推論、バックエンド演算テスト、ベンチマークは **未検証**。このスモークはビルドの来歴とデバイス列挙を確認する。
 
-## Codex 専用ラッパー
+## b12651 の再現コマンド
 
-Windows PowerShell 5.1 で Codex 専用 clone のルートから実行する。SSH セッションで必要な場合は、起動時に `-ExecutionPolicy RemoteSigned` を指定する。ラッパーは子 PowerShell 一つで VS2022 と SDK を初期化し、上記の既存ラッパーへ処理を委譲する。
+Windows PowerShell 5.1 で `C:\llama-build\automation\llama.cpp-evox2-windows` のルートから実行する。clone のパスは変更しない。以下は未使用の短いビルド先を指定する例。既存の出力や失敗時のログは保存する。
 
 ```powershell
 $wrapper = '.\tools\evox2\automation\Invoke-CodexBuild.ps1'
-& $wrapper -Backend Vulkan -BuildDir build-codex-vulkan-001 -PreflightOnly
-& $wrapper -Backend ROCm -BuildDir build-codex-rocm-001 -PreflightOnly
+$clang = 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\Llvm\x64\bin'
+
+& $wrapper -Backend Vulkan -BuildDir build-vk2 -VulkanLlvmBin $clang `
+    -ExpectedVulkanClangVersion 22.1.3 -CpuAllVariants OFF -PreflightOnly
+& $wrapper -Backend ROCm -BuildDir build-r2 -PreflightOnly
+
+& $wrapper -Backend Vulkan -BuildDir build-vk2 -VulkanLlvmBin $clang `
+    -ExpectedVulkanClangVersion 22.1.3 -CpuAllVariants OFF
+& $wrapper -Backend ROCm -BuildDir build-r2
 ```
 
-`-BuildDir` は clone 直下の未使用の `build-*` ディレクトリ名を指定する。`-PreflightOnly` はツールと専用キャッシュを検査し、ビルド先は作成しない。`-ConfigureOnly` は新規出力先で configure まで実行する。スイッチを省略すると、新規出力先で configure と Release ビルドを続けて実行する。configure 済みディレクトリの再利用はこのラッパーの対象外。configure と build にはクリーンな作業ツリーが必要。
+各コマンドが終了コード 0 だったことを確認してから次へ進む。キャッシュ不足で preflight が停止し、公式依存の取得が許可されている場合は、通常ビルドまたは `-ConfigureOnly` がツールの確認後に依存を取得する。ネットワーク取得を禁止するときは通常ビルドにも `-Offline` を付ける。preflight は依存とビルド先を変更せず、検査ログだけを出力する。
 
-依存は既に準備した `C:\llama-build\automation\_deps` を使う。キャッシュが不足していたら停止する。UI 関連の両フラグを `OFF` にし、FetchContent をオフラインに固定する。ビルド後は既存ラッパーの CLI スモーク結果とマニフェスト、実行ファイルの SHA-256、Radeon 8060S の列挙を照合する。`test-backend-ops.exe` は自動実行しない。コマンド、標準出力、標準エラー、終了コード、所要時間は `C:\llama-build\_logs\codex` に保存する。
+| Release 構成 | 所要時間 | BuildIdentity | llama-cli.exe SHA-256 |
+|---|---:|---|---|
+| Vulkan・VS2022 x64、VS2026 Clang 22.1.3、Vulkan SDK 1.4.357.0、OpenMP 22.1.8、CPU全バリアントOFF | 140.34 秒 | Verified | `2e7f5135ded3917d20a1d9183c9ef04b74beea9fcdfad16ee7e7d845b3590abe` |
+| ROCm・VS2022 x64、TheRock 10.0.0、AMD Clang 23.0.0git、gfx1151 | 440.44 秒 | Verified | `b1fa09954e77510aa0db1d2bab35faf70f1e4662dd9f631f185a5a7b42029e6a` |
+
+両ビルドは Radeon 8060S のデバイス列挙と旧 IQ3 の短文生成を確認済み。全実行ファイルのハッシュ、条件、ログは [b12651 ベースライン記録](UPSTREAM-B12651-20261124.md) を参照する。
+
+## 2026-11-23 縺ｮ繝ｩ繝・ヱ繝ｼ讀懆ｨｼ譎らせ
 
 2026-11-23 の実装確認では PowerShell 5.1 パーサーと UTF-8 BOM の確認が通過した。Vulkan preflight は終了コード `0`（1.88秒）、ROCm preflight は終了コード `0`（2.22秒）。両方ともビルド先を作成しなかった。この新ラッパーによる configure、ビルド、成果物検証は未実施。
 
