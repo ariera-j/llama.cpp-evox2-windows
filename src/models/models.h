@@ -2941,6 +2941,8 @@ struct llama_model_qwen4exp : public llama_model_base {
 
     class llm_graph_input_kpool;
 
+    std::vector<ggml_tensor *> ple_ngram_embd;
+
     void load_arch_hparams(llama_model_loader & ml) override;
     void load_arch_tensors(llama_model_loader & ml) override;
     uint32_t graph_nodes_per_tensor() const override { return 32; }
