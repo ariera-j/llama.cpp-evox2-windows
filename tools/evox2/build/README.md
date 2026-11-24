@@ -8,6 +8,10 @@ The Codex wrapper validates BoringSSL and, for Vulkan, LLVM OpenMP under `C:\lla
 
 Both Vulkan wrappers accept `-CpuAllVariants ON|OFF` and default to `ON`. The b12651 Vulkan baseline passes `OFF` to omit the Sapphire Rapids AMX target and builds one CPU plugin. `GGML_NATIVE=OFF` and `GGML_BACKEND_DL=ON` are retained. The Codex wrapper accepts the explicit pair `-VulkanLlvmBin` and `-ExpectedVulkanClangVersion`. For b12651 use VS2026 Clang 22.1.3 with LLVM OpenMP 22.1.8 under the VS2022 x64 host environment.
 
+Vulkan manifests record the verified `GGML_CPU_ALL_VARIANTS:BOOL` value from `CMakeCache.txt`. `BuildOnly` and `ManifestOnly` use the existing cache when the parameter is omitted. An explicit mismatch, a missing entry, or a value other than `ON` or `OFF` stops the invocation.
+
+Run `Test-Evox2VulkanCpuAllVariants.ps1` in Windows PowerShell 5.1 to check both variants and rejected cache states. The test uses temporary executables and directories.
+
 The cache fallback and capture behavior described in older sections applies to direct use of the historical backend wrappers. The Codex entry point prepares and verifies its private cache first.
 
 
