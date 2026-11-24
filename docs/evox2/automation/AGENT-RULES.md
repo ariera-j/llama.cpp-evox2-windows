@@ -16,3 +16,8 @@ Codex、OpenCode などが ThinkPad から EVO-X2 の専用 clone を操作す�
 - 両バックエンドとも自動検証は CLI のバージョン、デバイス列挙、マニフェスト照合まで。`test-backend-ops.exe` はビルド対象に含められる。自動実行と `-RunBackendTest` は禁止する。GPU 異常時の扱いは [既知の問題](KNOWN-ISSUES.md) を参照する。
 - Codex 専用ラッパーの通常ビルドと configure-only は、レビュー済み b12651 の公式 BoringSSL / LLVM OpenMP が専用キャッシュにない場合に限り自動取得できる。preflight は検査のみで、`-Offline` は依存取得を禁止する。破損、取得元・ハッシュ・SHA 不一致、取得不能、未レビューの upstream 入力は configure 前に停止する。SDK や開発ツールの自動導入・更新は行わない。
 - Codex 専用 clone のパスを維持し、ビルド先には短い未使用のディレクトリ名を選ぶ。長時間コンパイル時は Ninja の進捗、コンパイラのコマンドと PID、CPU 時間、メモリ、ログを保存する。変更を判断する前に同じ条件での再実行を避ける。
+
+## P-MODE 管理者タスク
+
+- 計測側はMethod ID 2の読み取りだけを行い、直接取得に失敗したら既存の `\Evox2\PModeProbe` をCOMで引数なしで起動する。
+- 管理者タスクは `C:\Program Files\Evox2\PModeProbe` の保護済みコピーを実行する。Codexはこの配置のファイル、タスク定義、DACL、ユーザー権限を変更しない。GitHub上の変更を反映する場合は、管理者が差分・SHA-256・ACLを確認する。[P-MODE 読み取り運用](PMODE-PROBE.md)
