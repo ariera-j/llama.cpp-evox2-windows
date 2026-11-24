@@ -584,6 +584,18 @@ function Assert-Evox2DependencyInputs {
         ':(icase,literal)ui/apps/chat/.npmrc'
     )
     $gitArgs = @('-C', $RepoRoot, '-c', 'core.quotePath=false')
+    # This reviewed ggml-base source-list addition enables the ROCmFPx codecs.
+    # Any other change to the file still requires a dependency review.
+    $rocmfpxBuildPath = 'ggml/src/CMakeLists.txt'
+    $rocmfpxBuildBlob = 'cfdb9a0ac0fe698592cf448657fc81bf7d247cdc'
+    $reviewedRocmFpxBuild = $false
+    if (Test-Path -LiteralPath (Join-Path $RepoRoot $rocmfpxBuildPath) -PathType Leaf) {
+        $blob = Invoke-Evox2DependencyCommand git ($gitArgs + @(
+            'hash-object', "--path=$rocmfpxBuildPath", '--', $rocmfpxBuildPath
+        ))
+        $reviewedRocmFpxBuild = $blob -ceq $rocmfpxBuildBlob
+    }
+
     $issues = @(foreach ($inputGroup in @(
         @{ Paths = $cmakeInputs; Reason = 'CMake configuration can change dependency acquisition' },
         @{ Paths = $packageInputs; Reason = 'package or submodule configuration can change dependency sources' }
@@ -591,6 +603,9 @@ function Assert-Evox2DependencyInputs {
         $tracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
             'diff', '--name-only', '--no-ext-diff', '--no-renames', '--ignore-submodules=none', $AuditedCommit, '--'
         ) + $inputGroup.Paths)
+        if ($reviewedRocmFpxBuild) {
+            $tracked = @($tracked | Where-Object { $_ -cne $rocmfpxBuildPath })
+        }
         $untracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
             'ls-files', '--others', '--exclude-standard', '--'
         ) + $inputGroup.Paths)
