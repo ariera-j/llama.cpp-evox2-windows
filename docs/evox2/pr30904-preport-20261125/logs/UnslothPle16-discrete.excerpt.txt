@@ -1,0 +1,75 @@
+# Selected stderr lines. Full file hash in ../raw-log-sha256.csv.
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon(TM) 8060S Graphics (AMD proprietary driver) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 64 | shared memory: 32768 | int dot: 1 | matrix cores: KHR_coopmat
+load_tensors: offloaded 49/49 layers to GPU
+llama_context: n_ctx                 = 256
+llama_context: flash_attn            = enabled
+llama_kv_cache: size =    6.00 MiB (   256 cells,  12 layers,  1/1 seqs), K (f16):    3.00 MiB, V (f16):    3.00 MiB
+llama_kv_cache: size =    1.50 MiB (   256 cells,  12 layers,  1/1 seqs), K (f16):    1.50 MiB, V (f16):    0.00 MiB
+
+----------------
+Vulkan Timings:
+ABS: 32 x 2.381 us = 76.2 us
+ADD: 3936 x 2.295 us = 9035.52 us
+CLAMP: 32 x 1.961 us = 62.76 us
+CONCAT: 2048 x 4.324 us = 8855.88 us
+CONT: 1088 x 1.97 us = 2144.4 us
+CPY: 2336 x 7.687 us = 17958 us
+DSV4_HC_POST: 32 x 2.202 us = 70.48 us
+DSV4_HC_PRE: 3072 x 1.882 us = 5781.8 us
+FILL: 1225 x 1.985 us = 2431.76 us
+FLASH_ATTN_EXT dst(256,24,1,1),  q(256,1,24,1),  k(256,256,2,1),  v(256,256,2,1),  m(256,1,1,1): 384 x 70.734 us = 27162.2 us (88.9442 GFLOPS/s)
+GATED_DELTA_NET: 1152 x 18.683 us = 21523.2 us
+GET_ROWS: 3712 x 7.17 us = 26617.4 us
+GLU: 3072 x 2.045 us = 6285 us
+HC_POST_GATE SCALE: 3040 x 2.415 us = 7343.8 us
+LIGHTNING_INDEXER: 384 x 10.498 us = 4031.44 us
+MUL: 2112 x 3.736 us = 7891.08 us
+MULTI_ADD ADD: 1600 x 4.59 us = 7344.72 us
+MUL_MAT_ID_MUL MUL_MAT_ID_VEC iq4_nl m=2560 n=10 k=640 n_expert=512: 1536 x 64.441 us = 98982.6 us (508.093 GFLOPS/s)
+MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512: 3008 x 57.387 us = 172622 us (570.882 GFLOPS/s)
+MUL_MAT_ID_VEC iq3_s m=640 n=10 k=2560 n_expert=512: 64 x 66.723 us = 4270.32 us (491.004 GFLOPS/s)
+MUL_MAT_VEC bf16 m=128 n=1 k=2560: 384 x 7.144 us = 2743.6 us (91.7076 GFLOPS/s)
+MUL_MAT_VEC bf16 m=512 n=1 k=2560: 384 x 14.345 us = 5508.5 us (182.706 GFLOPS/s)
+MUL_MAT_VEC f32 m=1 n=1 k=2560: 1536 x 2.698 us = 4144.36 us (1.89723 GFLOPS/s)
+MUL_MAT_VEC f32 m=4 n=1 k=10240: 3072 x 5.457 us = 16765.8 us (15.0095 GFLOPS/s)
+MUL_MAT_VEC f32 m=48 n=1 k=2560: 2304 x 4.392 us = 10120.8 us (55.9366 GFLOPS/s)
+MUL_MAT_VEC f32 m=512 n=1 k=2560: 1536 x 30.676 us = 47119.7 us (85.4366 GFLOPS/s)
+MUL_MAT_VEC q6_K m=10240 n=1 k=2560: 1120 x 197.331 us = 221011 us (265.637 GFLOPS/s)
+MUL_MAT_VEC q6_K m=12288 n=1 k=2560: 384 x 116.794 us = 44849.2 us (538.57 GFLOPS/s)
+MUL_MAT_VEC q6_K m=248320 n=1 k=2560: 32 x 2263.95 us = 72446.4 us (561.474 GFLOPS/s)
+MUL_MAT_VEC q6_K m=2560 n=1 k=6144: 1536 x 60.73 us = 93282.5 us (517.937 GFLOPS/s)
+MUL_MAT_VEC q6_K m=512 n=1 k=2560: 768 x 8.075 us = 6201.89 us (324.558 GFLOPS/s)
+MUL_MAT_VEC q6_K m=6144 n=1 k=2560: 1120 x 61.08 us = 68409.6 us (514.917 GFLOPS/s)
+MUL_MAT_VEC q6_K m=640 n=1 k=2560: 3008 x 9.709 us = 29205.7 us (337.423 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=10240 n=1 k=2560: 64 x 121.361 us = 7767.12 us (431.922 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=10240 n=1 k=320: 3104 x 17.473 us = 54236.2 us (374.484 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=2560 n=1 k=2560: 32 x 36.911 us = 1181.16 us (355.031 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=2560 n=1 k=640: 1536 x 10.532 us = 16178.1 us (310.867 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=320 n=1 k=10240: 3104 x 18.544 us = 57562.4 us (353.38 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=6144 n=1 k=2560: 32 x 73.411 us = 2349.16 us (428.424 GFLOPS/s)
+MUL_MAT_VEC q8_0 m=640 n=1 k=2560: 64 x 10.208 us = 653.36 us (320.917 GFLOPS/s)
+REPEAT: 64 x 4.148 us = 265.48 us
+RMS_NORM(128,16,1,1): 2304 x 3.073 us = 7081.28 us
+RMS_NORM_MUL RMS_NORM(128,1,1,1): 384 x 5.602 us = 2151.36 us
+RMS_NORM_MUL RMS_NORM(128,4,1,1): 384 x 3.889 us = 1493.6 us
+RMS_NORM_MUL RMS_NORM(128,48,1,1): 1152 x 5.866 us = 6757.68 us
+RMS_NORM_MUL RMS_NORM(256,2,1,1): 384 x 2.45 us = 941.04 us
+RMS_NORM_MUL RMS_NORM(256,24,1,1): 384 x 6.151 us = 2362.2 us
+RMS_NORM_MUL RMS_NORM(2560,4,1,1): 3200 x 215.891 us = 690852 us
+ROPE: 1152 x 2.692 us = 3101.32 us
+ROPE_VIEW_SET_ROWS ROPE: 384 x 3.987 us = 1531.12 us
+SCALE: 5920 x 2.547 us = 15081.6 us
+SET_ROWS: 1152 x 2.547 us = 2935.12 us
+SGN: 32 x 1.983 us = 63.48 us
+SIGMOID: 3104 x 2.153 us = 6683.64 us
+SIGMOID_MUL SIGMOID: 1216 x 2.986 us = 3631.64 us
+SILU: 3136 x 2.253 us = 7066 us
+SOFTPLUS_MUL SOFTPLUS: 1152 x 2.042 us = 2353.36 us
+SQRT: 32 x 2.321 us = 74.28 us
+SSM_CONV_SILU SSM_CONV: 1152 x 2.736 us = 3152.6 us
+SUM_ROWS: 32 x 8.303 us = 265.72 us
+TOPK_MOE_EARLY_SOFTMAX_NORM SOFT_MAX: 1536 x 10.49 us = 16113.3 us
+TOP_K K=64 (64,1,1,1): 384 x 736.671 us = 282882 us
+TOP_K_MASK: 384 x 3.227 us = 1239.32 us
+Total time: 2.25031e+06 us.

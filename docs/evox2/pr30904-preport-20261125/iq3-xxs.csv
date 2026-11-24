@@ -1,0 +1,9 @@
+model,logger,op,weight_type,m,n,k,n_expert,interval_count,sum_us,sum_us_per_token,percent_of_logger_total,logger_total_us,tg_tokens
+IQ3,discrete,MUL_MAT_VEC,IQ3_XXS,,,,,0,0,0,0,2250310.000,32
+IQ3,discrete,MUL_MAT_ID_VEC,IQ3_XXS,,,,,0,0,0,0,2250310.000,32
+IQ3,concurrent,MUL_MAT_VEC,IQ3_XXS,,,,,0,0,0,0,1041720.000,32
+IQ3,concurrent,MUL_MAT_ID_VEC,IQ3_XXS,,,,,0,0,0,0,1041720.000,32
+FAST,discrete,MUL_MAT_VEC,IQ3_XXS,,,,,0,0,0,0,2050440.000,32
+FAST,discrete,MUL_MAT_ID_VEC,IQ3_XXS,,,,,0,0,0,0,2050440.000,32
+FAST,concurrent,MUL_MAT_VEC,IQ3_XXS,,,,,0,0,0,0,1055740.000,32
+FAST,concurrent,MUL_MAT_ID_VEC,IQ3_XXS,,,,,0,0,0,0,1055740.000,32

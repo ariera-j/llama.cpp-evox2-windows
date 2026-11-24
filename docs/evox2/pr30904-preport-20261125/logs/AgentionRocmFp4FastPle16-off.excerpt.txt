@@ -1,0 +1,8 @@
+# Selected stderr lines. Full file hash in ../raw-log-sha256.csv.
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon(TM) 8060S Graphics (AMD proprietary driver) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 64 | shared memory: 32768 | int dot: 1 | matrix cores: KHR_coopmat
+load_tensors: offloaded 49/49 layers to GPU
+llama_context: n_ctx                 = 256
+llama_context: flash_attn            = enabled
+llama_kv_cache: size =    6.00 MiB (   256 cells,  12 layers,  1/1 seqs), K (f16):    3.00 MiB, V (f16):    3.00 MiB
+llama_kv_cache: size =    1.50 MiB (   256 cells,  12 layers,  1/1 seqs), K (f16):    1.50 MiB, V (f16):    0.00 MiB

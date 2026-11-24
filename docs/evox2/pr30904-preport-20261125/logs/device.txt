@@ -1,0 +1,13 @@
+Selected lines from vulkaninfo.exe, before the runs.
+deviceName        = AMD Radeon(TM) 8060S Graphics
+subgroupSize                      = 64
+SUBGROUP_FEATURE_ARITHMETIC_BIT
+driverName                                           = AMD proprietary driver
+driverInfo                                           = 26.8.1 (LLPC)
+minSubgroupSize                                                               = 32
+maxSubgroupSize                                                               = 64
+size   = 103079215104 (0x1800000000) (96.00 GiB)
+budget = 97925251072 (0x16ccccc000) (91.20 GiB)
+MEMORY_HEAP_DEVICE_LOCAL_BIT
+subgroupSizeControl                                = true
+computeFullSubgroups                               = true
