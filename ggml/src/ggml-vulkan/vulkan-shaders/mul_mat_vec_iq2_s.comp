@@ -5,7 +5,19 @@
 
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 
+layout(constant_id = 3) const uint IQ2_S_EXPERIMENT = 0;
+const bool HOIST_SIGNS = (IQ2_S_EXPERIMENT & 1u) != 0u;
+// Limit the extra per-column accumulators on wider MatVecs.
+const bool LOCAL_ACC = (IQ2_S_EXPERIMENT & 2u) != 0u && NUM_COLS <= 6;
+
 FLOAT_TYPE temp[NUM_COLS][NUM_ROWS];
+
+vec4 signed_grid(vec4 grid, uint signs) {
+    return vec4((signs & 1u) != 0u ? -grid.x : grid.x,
+                (signs & 2u) != 0u ? -grid.y : grid.y,
+                (signs & 4u) != 0u ? -grid.z : grid.z,
+                (signs & 8u) != 0u ? -grid.w : grid.w);
+}
 
 void calc_superblock(const uint a_offset, const uint b_offset, const uint itid, const uint i, const uint num_blocks_per_row, const uint first_row, const uint num_rows) {
     const uint y_idx = i * QUANT_K + 16 * itid;
@@ -21,28 +33,49 @@ void calc_superblock(const uint a_offset, const uint b_offset, const uint itid, 
         const uint qh = data_a[ibi].qh[ib32];
         const u8vec2 qs16 = unpack8(uint32_t(data_a_packed16[ibi].qs[itid])).xy; // vec4 used due to #12147
         const u8vec2 sign16 = unpack8(uint32_t(data_a_packed16[ibi].qs[QUANT_K / 16 + itid])).xy;
+        // The two eight-element grids of this lane share the same scale.
+        FLOAT_TYPE accum[NUM_COLS];
+        if (LOCAL_ACC) {
+            [[unroll]] for (uint j = 0; j < NUM_COLS; ++j) {
+                accum[j] = FLOAT_TYPE(0.0);
+            }
+        }
         [[unroll]] for (uint l = 0; l < 2; ++l) {
             const uint8_t sign = sign16[l];
             const uint qs = qs16[l] | ((qh << (8 - nibble_shift - 2 * l)) & 0x300);
             const uvec2 grid = iq2s_grid[qs];
             const vec4 grid0 = vec4(unpack8(grid.x));
             const vec4 grid1 = vec4(unpack8(grid.y));
+            const vec4 hoisted0 = HOIST_SIGNS ? signed_grid(grid0, uint(sign)) : vec4(0.0);
+            const vec4 hoisted1 = HOIST_SIGNS ? signed_grid(grid1, uint(sign) >> 4) : vec4(0.0);
 
             [[unroll]] for (uint j = 0; j < NUM_COLS; ++j) {
                 vec4 b0 = vec4(data_b_v4[(j*p.batch_stride_b + b_offset + y_idx) / 4 + 2*l + 0]);
                 vec4 b4 = vec4(data_b_v4[(j*p.batch_stride_b + b_offset + y_idx) / 4 + 2*l + 1]);
 
-                FLOAT_TYPE sum =
-                      fma(FLOAT_TYPE(b0.x), FLOAT_TYPE((sign &   1) != 0 ? -grid0.x : grid0.x),
-                      fma(FLOAT_TYPE(b0.y), FLOAT_TYPE((sign &   2) != 0 ? -grid0.y : grid0.y),
-                      fma(FLOAT_TYPE(b0.z), FLOAT_TYPE((sign &   4) != 0 ? -grid0.z : grid0.z),
-                      fma(FLOAT_TYPE(b0.w), FLOAT_TYPE((sign &   8) != 0 ? -grid0.w : grid0.w),
-                      fma(FLOAT_TYPE(b4.x), FLOAT_TYPE((sign &  16) != 0 ? -grid1.x : grid1.x),
-                      fma(FLOAT_TYPE(b4.y), FLOAT_TYPE((sign &  32) != 0 ? -grid1.y : grid1.y),
-                      fma(FLOAT_TYPE(b4.z), FLOAT_TYPE((sign &  64) != 0 ? -grid1.z : grid1.z),
-                      fma(FLOAT_TYPE(b4.w), FLOAT_TYPE((sign & 128) != 0 ? -grid1.w : grid1.w),
-                      FLOAT_TYPE(0.0)))))))));
-                temp[j][n] = fma(db, sum, temp[j][n]);
+                const vec4 signed0 = HOIST_SIGNS ? hoisted0 : signed_grid(grid0, uint(sign));
+                const vec4 signed1 = HOIST_SIGNS ? hoisted1 : signed_grid(grid1, uint(sign) >> 4);
+                const FLOAT_TYPE seed = LOCAL_ACC ? accum[j] : FLOAT_TYPE(0.0);
+                const FLOAT_TYPE sum =
+                      fma(FLOAT_TYPE(b0.x), FLOAT_TYPE(signed0.x),
+                      fma(FLOAT_TYPE(b0.y), FLOAT_TYPE(signed0.y),
+                      fma(FLOAT_TYPE(b0.z), FLOAT_TYPE(signed0.z),
+                      fma(FLOAT_TYPE(b0.w), FLOAT_TYPE(signed0.w),
+                      fma(FLOAT_TYPE(b4.x), FLOAT_TYPE(signed1.x),
+                      fma(FLOAT_TYPE(b4.y), FLOAT_TYPE(signed1.y),
+                      fma(FLOAT_TYPE(b4.z), FLOAT_TYPE(signed1.z),
+                      fma(FLOAT_TYPE(b4.w), FLOAT_TYPE(signed1.w),
+                      seed))))))));
+                if (LOCAL_ACC) {
+                    accum[j] = sum;
+                } else {
+                    temp[j][n] = fma(db, sum, temp[j][n]);
+                }
+            }
+        }
+        if (LOCAL_ACC) {
+            [[unroll]] for (uint j = 0; j < NUM_COLS; ++j) {
+                temp[j][n] = fma(db, accum[j], temp[j][n]);
             }
         }
         ibi += num_blocks_per_row;
