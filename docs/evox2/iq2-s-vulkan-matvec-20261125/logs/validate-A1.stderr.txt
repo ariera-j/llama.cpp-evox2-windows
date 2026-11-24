@@ -1,0 +1,27 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon(TM) 8060S Graphics (AMD proprietary driver) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 64 | shared memory: 32768 | int dot: 1 | matrix cores: KHR_coopmat
+load_backend: loaded Vulkan backend from C:\llama-build\automation\llama.cpp-evox2-windows\build-i2mv\bin\Release\ggml-vulkan.dll
+ggml_vulkan: pipeline stats for mul_mat_vec_iq2_s_f32_f32:
+ggml_vulkan:   numUsedVgprs: 82
+ggml_vulkan:   numUsedSgprs: 106
+ggml_vulkan:   ldsSizePerLocalWorkGroup: 65536
+ggml_vulkan:   ldsUsageSizeInBytes: 8192
+ggml_vulkan:   scratchMemUsageInBytes: 0
+ggml_vulkan: pipeline stats for mul_mat_vec_iq2_s_f32_f32:
+ggml_vulkan:   numUsedVgprs: 103
+ggml_vulkan:   numUsedSgprs: 77
+ggml_vulkan:   ldsSizePerLocalWorkGroup: 65536
+ggml_vulkan:   ldsUsageSizeInBytes: 8192
+ggml_vulkan:   scratchMemUsageInBytes: 0
+ggml_vulkan: pipeline stats for mul_mat_vec_iq2_s_f32_f32:
+ggml_vulkan:   numUsedVgprs: 236
+ggml_vulkan:   numUsedSgprs: 95
+ggml_vulkan:   ldsSizePerLocalWorkGroup: 65536
+ggml_vulkan:   ldsUsageSizeInBytes: 8192
+ggml_vulkan:   scratchMemUsageInBytes: 0
+ggml_vulkan: pipeline stats for mul_mat_vec_id_iq2_s_f32:
+ggml_vulkan:   numUsedVgprs: 82
+ggml_vulkan:   numUsedSgprs: 106
+ggml_vulkan:   ldsSizePerLocalWorkGroup: 65536
+ggml_vulkan:   ldsUsageSizeInBytes: 8192
+ggml_vulkan:   scratchMemUsageInBytes: 0

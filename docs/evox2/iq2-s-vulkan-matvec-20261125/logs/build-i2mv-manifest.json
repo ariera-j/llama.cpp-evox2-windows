@@ -1,0 +1,289 @@
+{
+    "SchemaVersion":  1,
+    "GeneratedAt":  "2026-11-25T00:46:53.3998557+09:00",
+    "GeneratedBy":  "tools/evox2/build/Build-Vulkan.ps1",
+    "Backend":  "Vulkan",
+    "Configuration":  "Release",
+    "BuildDirectory":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv",
+    "BinaryDirectory":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release",
+    "Source":  {
+                   "RepoRoot":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows",
+                   "Commit":  "a38ba149d11d6a7067e6c323523f95c7889b167b",
+                   "ShortCommit":  "a38ba149d1",
+                   "Branch":  "codex/iq2-s-vulkan-matvec-20261125",
+                   "Dirty":  false,
+                   "DirtyFingerprint":  null,
+                   "RemoteOrigin":  "git@github-evox2-windows:ariera-j/llama.cpp-evox2-windows.git",
+                   "StatusPorcelain":  {
+
+                                       }
+               },
+    "BuildSource":  {
+                        "RepoRoot":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows",
+                        "Commit":  "a38ba149d11d6a7067e6c323523f95c7889b167b",
+                        "ShortCommit":  "a38ba149d1",
+                        "Branch":  "codex/iq2-s-vulkan-matvec-20261125",
+                        "Dirty":  false,
+                        "DirtyFingerprint":  null,
+                        "RemoteOrigin":  "git@github-evox2-windows:ariera-j/llama.cpp-evox2-windows.git",
+                        "StatusPorcelain":  {
+
+                                            }
+                    },
+    "BuildIdentity":  {
+                          "Status":  "Verified",
+                          "Reason":  "Source stable during build; embedded commit matches."
+                      },
+    "ExecutableIdentity":  {
+                               "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-cli.exe",
+                               "Name":  "llama-cli.exe",
+                               "Directory":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release",
+                               "Sha256":  "3424b284c5f98538a012dcecb8628b1353e3f0b271bd9270f50ce195511aa15c",
+                               "LengthBytes":  10240,
+                               "Version":  "1.0.0-dev",
+                               "BuildNumber":  12679,
+                               "Commit":  "a38ba149d",
+                               "Compiler":  "Clang 22.1.3",
+                               "VersionExitCode":  0,
+                               "VersionText":  "version: 1.0.0-dev (build 12679, commit a38ba149d)\r\nbuilt with Clang 22.1.3 for Windows x86_64"
+                           },
+    "DeviceIdentity":  {
+                           "BackendDetected":  "Vulkan",
+                           "Devices":  [
+                                           {
+                                               "Id":  "Vulkan0",
+                                               "Backend":  "Vulkan",
+                                               "Name":  "AMD Radeon(TM) 8060S Graphics",
+                                               "TotalMiB":  114507,
+                                               "FreeMiB":  108782,
+                                               "RawLine":  "Vulkan0: AMD Radeon(TM) 8060S Graphics (114507 MiB, 108782 MiB free)"
+                                           }
+                                       ],
+                           "ExitCode":  0,
+                           "RawText":  "Available devices:\r\n  Vulkan0: AMD Radeon(TM) 8060S Graphics (114507 MiB, 108782 MiB free)"
+                       },
+    "Configure":  {
+                      "Executed":  false,
+                      "Generator":  "Ninja Multi-Config",
+                      "Arguments":  [
+                                        "-S",
+                                        "C:\\llama-build\\automation\\llama.cpp-evox2-windows",
+                                        "-B",
+                                        "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv",
+                                        "-G",
+                                        "Ninja Multi-Config",
+                                        "-DCMAKE_TOOLCHAIN_FILE=C:\\llama-build\\automation\\llama.cpp-evox2-windows\\cmake\\x64-windows-llvm.cmake",
+                                        "-DGGML_VULKAN=ON",
+                                        "-DGGML_NATIVE=OFF",
+                                        "-DGGML_BACKEND_DL=ON",
+                                        "-DGGML_CPU_ALL_VARIANTS:BOOL=OFF",
+                                        "-DGGML_OPENMP=ON",
+                                        "-DGGML_OPENMP_FETCH=ON",
+                                        "-DLLAMA_BUILD_BORINGSSL=ON",
+                                        "-DLLAMA_BUILD_EXAMPLES=OFF",
+                                        "-DLLAMA_BUILD_TESTS=ON",
+                                        "-DLLAMA_BUILD_TOOLS=ON",
+                                        "-DLLAMA_BUILD_SERVER=ON",
+                                        "-DLLAMA_BUILD_UI=OFF",
+                                        "-DGGML_RPC=ON",
+                                        "-DFETCHCONTENT_SOURCE_DIR_BORINGSSL=C:/llama-build/automation/_deps/fetchcontent/boringssl-0.20261105.0-src"
+                                    ],
+                      "ExtraArgs":  [
+
+                                    ],
+                      "MetadataRefresh":  {
+                                              "Executed":  true,
+                                              "Arguments":  [
+                                                                "-S",
+                                                                "C:\\llama-build\\automation\\llama.cpp-evox2-windows",
+                                                                "-B",
+                                                                "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv"
+                                                            ],
+                                              "CachePreserved":  true
+                                          }
+                  },
+    "Build":  {
+                  "Executed":  true,
+                  "Parallel":  4,
+                  "Targets":  [
+                                  "llama-cli",
+                                  "llama-server",
+                                  "llama-bench",
+                                  "test-backend-ops"
+                              ],
+                  "Arguments":  [
+                                    "--build",
+                                    "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv",
+                                    "--config",
+                                    "Release",
+                                    "--parallel",
+                                    "4",
+                                    "--target",
+                                    "llama-cli",
+                                    "llama-server",
+                                    "llama-bench",
+                                    "test-backend-ops"
+                                ]
+              },
+    "Toolchain":  {
+                      "CMake":  {
+                                    "Name":  "cmake",
+                                    "Path":  "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe",
+                                    "ExitCode":  0,
+                                    "Text":  "cmake version 3.31.6-msvc6\r\n\r\nCMake suite maintained and supported by Kitware (kitware.com/cmake)."
+                                },
+                      "Ninja":  {
+                                    "Name":  "ninja",
+                                    "Path":  "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja\\ninja.exe",
+                                    "ExitCode":  0,
+                                    "Text":  "1.12.1"
+                                },
+                      "Clang":  {
+                                    "Name":  "clang",
+                                    "Path":  "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin\\clang.exe",
+                                    "ExitCode":  0,
+                                    "Text":  "clang version 22.1.3 (https://github.com/llvm/llvm-project e9846648fd6183ee6d8cbdb4502213fcf902a211)\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin"
+                                },
+                      "ClangXX":  {
+                                      "Name":  "clang++",
+                                      "Path":  "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin\\clang++.exe",
+                                      "ExitCode":  0,
+                                      "Text":  "clang version 22.1.3 (https://github.com/llvm/llvm-project e9846648fd6183ee6d8cbdb4502213fcf902a211)\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin"
+                                  },
+                      "CL":  {
+                                 "Name":  "cl",
+                                 "Path":  "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\cl.exe",
+                                 "ExitCode":  2,
+                                 "Text":  "Microsoft(R) C/C++ Optimizing Compiler Version 19.44.35229 for x64\r\nCopyright (C) Microsoft Corporation.  All rights reserved.\r\nSystem.Management.Automation.RemoteException\r\nコンパイラ パス:\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\cl.exe:        Version 19.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\c1.dll:        Version 19.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\c1xx.dll:      Version 19.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\c2.dll:        Version 19.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\c1xx.dll:      Version 19.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe:      Version 14.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\mspdb140.dll:  Version 14.44.35229.0\r\n C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\1041\\clui.dll: Version 19.44.35229.0\r\nSystem.Management.Automation.RemoteException\r\ncl : コマンド ライン error D8003 : ソース ファイル名がありません"
+                             },
+                      "LlvmBin":  "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin",
+                      "VulkanSdk":  "C:\\VulkanSDK\\1.4.357.0",
+                      "SevenZipPath":  "C:\\Program Files\\7-Zip\\7z.exe"
+                  },
+    "BackendSettings":  {
+                            "Vulkan":  true,
+                            "Native":  false,
+                            "BackendDl":  true,
+                            "CpuAllVariants":  false
+                        },
+    "Runtime":  {
+                    "VulkanSdk":  "C:\\VulkanSDK\\1.4.357.0",
+                    "DependencyCache":  {
+                                            "Root":  "C:\\llama-build\\automation\\_deps",
+                                            "BoringSSL":  {
+                                                              "ExpectedVersion":  "0.20261105.0",
+                                                              "Source":  "C:\\llama-build\\automation\\_deps\\fetchcontent\\boringssl-0.20261105.0-src",
+                                                              "Reused":  true,
+                                                              "UserOverride":  false,
+                                                              "Reason":  null
+                                                          },
+                                            "OpenMP":  {
+                                                           "ExpectedVersion":  "22.1.8",
+                                                           "Source":  "C:\\llama-build\\automation\\_deps\\openmp\\llvm-openmp-22.1.8-x64",
+                                                           "BuildSeed":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\_deps\\llvm-openmp-22.1.8-x64",
+                                                           "Reused":  true,
+                                                           "Seeded":  false,
+                                                           "LicensePresent":  true,
+                                                           "Reason":  null
+                                                       },
+                                            "Captured":  null
+                                        }
+                },
+    "Validation":  {
+                       "SmokeSkipped":  false,
+                       "Version":  {
+                                       "FilePath":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-cli.exe",
+                                       "Arguments":  [
+                                                         "--version"
+                                                     ],
+                                       "ExitCode":  0,
+                                       "Tail":  [
+                                                    "version: 1.0.0-dev (build 12679, commit a38ba149d)",
+                                                    "built with Clang 22.1.3 for Windows x86_64"
+                                                ]
+                                   },
+                       "ListDevices":  {
+                                           "FilePath":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-cli.exe",
+                                           "Arguments":  [
+                                                             "--list-devices"
+                                                         ],
+                                           "ExitCode":  0,
+                                           "Tail":  [
+                                                        "Available devices:",
+                                                        "  Vulkan0: AMD Radeon(TM) 8060S Graphics (114507 MiB, 108782 MiB free)"
+                                                    ]
+                                       }
+                   },
+    "Artifacts":  [
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\ggml.dll",
+                          "Name":  "ggml.dll",
+                          "LengthBytes":  86528,
+                          "LastWriteTimeUtc":  "2026-11-24T15:45:50.4803048Z",
+                          "Sha256":  "28d7d5453b888b22e7260646806f99fbd791f37bc8c2b46e3c7634b0be9f0fcf"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\ggml-base.dll",
+                          "Name":  "ggml-base.dll",
+                          "LengthBytes":  921600,
+                          "LastWriteTimeUtc":  "2026-11-24T15:44:42.5951470Z",
+                          "Sha256":  "74d0839ebb6d22889179c347c8045a709fb39594f3ee877f3566eabd60131881"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\ggml-cpu.dll",
+                          "Name":  "ggml-cpu.dll",
+                          "LengthBytes":  969216,
+                          "LastWriteTimeUtc":  "2026-11-24T15:45:44.3883045Z",
+                          "Sha256":  "cf756302e4af40e05e9b7cefcbf844571fa2c589b48d0a0034de813e034fbf43"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\ggml-vulkan.dll",
+                          "Name":  "ggml-vulkan.dll",
+                          "LengthBytes":  55008256,
+                          "LastWriteTimeUtc":  "2026-11-24T15:45:44.5683035Z",
+                          "Sha256":  "891abd4dfd314607c2cfa608b84bf25ce67b25e31d98b2587d81f5d1bf846f0e"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama.dll",
+                          "Name":  "llama.dll",
+                          "LengthBytes":  4206592,
+                          "LastWriteTimeUtc":  "2026-11-24T15:46:03.4595446Z",
+                          "Sha256":  "477332faf377d058241df37ceaa3d3e9b7ee6041d3a215fcdff6183795bd5b02"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-bench.exe",
+                          "Name":  "llama-bench.exe",
+                          "LengthBytes":  10240,
+                          "LastWriteTimeUtc":  "2026-11-24T15:46:45.4295447Z",
+                          "Sha256":  "42e44e07faafb25becd3c0cdbdc0dbdcf3af4befe49ab77c8daf21a8190dc574"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-cli.exe",
+                          "Name":  "llama-cli.exe",
+                          "LengthBytes":  10240,
+                          "LastWriteTimeUtc":  "2026-11-24T15:46:46.3835443Z",
+                          "Sha256":  "3424b284c5f98538a012dcecb8628b1353e3f0b271bd9270f50ce195511aa15c"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-common.dll",
+                          "Name":  "llama-common.dll",
+                          "LengthBytes":  9241600,
+                          "LastWriteTimeUtc":  "2026-11-24T15:46:32.5215468Z",
+                          "Sha256":  "8b50e4b283206b8a92843664c4154b55792829d52ced835ad2d47d4781b2a068"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\llama-server.exe",
+                          "Name":  "llama-server.exe",
+                          "LengthBytes":  10240,
+                          "LastWriteTimeUtc":  "2026-11-24T15:46:45.7725429Z",
+                          "Sha256":  "97aec001f0c4a8b409e2e7e084a974a6cbe7813da62126c468f85f661667fdeb"
+                      },
+                      {
+                          "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-i2mv\\bin\\Release\\test-backend-ops.exe",
+                          "Name":  "test-backend-ops.exe",
+                          "LengthBytes":  2514944,
+                          "LastWriteTimeUtc":  "2026-11-24T15:46:52.6562746Z",
+                          "Sha256":  "756fcc1756ae01982c713588ae06e87f4b6fb918d9a094ca540a024a9b69e77f"
+                      }
+                  ]
+}

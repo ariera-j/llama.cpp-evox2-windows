@@ -1,0 +1,17 @@
+variant,pipeline,num_cols,num_rows,workgroup_x,subgroup,numUsedVgprs,numUsedSgprs,ldsSizePerLocalWorkGroup,ldsUsageSizeInBytes,scratchMemUsageInBytes
+Base,mul_mat_vec_iq2_s_f32_f32,1,4,64,64,82,106,65536,8192,0
+Base,mul_mat_vec_iq2_s_f32_f32,3,4,64,64,103,77,65536,8192,0
+Base,mul_mat_vec_iq2_s_f32_f32,8,4,64,64,236,95,65536,8192,0
+Base,mul_mat_vec_id_iq2_s_f32,1,4,64,64,82,106,65536,8192,0
+A1,mul_mat_vec_iq2_s_f32_f32,1,4,64,64,82,106,65536,8192,0
+A1,mul_mat_vec_iq2_s_f32_f32,3,4,64,64,103,77,65536,8192,0
+A1,mul_mat_vec_iq2_s_f32_f32,8,4,64,64,236,95,65536,8192,0
+A1,mul_mat_vec_id_iq2_s_f32,1,4,64,64,82,106,65536,8192,0
+A2,mul_mat_vec_iq2_s_f32_f32,1,4,64,64,73,106,65536,8192,0
+A2,mul_mat_vec_iq2_s_f32_f32,3,4,64,64,103,77,65536,8192,0
+A2,mul_mat_vec_iq2_s_f32_f32,8,4,64,64,236,95,65536,8192,0
+A2,mul_mat_vec_id_iq2_s_f32,1,4,64,64,73,106,65536,8192,0
+A1A2,mul_mat_vec_iq2_s_f32_f32,1,4,64,64,73,106,65536,8192,0
+A1A2,mul_mat_vec_iq2_s_f32_f32,3,4,64,64,103,77,65536,8192,0
+A1A2,mul_mat_vec_iq2_s_f32_f32,8,4,64,64,236,95,65536,8192,0
+A1A2,mul_mat_vec_id_iq2_s_f32,1,4,64,64,73,106,65536,8192,0
