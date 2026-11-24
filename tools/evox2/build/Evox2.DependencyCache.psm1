@@ -554,6 +554,63 @@ function Publish-Evox2Dependency {
     }
 }
 
+function Assert-Evox2DependencyInputs {
+    param([string]$RepoRoot, [string]$AuditedCommit)
+
+    # CMake entry points, nested projects, modules and templates can all
+    # introduce a fetch or override an acquisition setting in another file.
+    $cmakeInputs = @(
+        ':(icase,glob)**/CMakeLists.txt',
+        ':(icase,glob)**/*.cmake',
+        ':(icase,glob)**/*.cmake.in',
+        # ADLX is built separately and is not reachable from llama.cpp CMake.
+        ':(exclude,icase,literal)tools/evox2/adlx-gpu-monitor/CMakeLists.txt'
+    )
+    # ui-assets.cmake can run npm ci, including local package dependencies.
+    # Git submodules can introduce another source repository.
+    $packageInputs = @(
+        ':(icase,glob)ui/**/package.json',
+        ':(icase,glob)ui/**/package-lock.json',
+        ':(icase,glob)ui/**/npm-shrinkwrap.json',
+        ':(icase,glob)ui/**/.npmrc',
+        ':(icase,literal).gitmodules'
+    )
+
+    # The root and ggml projects search these module directories before using
+    # CMake's bundled modules. An ignored file there can shadow a bundled one.
+    $ignoredModules = @(
+        ':(icase,glob)cmake/**/*.cmake',
+        ':(icase,glob)ggml/cmake/**/*.cmake',
+        ':(icase,literal)ui/apps/chat/.npmrc'
+    )
+    $gitArgs = @('-C', $RepoRoot, '-c', 'core.quotePath=false')
+    $issues = @(foreach ($inputGroup in @(
+        @{ Paths = $cmakeInputs; Reason = 'CMake configuration can change dependency acquisition' },
+        @{ Paths = $packageInputs; Reason = 'package or submodule configuration can change dependency sources' }
+    )) {
+        $tracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
+            'diff', '--name-only', '--no-ext-diff', '--no-renames', '--ignore-submodules=none', $AuditedCommit, '--'
+        ) + $inputGroup.Paths)
+        $untracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
+            'ls-files', '--others', '--exclude-standard', '--'
+        ) + $inputGroup.Paths)
+        foreach ($path in @($tracked) + @($untracked) | Sort-Object -Unique) {
+            if ($path) { "${path}: $($inputGroup.Reason)" }
+        }
+    })
+
+    $issues += @(Invoke-Evox2DependencyCommand git ($gitArgs + @(
+        'ls-files', '--others', '--ignored', '--exclude-standard', '--'
+    ) + $ignoredModules) | ForEach-Object {
+        "${_}: ignored local module or npm configuration can override dependency acquisition"
+    })
+
+    if ($issues) {
+        throw ("Dependency inputs differ from reviewed baseline $AuditedCommit. Review these files before building:`n" +
+            ($issues -join "`n"))
+    }
+}
+
 function Initialize-Evox2CodexDependencies {
     [CmdletBinding()]
     param(
@@ -563,14 +620,7 @@ function Initialize-Evox2CodexDependencies {
         [switch]$AllowDownload
     )
 
-    # Review new upstream build inputs before permitting their network operations.
-    $audited = 'f5e6915c28f10330885fcb9243a93ae98d3115ab'
-    $scope = @('.', ':(exclude)docs/evox2', ':(exclude)tools/evox2')
-    & git -C $RepoRoot diff --quiet $audited -- @scope
-    if ($LASTEXITCODE -ne 0) { throw "Upstream inputs differ from reviewed b12651 ($audited). Review dependency declarations before building." }
-    if (@(Invoke-Evox2DependencyCommand git (@('-C', $RepoRoot, 'ls-files', '--others', '--exclude-standard', '--') + $scope)).Count) {
-        throw 'Unexpected untracked upstream inputs. Review dependency declarations before building.'
-    }
+    Assert-Evox2DependencyInputs -RepoRoot $RepoRoot -AuditedCommit 'f5e6915c28f10330885fcb9243a93ae98d3115ab'
 
     $versions = Get-Evox2DependencyVersions $RepoRoot
     $sslCmake = Join-Path $RepoRoot 'vendor\cpp-httplib\CMakeLists.txt'
