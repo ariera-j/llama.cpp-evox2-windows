@@ -87,6 +87,7 @@ param(
 
     [string[]]$ExtraArgs = @(),
 
+    [switch]$CapturePhaseMarkers,
     [switch]$RamDetail,
     [ValidateRange(100, 1000)][int]$RamDetailIntervalMs = 250,
     [ValidateRange(0, 120)][int]$RamDetailPreSeconds = 3,
@@ -129,7 +130,7 @@ $benchmarkModule = Join-Path $benchmarkDir 'Evox2.Benchmark.psm1'
 
 Import-Module $commonModule -Force
 Import-Module $benchmarkModule -Force
-if ($RamDetail) { Import-Module (Join-Path $benchmarkDir 'Evox2.RamDetail.psm1') -Force }
+if ($RamDetail -or $CapturePhaseMarkers) { Import-Module (Join-Path $benchmarkDir 'Evox2.RamDetail.psm1') -Force }
 Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
@@ -425,6 +426,7 @@ $RamSettings = @{
 }
 
 if ($RamDetail) { $ConditionFingerprint.RamDetail = $RamSettings }
+if ($CapturePhaseMarkers) { $ConditionFingerprint.CapturePhaseMarkers = $true }
 $ConditionId = Get-Evox2ConditionId -Condition $ConditionFingerprint
 $BuildLabel = Get-Evox2BuildLabel -ExecutableMetadata $Identity.Executable
 $CommandLine = ConvertTo-Evox2CommandLine `
@@ -562,6 +564,7 @@ $Conditions = [ordered]@{
         UmaLabel = $UmaLabel
     }
 
+    CapturePhaseMarkers = [bool]$CapturePhaseMarkers
     RamDetail = @{ Requested = [bool]$RamDetail; Settings = $RamSettings }
     ResourceMonitor = [ordered]@{
         Enabled         = [bool]$ResourceMonitor
@@ -677,6 +680,13 @@ try {
         }
     }
 
+    if ($CapturePhaseMarkers -and !$RamDetail) {
+        try {
+            $DetailMonitor = New-Evox2RamDetail $RunDirectory $RunId $RamSettings $NativeJsonPath $StdErrPath
+            Open-Evox2PhaseMarkers $DetailMonitor
+            Write-Evox2RamLaunch $DetailMonitor
+        } catch { Write-Warning "Phase trace could not start: $($_.Exception.Message)" }
+    }
     $process = Start-Process `
         -FilePath $LlamaBench `
         -ArgumentList $argumentLine `
@@ -875,6 +885,25 @@ try {
     }
 }
 
+$TargetLifecycle = [ordered]@{
+    StartedUtc = $null; ExitedUtc = $null; ProcessSeconds = $null
+    ResidualPids = @()
+}
+if ($process) {
+    try {
+        $targetStart = $process.StartTime.ToUniversalTime()
+        $TargetLifecycle.StartedUtc = $targetStart.ToString('o')
+        if ($process.HasExited) {
+            $targetExit = $process.ExitTime.ToUniversalTime()
+            $TargetLifecycle.ExitedUtc = $targetExit.ToString('o')
+            $TargetLifecycle.ProcessSeconds = ($targetExit - $targetStart).TotalSeconds
+        }
+    } catch {}
+}
+$TargetLifecycle.ResidualPids = @(foreach ($observedProcess in @($process, $monitorProcess, $adlxMonitorProcess, $(if ($DetailMonitor) {$DetailMonitor.Process}))) {
+    if ($observedProcess -and !$observedProcess.HasExited) { $observedProcess.Id }
+})
+
 $Finished = Get-Date
 $BackgroundAtFinish = Get-Evox2BackgroundActivitySnapshot
 $BackgroundActivity = Compare-Evox2BackgroundActivitySnapshots -Before $BackgroundAtStart -After $BackgroundAtFinish
@@ -957,7 +986,7 @@ $AdlxQuality = Get-Evox2MonitoringQuality -Kind ADLX -CsvPath $GpuMetricsPath `
 $resourceSampleCount = $ResourceQuality.SampleCount
 $adlxSampleCount = $AdlxQuality.SampleCount
 
-if ($DetailMonitor) {
+if ($RamDetail -and $DetailMonitor) {
     try { $RamDetailResult = Get-Evox2RamDetailResult $DetailMonitor $GpuMetricsPath }
     catch {
         $RamDetailResult = @{
@@ -1201,6 +1230,8 @@ $Result = [ordered]@{
     AdlxMonitorError       = $adlxMonitorStartError
     AdlxSampleCount        = $adlxSampleCount
     RamDetail = $RamDetailResult
+    TargetLifecycle = $TargetLifecycle
+    PhaseTracePath = $(if ($DetailMonitor -and (Test-Path -LiteralPath $DetailMonitor.EventPath)) { $DetailMonitor.EventPath } else { $null })
     MonitoringQuality = [ordered]@{
         Session = Get-Evox2MonitoringSession
         Resource = $ResourceQuality

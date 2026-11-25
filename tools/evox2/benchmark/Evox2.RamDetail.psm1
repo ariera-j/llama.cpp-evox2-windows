@@ -37,9 +37,14 @@ function New-Evox2RamDetail {
     }
 }
 
-function Start-Evox2RamDetail {
+function Open-Evox2PhaseMarkers {
     param($Detail)
     $Detail.Events = [IO.StreamWriter]::new($Detail.EventPath, $false, [Text.UTF8Encoding]::new($false))
+}
+
+function Start-Evox2RamDetail {
+    param($Detail)
+    Open-Evox2PhaseMarkers $Detail
     Write-RamEvent $Detail 'MonitorLaunchRequested'
     $argsList = @(
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned',
@@ -209,7 +214,7 @@ function Stop-Evox2RamDetail {
             }
         }
         if ($Detail.Events) {
-            try { Write-RamEvent $Detail 'MonitorStopObserved' }
+            try { Write-RamEvent $Detail 'TraceClosed' }
             catch { if (!$Detail.MarkerError) { $Detail.MarkerError = $_.Exception.Message } }
             finally {
                 try { $Detail.Events.Dispose() }
@@ -379,5 +384,5 @@ function Get-Evox2RamDetailResult {
     }
 }
 
-Export-ModuleMember -Function 'New-Evox2RamDetail','Start-Evox2RamDetail','Wait-Evox2RamDetailReady','Wait-Evox2RamBaseline',
+Export-ModuleMember -Function 'Open-Evox2PhaseMarkers','New-Evox2RamDetail','Start-Evox2RamDetail','Wait-Evox2RamDetailReady','Wait-Evox2RamBaseline',
     'Write-Evox2RamLaunch','Connect-Evox2RamTarget','Read-Evox2RamMarkers','Stop-Evox2RamDetail','Get-Evox2RamDetailResult'

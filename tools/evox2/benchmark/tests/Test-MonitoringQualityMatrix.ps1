@@ -21,7 +21,7 @@ $fixtureLib = Join-Path $fixtureTools 'lib'
 try {
     $encoding = [Text.UTF8Encoding]::new($true)
     Copy-Item -LiteralPath $common -Destination $fixtureLib
-    Copy-Item -LiteralPath (Join-Path $benchmark 'Evox2.Benchmark.psm1'),(Join-Path $benchmark 'Invoke-BenchmarkMatrix.ps1') -Destination $fixtureBench
+    Copy-Item -LiteralPath (Join-Path $benchmark 'Evox2.Benchmark.psm1'),(Join-Path $benchmark 'Invoke-BenchmarkMatrix.ps1'),(Join-Path $benchmark 'Evox2.MatrixComparison.psm1') -Destination $fixtureBench
 
     $ResourcePath = Join-Path $fixture 'resources.csv'
     $GpuMetricsPath = Join-Path $fixture 'gpu-metrics.csv'
