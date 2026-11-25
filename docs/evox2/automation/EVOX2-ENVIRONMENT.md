@@ -15,6 +15,12 @@ VS `17.0`、`VSCMD_ARG_HOST_ARCH=x64`、`VSCMD_ARG_TGT_ARCH=x64` を確認する
 
 `Get-Command` と `--version` で実体を確認する。Vulkan は `-CMakeExe` に上記の絶対パスを指定する。ROCm は `PATH` 上の先頭が上記 CMake と Ninja になるよう確認する。バージョン検証は有効のまま使用する。
 
+## SSH のイベントログ読み取り
+
+2026-11-26、運用者が管理者権限で `evox2-runner` を Windows の組み込み **Event Log Readers**（SID `S-1-5-32-573`）へ追加した。新規 SSH 接続の `whoami /groups` で有効を確認した。Windows PowerShell 5.1 の `Get-WinEvent` で System／Application の各最新1件を取得できた。両チャネルで意図的に該当0件の検索を行い、`NoMatchingEventsFound` を確認した。アクセス拒否や読み取りエラーがあれば、0件と扱わず無人計測を停止する。
+
+計測の前後は両チャネルの EventRecordID を使い、新規の GPU、WHEA、BugCheck、リソース枯渇などのイベントを確認する。過去の WER 再処理を発生時刻の裏付けなしに新規障害へ分類しない。OS 最終起動は CIM が取得制約のため、Kernel-General 12 の `StartTime` から 2026-11-26 00:21:08.500 JST と取得した。Kernel-Power 41 により異常終了後の起動と判定したため、直前の正常シャットダウン時刻、方式、OS 停止時間は欠損。稼働時間はネイティブ API で取得し、高速スタートアップ設定は無効を確認した。 [M005 と復旧手順](INCIDENT-20261126-M005.md)
+
 ## Vulkan
 
 2026-11-24 の b12651 Stage 1/2（Vulkan Release）では、Vulkan SDK `C:\VulkanSDK\1.4.357.0` と **Visual Studio 2026 Build Tools 付属の LLVM/Clang 22.1.3** を使用した。`clang.exe` と `clang++.exe` のディレクトリは `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\Llvm\x64\bin`。Codex ビルドラッパーには `-VulkanLlvmBin` でこのディレクトリを渡し、`-ExpectedVulkanClangVersion 22.1.3` を指定する。LLVM OpenMP は `22.1.8` を使用した。
