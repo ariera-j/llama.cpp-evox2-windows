@@ -1,5 +1,17 @@
 # Evo-X2 optimization roadmap
 
+## 2026-11-25 Vulkan MatVec の採否と独立候補
+
+| 項目 | 判断 |
+|---|---|
+| PR #30904 の直接移植 | 常用2モデルの IQ3_XXS テンソルが0件のため見送り。 [移植前調査](pr30904-preport-20261125/README.md) |
+| IQ2_S A1 | 単独の高速化効果を確認できず見送り。 |
+| IQ2_S A2 | Gate/Up の並行計測区間 −1.89%、VGPR 82 → 73。TG256 中央値 +0.36% は確定的な改善と判断できず保留。実験ソースを保存し、TPB や NUM_ROWS 変更時の候補として扱う。 |
+| IQ2_S A1+A2 | A2 単独への明確な上積みなし。 |
+| IQ2_S TPB=8 | 未実施の独立候補。A2 の採否と分けて評価する。 |
+
+[IQ2_S 実験の詳細とラウンド別結果](iq2-s-vulkan-matvec-20261125/README.md) · [異常低速の引き継ぎ](iq2-s-vulkan-matvec-20261125/README.md#低速2件の生ログ再解析)
+
 > **2026-11-23 現行判断（旧11/08冒頭を更新）:** [文書統合・現行ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を参照。旧IQ1／新IQ3追加、MH-Hard、Strata v0.2.13試用／r6・upstream比較、IQ3/IQ4 ROCm PP逆転のRGP調査、Gemma4 PP/TG調査は実施済み。**旧IQ3継続、新IQ3・IQ4への常用切替見送り**。Gemma4の診断用worktreeは11/22に通常使用を終了（原因断定なし）。11/23はCodexのモデル推論テストが進行中で、文書とブランチの整理後、IQ3 PLE16／ROCmFP4を主対象に、外部fork/Strata/upstreamの小さな高速化パッチを別ブランチで選別・検証する。下の11/08「次はIQ1/新IQ3〜」は完了前の履歴であり、現行作業順ではない。
 
 > **2026-11-08 現行の基準:** [最新外部調査・優先順位・旧IQ1/新IQ3 PLE16／Strata準備](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)。11/04〜11/08の[PP入力依存性調査](https://github.com/ariera-j/evox2-llm-experiments/blob/main/benchmarks/pp-input-dependence-64k-20261104/runs/2026-11-08-pp-input-dependence-overall-summary-ja.md)は一区切り。**r5 TOOL-001実入力llama-benchのr6移植、Vulkan Mask/Indexer、ROCm MoE/FA/KV_max、RGP時間収支は完了**。次は旧IQ1_Sと更新IQ3_XXSの元GGUF動作smoke→PLE16 preflight/必要なら変換→出力品質比較（MH-Hard）を優先し、**Strata公式Windows版の準備を並行**。upstream b12202の互換性監査、Gufo実機試用は後続。現行source/公開tag/バイナリは更新しない。以下の2026-11-07以前の「現在」「次」「latest」は**日付付き履歴**であり、現行の作業順を示さない。

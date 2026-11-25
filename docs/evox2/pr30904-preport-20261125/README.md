@@ -11,7 +11,7 @@
 | 対象 PR | `c1d245bc3d1c416f74f1e108b0f60fa2a699dbf1`（2026-11-12 UTC 修正版）。親は `f5027fb21307eb264aed483242603d68c87b0fe3`。親から対象コミットまでの差分を照合 |
 | 実機 | Radeon 8060S / AMD proprietary Vulkan `26.8.1 (LLPC)`。Vulkan の DEVICE_LOCAL ヒープ `103079215104` bytes（96 GiB）を当日確認 |
 
-実機 HEAD の作業ツリーには前回の環境文書更新1件が未ステージで存在した。ソース比較は HEAD の Git blob を使用し、実行ファイルと SDK は既存のものを使用した。保存済みマニフェストは `BuildIdentity.Status=Verified`。同マニフェストの `CpuAllVariants=true` は旧記録の既知の誤表示で、`build-s2v/CMakeCache.txt` の値は `GGML_CPU_ALL_VARIANTS:BOOL=OFF`。ビルドの Clang は 22.1.3、Vulkan SDK は 1.4.357.0、LLVM OpenMP は 22.1.8。 [Baseline](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/f4f1aa3e85124fed75a891ec63a1504536049eff) · [PR の対象コミット](https://github.com/ggml-org/llama.cpp/pull/30904/commits/c1d245bc3d1c416f74f1e108b0f60fa2a699dbf1) · [保存済みマニフェスト](logs/build-manifest.json) · [実測ハッシュ](logs/artifact-hashes.json)
+実機 HEAD の作業ツリーには前回の環境文書更新1件が未ステージで存在した。ソース比較は HEAD の Git blob を使用し、実行ファイルと SDK は既存のものを使用した。保存済みマニフェストは `BuildIdentity.Status=Verified`。同マニフェストの `CpuAllVariants=true` は旧記録の既知の誤表示で、`build-s2v/CMakeCache.txt` の値は `GGML_CPU_ALL_VARIANTS:BOOL=OFF`。ビルドの Clang は 22.1.3、Vulkan SDK は 1.4.357.0、LLVM OpenMP は 22.1.8。 [Baseline](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/f4f1aa3e85124fed75a891ec63a1504536049eff) · [PR の対象コミット](https://github.com/ggml-org/llama.cpp/pull/30904/commits/c1d245bc3d1c416f74f1e108b0f60fa2a699dbf1) · [保存済みマニフェスト](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/logs/build-manifest.json) · [実測ハッシュ](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/logs/artifact-hashes.json)
 
 ## 差分と競合
 
@@ -21,7 +21,7 @@
 | `ggml-vulkan.cpp` | 通常 IQ3_XXS の登録で TPB=16 を明示し、1列用 TPB=8 を登録。通常の selector に `k` 閾値を追加 | Baseline の同じ登録ブロックには ROCmFP4/FAST/FPx がある。IQ3_XXS 用パイプラインのみが変更対象。Q8_1 選択と ID 側の登録・selector は PR の変更範囲外 |
 | `vulkan-shaders/mul_mat_vec_iq3_xxs.comp` | 特殊化定数 ID 3 に `TPB`（既定 16）を追加。2個の u8 格子インデックスを u16 でロードし、符号付き格子を列ループ外で求める。1〜6列は局所 FMA 蓄積へまとめ、7〜8列は逐次スケーリングを維持 | Baseline の同ファイルは PR 親とバイト一致。既存コードも scale/sign の読み込みには packed16 を使う。今回追加される packed16 は格子インデックス用 |
 
-指定コミットの patch を Baseline の3ファイルを複製した一時ディレクトリで `git apply --check --verbose` にかけ、全ハンクが通過した。ヘッダーと C++ は周辺の実装差で行番号のずれがあった。実機への適用とビルドは実施していない。PR 本文の概要より修正版コミットの差分を優先した。 [PR 本文](https://github.com/ggml-org/llama.cpp/pull/30904) · [適用可否ログ](logs/patch-check.txt)
+指定コミットの patch を Baseline の3ファイルを複製した一時ディレクトリで `git apply --check --verbose` にかけ、全ハンクが通過した。ヘッダーと C++ は周辺の実装差で行番号のずれがあった。実機への適用とビルドは実施していない。PR 本文の概要より修正版コミットの差分を優先した。 [PR 本文](https://github.com/ggml-org/llama.cpp/pull/30904) · [適用可否ログ](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/logs/patch-check.txt)
 
 ## GGUF のテンソル構成
 
@@ -42,7 +42,7 @@
 | 共有 `ffn_gate_shexp.weight` / `ffn_up_shexp.weight` | `2560×640` | 各 47 Q6_K + 1 Q8_0 | 各 48 Q6_K |
 | 共有 `ffn_down_shexp.weight` | `640×2560` | 48 Q8_0 | 48 Q8_0 |
 
-テンソル全件の名前、型、shape、要素数、payload bytes、オフセットは CSV に収録した。容量は GGML のブロックサイズとブロック当たりのバイト数から計算し、各テンソル末尾と次のデータオフセットの差が GGUF アラインメント未満であること、および payload 総和と llama-bench の `model_size` が一致することを検証した。 [テンソル CSV](tensors.csv) · [GGML 型 ID](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/ggml/include/ggml.h#L217)
+テンソル全件の名前、型、shape、要素数、payload bytes、オフセットは CSV に収録した。容量は GGML のブロックサイズとブロック当たりのバイト数から計算し、各テンソル末尾と次のデータオフセットの差が GGUF アラインメント未満であること、および payload 総和と llama-bench の `model_size` が一致することを検証した。 [テンソル CSV](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/tensors.csv) · [GGML 型 ID](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/ggml/include/ggml.h#L217)
 
 ## IQ3_XXS MatVec の実行経路
 
@@ -60,11 +60,11 @@
 | c1d245b の通常経路 | 1列で `k >= 256 × 2 × (64/8) = 4096`（16ブロック/行）のとき TPB=8。64-thread workgroup あたり8ブロック。2列以上、閾値未満、ID は TPB=16 |
 | 参考の大型 variant | `256×1×1`、subgroup 64。式上は64ブロック/行、`k >= 16384`。対象 AMD 経路では選択されない |
 
-対象カーネルの実行は両モデルで 0 件のため、workgroup の選択と PR 後の閾値はホスト／シェーダーソースと実機 Vulkan プロパティの照合結果。 [パイプラインの特殊化](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L3325) · [デバイス情報の抜粋](logs/device.txt)
+対象カーネルの実行は両モデルで 0 件のため、workgroup の選択と PR 後の閾値はホスト／シェーダーソースと実機 Vulkan プロパティの照合結果。 [パイプラインの特殊化](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L3325) · [デバイス情報の抜粋](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/logs/device.txt)
 
 ## TG32 と Perf Logger
 
-各値は単発の診断値。モデルごと・logger モードごとに1回、`pp=0`、`tg=32`、`depth=0`、Vulkan0、49/49層 GPU、CPU MoE 0、F16 KV、FA ON、MTP OFF、warmup OFF で実行した。llama-bench の TG は1トークンずつ投入し、各 decode の GPU 完了を同期する。 `avg_ns` は TG 区間の wall time。プロセス経過時間にはモデルロードなども含まれる。 [コマンドとログ](commands.md) · [llama-bench の TG ループ](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/tools/llama-bench/llama-bench.cpp#L2201)
+各値は単発の診断値。モデルごと・logger モードごとに1回、`pp=0`、`tg=32`、`depth=0`、Vulkan0、49/49層 GPU、CPU MoE 0、F16 KV、FA ON、MTP OFF、warmup OFF で実行した。llama-bench の TG は1トークンずつ投入し、各 decode の GPU 完了を同期する。 `avg_ns` は TG 区間の wall time。プロセス経過時間にはモデルロードなども含まれる。 [コマンドとログ](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/commands.md) · [llama-bench の TG ループ](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/tools/llama-bench/llama-bench.cpp#L2201)
 
 | モデル | Logger | TG wall s | tok/s | Logger 区間合計 s | 区間数 |
 |---|---|---:|---:|---:|---:|
@@ -87,7 +87,13 @@
 | FAST | Q4_K | 640, 10, 2560 | 3,072 | 618.233 | 19.320 | 30.15% |
 | FAST | Q4_0_ROCMFP4_FAST（MUL と融合） | 2560, 10, 640 | 1,536 | 106.429 | 3.326 | 5.19% |
 
-個別 logger は enqueue 済み GGML ノード／融合単位で timestamp と同期を挿入する。CSV の件数はこの区間の記録数で、一つの区間に複数 dispatch や付随処理が含まれ得る。合計時間は logger の全記録区間の和で、各行のパーセントはこれを分母とした。並行 logger は同時進行し得るノードをグループ化し、一つの timestamp 区間として計る。グループ時間を構成カーネルへ配分できず、個別モードと並行モードの差には同期の有無や実行ごとの差も含まれる。差分から重複時間は算出していない。非計測 run の TG wall time が診断時より短いため、個別ログの累積時間を非計測 TG の時間内訳や短縮見込みに換算しない。 [logger 実装](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L15975) · [実測 CSV](runs.csv) · [全ラベル別集計](vk-timings.csv) · [IQ3_XXS 抽出結果](iq3-xxs.csv)
+個別 logger は enqueue 済み GGML ノード／融合単位で timestamp と同期を挿入する。CSV の件数はこの区間の記録数で、一つの区間に複数 dispatch や付随処理が含まれ得る。合計時間は logger の全記録区間の和で、各行のパーセントはこれを分母とした。並行 logger は同時進行し得るノードをグループ化し、一つの timestamp 区間として計る。グループ時間を構成カーネルへ配分できず、個別モードと並行モードの差には同期の有無や実行ごとの差も含まれる。差分から重複時間は算出していない。非計測 run の TG wall time が診断時より短いため、個別ログの累積時間を非計測 TG の時間内訳や短縮見込みに換算しない。 [logger 実装](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/ggml/src/ggml-vulkan/ggml-vulkan.cpp#L15975) · [実測 CSV](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/runs.csv) · [全ラベル別集計](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/vk-timings.csv) · [IQ3_XXS 抽出結果](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/becad6b05ce5f7c602facd3bb5ed586a4b4f38b4/docs/evox2/pr30904-preport-20261125/iq3-xxs.csv)
+
+## 採否（2026-11-25）
+
+常用の IQ3 PLE16 と ROCmFP4 FAST PLE16 は、IQ3_XXS テンソルと対象カーネルの呼び出しがともに0件だった。この用途での **PR #30904 の直接移植は見送る**。下記の移植時の注意点は、IQ3_XXS を実際に使用する構成を検討する際の記録として保持する。
+
+手法を IQ2_S に展開した独立実験では、A1 単独は採用見送り、A2 は採用保留、併用版は A2 単独に対する明確な追加効果なし。TPB=8 は IQ2_S で未実施の独立候補として残す。 [IQ2_S の採否とラウンド別比較](../iq2-s-vulkan-matvec-20261125/README.md)
 
 ## 移植時の注意点
 
