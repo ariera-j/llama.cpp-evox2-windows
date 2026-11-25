@@ -13,6 +13,10 @@ param(
     [string[]]$OnlyCase = @(),
     [string[]]$OnlyVariant = @(),
     [string[]]$OnlyBuild = @(),
+    [ValidateRange(1, 1000)]
+    [int[]]$OnlyRound = @(),
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9-]{0,31}$')]
+    [string]$RunIdPrefix,
 
     [ValidateRange(1, 1000)]
     [int]$MaxRuns = 100,
@@ -916,7 +920,7 @@ foreach ($rawJob in $Jobs) {
                         $template.Configuration = if ($buildKeys.Count -gt 1) { "$buildKey/$variantName" } else { $variantName }
                         $template.References = @($comparison.References | Where-Object { $_ })
                         $jobComparisonRows += $template
-                    } else { $expanded += $template }
+                    } elseif ($OnlyRound.Count -eq 0) { $expanded += $template }
                 }
             }
         }
@@ -929,6 +933,7 @@ foreach ($rawJob in $Jobs) {
                 $byConfig[$template.Configuration] = $template
             }
             foreach ($round in $schedule) {
+                if ($OnlyRound.Count -gt 0 -and $round.Round -notin $OnlyRound) { continue }
                 for ($j = 0; $j -lt $round.Order.Count; $j++) {
                     $configuration = $round.Order[$j]
                     if (!$byConfig.ContainsKey($configuration)) { continue }
@@ -945,7 +950,8 @@ foreach ($rawJob in $Jobs) {
 
 foreach ($item in $expanded) {
     $matrixIndex++
-    $item.MatrixRunId = 'M{0:D3}' -f $matrixIndex
+    $runId = 'M{0:D3}' -f $matrixIndex
+    $item.MatrixRunId = if ($RunIdPrefix) { "$RunIdPrefix-$runId" } else { $runId }
     $item.PlannedOrder = $matrixIndex
 }
 
@@ -1250,6 +1256,13 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         WarmupMarkerFromLaunchSeconds = $extra.WarmupMarkerFromLaunchSeconds
         RamPeakUsedMiB = $extra.RamPeakUsedMiB; RamPeakUtc = $extra.RamPeakUtc
         RamMinimumAvailableBytes = $extra.RamMinimumAvailableBytes; GpuRecovery = $extra.GpuRecovery
+        LastBootUpTimeUtc = $(if ($childRows.Count) { $childRows[0].LastBootUpTimeUtc })
+        OsUptimeSeconds   = $(if ($childRows.Count) { $childRows[0].OsUptimeSeconds })
+        OsUptimeHours     = $(if ($childRows.Count) { $childRows[0].OsUptimeHours })
+        OsBootTimeSource  = $(if ($childRows.Count) { $childRows[0].OsBootTimeSource })
+        OsBootCimStatus   = $(if ($childRows.Count) { $childRows[0].OsBootCimStatus })
+        OsShutdownEventStatus = $(if ($childRows.Count) { $childRows[0].OsShutdownEventStatus })
+        OsUptimeErrorId   = $(if ($childRows.Count) { $childRows[0].OsUptimeErrorId })
     }
 
     $runRecords | Export-Csv `

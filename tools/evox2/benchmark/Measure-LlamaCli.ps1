@@ -146,6 +146,7 @@ $benchmarkModule = Join-Path $benchmarkDir 'Evox2.Benchmark.psm1'
 
 Import-Module $commonModule -Force
 Import-Module $benchmarkModule -Force
+Import-Module (Join-Path $benchmarkDir 'Evox2.OsStartup.psm1') -Force
 if ($RamDetail -or $CapturePhaseMarkers) { Import-Module (Join-Path $benchmarkDir 'Evox2.RamDetail.psm1') -Force }
 Set-Evox2Utf8Console
 
@@ -663,9 +664,11 @@ $adlxMonitorExitCode = $null
 $ExitCode = $null
 $ExitCodeSource = 'unavailable'
 $runException = $null
+$OsStartup = $null
 
 try {
     Write-Host "Run directory: $RunDirectory"
+    $OsStartup = Get-Evox2OsStartup
     Write-Host "Starting llama-cli..."
 
     if ($RamDetail) {
@@ -1138,6 +1141,7 @@ $Result = [ordered]@{
     ExitCodeSource = $ExitCodeSource
     RunException   = $runException
 
+    OsStartup      = $OsStartup
     StartedAt      = $Started.ToString('o')
     FinishedAt     = $Finished.ToString('o')
     DurationSeconds = [math]::Round(($Finished - $Started).TotalSeconds, 3)
@@ -1289,6 +1293,13 @@ $Summary = [PSCustomObject]@{
     RamDetailStatus = $RamDetailResult.Status
     RamDetailIncreaseMiB = $RamDetailResult.IncreaseMiB
     RamDetailSystemRecovery = $RamDetailResult.SystemRecovery
+    LastBootUpTimeUtc = $OsStartup.LastBootUpTimeUtc
+    OsUptimeSeconds = $OsStartup.UptimeSeconds
+    OsUptimeHours = $OsStartup.UptimeHours
+    OsBootTimeSource = $OsStartup.LastBootUpTimeSource
+    OsBootCimStatus = $OsStartup.CimStatus
+    OsShutdownEventStatus = $OsStartup.ShutdownEventStatus
+    OsUptimeErrorId = $OsStartup.UptimeErrorId
     PromptMilliseconds = $Parsed.PromptEvalMilliseconds
     GenerationMilliseconds = $Parsed.GenerationEvalMilliseconds
     ActualContext = $Parsed.ActualContext

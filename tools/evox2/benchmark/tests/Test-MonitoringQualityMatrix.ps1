@@ -41,6 +41,11 @@ try {
     $adlxMonitorStartError = $null
 
     $RamDetailResult = @{ Status='Complete'; IncreaseMiB=32; SystemRecovery='WithinTolerance' }
+    $OsStartup = [pscustomobject]@{
+        LastBootUpTimeUtc=$null; UptimeSeconds=3600; UptimeHours=1
+        LastBootUpTimeSource=$null; CimStatus='AccessDenied'
+        ShutdownEventStatus='AccessDenied'; UptimeErrorId=$null
+    }
     foreach ($name in 'Measure-LlamaBench.ps1', 'Measure-LlamaCli.ps1') {
         $path = Join-Path $benchmark $name
         $tokens = $null; $problems = $null
@@ -63,6 +68,10 @@ try {
         }, $true))
         Assert-True ($tables.Count -eq 1) "Missing JSON record in $name"
         $record = $tables[0].KeyValuePairs | Where-Object { $_.Item1.Value -eq 'MonitoringQuality' }
+        $startupRecord = $tables[0].KeyValuePairs | Where-Object { $_.Item1.Value -eq 'OsStartup' }
+        Assert-True ($null -ne $startupRecord) "Missing OS startup JSON record in $name"
+        $startupDetails = & ([scriptblock]::Create($startupRecord.Item2.Extent.Text)) | ConvertTo-Json | ConvertFrom-Json
+        Assert-True ($startupDetails.UptimeSeconds -eq 3600 -and $null -eq $startupDetails.LastBootUpTimeUtc) 'Unexpected OS startup JSON record'
         $details = & ([scriptblock]::Create($record.Item2.Extent.Text)) | ConvertTo-Json -Depth 15 | ConvertFrom-Json
         Assert-True ($details.Resource.Status -eq 'Partial' -and $details.ADLX.Status -eq 'Unavailable') "Wrong wrapper quality in $name"
         Assert-True ($details.Resource.Metrics.CPU_Percent.ValidCount -eq 1 -and $details.Resource.Metrics.CPU_Percent.Average -eq 0 -and $null -eq $details.ADLX.Metrics.gpu_usage_pct.Average) 'JSON did not preserve missing values and observed zero'
@@ -78,7 +87,8 @@ try {
         $row = [ordered]@{ Status = 'OK'; RunId = 'fixture'; RunDirectory = 'fixture' }
         foreach ($pair in $tables[0].KeyValuePairs) {
             if ($pair.Item1.Value -in 'ResourceMonitorStatus', 'AdlxMonitorStatus', 'ResourceSamples', 'AdlxSamples',
-                'RamDetailStatus', 'RamDetailIncreaseMiB', 'RamDetailSystemRecovery') {
+                'RamDetailStatus', 'RamDetailIncreaseMiB', 'RamDetailSystemRecovery',
+                'LastBootUpTimeUtc', 'OsUptimeSeconds', 'OsUptimeHours', 'OsBootCimStatus', 'OsShutdownEventStatus') {
                 $row[$pair.Item1.Value] = & ([scriptblock]::Create($pair.Item2.Extent.Text))
             }
         }
@@ -108,6 +118,10 @@ try {
     foreach ($item in @($runs) + @($results) + @($json.Runs) + @($json.Results)) {
         Assert-True ($item.RamDetailStatus -eq 'Complete' -and $item.RamDetailIncreaseMiB -eq 32 -and $item.RamDetailSystemRecovery -eq 'WithinTolerance') 'Missing detail rollup'
         Assert-True ($item.ResourceMonitorStatus -eq 'Partial' -and $item.AdlxMonitorStatus -eq 'Unavailable' -and $item.ResourceSamples -eq 2 -and $item.AdlxSamples -eq 1) 'Missing Matrix quality rollup'
+    }
+    foreach ($item in @($runs) + @($json.Runs)) {
+        Assert-True ($item.OsUptimeSeconds -eq 3600 -and $item.OsUptimeHours -eq 1 -and
+            !$item.LastBootUpTimeUtc -and $item.OsShutdownEventStatus -eq 'AccessDenied') 'Missing Matrix OS startup rollup'
     }
     Write-Output 'PASS Measure quality assignments, JSON and CSV fields; Matrix quality rollup and status independence'
 } finally {
