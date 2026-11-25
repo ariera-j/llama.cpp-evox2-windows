@@ -4,6 +4,8 @@
 
 このランブックの正本は GitHub の `main`。b12651 のコマンドは対応する作業ブランチのツールに適用する。実行前に製品ソースの SHA とラッパーの引数を照合する。作業例の固定参照は [b12651 のビルドラッパー](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/tools/evox2/automation/Invoke-CodexBuild.ps1)。
 
+性能計測の準備、比較設計、監視、結果保存は [BENCHMARK-RULES.md](BENCHMARK-RULES.md) を参照する。
+
 ## 実行順序
 
 1. Git のブランチ、HEAD、作業ツリーを記録する。承認済みのビルド先を明示し、Vulkan と ROCm で分ける。成功済みの出力を保持する場合は新しい専用ディレクトリを使う。VS2022 x64 とバックエンドの SDK を同一 PowerShell 5.1 プロセスに準備する。
