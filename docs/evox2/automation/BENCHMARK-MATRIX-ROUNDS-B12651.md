@@ -52,7 +52,7 @@ Windows PowerShell 5.1.26100.10068 で変更 8 ファイルの構文・UTF-8 BOM
 | M004 | 1 | D | 627.100 | 30.019 | 50.627 | 85.972 | 99.744 |
 | M005 | 2 | D | — | — | — | — | — |
 
-Round 2 の M005 は Matrix の開始表示まで確認した。日本時間 2026-11-26 00:07 頃の状態確認から SSH が `No route to host` を返し、コントローラーの隣接ホスト解決も失敗した。M005 の成否、M006～M012 の実行有無、バッチの最終集計・安全チェック、切断後のプロセス残留は確認できていない。切断だけから GPU 障害・実機の停止・計測の終了は判定できない。追加 run と後続スモークは起動していない。
+Round 2 の M005（D）はハードフリーズにより異常終了した。結果 JSON は 0 バイトで、PP/TG 比較の有効サンプルから除外した。M001～M004 の正常終了と元ログを復旧後に実機で確認した。元バッチの run CSV に M006～M012 の結果はない。 [M005 障害・復旧記録](INCIDENT-20261126-M005.md)
 
 ### Round 1 の対応比較
 
@@ -67,8 +67,34 @@ Round 2 の M005 は Matrix の開始表示まで確認した。日本時間 202
 
 ### 取得できた監視品質と引き継ぎ
 
+| Run | 通常／ADLX／詳細 RAM 行数 | 物理 RAM／コミットの最大 GiB（詳細 RAM） | PID GPU Local 最大 GiB | 終了後 RAM／GPU |
+|---|---:|---:|---:|---|
+| M001 | —／—／— | —／— | — | — |
+| M002 | 36／44／— | —／— | 79.145 | — |
+| M003 | 35／48／370 | 9.029／89.340 | 79.145 | WithinTolerance／WithinTolerance |
+| M004 | 34／47／835 | 8.706／89.351 | 79.145 | WithinTolerance／WithinTolerance |
+
+4件とも子 JSON にベンチ2行と残留 PID なしの記録がある。ダッシュはこの表の取得元での未観測。
+
 - B/C/D の通常監視は Partial、ADLX は Complete。取得済みの D では RAM、PID メモリ、システム PerfMon 各 34/34。PID GPU の使用率と local memory は有効 34/34、PID GPU の全項目取得は 26/34。背景 CPU は取得不可の期間があり、通常監視の最大間隔は 6.154 秒。
 - D の ADLX は 47 行。GPU 利用率 0～100%、電力 8～123 W、VRAM は 403～80,904 MB と変動し、終了後の有効 2 行で 403 MB。PID local 最大 79.145 GiB、アダプター dedicated 最大 79.008 GiB、Vulkan モデルバッファ報告約 77,657 MiB と桁が一致する。計数範囲・時刻・単位は同一とは限らないので値の一致を要求しない。クロック・温度の行も保存した。
 - C/D は RAM 詳細監視 Complete とシステム・ADLX の回復 WithinTolerance。起動前基準比ピーク増加は C 2,321.152 MiB、D 1,965.750 MiB。D は 835 行、通常とは独立して平均 112.883 ms、最大 149.957 ms、ネイティブ欠損 0。D の子 JSON で起動、GGUF 情報、テンソル配置、Context、KV／計算バッファ、Graph reserve、warmup、bench の PP／TG progress の受信を確認した。実際の内部境界は未観測。
-- M001 のネイティブ `load time` 報告 188.118 秒、B/C/D の同報告 63.328～65.388 秒。M001 の PP/TG はネイティブ計測で約 13.002／8.522 秒であり、長い差は少なくとも Context 報告以前から観測できる。A は周期監視を無効にした条件のため、M001 のロード中 RAM、コミット、GPU 等は未取得。起動から終端までをそのままロード時間として扱わない。M001 の記録保持と M005 の最終状態確認を引き継ぐ。原因調査や再実行は行っていない。
-- 生ログの保管先は `C:\llama-build\_logs\codex\matrix\20261125-234629-575-b12651-monitor-overhead` と親ログ `matrix-34-overhead-588fa9.log`。Round 1 の最後の子ログに残留 PID なし。SSH 回復後は新しい計測の前に元バッチ・子ログと残留プロセスを照合し、既存の停止条件に従う。
+- M001 のネイティブ `load time` 報告 188.118 秒、B/C/D の同報告 63.328～65.388 秒。M001 の PP/TG はネイティブ計測で約 13.002／8.522 秒であり、長い差は少なくとも Context 報告以前から観測できる。A は周期監視を無効にした条件のため、M001 のロード中 RAM、コミット、GPU 等は未取得。起動から終端までをそのままロード時間として扱わない。M001 の異常ロード時間は作業4へ引き継ぐ。M001 の速度は Round 1 の有効結果として扱う。
+- 生ログの保管先は `C:\llama-build\_logs\codex\matrix\20261125-234629-575-b12651-monitor-overhead` と親ログ `matrix-34-overhead-588fa9.log`。Round 1 の最後の子ログに残留 PID なし。復旧後に M001～M005 の子ログと元バッチの原本を保全した。
+
+
+## 復旧後の計測計画と停止判断
+
+Round 2 は D→C→B→A、Round 3 は B→D→A→C。旧 M005 の代替には別 ID を割り当てる（予定 ID `R34R2D-M001`）。各セルは ThinkPad 側から `-OnlyRound <n> -OnlyVariant <A|B|C|D> -RunIdPrefix <一意の接頭辞> -MaxRuns 1 -StopOnError` で起動する。これにより、SSH 切断後に実機側が次セルを開始する余地をなくす。元の plan、実効条件、監視設定は維持する。復旧後の計測には再起動後であることと OS 環境情報の追加を明記し、同一ラウンドの比較を優先する。
+
+復旧後の SSH で重大イベントを必須確認できなかったため、残り8件は 0 件実行、後続3件のスモークも 0 件。構成別3件の中央値やラウンド間ばらつき、監視負荷、稼働時間との関係は未評価。既存 Round 1 の速度・監視品質と M001 の異常ロードは上記のとおり。 [停止判断と保全場所](INCIDENT-20261126-M005.md#復旧確認再開条件)
+
+
+### OS 稼働時間の追記と非推論検証
+
+実装は Matrix 専用ブランチの [0031a3719](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/0031a371971829d2de40a777537bf4f0e5bb4f6b)。
+
+- `Measure-LlamaBench.ps1` と `Measure-LlamaCli.ps1` はラン開始時に `Evox2.OsStartup.psm1` を一度呼ぶ。Windows の `GetTickCount64` の値を秒・時間に換算する。最終起動時刻は `Win32_OperatingSystem.LastBootUpTime` または System の Kernel-General 12 の `StartTime` から取得する。取得元が両方使えなければ空欄または `null`。 [Windows の稼働時間 API](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-gettickcount64)
+- 起動後の Kernel-Power 41 と直前の Kernel-General 13 を照合する。正常終了と時刻の対応を確認できた場合に OS 停止時間を記録する。終了方式は近接する User32 1074 が取得できた場合に記録する。高速スタートアップ設定はレジストリから読み取る。イベントが取得できない場合や正常終了を確認できない場合に OS 停止時間を補完しない。
+- 子 `result.json` の `OsStartup` に採取時刻・取得元・欠損状態・任意項目を保存。`summary.csv`、`matrix-runs.csv`、`matrix-result.json` の run に既存列を維持して `LastBootUpTimeUtc`、`OsUptimeSeconds`、`OsUptimeHours` と取得状態を追加する。周期監視・推論引数・比較キーは従来どおり。
+- PowerShell 5.1.26100.10068 で構文・UTF-8 BOM、実機ネイティブ稼働時間、秒／時間の換算、取得拒否時の欠損、Measure と Matrix の模擬 JSON／CSV 出力、既存ラウンド比較を検証した。現行 plan の復旧後8セルはそれぞれ `PlanOnly -MaxRuns 1` で指定順・ラウンド・枠を確認し、旧 plan の6件展開も確認した。SSH からは OS 稼働時間と高速スタートアップ無効を実測できた。CIM と System イベントに制約があり、最終起動時刻と直前シャットダウンの自動取得は実機 SSH で未確認。
