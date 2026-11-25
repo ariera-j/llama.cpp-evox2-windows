@@ -68,7 +68,7 @@ GitHub には確定した実験記録と再現に必要な成果物を保存す�
 
 ## 9. 現行の対応範囲と修正候補
 
-調査対象は [GitHub main の計測ツール (eaf50ce)](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/eaf50ce660e64bbe0f541e8087c84cf72ed2ac4e/tools/evox2/benchmark) と [実機で使用中の b12651 作業ブランチの計測ツール (438d5e8)](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/438d5e89af31c2153ce260e33baedebc573e4c33/tools/evox2/benchmark)。以下はソースを読んで確認した範囲。セッション・ドライバ依存の取得可否は実測時に各ログで確認する。
+調査対象は [GitHub main の計測ツール (eaf50ce)](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/eaf50ce660e64bbe0f541e8087c84cf72ed2ac4e/tools/evox2/benchmark) と [実機で使用中の b12651 作業ブランチの計測ツール (438d5e8)](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/438d5e89af31c2153ce260e33baedebc573e4c33/tools/evox2/benchmark)。ラッパーと監視の説明はソース確認に基づく。b12651 専用ブランチでの Matrix 移植・非推論検証は [作業 3-1 の記録](BENCHMARK-MATRIX-B12651.md) を参照する。セッション・ドライバ依存の取得可否は実測時に各ログで確認する。
 
 | 現行機能 | 利用時の注意 |
 |---|---|
@@ -76,7 +76,7 @@ GitHub には確定した実験記録と再現に必要な成果物を保存す�
 | PID 監視と ADLX | ラッパーに `-ResourceMonitor` を渡すと PID 指定の監視を起動し、`resources.csv` を出力する。ADLX は通常ラッパーが起動を試み、`-NoAdlxMonitor` で無効化できる。生成された `gpu-metrics.csv`、ADLX ログと件数を確認する。 |
 | Windows の監視 | `GetPerformanceInfo()` から物理 RAM、`Get-Process` から PID の各メモリ量を取得。`Get-Counter` で CPU、ディスク、ページング、コミット、GPU アダプター・PID のカウンターを取得する。バックグラウンドの開始・終了スナップショットと任意の周期取得、P-MODE の開始・終了記録がある。 |
 | SSH での取得 | 物理 RAM のネイティブ取得と対象 PID 情報を優先して確認する。過去には Get-Counter や ADLX の有効サンプルと欠損の両方があり、一部の WMI には拒否記録がある。ADLX の項目はデバイス・ドライバにも依存する。P-MODE の直接取得が失敗した場合は既存タスクの条件を満たすと取得できる。取得結果や警告の詳細は [KNOWN-ISSUES.md](KNOWN-ISSUES.md) と [P-MODE 読み取り運用](PMODE-PROBE.md) を参照する。 |
-| Matrix | 参照した main には `.psd1` の設定例、順次実行、`-PlanOnly`、絞り込み、最大件数、固定クールダウン、監視・失敗時のオプション、`matrix-plan.json`・`matrix-runs.csv`・`matrix-results.csv`・`matrix-result.json` がある。展開順は Job → Case → Build → Model → Variant。[ABBA 設定例](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/eaf50ce660e64bbe0f541e8087c84cf72ed2ac4e/tools/evox2/benchmark/configs/qwen38-r6-s8-vulkan-abba.psd1) は明示順と識別用の環境変数で繰り返しを表す。同一有効条件の重複チェックがある。現行 b12651 作業ブランチには Matrix 本体とリポジトリ管理の plan 例が収録されていない。実行時は対応バイナリ・ラッパーとの互換性も確認する。 |
+| Matrix | 参照した main には `.psd1` の設定例、順次実行、`-PlanOnly`、絞り込み、最大件数、固定クールダウン、監視・失敗時のオプション、`matrix-plan.json`・`matrix-runs.csv`・`matrix-results.csv`・`matrix-result.json` がある。展開順は Job → Case → Build → Model → Variant。[ABBA 設定例](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/eaf50ce660e64bbe0f541e8087c84cf72ed2ac4e/tools/evox2/benchmark/configs/qwen38-r6-s8-vulkan-abba.psd1) は明示順と識別用の環境変数で繰り返しを表す。同一有効条件の重複チェックがある。b12651 の [専用ブランチ](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/codex/benchmark-matrix-b12651-20261125) で Matrix と設定例を利用できる。PowerShell 5.1、PlanOnly、現行ラッパーの DryRun、テスト用データの集計まで確認済み。現行の製品作業ブランチでは文書を参照できる。実 Measure を Matrix から起動する検証、モデルロード、監視サンプル、速度測定は未実施。 |
 
 優先度と検証方法は今後の実装候補に対するもの。実際の実装・検証は別途承認された作業で扱う。
 
@@ -85,11 +85,11 @@ GitHub には確定した実験記録と再現に必要な成果物を保存す�
 | 高・部分取得の保存 | PID 用カウンター取得失敗時にシステム用へフォールバックする。フォールバックも失敗すると、ネイティブ取得済みの RAM を含む行の出力をスキップし、取得可能なプロセスメモリも保存されない。 | 取得元ごとに失敗を分離し、有効な項目と時刻を保存する。項目別に欠損・失敗理由と件数を残す。 | カウンターの全部失敗、PID 分のみ失敗、PID 終了の競合を模擬し、取得済みの項目と後続サンプルを確認する。 |
 | 高・欠損とゼロの区別 | `Get-SampleSum` は有効カウンターがない場合に 0 を返す。PID GPU 値にも 0 の初期値があり、可用性フラグが付く。一部の ADLX 項目は未取得時に空欄。 | 既存ラッパーと Matrix の集計を含め、取得不可は空欄／JSON の null 等で扱えるようにし、実測 0 と区別する。GPU カウンターの可用性と棄却数を保持する。 | 未取得・実測 0・無効値を含むサンプルを CSV と JSON に通し、集計結果を確認する。 |
 | 高・コミットとキャッシュ | ネイティブ構造体には `CommitTotal`、`CommitLimit`、`SystemCache`、`PageSize` がある。現行のネイティブ経路は物理 RAM のみを出力し、コミットは PerfMon 依存、System Cache は未出力。 | 同じネイティブ取得からページ数 × PageSize でコミット量・上限・キャッシュをバイトへ換算し、取得元を明示する。 `CommitPeak` はシステムのコミットピークとして扱い、区間内の物理 RAM ピークには時系列の観測を使う。 | PerfMon が使える場合の値と突き合わせ、PerfMon 無効時も保存されること、上限が不明な場合の割合の扱いを確認する。 |
-| 高・出力互換性と参照実装 | CSV・JSON の既存列、出力先、Matrix 集計が運用者の手順に使われる。b12651 には Matrix 本体がない。 | 既存識別子・単位・結果ファイル・集計の互換性を保ち、欠損表現と追加列／補助ログの採用方法を決める。Matrix と対象ラッパーの対応を確認する。 | 既存の生ログと新形式の例を同じ集計経路で読み、既存結果と欠損を確認する。対象ブランチで既存 plan の展開・引数を検証する。 |
+| 高・出力互換性と参照実装 | CSV・JSON の既存列、出力先、Matrix 集計が運用者の手順に使われる。b12651 では専用ブランチの Matrix をテストデータで検証済み。 | 既存識別子・単位・結果ファイル・集計の互換性を保ち、欠損表現と追加列／補助ログの採用方法を決める。Matrix と対象ラッパーの対応を確認する。 | 既存の生ログと新形式の例を同じ集計経路で読み、既存結果と欠損を確認する。対象ブランチで既存 plan の展開・引数を検証する。 |
 | 中・起動前と終了後 | 現行 PID 監視は対象起動後に始まり、終了時に止まる。固定クールダウンはメモリの解放を確認しない。 | PID がいない間もシステムの時系列を保存し、PID 接続と終了後の観測を加える。解放判断の指標・観測期間を実験条件に持たせる。 | 短命な非推論テストプロセスで、起動前、存続中、終了後のデータと解放確認を検証する。 |
 | 中・区間マーカー | リソースと ADLX の時系列・プロセスログはある。ロード、コンテキスト生成、初回 eval、PP/TG の共通時刻軸はない。 | ラッパーと取得可能なネイティブログで時刻・タイムゾーン・計測元を揃える。ラッパーが出力を受信した時刻と処理内部の境界を識別する。 | 既知の待ち時間を含むテストログで順序、時刻差、未観測区間を確認する。 |
 | 中・Matrix の順序とペア比較 | 手動記述の ABBA は可能。構成横断の自動順序制御、ラウンド識別、同じラウンドの Base 比集計はない。 | 計画・実行データに順序とラウンドを持たせ、交互実行とラウンド別比較を追加する。 | `-PlanOnly` で ABBA や複数ビルドの順序を検証し、途中失敗・欠損ラウンドの集計を確認する。 |
 | 中・SSH の監視品質 | 取得可否がセッションやドライバに依存し、起動できても有効サンプルが得られない場合がある。 | 実行ユーザー・セッション、監視元、件数、欠損の要約を残す。権限は既存運用の範囲で扱う。 | 許可済みの SSH と対話環境で、ネイティブ RAM・PID・PerfMon・ADLX・P-MODE の可用性を個別に確認する。 |
 | 後続・軽量 RAM 詳細監視 | 通常監視は秒単位で、短いピークと継続時間の観測は未対応。 | 通常監視と分離した任意の高頻度設定、実測間隔、ピーク継続時間の定義を検討する。 | 既知の短時間 RAM 変動を採取し、候補間隔ごとの捕捉率、CPU/I/O 負荷を確認する。 |
 
-今後決める事項は、監視欠損を注記付きで許容する条件と再計測が必要な条件、メモリ解放・ピーク継続の判定、軽量監視の負荷上限と採用間隔、バイナリごとに取得可能な区間マーカー、Matrix の対応ブランチとラウンド表現、欠損表現の互換方式。
+今後決める事項は、監視欠損を注記付きで許容する条件と再計測が必要な条件、メモリ解放・ピーク継続の判定、軽量監視の負荷上限と採用間隔、バイナリごとに取得可能な区間マーカー、Matrix の統合判断とラウンド表現、欠損表現の互換方式。
