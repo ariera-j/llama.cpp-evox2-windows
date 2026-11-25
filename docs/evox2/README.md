@@ -164,6 +164,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [BENCHMARK-MATRIX-B12651.md](automation/BENCHMARK-MATRIX-B12651.md) — b12651 Matrix port, local configuration and non-inference validation
 - [BENCHMARK-MONITORING-B12651.md](automation/BENCHMARK-MONITORING-B12651.md) — partial telemetry, output compatibility and SSH verification
 - [BENCHMARK-RAM-DETAIL-B12651.md](automation/BENCHMARK-RAM-DETAIL-B12651.md) — pre/post memory sampling, phase markers and pulse capture validation
+- [BENCHMARK-MATRIX-ROUNDS-B12651.md](automation/BENCHMARK-MATRIX-ROUNDS-B12651.md) — independent rounds, matched comparisons and monitoring overhead
 - [BENCHMARKING.md](BENCHMARKING.md) — historical long-context workload, throughput metrics and baseline references
 - [R5-ADLX-PMODE-VALIDATION-2026-10-15.md](R5-ADLX-PMODE-VALIDATION-2026-10-15.md): ADLX benchmark integration/overhead, display/power-state validation and Evo-X2 P-MODE performance + WMI/event mapping
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
