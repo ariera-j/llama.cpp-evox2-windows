@@ -163,6 +163,7 @@ runtime/build facts rather than trusting lookup-key labels.
 - [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md): Vulkan build procedure
 - [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md): ROCm 10.0 / TheRock build and runtime procedure
 - [BENCHMARK-RULES.md](automation/BENCHMARK-RULES.md) — required policy for planning, running, monitoring and recording performance measurements
+- [BENCHMARK-MATRIX-B12651.md](automation/BENCHMARK-MATRIX-B12651.md) — b12651 Matrix port, local configuration and non-inference validation
 - [BENCHMARKING.md](BENCHMARKING.md) — historical long-context workload, throughput metrics and baseline references
 - [R5-ADLX-PMODE-VALIDATION-2026-10-15.md](R5-ADLX-PMODE-VALIDATION-2026-10-15.md): ADLX benchmark integration/overhead, display/power-state validation and Evo-X2 P-MODE performance + WMI/event mapping
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
