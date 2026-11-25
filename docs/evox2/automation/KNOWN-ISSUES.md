@@ -69,3 +69,5 @@ IQ2_S MatVec 実験の Logger OFF TG256 で、A1 初回の run-02 は TG 計測�
 作業3-4の M005（Stage 2 b12676、UMA 96 GiB、PP8192／TG256）で、通常監視と RAM 詳細監視が PP warmup 開始報告の直後に途切れ、結果 JSON は空だった。RDP、ping、SSH、物理ディスプレイと USB キーボードの反応が失われ、強制終了後の起動で復旧した。フリーズ直前の観測範囲で RAM、コミット、GPU メモリに顕著な異常はなく、直接原因は未特定。AMD External Events Client Module の停止との因果関係は未確認。
 
 無人再開には新規重大イベントの確認経路が必要。復旧後の SSH ユーザーでは System チャネルがアクセス拒否だったため、残りの計測は開始前に停止した。M001 のロード遅延は独立した作業4の資料として保持する。 [障害記録](INCIDENT-20261126-M005.md)
+
+2026-11-26、運用者による Event Log Readers の追加後、新規 SSH で System／Application の読み取りを再確認した。障害前の測定と復旧後の測定は別ラウンドとして保持する。 [SSH のイベントログ読み取り](EVOX2-ENVIRONMENT.md#ssh-のイベントログ読み取り)
