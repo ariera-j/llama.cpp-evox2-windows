@@ -1,6 +1,10 @@
 # Evo-X2 upstream-refresh overview
 
-> **現行入口（2026-11-23）:** [文書・ブランチ差分の統合状況と作業ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先して読む。r6のS8/S9・COMMON-005・PP調査、MH-Hard、Strata、Gemma4 TG/PP調査はその後進展済み。現在はCodex/EVO-X2推論接続テスト中、文書整理後にブランチ整理・高速化候補の個別実装へ進む。**下の2026-10-25「Current execution order」等は歴史的チェックポイントであり、11/23現在のToDoではない。**
+> **共通文書と確定記録（2026-11-25）**
+> 作業前は [AGENT-RULES.md](automation/AGENT-RULES.md)、[実機のビルド環境](automation/EVOX2-ENVIRONMENT.md)、[RUNBOOK.md](automation/RUNBOOK.md)、[既知の問題](automation/KNOWN-ISSUES.md) を参照する。
+> 確定済み調査と共通の入口は [GitHub main の EVO-X2 文書索引](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/README.md) に集約している。下記は作業ブランチの履歴を参照するときに使う。
+
+> **2026-11-23 の作業状況:** [文書・ブランチ差分の統合状況と作業ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先して読む。r6のS8/S9・COMMON-005・PP調査、MH-Hard、Strata、Gemma4 TG/PP調査はその後進展済み。当時は Codex/EVO-X2 推論接続テスト中で、その後にブランチ整理と高速化候補の個別検証を予定していた。**下の2026-10-25「Current execution order」等は歴史的チェックポイントであり、11/23現在のToDoではない。**
 
 > **Current r6 execution order — 2026-10-25 (supersedes the historical r5/V1 'next' notice):** r6 is bootstrapped on locked upstream b11870. Follow [the fixed r6 patch and measurement-gate plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md): clean Vulkan/ROCm → COMMON-001 → ROCmFPx Vulkan → MTP compatibility → VULKAN-002 → DENSE → NOOP → Stage-B → flatten → final Qwen/Gemma checks. IQ3 original is measured only around PLE16 migration; IQ3 split PLE16 and, after support, ROCmFP4 are primary benchmarks. IQ4/huihui/Gemma4 are deferred until the integrated candidate, except a necessary clean-build compatibility probe. r5 research documents remain historical evidence; no new optimization experiments enter this first r6 integration.
 

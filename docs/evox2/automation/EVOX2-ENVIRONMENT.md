@@ -17,7 +17,9 @@ VS `17.0`、`VSCMD_ARG_HOST_ARCH=x64`、`VSCMD_ARG_TGT_ARCH=x64` を確認する
 
 ## Vulkan
 
-`C:\VulkanSDK\1.4.357.0` と `C:\Program Files\LLVM\bin` をラッパーへ明示する。後者の `clang.exe` と `clang++.exe` はともに `20.1.8`。詳細は [Windows Vulkan ビルドガイド](../BUILD-VULKAN-WINDOWS.md)。
+2026-11-24 の b12651 Stage 1/2（Vulkan Release）では、Vulkan SDK `C:\VulkanSDK\1.4.357.0` と **Visual Studio 2026 Build Tools 付属の LLVM/Clang 22.1.3** を使用した。`clang.exe` と `clang++.exe` のディレクトリは `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\Llvm\x64\bin`。Codex ビルドラッパーには `-VulkanLlvmBin` でこのディレクトリを渡し、`-ExpectedVulkanClangVersion 22.1.3` を指定する。LLVM OpenMP は `22.1.8` を使用した。
+
+MSVC・CMake・Ninja の開発環境は引き続き上記 VS2022 x64 を使用し、VS2026 の開発環境（`VsDevCmd.bat`）へは切り替えない。旧 `C:\Program Files\LLVM\bin` の Clang 20.1.8 は過去のビルド構成であり、b12651 Stage 1/2 の再現には使用しない。詳細は [Windows Vulkan ビルドガイド](../BUILD-VULKAN-WINDOWS.md)。
 
 ## ROCm
 

@@ -2,6 +2,8 @@
 
 ## Codex b12651 builds
 
+These options describe the [b12651 working revision](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/f4f1aa3e85124fed75a891ec63a1504536049eff). Check the wrapper in the source revision selected for the build. The older sections below are historical toolchain records.
+
 Use the fixed Codex clone and a short, unused output name. The [runbook](../../../docs/evox2/automation/RUNBOOK.md#b12651-の再現コマンド) has executable Vulkan and ROCm commands, the verified compiler and SDK combinations, and build times. The [b12651 record](../../../docs/evox2/automation/UPSTREAM-B12651-20261124.md) has artifact SHA-256 values and historical failure details.
 
 The Codex wrapper validates BoringSSL and, for Vulkan, LLVM OpenMP under `C:\llama-build\automation\_deps`. Normal build and configure-only runs prepare missing entries from official sources. `-Offline` and `-PreflightOnly` require existing verified entries. Configure always uses the prepared cache, disables both UI options and sets `FETCHCONTENT_FULLY_DISCONNECTED=ON`. The dependency audit compares CMake entry points, modules and templates, UI npm manifests and configuration, and Git submodule declarations against the reviewed b12651 commit. It also checks new inputs and ignored local overrides in the CMake module search directories and the chat npm project. Changed inputs are listed before dependency acquisition or configure, with a reason for review. C++ and shader source edits can proceed through this audit. Existing invalid cache entries are preserved for diagnosis.

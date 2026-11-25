@@ -8,11 +8,13 @@
 | CMake/Clang の警告 | Vulkan の `ccache not found`、Windows の pthread 探索失敗に続く `Found Threads: TRUE`、Clang の signed/unsigned 比較や `httplib.h` の言語拡張警告は成功ビルドでも観測された。ログに残し、終了コードと生成物で判定する。新規の警告、compiler error、ツールの版違いは個別に確認し、フラグや SDK を勝手に変えない。 |
 | VS18 / MSVC 14.51 と TheRock | 過去に HIP の `<cmath>` オーバーロード衝突が発生した。この運用では VS2022 / MSVC 14.44 を使用する。 |
 
-詳細は [ROCm の障害記録と警告](../BUILD-ROCM-WINDOWS.md)、[Vulkan device-lost 記録](../R6-LLAMA-BENCH-PP128K-VULKAN-DEVICE-LOST-2026-11-03.md)、[Gemma 4 Global FA の研究記録](../GEMMA4-GLOBALFA-RGP-GATE-20261121.md) を参照する。研究記録の計測手順を自動スモークには組み込まない。
+詳細は [ROCm の障害記録と警告](../BUILD-ROCM-WINDOWS.md)、[Vulkan device-lost 記録](../R6-LLAMA-BENCH-PP128K-VULKAN-DEVICE-LOST-2026-11-03.md)、[Gemma 4 Global FA の研究記録](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/V1-GEMMA4-GLOBALFA-RGP-GATE-20261121.md) を参照する。研究記録の計測手順を自動スモークには組み込まない。
 
 ## 2026-11-23 物理メモリ取得のみの修正と推論再検証
 
-グループ変更後も WMI の Win32_OperatingSystem は 0x80041003 で失敗した。Monitor-LlamaProcess.ps1 の物理 RAM 取得だけを GetPerformanceInfo に変更し、総ページ数と空きページ数をページサイズでバイトに換算して既存の GiB 列に出力する。API 失敗時は Win32 エラー番号を表示する。PerfMon、CSV 53 列、Measure-LlamaCli.ps1、ADLX は従来のまま。
+グループ変更後、当時の main `633c874874dd8dc6af603b9e36ac8c5ff236b0f3` で WMI の Win32_OperatingSystem は 0x80041003 で失敗した。ADLX VRAM と PerfMon は個別取得できた。この版の再試験は WMI エラーのため開始前に中止した。対象スクリプトの blob と SHA-256 は [再確認の記録](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/729ec6256ac6ecec5a219ee19876c2f787e1fcb7/docs/evox2/automation/KNOWN-ISSUES.md#2026-11-23-グループ変更後の-main-版モニター再確認)。
+
+その後、Monitor-LlamaProcess.ps1 の物理 RAM 取得だけを GetPerformanceInfo に変更し、総ページ数と空きページ数をページサイズでバイトに換算して既存の GiB 列に出力する。API 失敗時は Win32 エラー番号を表示する。PerfMon、CSV 53 列、Measure-LlamaCli.ps1、ADLX は従来のまま。
 
 PowerShell 5.1 の構文検証と UTF-8 BOM を確認した。10秒の PowerShell プロセスを監視した結果は終了コード 0、53 列・10 サンプル。最初の行で物理使用 8.009 GiB、空き 55.639 GiB、コミット 10.286 GiB、ページング3項目、GPU アダプターの Dedicated / Shared を取得した。
 
