@@ -359,6 +359,8 @@ function ConvertTo-Evox2MatrixResultRow {
             AdlxPowerClass    = $ChildRow.AdlxPowerClass
             PModeWarningCount = $ChildRow.PModeWarningCount
             ChildRunDirectory = $ChildRow.RunDirectory
+            ResourceMonitorStatus = $ChildRow.ResourceMonitorStatus
+            AdlxMonitorStatus = $ChildRow.AdlxMonitorStatus
         }
     }
 
@@ -410,6 +412,8 @@ function ConvertTo-Evox2MatrixResultRow {
         AdlxPowerClass    = $ChildRow.AdlxPowerClass
         PModeWarningCount = $ChildRow.PModeWarningCount
         ChildRunDirectory = $ChildRow.RunDirectory
+        ResourceMonitorStatus = $ChildRow.ResourceMonitorStatus
+        AdlxMonitorStatus = $ChildRow.AdlxMonitorStatus
     }
 }
 
@@ -1049,6 +1053,10 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         ChildConditionId = $childConditionId
         ChildRunDirectory = $childRunDirectory
         Error            = $errorText
+        ResourceMonitorStatus = $(if ($childRows.Count) { $childRows[0].ResourceMonitorStatus } else { $null })
+        AdlxMonitorStatus     = $(if ($childRows.Count) { $childRows[0].AdlxMonitorStatus } else { $null })
+        ResourceSamples      = $(if ($childRows.Count) { $childRows[0].ResourceSamples } else { $null })
+        AdlxSamples          = $(if ($childRows.Count) { $childRows[0].AdlxSamples } else { $null })
     }
 
     $runRecords | Export-Csv `
