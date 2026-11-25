@@ -25,27 +25,7 @@ $ErrorActionPreference = 'Stop'
 # Reuse the same lightweight process classification as the start/end snapshots.
 Import-Module (Join-Path $PSScriptRoot 'Evox2.Benchmark.psm1') -Force
 
-if (-not ('Evox2ResourceMemory' -as [type])) {
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class Evox2ResourceMemory {
-    [StructLayout(LayoutKind.Sequential)]
-    public struct PerformanceInfo {
-        public uint Size;
-        public UIntPtr CommitTotal, CommitLimit, CommitPeak;
-        public UIntPtr PhysicalTotal, PhysicalAvailable, SystemCache;
-        public UIntPtr KernelTotal, KernelPaged, KernelNonpaged, PageSize;
-        public uint HandleCount, ProcessCount, ThreadCount;
-    }
-
-    [DllImport("psapi.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool GetPerformanceInfo(ref PerformanceInfo info, uint size);
-}
-"@
-}
+Import-Module (Join-Path $PSScriptRoot 'Evox2.Memory.psm1')
 
 function ConvertTo-RoundedMetric {
     param($Value, [double]$Divisor = 1, [int]$Digits = 1)
@@ -75,29 +55,6 @@ function Test-TargetExited {
 
     try { return $Process.HasExited } catch {
         return ($null -eq (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue))
-    }
-}
-
-function Read-SystemMemory {
-    $info = New-Object 'Evox2ResourceMemory+PerformanceInfo'
-    $info.Size = [Runtime.InteropServices.Marshal]::SizeOf($info)
-    if (![Evox2ResourceMemory]::GetPerformanceInfo([ref]$info, $info.Size)) {
-        throw "GetPerformanceInfo Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())."
-    }
-    $pageSize = $info.PageSize.ToUInt64()
-    $total = $info.PhysicalTotal.ToUInt64() * $pageSize
-    $available = $info.PhysicalAvailable.ToUInt64() * $pageSize
-    $commit = $info.CommitTotal.ToUInt64() * $pageSize
-    $limit = $info.CommitLimit.ToUInt64() * $pageSize
-    [pscustomobject]@{
-        Total = $total
-        Available = $available
-        Used = $total - $available
-        Commit = $commit
-        CommitLimit = $limit
-        CommitPercent = $(if ($limit -gt 0) { 100.0 * $commit / $limit } else { $null })
-        CommitPeak = $info.CommitPeak.ToUInt64() * $pageSize
-        Cache = $info.SystemCache.ToUInt64() * $pageSize
     }
 }
 
@@ -205,20 +162,16 @@ $nextBackgroundSampleAt = (Get-Date).AddSeconds($BackgroundIntervalSeconds)
 while (-not (Test-TargetExited $target)) {
     $loopStart = Get-Date
     $sampleClock = [Diagnostics.Stopwatch]::StartNew()
-    $target.Refresh()
     $native = $null
     $nativeError = $null
-    try { $native = Read-SystemMemory } catch { $nativeError = $_.Exception.Message }
-    $processValues = @{}
-    $processError = $null
-    foreach ($property in 'WorkingSet64', 'PrivateMemorySize64', 'VirtualMemorySize64') {
-        try {
-            $value = $target.$property
-            if ($null -ne $value -and $value -ge 0) { $processValues[$property] = $value }
-        } catch {
-            if (!$processError) { $processError = $_.Exception.Message }
-        }
-    }
+    $nativeMemoryUtc = [datetime]::UtcNow
+    $nativeMemoryTick = [Diagnostics.Stopwatch]::GetTimestamp()
+    try { $native = Get-Evox2SystemMemory } catch { $nativeError = $_.Exception.Message }
+    $processMemoryUtc = [datetime]::UtcNow
+    $processMemoryTick = [Diagnostics.Stopwatch]::GetTimestamp()
+    $memory = Get-Evox2ProcessMemory $target
+    $processValues = $memory.Values
+    $processError = $memory.Error
 
     $batch = Read-CounterBatch $allPaths
     if (Test-TargetExited $target) { break }
@@ -379,6 +332,10 @@ while (-not (Test-TargetExited $target)) {
         ProcessMemoryError            = $processError
         PerfMonError                  = $counterError
         BackgroundProbeError          = $backgroundError
+        NativeMemoryTimestampUtc      = $nativeMemoryUtc.ToString('o')
+        NativeMemoryStopwatchTicks    = $nativeMemoryTick
+        ProcessMemoryTimestampUtc     = $processMemoryUtc.ToString('o')
+        ProcessMemoryStopwatchTicks   = $processMemoryTick
     } | Export-Csv -LiteralPath $fullLogPath -Append -NoTypeInformation -Encoding UTF8
 
     $elapsedMilliseconds = ((Get-Date) - $loopStart).TotalMilliseconds

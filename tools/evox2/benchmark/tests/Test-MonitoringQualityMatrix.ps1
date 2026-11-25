@@ -40,6 +40,7 @@ try {
     $adlxMonitorExitCode = 0
     $adlxMonitorStartError = $null
 
+    $RamDetailResult = @{ Status='Complete'; IncreaseMiB=32; SystemRecovery='WithinTolerance' }
     foreach ($name in 'Measure-LlamaBench.ps1', 'Measure-LlamaCli.ps1') {
         $path = Join-Path $benchmark $name
         $tokens = $null; $problems = $null
@@ -76,7 +77,8 @@ try {
         # child row, fed by fields evaluated from the real summary mapping.
         $row = [ordered]@{ Status = 'OK'; RunId = 'fixture'; RunDirectory = 'fixture' }
         foreach ($pair in $tables[0].KeyValuePairs) {
-            if ($pair.Item1.Value -in 'ResourceMonitorStatus', 'AdlxMonitorStatus', 'ResourceSamples', 'AdlxSamples') {
+            if ($pair.Item1.Value -in 'ResourceMonitorStatus', 'AdlxMonitorStatus', 'ResourceSamples', 'AdlxSamples',
+                'RamDetailStatus', 'RamDetailIncreaseMiB', 'RamDetailSystemRecovery') {
                 $row[$pair.Item1.Value] = & ([scriptblock]::Create($pair.Item2.Extent.Text))
             }
         }
@@ -90,6 +92,7 @@ try {
     [IO.File]::WriteAllText($plan, @'
 @{
     SchemaVersion = 1
+    Defaults = @{ BenchParameters = @{ RamDetail = $true; RamDetailIntervalMs = 100 }; CliParameters = @{ RamDetail = $true; RamDetailPreSeconds = 1 } }
     Jobs = @(
         @{ Name = 'bench'; Tool = 'bench'; BuildKeys = @('B'); ModelKeys = @('M') },
         @{ Name = 'cli'; Tool = 'cli'; BuildKeys = @('B'); ModelKeys = @('M'); Parameters = @{ AllocationOnly = $true } }
@@ -103,6 +106,7 @@ try {
     $json = Get-Content -LiteralPath (Join-Path $batch.FullName 'matrix-result.json') -Raw | ConvertFrom-Json
     Assert-True ($runs.Count -eq 2 -and $results.Count -eq 2 -and $json.StatusCounts.OK -eq 2) 'Quality affected workload success'
     foreach ($item in @($runs) + @($results) + @($json.Runs) + @($json.Results)) {
+        Assert-True ($item.RamDetailStatus -eq 'Complete' -and $item.RamDetailIncreaseMiB -eq 32 -and $item.RamDetailSystemRecovery -eq 'WithinTolerance') 'Missing detail rollup'
         Assert-True ($item.ResourceMonitorStatus -eq 'Partial' -and $item.AdlxMonitorStatus -eq 'Unavailable' -and $item.ResourceSamples -eq 2 -and $item.AdlxSamples -eq 1) 'Missing Matrix quality rollup'
     }
     Write-Output 'PASS Measure quality assignments, JSON and CSV fields; Matrix quality rollup and status independence'

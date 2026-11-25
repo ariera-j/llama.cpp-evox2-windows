@@ -361,6 +361,9 @@ function ConvertTo-Evox2MatrixResultRow {
             ChildRunDirectory = $ChildRow.RunDirectory
             ResourceMonitorStatus = $ChildRow.ResourceMonitorStatus
             AdlxMonitorStatus = $ChildRow.AdlxMonitorStatus
+            RamDetailStatus = $ChildRow.RamDetailStatus
+            RamDetailIncreaseMiB = $ChildRow.RamDetailIncreaseMiB
+            RamDetailSystemRecovery = $ChildRow.RamDetailSystemRecovery
         }
     }
 
@@ -414,6 +417,9 @@ function ConvertTo-Evox2MatrixResultRow {
         ChildRunDirectory = $ChildRow.RunDirectory
         ResourceMonitorStatus = $ChildRow.ResourceMonitorStatus
         AdlxMonitorStatus = $ChildRow.AdlxMonitorStatus
+        RamDetailStatus = $ChildRow.RamDetailStatus
+        RamDetailIncreaseMiB = $ChildRow.RamDetailIncreaseMiB
+        RamDetailSystemRecovery = $ChildRow.RamDetailSystemRecovery
     }
 }
 
@@ -1057,6 +1063,9 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         AdlxMonitorStatus     = $(if ($childRows.Count) { $childRows[0].AdlxMonitorStatus } else { $null })
         ResourceSamples      = $(if ($childRows.Count) { $childRows[0].ResourceSamples } else { $null })
         AdlxSamples          = $(if ($childRows.Count) { $childRows[0].AdlxSamples } else { $null })
+        RamDetailStatus       = $(if ($childRows.Count) { $childRows[0].RamDetailStatus } else { $null })
+        RamDetailIncreaseMiB  = $(if ($childRows.Count) { $childRows[0].RamDetailIncreaseMiB } else { $null })
+        RamDetailSystemRecovery = $(if ($childRows.Count) { $childRows[0].RamDetailSystemRecovery } else { $null })
     }
 
     $runRecords | Export-Csv `
