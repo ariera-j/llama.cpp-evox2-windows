@@ -1,0 +1,12 @@
+[
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "576CDA5AC89F2EB0B534B25FF37DA78DFDC14C28E7B7D1AB5BB56F9ED7CDC8D2",
+        "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-s2v\\bin\\Release\\llama-bench.exe"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "891196297B5D3F7EDA62F34DD84E36016BCAC8943006BFE93740401DD0A6DEA5",
+        "Path":  "C:\\llama-build\\automation\\llama.cpp-evox2-windows\\build-s2v\\bin\\Release\\ggml-vulkan.dll"
+    }
+]

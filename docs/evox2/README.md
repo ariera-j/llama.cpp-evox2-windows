@@ -1,8 +1,12 @@
 # Evo-X2 upstream-refresh overview
 
+> **共通文書と確定記録（2026-11-25）**
+> 作業前は [AGENT-RULES.md](automation/AGENT-RULES.md)、[実機のビルド環境](automation/EVOX2-ENVIRONMENT.md)、[RUNBOOK.md](automation/RUNBOOK.md)、[既知の問題](automation/KNOWN-ISSUES.md) を参照する。
+> b12651 ベースライン、COMMON-001、ROCmFP4 FAST Vulkan、PR #30904 移植前調査、IQ2_S MatVec 実験の確定記録は [基準計測・検証記録の索引](BASELINE.md) を参照する。移植前調査と IQ2_S 実験の実装・採否は各記録を参照する。
+
 > **文書ファイル名の整理（2026-11-24）:** バージョン固有の実験・計測・調査は `R2-` ～ `R6-` / `V1-` を先頭に付ける。旧ファイル名との対応、履歴ブランチとの比較方法は [DOCUMENT-NAMING.md](DOCUMENT-NAMING.md) を参照。汎用ビルド手順・運用ルール・横断ログは従来の名前を維持する。ベースラインの横断入口は [BASELINE.md](BASELINE.md)。
 
-> **現行入口（2026-11-23）:** [文書・ブランチ差分の統合状況と作業ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先して読む。r6のS8/S9・COMMON-005・PP調査、MH-Hard、Strata、Gemma4 TG/PP調査はその後進展済み。現在はCodex/EVO-X2推論接続テスト中、文書整理後にブランチ整理・高速化候補の個別実装へ進む。**下の2026-10-25「Current execution order」等は歴史的チェックポイントであり、11/23現在のToDoではない。**
+> **2026-11-23 の作業状況:** [文書・ブランチ差分の統合状況と作業ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)を優先して読む。r6のS8/S9・COMMON-005・PP調査、MH-Hard、Strata、Gemma4 TG/PP調査はその後進展済み。当時は Codex/EVO-X2 推論接続テスト中で、その後にブランチ整理と高速化候補の個別検証を予定していた。**下の2026-10-25「Current execution order」等は歴史的チェックポイントであり、11/23現在のToDoではない。**
 
 > **Current r6 execution order — 2026-10-25 (supersedes the historical r5/V1 'next' notice):** r6 is bootstrapped on locked upstream b11870. Follow [the fixed r6 patch and measurement-gate plan](R6-INTEGRATION-EXECUTION-PLAN-2026-10-25.md): clean Vulkan/ROCm → COMMON-001 → ROCmFPx Vulkan → MTP compatibility → VULKAN-002 → DENSE → NOOP → Stage-B → flatten → final Qwen/Gemma checks. IQ3 original is measured only around PLE16 migration; IQ3 split PLE16 and, after support, ROCmFP4 are primary benchmarks. IQ4/huihui/Gemma4 are deferred until the integrated candidate, except a necessary clean-build compatibility probe. r5 research documents remain historical evidence; no new optimization experiments enter this first r6 integration.
 

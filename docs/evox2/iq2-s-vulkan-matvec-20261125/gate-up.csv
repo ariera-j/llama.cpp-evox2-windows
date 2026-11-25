@@ -1,0 +1,5 @@
+variant,sequence,tokens,m,k,experts,selected,logger_intervals,logged_nodes,intervals_per_token,mean_us_per_interval,sum_us,sum_us_per_token,sum_all_logger_intervals_us,pct_of_logger_total,raw_label
+Base,13,32,640,2560,512,10,1504,3008,47.0,107.442,161594.0,5049.8125,1038510.0,15.56017756208414,"MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512, MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512"
+A2,14,32,640,2560,512,10,1504,3008,47.0,105.412,158541.0,4954.40625,1037530.0,15.280618391757347,"MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512, MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512"
+A1,15,32,640,2560,512,10,1504,3008,47.0,107.427,161572.0,5049.125,1039890.0,15.537412610949236,"MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512, MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512"
+A1A2,16,32,640,2560,512,10,1504,3008,47.0,105.406,158532.0,4954.125,1036410.0,15.296263061915651,"MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512, MUL_MAT_ID_VEC iq2_s m=640 n=10 k=2560 n_expert=512"

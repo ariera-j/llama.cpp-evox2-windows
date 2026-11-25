@@ -1,0 +1,9 @@
+Checking patch ggml/src/ggml-vulkan/ggml-vulkan-types.h...
+Hunk #1 succeeded at 385 (offset 24 lines).
+Hunk #2 succeeded at 864 (offset 68 lines).
+Checking patch ggml/src/ggml-vulkan/ggml-vulkan.cpp...
+Hunk #1 succeeded at 3346 (offset 429 lines).
+Hunk #2 succeeded at 3380 (offset 429 lines).
+Hunk #3 succeeded at 3417 (offset 434 lines).
+Hunk #4 succeeded at 6423 (offset 779 lines).
+Checking patch ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_iq3_xxs.comp...

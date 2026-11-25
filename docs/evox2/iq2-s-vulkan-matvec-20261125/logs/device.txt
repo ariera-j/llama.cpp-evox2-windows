@@ -1,0 +1,8 @@
+deviceName        = AMD Radeon(TM) 8060S Graphics
+subgroupSize                      = 64
+driverInfo                                           = 26.8.1 (LLPC)
+minSubgroupSize                                                               = 32
+maxSubgroupSize                                                               = 64
+VK_KHR_pipeline_executable_properties       : extension revision 1
+size   = 103079215104 (0x1800000000) (96.00 GiB)
+subgroupSizeControl                                = true

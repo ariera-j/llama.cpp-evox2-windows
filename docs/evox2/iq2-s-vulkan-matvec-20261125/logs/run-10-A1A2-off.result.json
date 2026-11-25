@@ -1,0 +1,21 @@
+{
+    "ended":  "2026-11-25T01:00:03.6141349+09:00",
+    "exitCode":  0,
+    "processSeconds":  60.5943275,
+    "pmodeAfter":  {
+                       "ProbeSucceeded":  true,
+                       "Mode":  "Performance",
+                       "RawValue":  1,
+                       "Source":  "IP3-WMI-method2",
+                       "Transport":  "ScheduledTask",
+                       "InstanceName":  "ACPI\\PNP0C14\\IP3POWERSWITCH_0",
+                       "MethodId":  2,
+                       "OpenResult":  0,
+                       "ExecuteResult":  0,
+                       "CloseResult":  0,
+                       "OutputSize":  4,
+                       "Elevated":  true,
+                       "Error":  null,
+                       "CapturedAt":  "2026-11-25T01:00:03.9599640+09:00"
+                   }
+}

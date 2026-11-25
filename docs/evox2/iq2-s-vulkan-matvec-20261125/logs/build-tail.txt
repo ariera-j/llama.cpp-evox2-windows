@@ -1,0 +1,22 @@
+[838/843] Building CXX object tools/cli/CMakeFiles/llama-cli-impl.dir/Release/cli-context.cpp.obj
+In file included from C:/llama-build/automation/llama.cpp-evox2-windows/tools/cli/cli-context.cpp:1:
+In file included from C:/llama-build/automation/llama.cpp-evox2-windows/tools/cli\cli-context.h:6:
+In file included from C:/llama-build/automation/llama.cpp-evox2-windows/tools/cli\cli-server.h:5:
+In file included from C:/llama-build/automation/llama.cpp-evox2-windows/common/.\http.h:5:
+C:/llama-build/automation/llama.cpp-evox2-windows/vendor/nlohmann/..\cpp-httplib/httplib.h:315:17: warning: extension used [-Wlanguage-extension-token]
+
+  315 | using ssize_t = __int64;
+
+      |                 ^
+
+1 warning generated.
+
+[839/843] Linking CXX shared library bin\Release\llama-cli-impl.dll
+[840/843] Linking CXX executable bin\Release\llama-cli.exe
+[841/843] Building CXX object tests/CMakeFiles/test-backend-ops.dir/Release/test-backend-ops.cpp.obj
+[842/843] Linking CXX executable bin\Release\test-backend-ops.exe
+Running Vulkan smoke checks...
+
+Vulkan build manifest written:
+C:\llama-build\automation\llama.cpp-evox2-windows\build-i2mv\bin\Release\evox2-build.json
+Verified Vulkan, Vulkan0, a38ba149d11d6a7067e6c323523f95c7889b167b, SHA-256 3424b284c5f98538a012dcecb8628b1353e3f0b271bd9270f50ce195511aa15c

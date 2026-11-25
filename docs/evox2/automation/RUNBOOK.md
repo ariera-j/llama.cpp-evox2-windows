@@ -2,10 +2,12 @@
 
 運用範囲は [エージェントルール](AGENT-RULES.md)、ツールの固定値は [EVO-X2 環境](EVOX2-ENVIRONMENT.md) を参照する。ラッパーの構文、キャッシュ形式、マニフェストの正本は [ビルドラッパー README](../../../tools/evox2/build/README.md) と各ビルドガイド ([Vulkan](../BUILD-VULKAN-WINDOWS.md)、[ROCm](../BUILD-ROCM-WINDOWS.md))。
 
+このランブックの正本は GitHub の `main`。b12651 のコマンドは対応する作業ブランチのツールに適用する。実行前に製品ソースの SHA とラッパーの引数を照合する。作業例の固定参照は [b12651 のビルドラッパー](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/tools/evox2/automation/Invoke-CodexBuild.ps1)。
+
 ## 実行順序
 
 1. Git のブランチ、HEAD、作業ツリーを記録する。承認済みのビルド先を明示し、Vulkan と ROCm で分ける。成功済みの出力を保持する場合は新しい専用ディレクトリを使う。VS2022 x64 とバックエンドの SDK を同一 PowerShell 5.1 プロセスに準備する。
-2. ソースから BoringSSL と、Vulkan の場合は LLVM OpenMP の要求版を読む。共有キャッシュを読み取り専用で検証し、足りないものだけ `C:\llama-build\automation\_deps` にコピーする。BoringSSL は `.git` を含む独立した checkout とし、要求タグと HEAD の一致、クリーンな状態をコピー後にも確認する。OpenMP はヘッダー、インポートライブラリ、DLL、`LICENSE.TXT` を確認する。いずれかの必須キャッシュが不足したら configure の前に停止し、依存名と版を報告する。追加取得は明示承認後に専用領域で行う。ROCm の成功時は `-DFETCHCONTENT_FULLY_DISCONNECTED=ON` も指定した。
+2. 対象ソースの要求版を確認し、Codex 専用キャッシュ `C:\llama-build\automation\_deps` を検証する。レビュー済み b12651 の Codex ラッパーは、通常ビルドと ConfigureOnly で公式 BoringSSL / LLVM OpenMP の不足分を取得できる。BoringSSL はタグ・HEAD・固定 SHA・取得元・作業ツリーを照合し、OpenMP は配布ファイルとライセンスの upstream SHA-256、および展開済みの必要ファイルを検証する。一時領域で準備して検証後に公開し、同じ依存に対する並行取得はロックで直列化する。破損キャッシュ、取得失敗、未レビューの upstream 入力は configure 前に停止する。
 3. 既存の `Build-Vulkan.ps1` または `Build-ROCm.ps1` に専用 `-BuildDir`、`-DependencyCacheRoot`、`-Parallel 4` を渡す。Vulkan は確認済みの `-CMakeExe`、`-VulkanSdk`、`-LlvmBin` を指定する。ROCm は TheRock を有効化済みの環境で `-ExpectedRocmSdkVersion '10.0.0'` と `-AmdGpuTarget gfx1151` を指定する。
 4. `-ConfigureOnly` と `-ExtraCMakeArgs @('-DLLAMA_BUILD_UI=OFF', '-DLLAMA_USE_PREBUILT_UI=OFF')` で再現する。終了コード `0` とキャッシュ上の UI 両フラグ `OFF`、選択されたコンパイラ、SDK、依存の出所を確認する。ROCm の場合は `GGML_HIP=ON` と `AMDGPU_TARGETS=gfx1151` も確認する。
 5. 同じ PowerShell とビルド先で `-BuildOnly` を実行する。このモードは既存 CMake キャッシュを使ってメタデータを更新し、configure と生成を再実行する。更新後も UI が `OFF` で、UI 取得処理がログに現れていないことを確認する。
@@ -13,7 +15,13 @@
 
 リモートで標準出力と標準エラーを別々の一意名で `C:\llama-build\_logs\codex` に記録し、configure、ビルド、各スモークの終了コードと所要時間を残す。SSH が切れたら、再実行の前にプロセスとログを確認する。非ゼロ終了、SDK/キャッシュ不一致、UI 取得、期待デバイスの欠落、マニフェスト不一致があれば停止し、失敗箇所とログを報告する。失敗したビルドディレクトリは保存する。詳細は [既知の問題](KNOWN-ISSUES.md)。
 
-## 2026-11-23 に確認した範囲
+## P-MODE の取得
+
+対応する作業ブランチの計測ラッパーでは、直接WMIの読み取りに失敗した場合、計測ラッパーはTask Scheduler COMで既存の `\Evox2\PModeProbe` を引数なしで起動する。 `ai` のInteractiveログオンが必要で、結果ファイルの新規更新を検証する。保護先、管理者による更新・SHA-256確認、通常ユーザーでの検証コマンド、障害時の切り分けは [P-MODE 読み取り運用](PMODE-PROBE.md) を参照する。
+
+## b12037 の確認記録（2026-11-23）
+
+旧 b12037 の手順では共有キャッシュを読み取り専用で検証し、不足分を専用キャッシュにコピーした。追加取得は明示承認を要し、キャッシュが不足すると configure 前に停止した。ROCm の成功時は `-DFETCHCONTENT_FULLY_DISCONNECTED=ON` も指定した。
 
 確認ソースは `9de09c6106daf13f26134a4a453a200c73c45bbb`、CLI は `0.7.0-dev` の build `12037`。BoringSSL `0.20261020.0` を両方で再利用し、Vulkan では LLVM OpenMP `20.1.8` も再利用した。
 
@@ -24,21 +32,37 @@
 
 文書取り込み後の `bf3026f32915a88a96f9131636820dbcd45aaeed` からの再ビルド、モデル推論、バックエンド演算テスト、ベンチマークは **未検証**。このスモークはビルドの来歴とデバイス列挙を確認する。
 
-## Codex 専用ラッパー
+## b12651 の再現コマンド
 
-Windows PowerShell 5.1 で Codex 専用 clone のルートから実行する。SSH セッションで必要な場合は、起動時に `-ExecutionPolicy RemoteSigned` を指定する。ラッパーは子 PowerShell 一つで VS2022 と SDK を初期化し、上記の既存ラッパーへ処理を委譲する。
+Windows PowerShell 5.1 で `C:\llama-build\automation\llama.cpp-evox2-windows` のルートから実行する。clone のパスは変更しない。以下は未使用の短いビルド先を指定する例。既存の出力や失敗時のログは保存する。
 
 ```powershell
 $wrapper = '.\tools\evox2\automation\Invoke-CodexBuild.ps1'
-& $wrapper -Backend Vulkan -BuildDir build-codex-vulkan-001 -PreflightOnly
-& $wrapper -Backend ROCm -BuildDir build-codex-rocm-001 -PreflightOnly
+$clang = 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\Llvm\x64\bin'
+
+& $wrapper -Backend Vulkan -BuildDir build-vk2 -VulkanLlvmBin $clang `
+    -ExpectedVulkanClangVersion 22.1.3 -CpuAllVariants OFF -PreflightOnly
+& $wrapper -Backend ROCm -BuildDir build-r2 -PreflightOnly
+
+& $wrapper -Backend Vulkan -BuildDir build-vk2 -VulkanLlvmBin $clang `
+    -ExpectedVulkanClangVersion 22.1.3 -CpuAllVariants OFF
+& $wrapper -Backend ROCm -BuildDir build-r2
 ```
 
-`-BuildDir` は clone 直下の未使用の `build-*` ディレクトリ名を指定する。`-PreflightOnly` はツールと専用キャッシュを検査し、ビルド先は作成しない。`-ConfigureOnly` は新規出力先で configure まで実行する。スイッチを省略すると、新規出力先で configure と Release ビルドを続けて実行する。configure 済みディレクトリの再利用はこのラッパーの対象外。configure と build にはクリーンな作業ツリーが必要。
+`-BuildDir` は clone 直下の未使用の `build-*` 名を指定する。configure と build にはクリーンな作業ツリーが必要。SSH セッションで必要な場合は PowerShell 起動時に `-ExecutionPolicy RemoteSigned` を指定する。
 
-依存は既に準備した `C:\llama-build\automation\_deps` を使う。キャッシュが不足していたら停止する。UI 関連の両フラグを `OFF` にし、FetchContent をオフラインに固定する。ビルド後は既存ラッパーの CLI スモーク結果とマニフェスト、実行ファイルの SHA-256、Radeon 8060S の列挙を照合する。`test-backend-ops.exe` は自動実行しない。コマンド、標準出力、標準エラー、終了コード、所要時間は `C:\llama-build\_logs\codex` に保存する。
+各コマンドが終了コード 0 だったことを確認してから次へ進む。キャッシュ不足で preflight が停止し、公式依存の取得が許可されている場合は、通常ビルドまたは `-ConfigureOnly` がツールの確認後に依存を取得する。ネットワーク取得を禁止するときは通常ビルドにも `-Offline` を付ける。preflight は依存とビルド先を変更せず、検査ログだけを出力する。
 
-2026-11-23 の実装確認では PowerShell 5.1 パーサーと UTF-8 BOM の確認が通過した。Vulkan preflight は終了コード `0`（1.88秒）、ROCm preflight は終了コード `0`（2.22秒）。両方ともビルド先を作成しなかった。この新ラッパーによる configure、ビルド、成果物検証は未実施。
+| Release 構成 | 所要時間 | BuildIdentity | llama-cli.exe SHA-256 |
+|---|---:|---|---|
+| Vulkan・VS2022 x64、VS2026 Clang 22.1.3、Vulkan SDK 1.4.357.0、OpenMP 22.1.8、CPU全バリアントOFF | 140.34 秒 | Verified | `2e7f5135ded3917d20a1d9183c9ef04b74beea9fcdfad16ee7e7d845b3590abe` |
+| ROCm・VS2022 x64、TheRock 10.0.0、AMD Clang 23.0.0git、gfx1151 | 440.44 秒 | Verified | `b1fa09954e77510aa0db1d2bab35faf70f1e4662dd9f631f185a5a7b42029e6a` |
+
+両ビルドは Radeon 8060S のデバイス列挙と旧 IQ3 の短文生成を確認済み。全実行ファイルのハッシュ、条件、ログは [b12651 ベースライン記録](UPSTREAM-B12651-20261124.md) を参照する。
+
+## b12037 用 Codex ラッパーの確認記録（2026-11-23）
+
+2026-11-23 の実装確認では PowerShell 5.1 パーサーと UTF-8 BOM の確認が通過した。Vulkan preflight は終了コード `0`（1.88秒）、ROCm preflight は終了コード `0`（2.22秒）。両方ともビルド先を作成しなかった。この日のラッパー検証は preflight まで。当時の引数とキャッシュ運用は [b12037 用ラッパーの記録](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/0b4d4ab837b52b9fdef94aedc7543298e41cc107/docs/evox2/automation/RUNBOOK.md#codex-専用ラッパー) を参照する。
 
 ## 2026-11-23 旧 IQ3 推論スモーク（UMA 64 GB）
 

@@ -10,5 +10,10 @@
 | r6 clean | [R6-CLEAN-BASELINE-VALIDATION-2026-10-25.md](R6-CLEAN-BASELINE-VALIDATION-2026-10-25.md) |
 | v1.0.0 / Strata 調査 | [V1-STRATA-PP-RESEARCH-HANDOFF-20261115.md](V1-STRATA-PP-RESEARCH-HANDOFF-20261115.md) |
 | Codex / 次期 upstream | [モデル互換性・監視ゲート・移植方針 (2026-11-23)](automation/MODEL-BASELINE-AND-UPSTREAM-PORTING-20261123.md) |
+| b12651 初期ビルド | [Vulkan／ROCm ベースライン](automation/UPSTREAM-B12651-20261124.md) |
+| b12651 PP/TG | [32k 試験](automation/UPSTREAM-B12651-32K-PP-TG-TRIAL-20261124.md) · [本計測](automation/UPSTREAM-B12651-PP-TG-20261124.md) |
+| b12651 Stage 1 / 2 | [COMMON-001](B12651-STAGE1-COMMON001-20261124.md) · [ROCmFP4 FAST PLE16 の Vulkan 検証](B12651-STAGE2-ROCMFP4-VULKAN-20261124.md) |
+| PR #30904 移植前調査 | [IQ3_XXS の経路・テンソル調査](pr30904-preport-20261125/README.md) |
+| IQ2_S Vulkan MatVec | [A1/A2 実験結果](iq2-s-vulkan-matvec-20261125/README.md) |
 
 共通の計測方法は [BENCHMARKING.md](BENCHMARKING.md)、文書命名規則は [DOCUMENT-NAMING.md](DOCUMENT-NAMING.md)。新しい基準計測の結果は実際に使用したソースバージョン（または upstream build 番号）を先頭につけた独立した文書として記録する。

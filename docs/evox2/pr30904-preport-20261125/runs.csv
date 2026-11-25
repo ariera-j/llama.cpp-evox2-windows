@@ -1,0 +1,7 @@
+model,logger,tg_tokens,bench_tg_wall_s,tg_tokens_per_s,whole_process_s,pmode_start,pmode_end,logger_total_us,logger_labels,logger_intervals
+IQ3,discrete,32,4.3212066,7.405339,57.4861307,Performance,Performance,2250310.0,63,88009
+IQ3,off,32,1.1101476,28.824996,53.4992416,Performance,Performance,,0,0
+IQ3,concurrent,32,1.2378596,25.851074,226.45245849999998,Performance,Performance,1041720.0,91,59456
+FAST,discrete,32,2.4441587,13.09244,58.562931299999995,Performance,Performance,2050440.0,61,88137
+FAST,off,32,1.1249526,28.445643,62.5951758,Performance,Performance,,0,0
+FAST,concurrent,32,1.2422285,25.760156,57.456689499999996,Performance,Performance,1055740.0,92,59520

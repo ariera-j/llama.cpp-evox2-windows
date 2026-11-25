@@ -1,5 +1,22 @@
 # Evo-X2 build wrappers
 
+## Codex b12651 builds
+
+These options describe the [b12651 working revision](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/f4f1aa3e85124fed75a891ec63a1504536049eff). Check the wrapper in the source revision selected for the build. The older sections below are historical toolchain records.
+
+Use the fixed Codex clone and a short, unused output name. The [runbook](../../../docs/evox2/automation/RUNBOOK.md#b12651-の再現コマンド) has executable Vulkan and ROCm commands, the verified compiler and SDK combinations, and build times. The [b12651 record](../../../docs/evox2/automation/UPSTREAM-B12651-20261124.md) has artifact SHA-256 values and historical failure details.
+
+The Codex wrapper validates BoringSSL and, for Vulkan, LLVM OpenMP under `C:\llama-build\automation\_deps`. Normal build and configure-only runs prepare missing entries from official sources. `-Offline` and `-PreflightOnly` require existing verified entries. Configure always uses the prepared cache, disables both UI options and sets `FETCHCONTENT_FULLY_DISCONNECTED=ON`. The dependency audit compares CMake entry points, modules and templates, UI npm manifests and configuration, and Git submodule declarations against the reviewed b12651 commit. It also checks new inputs and ignored local overrides in the CMake module search directories and the chat npm project. Changed inputs are listed before dependency acquisition or configure, with a reason for review. C++ and shader source edits can proceed through this audit. Existing invalid cache entries are preserved for diagnosis.
+
+Both Vulkan wrappers accept `-CpuAllVariants ON|OFF` and default to `ON`. The b12651 Vulkan baseline passes `OFF` to omit the Sapphire Rapids AMX target and builds one CPU plugin. `GGML_NATIVE=OFF` and `GGML_BACKEND_DL=ON` are retained. The Codex wrapper accepts the explicit pair `-VulkanLlvmBin` and `-ExpectedVulkanClangVersion`. For b12651 use VS2026 Clang 22.1.3 with LLVM OpenMP 22.1.8 under the VS2022 x64 host environment.
+
+Vulkan manifests record the verified `GGML_CPU_ALL_VARIANTS:BOOL` value from `CMakeCache.txt`. `BuildOnly` and `ManifestOnly` use the existing cache when the parameter is omitted. An explicit mismatch, a missing entry, or a value other than `ON` or `OFF` stops the invocation.
+
+Run `Test-Evox2VulkanCpuAllVariants.ps1` in Windows PowerShell 5.1 to check both variants and rejected cache states. The test uses temporary executables and directories.
+
+The cache fallback and capture behavior described in older sections applies to direct use of the historical backend wrappers. The Codex entry point prepares and verifies its private cache first.
+
+
 ## 2026-10-29: confirmed r6 Vulkan toolchain pin (corrected after Windows preflight)
 
 **The measured b11908 Vulkan and ROCm builds both used VS2022 Build Tools CMake `3.31.6-msvc6`, *not* `4.3.1`.** The original `4.3.1` description came from the earlier **r3** Windows build guide. This was confirmed by inspecting the previously uploaded **G8-6 verification archive** (Vulkan and ROCm `evox2-build.json` manifests, both with verified build identities) plus the independent Vulkan manifest from 2026-10-28. The CMake executable path in all three manifests was:
