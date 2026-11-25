@@ -1,5 +1,7 @@
 # Evo-X2 Windows tooling
 
+Follow the [EVO-X2 benchmark rules](../../docs/evox2/automation/BENCHMARK-RULES.md) before planning or running performance measurements. This README documents tool arguments, output, and examples.
+
 > **2026-10-24 PLE16 model preparation:** [`model/README.md`](model/README.md) documents the r5-local, r2-derived Python converter, r3-derived PowerShell wrapper, preflight mode, verification and large-model safety checks. No inference or benchmark runtime code changed; run converted GGUFs using COMMON-001-capable binaries.
 
 
@@ -298,9 +300,7 @@ Anything supplied through `-ExtraArgs` is written to `conditions.json` and inclu
 
 ## Resource monitoring
 
-`Monitor-LlamaProcess.ps1` is normally started automatically by `Measure-LlamaCli.ps1` when `-ResourceMonitor` is specified.
-
-The wrapper starts `llama-cli`, obtains its exact PID, and launches the monitor against that PID.
+Both benchmark wrappers start `Monitor-LlamaProcess.ps1` when `-ResourceMonitor` is specified. The wrapper obtains the exact PID after launching the child and attaches the monitor to that PID. See the [benchmark rules and coverage limits](../../docs/evox2/automation/BENCHMARK-RULES.md#9-現行の対応範囲と修正候補) for missing counters and session constraints.
 
 This avoids the previous behavior of summing every process named `llama-cli`.
 
@@ -571,6 +571,8 @@ The full native rows are also embedded in `result.json`.
 
 
 ## Phase 4: benchmark matrix runner
+
+The examples in this section apply to branches that include the Matrix script and plans. Check the [benchmark rules and coverage limits](../../docs/evox2/automation/BENCHMARK-RULES.md#9-現行の対応範囲と修正候補) for the current b12651 work branch.
 
 `Invoke-BenchmarkMatrix.ps1` orchestrates the already-validated
 `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1` wrappers.

@@ -160,7 +160,8 @@ runtime/build facts rather than trusting lookup-key labels.
 - [BASELINE.md](BASELINE.md): current pending validation gates and preserved r4/r3 measurements
 - [BUILD-VULKAN-WINDOWS.md](BUILD-VULKAN-WINDOWS.md): Vulkan build procedure
 - [BUILD-ROCM-WINDOWS.md](BUILD-ROCM-WINDOWS.md): ROCm 10.0 / TheRock build and runtime procedure
-- [BENCHMARKING.md](BENCHMARKING.md): measurement methodology and logging requirements
+- [BENCHMARK-RULES.md](automation/BENCHMARK-RULES.md) — required policy for planning, running, monitoring and recording performance measurements
+- [BENCHMARKING.md](BENCHMARKING.md) — historical long-context workload, throughput metrics and baseline references
 - [R5-ADLX-PMODE-VALIDATION-2026-10-15.md](R5-ADLX-PMODE-VALIDATION-2026-10-15.md): ADLX benchmark integration/overhead, display/power-state validation and Evo-X2 P-MODE performance + WMI/event mapping
 - [PATCHES.md](PATCHES.md): downstream patch registry and status
 - [R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md](R5-MTP-PP-INVESTIGATION-PLAN-2026-10-13.md): MTP ON prompt-wall slowdown breakdown plan and historical r2 QSA re-evaluation

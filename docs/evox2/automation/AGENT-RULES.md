@@ -20,6 +20,7 @@ Codex、OpenCode などが ThinkPad から EVO-X2 の専用 clone を操作す�
 ## 文書の正本と同期
 
 - GitHub の `main` を共通ドキュメントと確定済み調査記録の正本とする。作業前に GitHub の `main` の SHA を確認し、[運用ルール](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/AGENT-RULES.md)、[実機環境](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/EVOX2-ENVIRONMENT.md)、[ランブック](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/RUNBOOK.md)、[既知の問題](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/KNOWN-ISSUES.md) と対象の検証記録を読む。必要な運用文書を確認できなければ停止して報告する。
+- 性能計測の計画・実行前に GitHub の `main` にある [BENCHMARK-RULES.md](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/BENCHMARK-RULES.md) を必ず確認する。
 - 実験ソース、計測・検証スクリプト、未採用パッチは作業ブランチに置く。確定した Markdown、結果 CSV、マニフェスト、実行ログの必要な部分を文書専用コミットで `main` に反映する。実験で使用したブランチ、ソース SHA、ビルド識別情報、実行条件、生ログの所在を記録し、実装やスクリプトの参照は実行時のコミットに固定する。
 - 同期前に、GitHub の `main`、作業ブランチ、実機 clone の HEAD・作業ツリー・追跡先と ahead/behind を確認する。既存の未コミット変更は退避して内容を照合し、取り込み済みと確認できた差分は同期後の blob で検証する。競合や採否を判断できない差分は保持し、対象パスと理由を報告する。
 - 共通の運用文書は `main` の該当ファイルを現行作業ブランチに文書専用コミットとして反映する。同期前後で文書以外の差分が空であることと、実機の HEAD が対象の追跡先と一致することを確認する。過去の実験ブランチと固定 SHA の記録は当時の状態を保持する。世代別の調査記録は [EVO-X2 文書索引](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/README.md) を参照する。
