@@ -27,6 +27,8 @@ enum llama_fver {
 
 const char * llama_file_version_name(llama_fver version);
 
+namespace llama_load_diag { class group; }
+
 struct llama_model_loader {
     // Holds information on a model weight
     struct llama_tensor_weight {
@@ -264,7 +266,8 @@ struct llama_model_loader {
             std::vector<ggml_backend_buffer_t> & bufs,
             llama_mlocks * lmlocks,
             llama_progress_callback progress_callback,
-            void * progress_callback_user_data);
+            void * progress_callback_user_data,
+            llama_load_diag::group * diag);
 
     std::string ftype_name() const;
 

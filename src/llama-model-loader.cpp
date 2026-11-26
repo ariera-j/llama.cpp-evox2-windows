@@ -1,5 +1,7 @@
 #include "llama-model-loader.h"
 
+#include "llama-model-load-diag.h"
+
 #include "ggml-alloc.h"
 #include "ggml.h"
 #include "gguf.h"
@@ -12,6 +14,7 @@
 #include <cstdint>
 #include <cstring>
 #include <future>
+#include <optional>
 #include <regex>
 #include <unordered_set>
 
@@ -1666,10 +1669,20 @@ bool llama_model_loader::load_all_data(
         std::vector<ggml_backend_buffer_t> & bufs,
         llama_mlocks * lmlocks,
         llama_progress_callback progress_callback,
-        void * progress_callback_user_data) {
+        void * progress_callback_user_data,
+        llama_load_diag::group * diag) {
+    using llama_load_diag::location;
+    using llama_load_diag::measure;
+    using llama_load_diag::operation;
     if (files.empty()) {
+        if (diag) {
+            diag->phase("external_data");
+        }
         for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
-            set_tensor_data(t, set_tensor_data_ud);
+            measure(diag, operation::callback, [&] { set_tensor_data(t, set_tensor_data_ud); });
+            if (diag) {
+                diag->complete_tensor();
+            }
         }
         return true;
     }
@@ -1680,6 +1693,10 @@ bool llama_model_loader::load_all_data(
     // 4 staging buffers for async uploads, each sized 1MB seems to be a good default for single NVMe drives.
     // NVMe raid configurations might require more / larger buffers.
     constexpr size_t n_buffers = 4;
+    std::optional<std::array<location, n_buffers>> slots;
+    if (diag) {
+        slots.emplace();
+    }
 
     size_t alignment = 1;
     for (const auto & file : files) {
@@ -1736,7 +1753,13 @@ bool llama_model_loader::load_all_data(
 
         // If the backend is supported, create pinned memory buffers and events for synchronisation.
         for (size_t idx = 0; idx < n_buffers; ++idx) {
-            auto * buf = ggml_backend_buft_alloc_buffer(host_buft, buffer_size);
+            location pos;
+            if (diag) {
+                pos.slot = int(idx);
+                pos.request_bytes = buffer_size;
+            }
+            auto * buf = measure(diag, operation::staging_alloc,
+                    [&] { return ggml_backend_buft_alloc_buffer(host_buft, buffer_size); }, buffer_size, pos);
 
             if (!buf) {
                 LLAMA_LOG_DEBUG("%s: failed to allocate host buffer for async uploads for device %s\n", func,
@@ -1747,7 +1770,7 @@ bool llama_model_loader::load_all_data(
             host_buffers.emplace_back(buf);
             host_ptrs.emplace_back(ggml_backend_buffer_get_base(buf));
 
-            auto * event = ggml_backend_event_new(dev);
+            auto * event = measure(diag, operation::event_create, [&] { return ggml_backend_event_new(dev); }, 0, pos);
             if (!event) {
                 LLAMA_LOG_DEBUG("%s: failed to create event for async uploads for device %s\n", func,
                     ggml_backend_dev_name(dev));
@@ -1757,7 +1780,7 @@ bool llama_model_loader::load_all_data(
             events.emplace_back(event);
         }
 
-        ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
+        ggml_backend_t backend = measure(diag, operation::backend_init, [&] { return ggml_backend_dev_init(dev, nullptr); });
         if (!backend) {
             LLAMA_LOG_DEBUG("%s: failed to initialize backend for device %s for async uploads\n", func,
                 ggml_backend_dev_name(dev));
@@ -1772,6 +1795,10 @@ bool llama_model_loader::load_all_data(
             ggml_backend_dev_name(ggml_backend_get_device(upload_backend)),
             ggml_backend_buft_name(ggml_backend_buffer_get_type(bufs[0])),
             ggml_backend_name(upload_backend));
+    }
+
+    if (diag) {
+        diag->phase(upload_backend ? "async_ready" : "async_unavailable");
     }
 
     std::vector<ggml_tensor *> tensors;
@@ -1794,7 +1821,11 @@ bool llama_model_loader::load_all_data(
 
     // staging buffer for non-host buffers without async uploads, reused because a fresh allocation per tensor page faults on every load
     // allocated from the CPU buffer type, which uses vm_allocate on Apple platforms, so freeing it returns its pages to the OS right away
-    ggml_backend_buffer_ptr read_buf;
+    const auto free_read_buf = [diag](ggml_backend_buffer_t buffer) {
+        measure(diag, operation::staging_free, [&] { ggml_backend_buffer_free(buffer); });
+    };
+    std::unique_ptr<ggml_backend_buffer, decltype(free_read_buf)> read_buf(nullptr, free_read_buf);
+    uint64_t tensor_index = 0;
     for (struct ggml_tensor * cur : tensors) {
         const auto * weight = get_weight(ggml_get_name(cur));
         if (weight == nullptr) {
@@ -1802,15 +1833,35 @@ bool llama_model_loader::load_all_data(
             continue;
         }
 
+        location pos;
+        if (diag) {
+            pos.tensor = ++tensor_index;
+            pos.shard = weight->idx;
+            pos.file_offset = weight->offs;
+            pos.tensor_file_offset = weight->offs;
+        }
         if (progress_callback) {
-            if (!progress_callback((float) size_done / size_data, progress_callback_user_data)) {
+            if (!measure(diag, operation::callback, [&] {
+                    return progress_callback((float) size_done / size_data, progress_callback_user_data);
+                }, 0, pos)) {
                 return false;
             }
         }
 
         size_t n_size = ggml_nbytes(cur);
-
         const bool from_mapping = use_mmap || lazy.has(cur);
+        if (diag) {
+            pos.request_bytes = n_size;
+            const char * route;
+            if (from_mapping) {
+                route = lazy.has(cur) ? "lazy" : "mmap";
+            } else if (ggml_backend_buffer_is_host(cur->buffer)) {
+                route = "host_read";
+            } else {
+                route = upload_backend ? "async_upload" : "sync_fallback";
+            }
+            diag->tensor(route, pos);
+        }
 
         if (from_mapping) {
             const auto & mapping = mappings.at(weight->idx);
@@ -1834,26 +1885,26 @@ bool llama_model_loader::load_all_data(
 
             GGML_ASSERT(buf_mmap || cur->data); // either we have a buffer to allocate the tensor in, or it is already allocated
             if (buf_mmap && cur->data == nullptr) {
-                ggml_backend_tensor_alloc(buf_mmap, cur, data);
+                measure(diag, operation::map_tensor, [&] { ggml_backend_tensor_alloc(buf_mmap, cur, data); }, n_size, pos);
 
                 // locking a lazy tensor would fault all of it in, which is what lazy avoids
                 if (lmlocks && !lazy.has(cur)) {
                     const auto & lmlock = lmlocks->at(weight->idx);
-                    lmlock->grow_to(weight->offs + n_size);
+                    measure(diag, operation::lock_mapping, [&] { lmlock->grow_to(weight->offs + n_size); }, 0, pos);
                 }
 
                 auto & mmap_used = mmaps_used[weight->idx];
                 mmap_used.first  = std::min(mmap_used.first,  weight->offs);
                 mmap_used.second = std::max(mmap_used.second, weight->offs + n_size);
             } else {
-                ggml_backend_tensor_set(cur, data, 0, n_size);
+                measure(diag, operation::mapped_set, [&] { ggml_backend_tensor_set(cur, data, 0, n_size); }, n_size, pos);
             }
         } else {
             const auto & file = files.at(weight->idx);
 
             if (ggml_backend_buffer_is_host(cur->buffer)) {
-                file->seek(weight->offs, SEEK_SET);
-                file->read_raw(cur->data, n_size);
+                measure(diag, operation::seek, [&] { file->seek(weight->offs, SEEK_SET); }, 0, pos);
+                measure(diag, operation::host_read, [&] { file->read_raw(cur->data, n_size); }, n_size, pos);
                 if (check_tensors) {
                     validation_result.emplace_back(std::async(std::launch::async, [cur, n_size] {
                         return std::make_pair(cur, ggml_validate_row_data(cur->type, cur->data, n_size));
@@ -1866,7 +1917,10 @@ bool llama_model_loader::load_all_data(
                     alignment = file->read_alignment();
                     size_t aligned_offset = offset & ~(alignment - 1);
                     size_t offset_from_alignment = offset - aligned_offset;
-                    file->seek(aligned_offset, SEEK_SET);
+                    if (diag) {
+                        pos.file_offset = aligned_offset;
+                    }
+                    measure(diag, operation::seek, [&] { file->seek(aligned_offset, SEEK_SET); }, 0, pos);
 
                     // Calculate aligned read boundaries
                     size_t read_start = aligned_offset;
@@ -1882,10 +1936,21 @@ bool llama_model_loader::load_all_data(
                         uintptr_t ptr_dest_aligned = (reinterpret_cast<uintptr_t>(host_ptrs[buffer_idx]) + alignment - 1) & ~(alignment - 1);
 
                         // Wait for previous upload to complete before reusing buffer
-                        ggml_backend_event_synchronize(events[buffer_idx]);
+                        if (diag) {
+                            pos.file_offset = aligned_offset + bytes_read;
+                            pos.tensor_offset = data_read;
+                            pos.slot = int(buffer_idx);
+                            pos.request_bytes = read_size;
+                        }
+                        const bool reuse = diag && (*slots)[buffer_idx].tensor != 0;
+                        measure(diag, reuse ? operation::reuse_wait : operation::first_wait,
+                                [&] { ggml_backend_event_synchronize(events[buffer_idx]); }, 0,
+                                reuse ? (*slots)[buffer_idx] : pos);
 
                         // Read aligned chunk from file
-                        file->read_raw_unsafe(reinterpret_cast<void *>(ptr_dest_aligned), read_size);
+                        measure(diag, operation::read, [&] {
+                            file->read_raw_unsafe(reinterpret_cast<void *>(ptr_dest_aligned), read_size);
+                        }, read_size, pos);
 
                         // Calculate actual data portion (excluding alignment padding)
                         uintptr_t ptr_data = ptr_dest_aligned;
@@ -1903,9 +1968,19 @@ bool llama_model_loader::load_all_data(
                         }
 
                         // Async upload actual data to GPU
-                        ggml_backend_tensor_set_async(upload_backend, cur,
-                                                      reinterpret_cast<void *>(ptr_data), data_read, data_to_copy);
-                        ggml_backend_event_record(events[buffer_idx], upload_backend);
+                        if (diag) {
+                            pos.file_offset = offset + data_read;
+                            pos.request_bytes = data_to_copy;
+                        }
+                        measure(diag, operation::upload, [&] {
+                            ggml_backend_tensor_set_async(upload_backend, cur,
+                                    reinterpret_cast<void *>(ptr_data), data_read, data_to_copy);
+                        }, data_to_copy, pos);
+                        measure(diag, operation::event_record,
+                                [&] { ggml_backend_event_record(events[buffer_idx], upload_backend); }, 0, pos);
+                        if (diag) {
+                            (*slots)[buffer_idx] = pos;
+                        }
 
                         data_read += data_to_copy;
                         bytes_read += read_size;
@@ -1926,17 +2001,27 @@ bool llama_model_loader::load_all_data(
                     if (!read_buf || read_buf_size < buf_size || read_buf_size > 2*buf_size) {
                         // free the old buffer first, so only one is alive
                         read_buf.reset();
-                        read_buf.reset(ggml_backend_buft_alloc_buffer(ggml_backend_cpu_buffer_type(), buf_size));
+                        read_buf.reset(measure(diag, operation::staging_alloc,
+                                [&] { return ggml_backend_buft_alloc_buffer(ggml_backend_cpu_buffer_type(), buf_size); },
+                                buf_size, pos));
                         if (!read_buf) {
                             throw std::runtime_error(format("failed to allocate a %zu-byte staging buffer", buf_size));
                         }
                     }
                     uint8_t * read_dst = (uint8_t *) GGML_PAD((uintptr_t) ggml_backend_buffer_get_base(read_buf.get()), align);
-                    file->seek(aligned_offset, SEEK_SET);
-                    file->read_raw_unsafe(read_dst, read_size);
+                    if (diag) {
+                        pos.file_offset = aligned_offset;
+                        pos.request_bytes = read_size;
+                    }
+                    measure(diag, operation::seek, [&] { file->seek(aligned_offset, SEEK_SET); }, 0, pos);
+                    measure(diag, operation::read, [&] { file->read_raw_unsafe(read_dst, read_size); }, read_size, pos);
 
                     const uint8_t * data = read_dst + pad;
-                    ggml_backend_tensor_set(cur, data, 0, n_size);
+                    if (diag) {
+                        pos.file_offset = weight->offs;
+                        pos.request_bytes = n_size;
+                    }
+                    measure(diag, operation::sync_set, [&] { ggml_backend_tensor_set(cur, data, 0, n_size); }, n_size, pos);
                     if (check_tensors && !ggml_validate_row_data(cur->type, data, n_size)) {
                         throw std::runtime_error(format("tensor '%s' has invalid data", ggml_get_name(cur)));
                     }
@@ -1945,22 +2030,33 @@ bool llama_model_loader::load_all_data(
         }
 
         size_done += n_size;
+        if (diag) {
+            diag->complete_tensor();
+        }
     }
 
     // free temporary resources used for async uploads
-    for (auto * event : events) {
-        ggml_backend_event_synchronize(event);
-        ggml_backend_event_free(event);
+    if (diag && !events.empty()) {
+        diag->phase("drain");
+    }
+    for (size_t i = 0; i < events.size(); ++i) {
+        auto * event = events[i];
+        const location pos = diag ? (*slots)[i] : location{};
+        measure(diag, operation::drain, [&] { ggml_backend_event_synchronize(event); }, 0, pos);
+        measure(diag, operation::event_free, [&] { ggml_backend_event_free(event); }, 0, pos);
     }
     for (auto * buf : host_buffers) {
-        ggml_backend_buffer_free(buf);
+        measure(diag, operation::staging_free, [&] { ggml_backend_buffer_free(buf); });
     }
-    ggml_backend_free(upload_backend);
+    measure(diag, operation::backend_free, [&] { ggml_backend_free(upload_backend); });
+    if (diag) {
+        diag->phase("finalize");
+    }
 
     // check validation results
     bool validation_failed = false;
     for (auto & future : validation_result) {
-        auto result = future.get();
+        auto result = measure(diag, operation::validation, [&] { return future.get(); });
         if (!result.second) {
             LLAMA_LOG_ERROR("%s: tensor '%s' has invalid data\n", __func__, ggml_get_name(result.first));
             validation_failed = true;
@@ -1977,16 +2073,16 @@ bool llama_model_loader::load_all_data(
             for (uint32_t idx = 0; idx < mappings.size(); idx++) {
                 const auto & mmap_used = mmaps_used.at(idx);
                 auto & mapping = mappings.at(idx);
-                mapping->unmap_fragment(0, mmap_used.first);
+                measure(diag, operation::unmap, [&] { mapping->unmap_fragment(0, mmap_used.first); });
                 if (mmap_used.second != 0) {
-                    mapping->unmap_fragment(mmap_used.second, mapping->size());
+                    measure(diag, operation::unmap, [&] { mapping->unmap_fragment(mmap_used.second, mapping->size()); });
                 }
             }
         }
         if (progress_callback) {
             // Even though the model is done loading, we still honor
             // cancellation since we need to free allocations.
-            return progress_callback(1.0f, progress_callback_user_data);
+            return measure(diag, operation::callback, [&] { return progress_callback(1.0f, progress_callback_user_data); });
         }
     }
 

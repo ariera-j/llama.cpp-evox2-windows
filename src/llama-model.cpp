@@ -7,6 +7,7 @@
 #include "llama-mmap.h"
 #include "llama-cparams.h"
 #include "llama-model-loader.h"
+#include "llama-model-load-diag.h"
 
 #include "llama-kv-cache.h"
 #include "llama-kv-cache-iswa.h"
@@ -34,6 +35,7 @@
 #include <functional>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -1725,6 +1727,12 @@ void llama_model_base::load_vocab(llama_model_loader & ml) {
 }
 
 bool llama_model_base::load_tensors(llama_model_loader & ml) {
+    const bool diagnose_load = !ml.no_alloc && llama_load_diag::enabled(std::getenv("LLAMA_MODEL_LOAD_DIAG"));
+    const llama_load_diag::session diagnostics{ggml_time_us, t_start_us, stderr};
+    if (diagnose_load) {
+        diagnostics.mark("load_tensors_begin");
+    }
+
     const auto & split_mode   = params.split_mode;
     const bool use_mlock      = params.load_mode == LLAMA_LOAD_MODE_MLOCK || params.load_mode == LLAMA_LOAD_MODE_MMAP_MLOCK;
     const auto & tensor_split = params.tensor_split;
@@ -2090,7 +2098,13 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
     // per-tensor activation precision policy
     prec_policy.load(ml, *this);
 
+    if (diagnose_load) {
+        diagnostics.mark("mappings_begin");
+    }
     ml.init_mappings(true, use_mlock ? &pimpl->mlock_mmaps : nullptr);
+    if (diagnose_load) {
+        diagnostics.mark("mappings_end");
+    }
     pimpl->mappings.reserve(ml.mappings.size());
 
     // create the backend buffers
@@ -2226,6 +2240,10 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         return true;
     }
 
+    if (diagnose_load) {
+        diagnostics.mark("buffers_ready");
+    }
+
     // without mmap, load non-host buffers first: their tensors go through a staging buffer, which is cheapest while the fewest weights are resident
     if (!ml.use_mmap) {
         std::stable_partition(ctx_bufs.begin(), ctx_bufs.end(), [](const auto & x) {
@@ -2235,12 +2253,26 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
     }
 
     // load tensor data
+    size_t group_index = 0;
     for (auto & [ctx, bufs] : ctx_bufs) {
-        if (!ml.load_all_data(ctx, bufs, use_mlock ? &pimpl->mlock_mmaps : NULL, params.progress_callback, params.progress_callback_user_data)) {
+        std::optional<llama_load_diag::group> group;
+        if (diagnose_load) {
+            const char * buffer_type = bufs.empty() ? "none" : ggml_backend_buffer_name(bufs.front());
+            group.emplace(diagnostics, ++group_index, buffer_type);
+        }
+        const bool loaded = ml.load_all_data(ctx, bufs, use_mlock ? &pimpl->mlock_mmaps : NULL,
+                params.progress_callback, params.progress_callback_user_data, group ? &*group : nullptr);
+        if (group) {
+            group->finish(loaded);
+        }
+        if (!loaded) {
             return false;
         }
     }
 
+    if (diagnose_load) {
+        diagnostics.mark("postprocess_begin");
+    }
     if (use_mmap_buffer) {
         for (auto & mapping : ml.mappings) {
             pimpl->mappings.emplace_back(std::move(mapping));
@@ -2252,6 +2284,10 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
     }
 
     load_tensors_hadamard();
+
+    if (diagnose_load) {
+        diagnostics.mark("load_tensors_end");
+    }
 
     return true;
 }
