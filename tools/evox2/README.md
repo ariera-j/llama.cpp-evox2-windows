@@ -10,6 +10,8 @@ Follow the [EVO-X2 benchmark rules](../../docs/evox2/automation/BENCHMARK-RULES.
 
 GitHub `main` is the source of truth for the standard tools. The active product branch ships the same benchmark code. [Integration record](../../docs/evox2/automation/BENCHMARK-INTEGRATION.md)
 
+Measure verifies runtime artifacts before launching the executable for metadata. New manifests use `RuntimeDependenciesV1`; legacy manifests use `LegacyArtifacts`. Matrix uses the same Measure entry points. A malformed runtime extension stops execution. [Manifest verification and compatibility](../../docs/evox2/automation/BUILD-VALIDATION-20261126.md)
+
 Use `Measure-LlamaBench.ps1` or `Measure-LlamaCli.ps1` for a single condition. Use `Invoke-BenchmarkMatrix.ps1 -Plan ... -LocalConfig ... -PlanOnly` to inspect a matrix before execution. The [b12651 local template](benchmark/configs/local.b12651.example.psd1) uses placeholder paths. Keep the actual config outside Git. The [explicit-round example](benchmark/configs/qwen38-b12651-monitor-overhead.example.psd1) shows independent processes and A/B/C/D monitoring. The [ABBA example](benchmark/configs/qwen38-b12651-vulkan-abba.example.psd1) shows paired order. `Comparison.Runs` counts processes per configuration. Bench `Repetitions` counts repetitions inside one process. The Measure wrappers support `-DryRun` for metadata and command inspection.
 
 | Use | Monitoring |

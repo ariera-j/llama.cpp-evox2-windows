@@ -76,3 +76,7 @@ IQ2_S MatVec 実験の Logger OFF TG256 で、A1 初回の run-02 は TG 計測�
 ## 作業4で参照する独立した観測
 
 再起動前後の TG 速度差、M001 と Round 3 D のロード遅延、ROCm 短時間の物理 RAM 逼迫は調査候補として保持する。M005 のハードフリーズと AMD External Events の停止との因果関係は未確認。 [run ID・計測条件・ログ](BENCHMARK-MATRIX-ROUNDS-B12651.md#ram-詳細監視と作業4への引き継ぎ)
+
+## 登録 worktree の CMake Git index 警告
+
+Windows の `.git` ファイルがドライブ付き絶対パスを指す場合、CMake がこれを相対パスと解釈し `Git index not found in git repository.` を出す場合がある。`git rev-parse --path-format=absolute --git-path index` で Git が解決した実体を確認する。明示 configure と `BuildOnly` の再生成、CLI の埋め込み SHA、`BuildIdentity=Verified` を照合する。短い worktree と出力名を使い、Windows の長いパス設定は変更しない。 [w54 の両バックエンド検証](BUILD-VALIDATION-20261126.md)

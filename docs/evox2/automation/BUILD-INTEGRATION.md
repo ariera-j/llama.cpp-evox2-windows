@@ -2,6 +2,8 @@
 
 GitHub の `main` を標準ビルドツールの正本とする。現行製品ブランチ `codex/vulkan-manifest-cpu-variants-20261124` は同じ標準ファイルを使う。実機の構成と起動手順は [RUNBOOK](RUNBOOK.md) と [ビルド README](../../../tools/evox2/build/README.md) を参照する。
 
+作業5-4では B・A・D の改善版を短い登録 worktree から両バックエンドで実ビルドし、GitHub main の標準ビルド・計測ツールに採用した。以下は作業5-2時点の記録。現行の操作と検証範囲は [作業5-4の実ビルド検証](BUILD-VALIDATION-20261126.md) を参照する。
+
 ## 採用元と差分
 
 開始時の GitHub main は `2bce03311306c3d0367349e85db4420455ab283a`、現行製品と実機専用 clone は `f500e9b070f3e6065dde50309def74d83cf9ddd4`。製品上の専用作業ブランチ `codex/build-integration-20261126` でツール差分を検証した。両 Release の実ビルド元と製品側ツールコミットは `170552d0a2a7bc481bb7f5b4828ebae7d7bb3306`。main のツールコミットは `ea8b6a6ac6b472fefa427c8ff3ade59a515b3934`。文書は後続の文書専用コミットに収録。

@@ -2,6 +2,8 @@
 
 GitHub の `main` を標準計測ツールの正本とする。現行製品ブランチ `codex/vulkan-manifest-cpu-variants-20261124` の標準計測ファイルは同じ内容を使用する。運用手順は [計測ルール](BENCHMARK-RULES.md)、[RUNBOOK](RUNBOOK.md)、[ツール README](../../../tools/evox2/README.md) を参照する。
 
+作業5-4で CLI／bench に共通の実行前依存検証を採用した。新形式は `RuntimeDependenciesV1` として EXE ごとの依存、同梱 DLL、ROCm ランタイムデータを照合し、不正な拡張や不一致は起動前に停止する。旧形式は `LegacyArtifacts` を使う。Matrix は各 Measure の検証を使用する。 [新旧形式の実機確認](BUILD-VALIDATION-20261126.md)
+
 ## 採用元と差分
 
 統合開始時は main `76417e3725ba13b2866b1140c634a8e13f71952d`、製品作業ブランチ `f50db0b63c58eb1263b5a46eb569368da2c4f657`、Matrix 専用 `6c09299f680de008524da420a340c162e948fae3`。Matrix の分岐点 `fdd965967eda4da3c90847c348750694a120561f` から計測差分を抽出し、main と製品ブランチ両方の実ファイルと照合した。

@@ -2,6 +2,8 @@
 
 For b12651-series Vulkan builds with VS2026 Clang 22.1.3 under the VS2022 x64 host environment, follow the [standard Codex runbook](automation/RUNBOOK.md#b12651-の再現コマンド). The procedures below record earlier source and toolchain combinations.
 
+The approved short worktree procedure was validated with CPU variants OFF, LLVM OpenMP 22.1.8, and Vulkan SDK 1.4.357.0. See the [Release and runtime verification record](automation/BUILD-VALIDATION-20261126.md).
+
 > **2026-10-29 r6 verified CMake provenance / corrected post-tag tooling:** The b11908 Vulkan manifest from the G8-6 verification archive, its ROCm counterpart, and the independently saved Vulkan manifest all record the **VS2022 Build Tools CMake `3.31.6-msvc6`**, not `4.3.1`. Thus `tools/evox2/build/Build-Vulkan.ps1` now defaults to **`-ExpectedCMakeVersion '3.31.6-msvc6'`**. It recognizes Microsoft CMake suffixes and stops before configure/build for mismatches. Pass `-CMakeExe` only when selecting a different installed executable intentionally. `-PreflightOnly` checks the version, SDK and LLVM without building. Vulkan SDK `C:\VulkanSDK\1.4.357.0` and LLVM `C:\Program Files\LLVM\bin` are auto-selected if present and not overridden. [Current wrapper guide](../../tools/evox2/build/README.md). This is a tooling-only change; the validated b11908 binaries and published tag are untouched.
 
 
