@@ -603,7 +603,7 @@ function Assert-Evox2DependencyInputs {
         $tracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
             'diff', '--name-only', '--no-ext-diff', '--no-renames', '--ignore-submodules=none', $AuditedCommit, '--'
         ) + $inputGroup.Paths)
-        if ($reviewedRocmFpxBuild) {
+        if ($reviewedRocmFpxBuild -and $AuditedCommit -ceq 'f5e6915c28f10330885fcb9243a93ae98d3115ab') {
             $tracked = @($tracked | Where-Object { $_ -cne $rocmfpxBuildPath })
         }
         $untracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
@@ -635,14 +635,32 @@ function Initialize-Evox2CodexDependencies {
         [switch]$AllowDownload
     )
 
-    Assert-Evox2DependencyInputs -RepoRoot $RepoRoot -AuditedCommit 'f5e6915c28f10330885fcb9243a93ae98d3115ab'
-
     $versions = Get-Evox2DependencyVersions $RepoRoot
+    $auditedCommit = if ($versions.BoringSsl -eq '0.20261020.0') {
+        '2bce03311306c3d0367349e85db4420455ab283a'
+    } else {
+        'f5e6915c28f10330885fcb9243a93ae98d3115ab'
+    }
+    Assert-Evox2DependencyInputs -RepoRoot $RepoRoot -AuditedCommit $auditedCommit
+
     $sslCmake = Join-Path $RepoRoot 'vendor\cpp-httplib\CMakeLists.txt'
     $sslUrl = Get-Evox2CMakeStringValue $sslCmake 'BORINGSSL_GIT'
-    $sslCommit = '3dc4b63808921e914a3fb1fa61869abc3938781b'
-    if ($sslUrl -cne 'https://boringssl.googlesource.com/boringssl' -or $versions.BoringSsl -ne '0.20261105.0') {
-        throw 'Unreviewed BoringSSL source or version.'
+    if ($sslUrl -cne 'https://boringssl.googlesource.com/boringssl') {
+        throw 'Unreviewed BoringSSL source.'
+    }
+    $downloadEnabled = $AllowDownload.IsPresent
+    switch ($versions.BoringSsl) {
+        '0.20261105.0' {
+            $sslCommit = '3dc4b63808921e914a3fb1fa61869abc3938781b'
+            $expectedOmpVersion = '22.1.8'
+        }
+        '0.20261020.0' {
+            # Preserve the previous main wrapper's cache-only policy.
+            $sslCommit = 'd3bf4795ad5b79d646cddf2fec687da5b9b502db'
+            $expectedOmpVersion = '20.1.8'
+            $downloadEnabled = $false
+        }
+        default { throw 'Unreviewed BoringSSL version.' }
     }
     $sslPath = Join-Path $CacheRoot "fetchcontent\boringssl-$($versions.BoringSsl)-src"
     $sslValidate = {
@@ -680,7 +698,7 @@ function Initialize-Evox2CodexDependencies {
         $installerSha = Get-Evox2CMakeStringValue $ompCmake 'GGML_OPENMP_INSTALLER_SHA256'
         $licenseSha = Get-Evox2CMakeStringValue $ompCmake 'GGML_OPENMP_LICENSE_SHA256'
         $ompVersion = $versions.OpenMp
-        if ($ompVersion -ne '22.1.8' -or $installerSha -notmatch '^[0-9a-f]{64}$' -or $licenseSha -notmatch '^[0-9a-f]{64}$') {
+        if ($ompVersion -ne $expectedOmpVersion -or $installerSha -notmatch '^[0-9a-f]{64}$' -or $licenseSha -notmatch '^[0-9a-f]{64}$') {
             throw 'Unreviewed LLVM OpenMP version or missing upstream hashes.'
         }
         $ompPath = Join-Path $CacheRoot "openmp\llvm-openmp-$ompVersion-x64"
@@ -689,6 +707,11 @@ function Initialize-Evox2CodexDependencies {
             'bin\libomp.dll' = '1e4222f195d84e7355109d778e751dfe3c085e42c947f7fe3d7853181329dd40'
             'include\omp.h' = 'cb9ab6f531f893ed38634f071417459d147607e1cd2adae0e382dff5e98f18fd'
             'lib\libomp.lib' = '3f8f26586db975f83db95dac80ef1a264e9c2b65dcb2ddb2d1a9318d2e01940d'
+        }
+        if ($ompVersion -eq '20.1.8') {
+            $ompHashes['bin\libomp.dll'] = 'a12116ba72d1d6820407cf30be23da04ce79d6bb8a71a5ee71759c5a1faa6f1c'
+            $ompHashes['include\omp.h'] = '098fc2aa433072427dc68d8c289ca14fc871142e615e0064614419bb9bc15905'
+            $ompHashes['lib\libomp.lib'] = '7fc644ff5c7ff8cc5ab69c1301371a1fb6f3c7a6bef25b82155c609527de956c'
         }
         $ompValidate = {
             param($path)
@@ -720,9 +743,9 @@ function Initialize-Evox2CodexDependencies {
         if (Test-Path -LiteralPath $ompPath) { & $ompValidate $ompPath }
     }
 
-    Publish-Evox2Dependency $sslPath $sslValidate $sslAcquire $AllowDownload.IsPresent
+    Publish-Evox2Dependency $sslPath $sslValidate $sslAcquire $downloadEnabled
     if ($Backend -eq 'Vulkan') {
-        Publish-Evox2Dependency $ompPath $ompValidate $ompAcquire $AllowDownload.IsPresent
+        Publish-Evox2Dependency $ompPath $ompValidate $ompAcquire $downloadEnabled
     }
 }
 
