@@ -13,6 +13,12 @@ It is intentionally separate from `ROADMAP.md` and the implementation/measuremen
 
 ---
 
+## 2026-11-26 — upstream・fork・ROCmFP4 HIP 調査（research-only）
+
+- 公式 master `a866b4ade63921826c530307a368fbca3a334a0b`、正式 v1.1.0、番号タグ b12777 を確認。製品と共通の b12651 以降は138コミット。Vulkan #31323／#32415 は既にベースに含まれ、後続の有力候補は Qwen GDN replay #31669／#32721 と HIP FA #32901／#33045。
+- 当面 b12651 を維持し、ROCm IQ4_NL の幅160 GET_ROWS と PLE の GPU 配置を独立候補とする。FAST PLE16 の HIP 移植は ROCmFPX を主候補とし、FP3 gather、FAST 行列演算、gfx1151 の高速経路を段階的に評価する。Strata・Gufo の速度は公開条件の記録として扱う。
+- 採用判断と実装は運用者レビュー後。固定 SHA、比較箇所、再開手順と検証計画を詳細文書に収録。 [最新動向と優先順位](UPSTREAM-OPTIMIZATION-REVIEW-2026-11-26.md) · [HIP 移植元と段階計画](ROCMFP4-HIP-PORT-REVIEW-2026-11-26.md)
+
 ## 2026-11-12 — Strata試用前の最新動向確認（research-only）
 
 **位置付け：** [2026-11-08の前回調査](R6-NEXT-PRIORITIES-EXTERNAL-REFRESH-2026-11-08.md)からの更新差分。今回の目的は**Strata初回試用の可否・EVO-X2への実用上の影響**を判断することであり、**r6 upstream更新／ドライバー入替／ソース変更は行わない**。確認日2026-11-12 JST。外部ベンチは必ず**作者報告・別のモデル/設定**として扱い、llama.cpp r6との優劣を推定しない。
