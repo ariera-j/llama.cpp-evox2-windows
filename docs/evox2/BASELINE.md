@@ -15,6 +15,6 @@
 | b12651 Stage 1 / 2 | [COMMON-001](B12651-STAGE1-COMMON001-20261124.md) · [ROCmFP4 FAST PLE16 の Vulkan 検証](B12651-STAGE2-ROCMFP4-VULKAN-20261124.md) |
 | PR #30904 移植前調査 | [IQ3_XXS の経路・テンソル調査](pr30904-preport-20261125/README.md) |
 | IQ2_S Vulkan MatVec | [A1/A2 実験結果](iq2-s-vulkan-matvec-20261125/README.md) |
-| b12651 系モデルロード | [既存ログ・ソース解析（作業4-1）](automation/B12651-MODEL-LOAD-INVESTIGATION-20261126.md) |
+| b12651 系モデルロード | [既存ログ・ソース解析（作業4-1）](automation/B12651-MODEL-LOAD-INVESTIGATION-20261126.md) · [基準計測（作業4-2）・診断設計案（作業4-3）](automation/B12651-MODEL-LOAD-BASELINE-20261126.md) |
 
 共通の計測方法は [BENCHMARKING.md](BENCHMARKING.md)、文書命名規則は [DOCUMENT-NAMING.md](DOCUMENT-NAMING.md)。新しい基準計測の結果は実際に使用したソースバージョン（または upstream build 番号）を先頭につけた独立した文書として記録する。
