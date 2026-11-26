@@ -82,6 +82,74 @@ GPU 監視の PP／TG 中央値。通常監視の Partial は主に PID GPU の�
 | 5 | `ADRPRE-05-M001` | 2026-11-26 19:56:44 | `20261126-195644-161-cli-rocm-b12696-ctx32768-b1fdf75723fd` | `20261126-195600-894-adrenalin-pre-cli-20261126` | 25.314 → 25.338 | 9.810 → 9.818 | 0.482 → 0.482 | 69638 / 43819 |
 | 6 | `ADRPRE-06-M001` | 2026-11-26 20:02:00 | `20261126-200200-309-cli-rocm-b12696-ctx65536-308cf3ff8e36` | `20261126-200117-225-adrenalin-pre-cli-20261126` | 25.296 → 26.327 | 9.861 → 9.711 | 0.482 → 0.482 | 69638 / 43819 |
 
-## 更新後
+## 更新後（Adrenalin 26.11.2）
 
-同じ実行物、設定、順序で採取した結果をここに追加する。環境差、各セルの成否とスループット・リソース値、診断の主要区間を対応付ける。
+計測1は Measure 終了0・Matrix OK。終了後 RAM の詳細回復判定が `AboveTolerance` だったため、更新前と同じ停止手順で計測2～6を中止した。更新前のプランと LocalConfig をそのまま参照し、全6セルを個別に `PlanOnly -MaxRuns 1 -StopOnError` で確認した。推論は計測1の1回。
+
+### 環境差分
+
+| 項目 | 更新前 | 更新後 |
+| --- | --- | --- |
+| Adrenalin | 26.8.1 | 26.11.2（AMD Software のアンインストール レジストリ DisplayVersion） |
+| Radeon 8060S ディスプレイドライバー | 32.0.31041.1004 | 32.0.32029.2010（リリース文字列 `26.20.29.02-261116a-206168C-AMD-Software-Adrenalin-Edition`） |
+| Vulkan ICD DLL／API | `amdvlk64.dll` 9.2.10.395／1.4.349 | `amdvlk64.dll` 9.2.10.416／1.4.359 |
+| Vulkan SDK／System32 Loader | 1.4.357.0／1.4.357.0 | 1.4.357.0／1.4.357.0 |
+| TheRock と同梱 HIP／BLAS | 10.0.0、HIP 10.0.3581.0、hipBLAS 3.6.0.0、hipBLASLt 1.4.1.0 | 同左。ランタイムファイルとデータツリーの照合に成功 |
+| Windows／BIOS／UMA／P-MODE | 26300.10075／EVO-X2 1.12／96 GiB／Performance | 同左 |
+| OS 起動時刻 | 11/26 00:21:08.500 JST | 11/26 20:45:51.500 JST。計測1の Measure 環境取得時の稼働時間577.781秒 |
+| 計測1の詳細監視開始前 System Cache | 22.21 GiB | 3.56 GiB |
+
+取得元は上記「更新前の固定条件」と同じ。計測前に3ビルドの EXE、同梱 DLL、マニフェストをハッシュ台帳と照合し、実行依存の3種の digest も更新前と一致した。ROCm のデータツリーは標準検証で照合した。モデルはパス・名前・サイズ・更新日時を確認し、入力3種は SHA-256 一致。自然な初回ロードを保持するためモデル全体の再ハッシュは行っていない。計測1の引数配列、モデルパス、ADLX EXE ハッシュも更新前と一致。
+
+### 実測と比較
+
+| セル | 条件 | PP 更新前 → 更新後 tok/s | TG 更新前 → 更新後 tok/s | 結果 |
+| --- | --- | ---: | ---: | --- |
+| 1 | Vulkan b12690 診断 | 629.219 → 636.351（+1.13%） | 29.552 → 29.606（+0.18%） | 推論完了。回復判定により後続停止 |
+| 2 | Vulkan IQ3 128k | 299.12 → — | 23.06 → — | 未実行 |
+| 3 | Vulkan FP4 FAST 64k | 389.38 → — | 26.08 → — | 未実行 |
+| 4 | Vulkan Gemma 32k | 64.44 → — | 8.88 → — | 未実行 |
+| 5 | ROCm Gemma 32k | 186.87 → — | 9.02 → — | 未実行 |
+| 6 | ROCm IQ3 64k | 407.87 → — | 22.26 → — | 未実行 |
+
+| 計測1の項目 | 更新前 | 更新後 |
+| --- | ---: | ---: |
+| PP／TG GPU クロック中央値 MHz | 2884／2898 | 2881.5／2892.5 |
+| PP／TG VRAM クロック中央値 MHz | 968／1000 | 938／1000 |
+| PP／TG GPU 使用率中央値 % | 100／97 | 100／97 |
+| PP／TG GPU 電力中央値 W | 121／80 | 119／80 |
+| PP／TG GPU 温度中央値 °C | 65／52 | 66／52 |
+| PID GPU Dedicated 最大 GiB／ADLX VRAM 最大 MB | 78.614／80994 | 78.618／80956 |
+| RAM 使用最大／最小空き／コミット最大 GiB | 8.477／23.171／90.687 | 8.478／23.169／89.138 |
+| Pages Input／Page Reads／Page Faults 最大（秒あたり） | 538865／1208／668731.4 | 541674.5／1652.4／709789.7 |
+| 通常／ADLX／RAM 詳細サンプル数 | 35／48／377 | 36／49／387 |
+| 通常／ADLX／RAM 詳細状態 | Partial／Complete／Complete | Partial／Complete／Complete |
+
+[更新後の比較 CSV](adrenalin-update-comparison-20261126/post-update-comparison.csv) に差分と欠損セルを記録。ページング値は PerfMon の取得成功行の最大値で、ページファイル I/O の量は未確認。PP／TG の ADLX 区間は従来の受信マーカーに基づく。
+
+### Vulkan ロード診断
+
+診断 JSON は更新前24行、更新後23行。両方で schema 1 のロード終了と2群の `ok` を確認した。大幅なロード遅延は観測しなかった。
+
+| 区間・操作 | 更新前 | 更新後 |
+| --- | ---: | ---: |
+| 容量報告 → Context 受信 s | 45.500 | 44.514 |
+| native load 報告 s | 64.766 | 66.879 |
+| Vulkan GPU 群 wall s | 45.190 | 43.998 |
+| read 積算 s | 42.643 | 41.352 |
+| reuse_wait 積算 ms | 309.133 | 283.612 |
+| upload 積算 ms | 181.803 | 179.388 |
+| event_record 積算 s | 1.995 | 2.123 |
+| drain 積算 µs | 11 | 11 |
+
+内部タイマーはローダーの CPU 側経過時間。容量報告から Context までの時間はラッパーのログ受信間隔。 [操作別 CSV](adrenalin-update-comparison-20261126/load-diag-comparison.csv)
+
+### 停止判定と採用判断
+
+RAM 詳細の終了後最終行は開始前より物理使用量が182.680 MiB、コミットが178.738 MiB増えた。物理使用量とコミットがともに128 MiB の許容差を超え、`AboveTolerance` になった。GPU の ADLX VRAM は408→451 MB で `WithinTolerance`。停止監査を実行した SSH の終了コードは1。読み取り専用の事後監査では Performance、空き RAM 25.571 GiB、コミット7.928 GiB、WDDM Dedicated 0.441 GiB、対象プロセスなしを確認した。診断は対象プロセスだけに設定され、新規 SSH のプロセス環境では未設定だった。
+
+起動監査の Kernel-General/12（System 69721）は運用者による予定再起動。実行前カーソルは System 69907／Application 44009。停止時は69908／44012。追加記録は IsolatedUserMode と Security-SPP の情報イベントで、確認範囲に GPU リセット、WHEA、BugCheck、リソース枯渇、AMD External Events Client Module の異常終了はなかった。短時間の結果で長期安定性は判断できない。
+
+今回のデータで確認できたのは Vulkan 診断ワークロードの完走と、回復判定による停止。再起動後の稼働時間やファイルキャッシュに差があり、単発の速度差からドライバー固有の効果は判断できない。採用判断には回復判定の扱いと、未実行の Vulkan 128k TG、両バックエンドの Gemma PP、ROCm IQ3 64k の RAM 逼迫、長時間の安定性の確認が残る。
+
+生ログは `C:\llama-build\_logs\codex`。Measure は `20261126-205520-330-bench-vulkan-b12690-ctx8192-bd810f7bbb71`、Matrix は `matrix\20261126-205434-315-b12651-monitor-overhead`。実行 ID は `ADRPOST-01-ON-M001`。PlanOnly、コントローラーの transcript、停止根拠 JSON、事後監査結果は `adrenalin-post-20261126` に保全した。

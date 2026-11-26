@@ -23,3 +23,7 @@
 - 計測2と6は [Stage 1 UMA96GB](../../B12651-STAGE1-COMMON001-20261124.md)。計測6の短時間の RAM 逼迫については [作業4-1](../B12651-MODEL-LOAD-INVESTIGATION-20261126.md) も参照する。
 - 計測3は [Stage 2 Vulkan FAST 64k](../../B12651-STAGE2-ROCMFP4-VULKAN-20261124.md)。
 - 計測4・5は [b12651 Gemma 4 32k](../UPSTREAM-B12651-PP-TG-20261124.md)。対象 run ごとの識別情報は [参照 run CSV](reference-identity.csv) を参照する。
+
+## 更新後データ
+
+[更新後比較 CSV](post-update-comparison.csv) の変化率は（更新後－更新前）／更新前×100。未実行セルの更新後の値は空欄。ページングは通常監視 CSV の `PerfMonSystemStatus=Complete` 行の最大値。 [ロード診断 CSV](load-diag-comparison.csv) は前後の stderr の `group_end` にある `operations` を、群と操作名で結合した。積算値と最大値の単位は µs。終了後の RAM 判定は算出し直さず Measure の `RamDetail.SystemRecovery` を使用した。

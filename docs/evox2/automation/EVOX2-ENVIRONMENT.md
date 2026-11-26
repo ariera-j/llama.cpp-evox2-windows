@@ -36,3 +36,12 @@ MSVC・CMake・Ninja の開発環境は引き続き上記 VS2022 x64 を使用�
 同じ PowerShell で `C:\TheRock\build\.venv\Scripts\Activate.ps1` を実行する。`rocm-sdk version` は `10.0.0`、`rocm-sdk path --root` は `C:\TheRock\build\.venv\Lib\site-packages\_rocm_sdk_devel`。C/C++ と HIP に使う AMD Clang はルートの `lib\llvm\bin` にあり、実測バナーは `23.0.0git`、ターゲットは `gfx1151`。
 
 仮想環境の有効化後も `PATH` と `HIP_PATH`、`HIP_PATH_72` に ROCm 7.2 が残る場合がある。プロセス内で 7.2 への参照を除去し、`HIP_PATH` と `ROCM_PATH` を TheRock ルートに合わせる。ユーザー・システム環境変数は変更しない。ラッパーは SDK の DLL と rocBLAS/hipBLASLt のデータを実行ファイルの隣に配置して照合する。詳細は [Windows ROCm ビルドガイド](../BUILD-ROCM-WINDOWS.md)。
+
+## AMD ドライバーとランタイムの履歴
+
+| 確認時点 | AMD Software | ディスプレイドライバー | Vulkan ICD DLL 版／API | System32 Vulkan Loader |
+| --- | --- | --- | --- | --- |
+| 2026-11-26 更新前 | 26.8.1 | 32.0.31041.1004 | 9.2.10.395／1.4.349 | 1.4.357.0 |
+| 2026-11-26 更新後 | 26.11.2 | 32.0.32029.2010 | 9.2.10.416／1.4.359 | 1.4.357.0 |
+
+製品版は AMD Software のアンインストール レジストリ、ディスプレイ版と ICD JSON は Radeon 8060S の `Control\Video` レジストリから取得した。ICD DLL と Loader はファイル版を使用した。更新後も Vulkan SDK 1.4.357.0、TheRock 10.0.0、BIOS EVO-X2 1.12、Windows 26300.10075、UMA 96 GiB を確認した。標準ビルドに同梱された `amdhip64_7.dll` は10.0.3581.0、`hipblas.dll` は3.6.0.0、`libhipblaslt.dll` は1.4.1.0で、同梱ファイルとランタイムデータツリーの検証に成功した。 [更新比較と停止記録](ADRENALIN-UPDATE-COMPARISON-20261126.md#更新後adrenalin-26112)
