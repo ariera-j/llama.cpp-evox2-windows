@@ -2,11 +2,13 @@
 
 ## Codex b12651 builds
 
-These options describe the [b12651 working revision](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/f4f1aa3e85124fed75a891ec63a1504536049eff). Check the wrapper in the source revision selected for the build. The older sections below are historical toolchain records.
+GitHub `main` is the source of truth for the standard build tools. The current product branch uses the same files. Check the product source commit before invoking the wrapper in the fixed Codex clone. The sections below the b12651 instructions record historical toolchains. See [integration and release verification](../../../docs/evox2/automation/BUILD-INTEGRATION.md).
 
 Use the fixed Codex clone and a short, unused output name. The [runbook](../../../docs/evox2/automation/RUNBOOK.md#b12651-の再現コマンド) has executable Vulkan and ROCm commands, the verified compiler and SDK combinations, and build times. The [b12651 record](../../../docs/evox2/automation/UPSTREAM-B12651-20261124.md) has artifact SHA-256 values and historical failure details.
 
 The Codex wrapper validates BoringSSL and, for Vulkan, LLVM OpenMP under `C:\llama-build\automation\_deps`. Normal build and configure-only runs prepare missing entries from official sources. `-Offline` and `-PreflightOnly` require existing verified entries. Configure always uses the prepared cache, disables both UI options and sets `FETCHCONTENT_FULLY_DISCONNECTED=ON`. The dependency audit compares CMake entry points, modules and templates, UI npm manifests and configuration, and Git submodule declarations against the reviewed b12651 commit. It also checks new inputs and ignored local overrides in the CMake module search directories and the chat npm project. Changed inputs are listed before dependency acquisition or configure, with a reason for review. C++ and shader source edits can proceed through this audit. Existing invalid cache entries are preserved for diagnosis.
+
+Normal calls run the backend's `ConfigureOnly`, check the generated cache, then run `BuildOnly` in the same Windows PowerShell 5.1 worker. The outer `ConfigureOnly` stops after verifying the generated cache. It requires its own unused output name. The reviewed legacy main dependency inputs (BoringSSL 0.20261020.0 and Vulkan OpenMP 20.1.8) can reuse verified cache entries and always stop if those entries are missing.
 
 Both Vulkan wrappers accept `-CpuAllVariants ON|OFF` and default to `ON`. The b12651 Vulkan baseline passes `OFF` to omit the Sapphire Rapids AMX target and builds one CPU plugin. `GGML_NATIVE=OFF` and `GGML_BACKEND_DL=ON` are retained. The Codex wrapper accepts the explicit pair `-VulkanLlvmBin` and `-ExpectedVulkanClangVersion`. For b12651 use VS2026 Clang 22.1.3 with LLVM OpenMP 22.1.8 under the VS2022 x64 host environment.
 
