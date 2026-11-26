@@ -71,3 +71,8 @@ IQ2_S MatVec 実験の Logger OFF TG256 で、A1 初回の run-02 は TG 計測�
 無人再開には新規重大イベントの確認経路が必要。復旧後の SSH ユーザーでは System チャネルがアクセス拒否だったため、残りの計測は開始前に停止した。M001 のロード遅延は独立した作業4の資料として保持する。 [障害記録](INCIDENT-20261126-M005.md)
 
 2026-11-26、運用者による Event Log Readers の追加後、新規 SSH で System／Application の読み取りを再確認した。障害前の測定と復旧後の測定は別ラウンドとして保持する。 [SSH のイベントログ読み取り](EVOX2-ENVIRONMENT.md#ssh-のイベントログ読み取り)
+
+
+## 作業4で参照する独立した観測
+
+再起動前後の TG 速度差、M001 と Round 3 D のロード遅延、ROCm 短時間の物理 RAM 逼迫は調査候補として保持する。M005 のハードフリーズと AMD External Events の停止との因果関係は未確認。 [run ID・計測条件・ログ](BENCHMARK-MATRIX-ROUNDS-B12651.md#ram-詳細監視と作業4への引き継ぎ)

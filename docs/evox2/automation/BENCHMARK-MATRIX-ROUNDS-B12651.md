@@ -1,5 +1,8 @@
 # b12651 Matrix のラウンド比較と監視の統合検証（作業 3-4）
 
+> 本文は当時の検証記録。標準運用は [計測ルール](BENCHMARK-RULES.md) と [作業3-5の統合記録](BENCHMARK-INTEGRATION.md) を参照。
+
+
 実装は `codex/benchmark-matrix-b12651-20261125` の [544718493](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/5447184939aa1e60dbb9228c1c512ecf78c3d761)。基準は `94c1413dfca7452e9d00a2fc54d57f8aea7e8660`。製品ソースと既存ビルドはそのまま使用した。計測規則と来歴は [BENCHMARK-RULES.md](BENCHMARK-RULES.md)、[Matrix 移植](BENCHMARK-MATRIX-B12651.md)、[通常監視](BENCHMARK-MONITORING-B12651.md)、[RAM 詳細監視](BENCHMARK-RAM-DETAIL-B12651.md) に記録している。
 
 ## ラウンド設定
@@ -196,3 +199,49 @@ Round 1 の4件を維持し、復旧後の有効件数は 8/8。スモークは 
 - 本計測の終了後監査では重大イベント0件。取得した Application の4件は Security-SPP の情報イベント。原本の Windows イベントログやダンプは公開リポジトリに保存していない。
 - 後続は Vulkan b12676＋IQ3 PLE16 の CLI、ROCm b12671＋IQ3 PLE16 の CLI、Vulkan b12676＋ROCmFP4 FAST PLE16 の bench がすべて正常終了。CLI は同じ短い入力、Context 2048、上限32生成。FP4 は pp256／tg32。通常監視と ADLX、250 ms RAM 詳細監視、子／Matrix 出力を全件確認し、RAM／GPU 回復はいずれも WithinTolerance。FP4 終了後に取得した Application の2件も Security-SPP の情報イベント。
 - 既存の Matrix 比較モジュールで Round 1 と復旧後を再集計し、各構成有効3件を確認した。実機の `combined-summary.csv`、`combined-rounds.csv`、`recovery-run-map.csv` から元の予定順と各子ログを再照合できる。旧 M005 は異常終了として別記録に残し、同じ枠の速度比較には新しい `R34R2D-M001` を使用した。
+
+## 作業3-5で照合した追加集計
+
+12件の有効 run を使用した。旧 M005 は障害記録に保持し、同じ枠には `R34R2D-M001` を使用した。
+
+| 比較 | 同一ラウンド内 PP 差の平均 | 同一ラウンド内 TG 差の平均 |
+|---|---:|---:|
+| B／A | −0.021% | −0.002% |
+| C／B | −0.125% | +0.021% |
+| D／B | −0.122% | +0.103% |
+| D／C | +0.003% | +0.082% |
+
+各ラウンドの差の絶対値は PP 最大0.25%、TG 最大0.35%。今回の条件で大きな影響は観測されなかった。3ラウンドで検出できない影響は残る。
+
+### GPU クロックと再起動前後の速度
+
+ADLX の PP 区間は `PromptRunReported` の UTC 受信時刻からネイティブ PP 区間の長さを加えた時刻までとし、稼働率90%以上のサンプルを使用した。TG は対応する受信時刻とネイティブ TG 区間を使用した。平均は B／C／D 各 run の平均を等重みで集計し、最小値は全有効サンプルの最小値。ログ受信と内部計測境界には時間差があり、ADLX の採取間隔は約2秒。
+
+| 項目 | Round 1・フリーズ前 | Round 2・復旧後 | Round 3・復旧後 |
+|---|---:|---:|---:|
+| PP 中 VRAM 平均 MHz | 968.8 | 965.8 | 967.4 |
+| PP 中 VRAM 最低 MHz | 957 | 954 | 962 |
+| PP 中 GPU コア平均 MHz | 2,883 | 2,883 | 2,877 |
+| PP 中 GPU 電力平均 W | 120.5 | 120.1 | 120.8 |
+| TG 中 VRAM 平均 MHz | 999.3 | 999.6 | 999.1 |
+| TG 中 GPU コア平均 MHz | 2,890 | 2,895 | 2,889 |
+| TG 中 GPU 使用率平均 | 98.6% | 97.0% | 96.8% |
+| PP 全構成平均 tok/s | 628.381 | 629.194 | 628.137 |
+| TG 全構成平均 tok/s | 30.024 | 29.594 | 29.592 |
+
+提供された追加解析値のうち Round 3 の TG クロック（VRAM 998.9 MHz、GPU コア 2,887 MHz）は、上記の受信時刻とネイティブ区間を使った再集計（999.1 MHz／2,889 MHz）と僅かに異なった。採用する区間と値を明示した。PP8192 は約13秒で、2026年10月の異常時に観測された PP 中の平均約884 MHzと進行に伴う低下は今回の短い PP では見られなかった。長いコンテキストでは未検証。 [過去の障害記録](../EVOX2-UNEXPECTED-WINDOWS-RESTART-INCIDENT-LOG.md#2026-10-22-evening-subsequent-ppvram-clock-and-power-cycle-investigation) · [運用者の記事](https://qiita.com/ariera/items/dec991572b708ebbe2db)
+
+復旧後は TG が約1.44%低下した。監視なしの A にも同じ方向の差があり、監視負荷とは別の観測として扱う。VRAM・GPU コアクロックに顕著な差はなかった。運用者によれば、復旧後はタスクマネージャと管理者 PowerShell が計測終了まで開いていた。タスクマネージャの継続更新による影響は未検証の仮説。次回からタスクマネージャを閉じ、微小差は可能な限り同じ OS 起動期間と GUI・バックグラウンド条件で比較する。今回は追加計測を行っていない。
+
+### RAM 詳細監視と作業4への引き継ぎ
+
+C／D の全ラウンドで、250 ms 設定の実測平均は254.0～257.3 ms、100 ms は107.4～112.9 ms。ネイティブ RAM の欠損はなく、終了後の RAM・コミット・GPU メモリは許容範囲内に回復した。通常監視2秒の最大間隔は約6～7秒で、別プロセスの RAM 詳細監視は短周期を維持した。
+
+| 参照 run | 計測条件と観測 | ログ |
+|---|---|---|
+| M001・Round 1 A | Vulkan b12676／IQ3 PLE16、PP8192／TG256、通常・詳細監視なし。起動から Context 初期化報告まで173.732秒。ほかの通常範囲は約50.6～52.2秒。 | 元バッチの `matrix-runs.csv` と子 `20261125-234712-543-bench-vulkan-b12676-ctx8192-6f86f40011cb` |
+| R34R3D-M001 | 同一 Vulkan とワークロード、100 ms 詳細監視。Context 初期化報告まで65.864秒。78.859秒は子ログのネイティブ `load time` 報告で、ラッパーの全所要時間119.007秒とも計測境界が異なる。 | `r34-recovery-20261126` の同名 `.result.json` から子 `ram-detail.csv`、`ram-events.jsonl`、`stderr.log` を参照 |
+| R34-rocm-iq3-cli-M001 | ROCm b12671／IQ3 PLE16、Context 2048、短い既存入力、生成上限32、詳細250 ms。物理 RAM 最大31.641 GiB、空き最小6.6 MiB、コミット最大87.935 GiB。291行中24行で空き1 GiB未満。通常監視の空き最小は約86 MiB。正常終了し回復を確認。 | 子 `20261126-024103-292-cli-rocm-b12671-ctx2048-f9704be4729c` の `ram-detail.csv`、`resources.csv`、`result.json` |
+| IQ2_S A1 run-02・A1+A2 run-08 | Vulkan／IQ3 PLE16、TG256、warmup OFF。run-02 は初回 eval 付近、run-08 は TG 開始前に遅延が観測された。 | [計測条件と生ログ](../iq2-s-vulkan-matvec-20261125/commands.md) · [タイマーの再解析](../iq2-s-vulkan-matvec-20261125/README.md#低速2件の生ログ再解析) |
+
+生ログのルートは実機の `C:\llama-build\_logs\codex`。M005 ハードフリーズ、AMD External Events 停止、モデルロード遅延、ROCm の RAM 逼迫、再起動前後の TG 速度差はそれぞれの観測記録を保持し、因果関係は未確定。 [M005 の障害記録](INCIDENT-20261126-M005.md)

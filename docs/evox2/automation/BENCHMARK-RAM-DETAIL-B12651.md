@@ -1,5 +1,8 @@
 # b12651 モデルロード時の RAM 詳細監視（作業 3-3）
 
+> 本文は当時の検証記録。標準運用は [計測ルール](BENCHMARK-RULES.md) と [作業3-5の統合記録](BENCHMARK-INTEGRATION.md) を参照。
+
+
 Matrix 専用ブランチの実装 [c5966f009](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/c5966f0097d28e294c1715d06244c908e7cb5f31) を対象とする。作業開始時の HEAD は `603094a70a1fe731c8cf2d80ed3c0fe62b75af8d`。通常監視の来歴は [作業 3-2](BENCHMARK-MONITORING-B12651.md)、Matrix の起動・設定は [作業 3-1](BENCHMARK-MATRIX-B12651.md) に記録している。
 
 ## 起動と終了
