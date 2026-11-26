@@ -2,6 +2,8 @@
 
 ## Codex b12651 builds
 
+This candidate branch adds approved short worktrees, a runtime dependency extension, and build state records. See [worktree invocation, recovery, and the work 5-4 validation plan](../../../docs/evox2/automation/BUILD-IMPROVEMENTS-20261126.md).
+
 GitHub `main` is the source of truth for the standard build tools. The current product branch uses the same files. Check the product source commit before invoking the wrapper in the fixed Codex clone. The sections below the b12651 instructions record historical toolchains. See [integration and release verification](../../../docs/evox2/automation/BUILD-INTEGRATION.md).
 
 Use the fixed Codex clone and a short, unused output name. The [runbook](../../../docs/evox2/automation/RUNBOOK.md#b12651-の再現コマンド) has executable Vulkan and ROCm commands, the verified compiler and SDK combinations, and build times. The [b12651 record](../../../docs/evox2/automation/UPSTREAM-B12651-20261124.md) has artifact SHA-256 values and historical failure details.
