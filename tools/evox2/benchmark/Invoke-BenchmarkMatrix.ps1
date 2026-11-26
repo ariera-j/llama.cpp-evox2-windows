@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -24,7 +24,12 @@ param(
     [switch]$ResourceMonitor,
     [switch]$NoResourceMonitor,
 
-    [switch]$PlanOnly
+    [switch]$PlanOnly,
+
+    [ValidateRange(1, 1000)]
+    [int[]]$OnlyRound = @(),
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9-]{0,31}$')]
+    [string]$RunIdPrefix
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,6 +43,7 @@ $measureBench = Join-Path $benchmarkDir 'Measure-LlamaBench.ps1'
 
 Import-Module $commonModule -Force
 Import-Module $benchmarkModule -Force
+Import-Module (Join-Path $benchmarkDir 'Evox2.MatrixComparison.psm1') -Force
 Set-Evox2Utf8Console
 
 function Copy-Evox2Hashtable {
@@ -196,7 +202,7 @@ function Get-Evox2MatrixWorkloadLabel {
             'default'
         }
 
-        $input = if ($Parameters.ContainsKey('AllocationOnly') -and
+        $inputLabel = if ($Parameters.ContainsKey('AllocationOnly') -and
                      [bool]$Parameters.AllocationOnly) {
             'allocation'
         } elseif ($Parameters.ContainsKey('InputKey')) {
@@ -213,7 +219,7 @@ function Get-Evox2MatrixWorkloadLabel {
             'nomtp'
         }
 
-        return "ctx=$context input=$input $mtp"
+        return "ctx=$context input=$inputLabel $mtp"
     }
 
     $p = if ($Parameters.ContainsKey('PromptTokens')) {
@@ -359,6 +365,18 @@ function ConvertTo-Evox2MatrixResultRow {
             AdlxPowerClass    = $ChildRow.AdlxPowerClass
             PModeWarningCount = $ChildRow.PModeWarningCount
             ChildRunDirectory = $ChildRow.RunDirectory
+            ResourceMonitorStatus = $ChildRow.ResourceMonitorStatus
+            AdlxMonitorStatus = $ChildRow.AdlxMonitorStatus
+            RamDetailStatus = $ChildRow.RamDetailStatus
+            RamDetailIncreaseMiB = $ChildRow.RamDetailIncreaseMiB
+            RamDetailSystemRecovery = $ChildRow.RamDetailSystemRecovery
+            PlannedOrder = $PlanRun.PlannedOrder; ComparisonGroup = $PlanRun.ComparisonGroup
+            BaseConfiguration = $PlanRun.BaseConfiguration; Configuration = $PlanRun.Configuration
+            Round = $PlanRun.Round; RoundPosition = $PlanRun.RoundPosition
+            ActualContext = $ChildRow.ActualContext; InputSha256 = $ChildRow.InputSha256; PromptSlice = $ChildRow.PromptSlice
+            NativeSeconds = $null
+            PromptSeconds = $(if ($null -ne $ChildRow.PromptMilliseconds) { $ChildRow.PromptMilliseconds / 1000 } else { $null })
+            GenerationSeconds = $(if ($null -ne $ChildRow.GenerationMilliseconds) { $ChildRow.GenerationMilliseconds / 1000 } else { $null })
         }
     }
 
@@ -379,12 +397,16 @@ function ConvertTo-Evox2MatrixResultRow {
         Build             = $ChildRow.Build
         ModelAlias        = $ChildRow.ModelAlias
 
-        Context           = $null
-        InputFile         = $null
+        Context           = $ChildRow.Context
+        InputFile         = $ChildRow.InputFile
         MTP               = $false
         PP                = $null
         TG                = $null
         DraftAcceptance   = $null
+        DenseIndexerEvidence = $null
+        DenseIndexerOmitted  = $null
+        QsaNoopEvidence      = $null
+        QsaNoopEnabled       = $null
 
         BenchTest         = $ChildRow.Test
         PromptTokens      = $ChildRow.PromptTokens
@@ -406,7 +428,101 @@ function ConvertTo-Evox2MatrixResultRow {
         AdlxPowerClass    = $ChildRow.AdlxPowerClass
         PModeWarningCount = $ChildRow.PModeWarningCount
         ChildRunDirectory = $ChildRow.RunDirectory
+        ResourceMonitorStatus = $ChildRow.ResourceMonitorStatus
+        AdlxMonitorStatus = $ChildRow.AdlxMonitorStatus
+        RamDetailStatus = $ChildRow.RamDetailStatus
+        RamDetailIncreaseMiB = $ChildRow.RamDetailIncreaseMiB
+        RamDetailSystemRecovery = $ChildRow.RamDetailSystemRecovery
+        PlannedOrder = $PlanRun.PlannedOrder; ComparisonGroup = $PlanRun.ComparisonGroup
+        BaseConfiguration = $PlanRun.BaseConfiguration; Configuration = $PlanRun.Configuration
+        Round = $PlanRun.Round; RoundPosition = $PlanRun.RoundPosition
+        ActualContext = $ChildRow.Context; InputSha256 = $ChildRow.InputSha256; PromptSlice = $ChildRow.PromptSlice
+        NativeSeconds = $(if ($null -ne $ChildRow.AvgNanoseconds) { $ChildRow.AvgNanoseconds / 1e9 } else { $null })
+        PromptSeconds = $null; GenerationSeconds = $null
     }
+}
+
+function Get-MatrixChildDetails {
+    param([string]$Directory)
+
+    if (!$Directory) { return }
+    $path = Join-Path $Directory 'result.json'
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    $result = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    $nativeLoad = $null
+    $gpuFailure = $false
+    $contextSeconds = $null
+    $warmupSeconds = $null
+    if ($result.Files.StdErr -and (Test-Path -LiteralPath $result.Files.StdErr -PathType Leaf)) {
+        foreach ($line in (Get-Content -LiteralPath $result.Files.StdErr)) {
+            if ($line -match 'VK_ERROR_DEVICE_LOST|HIP_ERROR_LAUNCH_FAILURE|hipErrorLaunchFailure|out of memory|GGML_ASSERT.*failed') {
+                $gpuFailure = $true
+            }
+            if ($null -eq $nativeLoad -and $line -match 'load time\s*=\s*([0-9.]+)\s*ms') {
+                $nativeLoad = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) / 1000
+            }
+        }
+    }
+    if ($result.PhaseTracePath -and (Test-Path -LiteralPath $result.PhaseTracePath -PathType Leaf)) {
+        $launch = $null
+        foreach ($line in (Get-Content -LiteralPath $result.PhaseTracePath -Encoding UTF8)) {
+            $event = $line | ConvertFrom-Json
+            if ($event.Event -eq 'TargetLaunchRequested') { $launch = $event; continue }
+            if (!$launch -or $event.Event -ne 'LogMarkerReceived') { continue }
+            $duration = ([long]$event.StopwatchTicks - [long]$launch.StopwatchTicks) / [double]$event.StopwatchFrequency
+            if ($null -eq $contextSeconds -and $event.Data.Phase -eq 'ContextInitialization') { $contextSeconds = $duration }
+            if ($null -eq $warmupSeconds -and $event.Data.Phase -eq 'WarmupReported') { $warmupSeconds = $duration }
+        }
+    }
+    [pscustomobject]@{
+        Lifecycle = $result.TargetLifecycle; ResidualPids = @($result.TargetLifecycle.ResidualPids | Where-Object { $_ })
+        ProcessSeconds = $result.TargetLifecycle.ProcessSeconds; WrapperSeconds = $result.DurationSeconds
+        ModelLoadReportedSeconds = $nativeLoad; ContextMarkerFromLaunchSeconds = $contextSeconds
+        WarmupMarkerFromLaunchSeconds = $warmupSeconds; GpuFailure = $gpuFailure
+        PModeStart = $result.PModeAtStart.Mode; PModeFinish = $result.PModeAtFinish.Mode
+        RamPeakUsedMiB = $result.RamDetail.PeakUsedMiB; RamPeakUtc = $result.RamDetail.PeakUtc
+        RamMinimumAvailableBytes = $result.RamDetail.RunningMetrics.AvailableRAMBytes.Minimum
+        GpuRecovery = $result.RamDetail.GpuRecovery.Status
+    }
+}
+
+function Get-MatrixGateCheck {
+    param([hashtable]$Policy, $Baseline, [string]$Phase)
+    $check = [ordered]@{
+        Phase=$Phase; TimestampUtc=[datetime]::UtcNow.ToString('o')
+        AvailableGiB=$null; CommitGiB=$null; DedicatedGpuGiB=$null
+        PMode=$null; ProcessIds=@(); Issue=$null
+    }
+    try {
+        $memory = Get-Evox2SystemMemory
+        $check.AvailableGiB = $memory.Available / 1GB
+        $check.CommitGiB = $memory.Commit / 1GB
+        $check.ProcessIds = @(Get-Process -Name 'llama-bench','llama-cli','llama-server','evox2-adlx-gpu-monitor','ninja','cmake','test-backend-ops' -ErrorAction SilentlyContinue |
+            ForEach-Object { "$($_.ProcessName):$($_.Id)" })
+        if ($check.ProcessIds.Count) { throw "Competing or residual process: $($check.ProcessIds -join ', ')." }
+        if ($Policy.ContainsKey('MinimumAvailableGiB') -and $check.AvailableGiB -lt $Policy.MinimumAvailableGiB) {
+            throw 'Available physical memory fell below the plan safety threshold.'
+        }
+        if ($Baseline -and $Policy.ContainsKey('MaxCommitGrowthGiB') -and
+            $check.CommitGiB -gt $Baseline.CommitGiB + $Policy.MaxCommitGrowthGiB) {
+            throw 'System commit did not return within the plan tolerance.'
+        }
+        if ($Policy.ContainsKey('MaxGpuGrowthGiB')) {
+            $gpu = Get-Counter -Counter '\GPU Adapter Memory(*)\Dedicated Usage' -ErrorAction Stop
+            $values = @($gpu.CounterSamples | Where-Object { $_.Status -in 0,1 -and $_.CookedValue -ge 0 })
+            if (!$values.Count) { throw 'No valid adapter dedicated memory sample at the safety gate.' }
+            $check.DedicatedGpuGiB = ($values | Measure-Object CookedValue -Sum).Sum / 1GB
+            if ($Baseline -and $check.DedicatedGpuGiB -gt $Baseline.DedicatedGpuGiB + $Policy.MaxGpuGrowthGiB) {
+                throw 'Adapter dedicated memory did not return within the plan tolerance.'
+            }
+        }
+        if ($Policy.PMode -and $Phase.StartsWith('before')) {
+            $pMode = Get-Evox2PModeMetadata
+            $check.PMode = $pMode.Mode
+            if (!$pMode.ProbeSucceeded -or $pMode.Mode -ne $Policy.PMode) { throw "Required P-MODE '$($Policy.PMode)' could not be verified." }
+        }
+    } catch { $check.Issue = $_.Exception.Message }
+    [pscustomobject]$check
 }
 
 if ($ResourceMonitor -and $NoResourceMonitor) {
@@ -447,6 +563,8 @@ $PlanName = if ($PlanData.ContainsKey('Name') -and
 }
 
 $Settings = Get-Evox2OptionalHashtable -Parent $PlanData -Key 'Settings'
+$SafetyGate = Get-Evox2OptionalHashtable -Parent $Settings -Key 'SafetyGate'
+if ($SafetyGate.Count -gt 0) { Import-Module (Join-Path $benchmarkDir 'Evox2.Memory.psm1') }
 $Defaults = Get-Evox2OptionalHashtable -Parent $PlanData -Key 'Defaults'
 
 $ContinueOnError = $true
@@ -571,6 +689,19 @@ foreach ($rawJob in $Jobs) {
         )
     }
 
+    $comparison = Get-Evox2OptionalHashtable -Parent $job -Key 'Comparison'
+    $jobComparisonRows = @()
+    $schedule = @()
+    if ($comparison.Count -gt 0) {
+        $names = @(foreach ($key in $buildKeys) {
+            foreach ($item in $variants) {
+                if ($item -isnot [hashtable]) { throw 'Each comparison variant requires a hashtable.' }
+                $name = if ($item.Name) { [string]$item.Name } else { 'default' }
+                if ($buildKeys.Count -gt 1) { "$key/$name" } else { $name }
+            }
+        })
+        $schedule = @(Get-Evox2MatrixRoundSchedule $comparison $names $jobName)
+    }
     foreach ($rawCase in $cases) {
         if (-not ($rawCase -is [hashtable])) {
             throw "Job '$jobName' contains a Case that is not a hashtable."
@@ -733,6 +864,14 @@ foreach ($rawJob in $Jobs) {
                             -ToolName 'llama-bench' `
                             -Parameters $effectiveParameters `
                             -ValidParameterNames $validBenchParameters
+
+                        if ($effectiveParameters.ContainsKey('InputKey') -and
+                            -not [string]::IsNullOrWhiteSpace([string]$effectiveParameters.InputKey)) {
+                            [void](Get-Evox2ConfigEntry `
+                                -Config $Local `
+                                -Section Inputs `
+                                -Key ([string]$effectiveParameters.InputKey))
+                        }
                     }
 
                     $planKeyData = [ordered]@{
@@ -757,11 +896,8 @@ foreach ($rawJob in $Jobs) {
                     $displayName = "$jobName/$caseName/$buildKey/$modelKey/$variantName"
                     $seenPlanKeys[$planRunKey] = $displayName
 
-                    $matrixIndex++
-                    $matrixRunId = 'M{0:D3}' -f $matrixIndex
-
-                    $expanded += [PSCustomObject]@{
-                        MatrixRunId = $matrixRunId
+                    $template = [PSCustomObject]@{
+                        MatrixRunId = $null
                         PlanRunKey  = $planRunKey
                         Tool        = $toolName
                         Job         = $jobName
@@ -776,11 +912,48 @@ foreach ($rawJob in $Jobs) {
                             -Environment $effectiveEnvironment
                         Parameters  = $effectiveParameters
                         Environment = $effectiveEnvironment
+                        ComparisonGroup = $null; BaseConfiguration = $null; Configuration = $null
+                        References = @(); Round = $null; RoundPosition = $null; PlannedOrder = $null
                     }
+                    if ($comparison.Count -gt 0) {
+                        $template.ComparisonGroup = [string]$comparison.Group
+                        $template.BaseConfiguration = [string]$comparison.Base
+                        $template.Configuration = if ($buildKeys.Count -gt 1) { "$buildKey/$variantName" } else { $variantName }
+                        $template.References = @($comparison.References | Where-Object { $_ })
+                        $jobComparisonRows += $template
+                    } elseif ($OnlyRound.Count -eq 0) { $expanded += $template }
                 }
             }
         }
     }
+    if ($comparison.Count -gt 0) {
+        foreach ($group in ($jobComparisonRows | Group-Object Case, ModelKey)) {
+            $byConfig = @{}
+            foreach ($template in $group.Group) {
+                if ($byConfig.ContainsKey($template.Configuration)) { throw "Duplicate comparison configuration: $($template.Configuration)" }
+                $byConfig[$template.Configuration] = $template
+            }
+            foreach ($round in $schedule) {
+                if ($OnlyRound.Count -gt 0 -and $round.Round -notin $OnlyRound) { continue }
+                for ($j = 0; $j -lt $round.Order.Count; $j++) {
+                    $configuration = $round.Order[$j]
+                    if (!$byConfig.ContainsKey($configuration)) { continue }
+                    $entry = $byConfig[$configuration].PSObject.Copy()
+                    $entry.Round = $round.Round
+                    $entry.RoundPosition = $j + 1
+                    $expanded += $entry
+                    if ($expanded.Count -gt $MaxRuns) { throw "Matrix exceeds MaxRuns=$MaxRuns." }
+                }
+            }
+        }
+    }
+}
+
+foreach ($item in $expanded) {
+    $matrixIndex++
+    $runId = 'M{0:D3}' -f $matrixIndex
+    $item.MatrixRunId = if ($RunIdPrefix) { "$RunIdPrefix-$runId" } else { $runId }
+    $item.PlannedOrder = $matrixIndex
 }
 
 if ($expanded.Count -eq 0) {
@@ -810,10 +983,18 @@ Write-Host "ContinueOnError  : $ContinueOnError"
 Write-Host "LogRoot          : $LogRoot"
 Write-Host ''
 
-$expanded |
-    Select-Object MatrixRunId, Tool, Job, Case, Variant, BuildKey, ModelKey, Workload, EnvironmentSummary |
-    Format-Table -AutoSize |
-    Out-Host
+$hasComparison = @($expanded | Where-Object ComparisonGroup).Count -gt 0
+if ($hasComparison) {
+    foreach ($item in $expanded) {
+        Write-Host ("{0} {1} group={2} round={3} slot={4} configuration={5} base={6} {7}/{8}/{9}/{10}/{11} {12}" -f
+            $item.PlannedOrder, $item.MatrixRunId, $item.ComparisonGroup, $item.Round, $item.RoundPosition,
+            $item.Configuration, $item.BaseConfiguration, $item.Job, $item.Case, $item.BuildKey,
+            $item.ModelKey, $item.Variant, $item.Workload)
+    }
+} else {
+    $expanded | Select-Object MatrixRunId, Tool, Job, Case, Variant, BuildKey, ModelKey, Workload, EnvironmentSummary |
+        Format-Table -AutoSize | Out-Host
+}
 
 Write-Host '==========================================================='
 Write-Host ''
@@ -859,6 +1040,9 @@ foreach ($item in $expanded) {
         EnvironmentSummary = $item.EnvironmentSummary
         Parameters  = $item.Parameters
         Environment = $item.Environment
+        PlannedOrder = $item.PlannedOrder; ComparisonGroup = $item.ComparisonGroup
+        BaseConfiguration = $item.BaseConfiguration; Configuration = $item.Configuration
+        Round = $item.Round; RoundPosition = $item.RoundPosition
     }
 }
 
@@ -894,6 +1078,7 @@ $planRecord = [ordered]@{
         ForceResourceMonitorOn  = [bool]$ResourceMonitor
         ForceResourceMonitorOff = [bool]$NoResourceMonitor
         MaxRuns = $MaxRuns
+        SafetyGate = $SafetyGate
     }
 
     Runs = $expandedForJson
@@ -904,12 +1089,21 @@ Write-Evox2Json -InputObject $planRecord -Path $planJsonPath -Depth 32
 $runRecords = @()
 $resultRows = @()
 $stoppedEarly = $false
+$gateChecks = @()
+$gateBaseline = $null
 
 Write-Host "Matrix batch directory: $batchDir"
 Write-Host ''
 
 for ($i = 0; $i -lt $expanded.Count; $i++) {
     $planRun = $expanded[$i]
+    if ($SafetyGate.Count -gt 0) {
+        $check = Get-MatrixGateCheck $SafetyGate $gateBaseline "before $($planRun.MatrixRunId)"
+        if (!$gateBaseline) { $gateBaseline = $check }
+        $gateChecks += $check
+        Write-Evox2Json -InputObject @($gateChecks) -Path (Join-Path $batchDir 'matrix-safety-checks.json')
+        if ($check.Issue) { Write-Warning $check.Issue; $stoppedEarly = $true; break }
+    }
     $runStart = Get-Date
 
     Write-Host ''
@@ -946,23 +1140,24 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
     $childConditionId = $null
     $childRunDirectory = $null
 
+    $extra = $null
     $savedRunEnvironment = @{}
-    foreach ($name in $planRun.Environment.Keys) {
-        $existing = Get-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
-        $savedRunEnvironment[$name] = [ordered]@{
-            Exists = ($null -ne $existing)
-            Value = if ($null -ne $existing) { $existing.Value } else { $null }
-        }
-
-        $newValue = $planRun.Environment[$name]
-        if ($null -eq $newValue) {
-            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
-        } else {
-            Set-Item -LiteralPath "Env:$name" -Value ([string]$newValue)
-        }
-    }
-
     try {
+        foreach ($name in $planRun.Environment.Keys) {
+            $existing = Get-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            $savedRunEnvironment[$name] = [ordered]@{
+                Exists = ($null -ne $existing)
+                Value = if ($null -ne $existing) { $existing.Value } else { $null }
+            }
+
+            $newValue = $planRun.Environment[$name]
+            if ($null -eq $newValue) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            } else {
+                Set-Item -LiteralPath "Env:$name" -Value ([string]$newValue)
+            }
+        }
+
         if ($planRun.Tool -eq 'cli') {
             $childRows = @(& $measureCli @invokeParams)
         } else {
@@ -989,10 +1184,12 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
             $childConditionId = $childRows[0].ConditionId
             $childRunDirectory = $childRows[0].RunDirectory
 
+            if ($hasComparison -or $SafetyGate.Count -gt 0) {
+                $extra = Get-MatrixChildDetails $childRunDirectory
+            }
             foreach ($childRow in $childRows) {
-                $resultRows += ConvertTo-Evox2MatrixResultRow `
-                    -PlanRun $planRun `
-                    -ChildRow $childRow
+                $row = ConvertTo-Evox2MatrixResultRow -PlanRun $planRun -ChildRow $childRow
+                $resultRows += $row
             }
         }
     } catch {
@@ -1013,6 +1210,13 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         }
     }
 
+    if ($SafetyGate.Count -gt 0 -and $matrixStatus -eq 'OK') {
+        if (!$extra -or !$extra.Lifecycle -or $extra.ResidualPids.Count -gt 0 -or
+            $extra.GpuFailure -or ($SafetyGate.PMode -and ($extra.PModeStart -ne $SafetyGate.PMode -or $extra.PModeFinish -ne $SafetyGate.PMode))) {
+            $matrixStatus = 'SAFETY_STOP'
+            $errorText = 'Missing lifecycle evidence, residual process, GPU error or P-MODE mismatch. Inspect child result and stderr.'
+        }
+    }
     $runEnd = Get-Date
 
     $runRecords += [PSCustomObject]@{
@@ -1037,6 +1241,29 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         ChildConditionId = $childConditionId
         ChildRunDirectory = $childRunDirectory
         Error            = $errorText
+        ResourceMonitorStatus = $(if ($childRows.Count) { $childRows[0].ResourceMonitorStatus } else { $null })
+        AdlxMonitorStatus     = $(if ($childRows.Count) { $childRows[0].AdlxMonitorStatus } else { $null })
+        ResourceSamples      = $(if ($childRows.Count) { $childRows[0].ResourceSamples } else { $null })
+        AdlxSamples          = $(if ($childRows.Count) { $childRows[0].AdlxSamples } else { $null })
+        RamDetailStatus       = $(if ($childRows.Count) { $childRows[0].RamDetailStatus } else { $null })
+        RamDetailIncreaseMiB  = $(if ($childRows.Count) { $childRows[0].RamDetailIncreaseMiB } else { $null })
+        RamDetailSystemRecovery = $(if ($childRows.Count) { $childRows[0].RamDetailSystemRecovery } else { $null })
+        PlannedOrder = $planRun.PlannedOrder; ActualOrder = $runRecords.Count + 1
+        ComparisonGroup = $planRun.ComparisonGroup; BaseConfiguration = $planRun.BaseConfiguration
+        Configuration = $planRun.Configuration; Round = $planRun.Round; RoundPosition = $planRun.RoundPosition
+        ProcessSeconds = $extra.ProcessSeconds; WrapperSeconds = $extra.WrapperSeconds
+        ModelLoadReportedSeconds = $extra.ModelLoadReportedSeconds
+        ContextMarkerFromLaunchSeconds = $extra.ContextMarkerFromLaunchSeconds
+        WarmupMarkerFromLaunchSeconds = $extra.WarmupMarkerFromLaunchSeconds
+        RamPeakUsedMiB = $extra.RamPeakUsedMiB; RamPeakUtc = $extra.RamPeakUtc
+        RamMinimumAvailableBytes = $extra.RamMinimumAvailableBytes; GpuRecovery = $extra.GpuRecovery
+        LastBootUpTimeUtc = $(if ($childRows.Count) { $childRows[0].LastBootUpTimeUtc })
+        OsUptimeSeconds   = $(if ($childRows.Count) { $childRows[0].OsUptimeSeconds })
+        OsUptimeHours     = $(if ($childRows.Count) { $childRows[0].OsUptimeHours })
+        OsBootTimeSource  = $(if ($childRows.Count) { $childRows[0].OsBootTimeSource })
+        OsBootCimStatus   = $(if ($childRows.Count) { $childRows[0].OsBootCimStatus })
+        OsShutdownEventStatus = $(if ($childRows.Count) { $childRows[0].OsShutdownEventStatus })
+        OsUptimeErrorId   = $(if ($childRows.Count) { $childRows[0].OsUptimeErrorId })
     }
 
     $runRecords | Export-Csv `
@@ -1074,19 +1301,36 @@ for ($i = 0; $i -lt $expanded.Count; $i++) {
         ($runEnd - $runStart).TotalMinutes
     )
 
-    if ($matrixStatus -ne 'OK' -and -not $ContinueOnError) {
+    if ($matrixStatus -eq 'SAFETY_STOP' -or ($matrixStatus -ne 'OK' -and -not $ContinueOnError)) {
         Write-Warning 'Stopping matrix because ContinueOnError is false.'
         $stoppedEarly = $true
         break
     }
 
     $isLastPlannedRun = ($i -ge ($expanded.Count - 1))
-    if (-not $isLastPlannedRun -and $effectiveCooldown -gt 0) {
+    if ((-not $isLastPlannedRun -or $SafetyGate.Count -gt 0) -and $effectiveCooldown -gt 0) {
         Write-Host "Cooling down for $effectiveCooldown seconds..."
         Start-Sleep -Seconds $effectiveCooldown
     }
+    if ($SafetyGate.Count -gt 0) {
+        $check = Get-MatrixGateCheck $SafetyGate $gateBaseline "after $($planRun.MatrixRunId)"
+        $gateChecks += $check
+        Write-Evox2Json -InputObject @($gateChecks) -Path (Join-Path $batchDir 'matrix-safety-checks.json')
+        if ($check.Issue) { Write-Warning $check.Issue; $stoppedEarly = $true; break }
+    }
 }
 
+$comparisonFiles = $null
+if ($hasComparison) {
+    $comparisonResult = Get-Evox2MatrixComparison $expanded $runRecords $resultRows
+    $comparisonFiles = [ordered]@{ Rounds = $null; Summary = $null }
+    if ($comparisonResult.Rounds.Count) {
+        $comparisonFiles.Rounds = Join-Path $batchDir 'matrix-comparison-rounds.csv'
+        $comparisonResult.Rounds | Export-Csv -LiteralPath $comparisonFiles.Rounds -Encoding UTF8 -NoTypeInformation
+        $comparisonFiles.Summary = Join-Path $batchDir 'matrix-comparison-summary.csv'
+        $comparisonResult.Summary | Export-Csv -LiteralPath $comparisonFiles.Summary -Encoding UTF8 -NoTypeInformation
+    }
+}
 $batchFinished = Get-Date
 
 $finalResult = [ordered]@{
@@ -1120,6 +1364,8 @@ $finalResult = [ordered]@{
         }
     }
 
+    ComparisonFiles = $comparisonFiles
+    SafetyChecks = @($gateChecks)
     Runs    = @($runRecords)
     Results = @($resultRows)
 }

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [int]$DurationSeconds = 30,
     [int]$IntervalMs = 2000,
@@ -41,7 +41,7 @@ if (-not $Output) {
     $Output = Join-Path $logDir "adlx-gpu-metrics-$stamp.csv"
 }
 
-$args = @(
+$monitorArgs = @(
     '--duration', $DurationSeconds.ToString(),
     '--interval-ms', $IntervalMs.ToString(),
     '--gpu-index', $GpuIndex.ToString(),
@@ -56,7 +56,7 @@ Write-Host "  interval   : $IntervalMs ms"
 Write-Host "  gpu index  : $GpuIndex"
 Write-Host ''
 
-& $exe @args
+& $exe @monitorArgs
 $exitCode = $LASTEXITCODE
 
 if ($exitCode -ne 0) {

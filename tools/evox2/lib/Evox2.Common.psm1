@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 
 Set-StrictMode -Version Latest
 
@@ -736,6 +736,10 @@ function Get-Evox2PModeStatePath {
     return Join-Path $programData 'Evox2\PMode\state.json'
 }
 
+function New-Evox2PModeTaskService {
+    New-Object -ComObject Schedule.Service -ErrorAction Stop
+}
+
 function Get-Evox2PModeMetadata {
     [CmdletBinding()]
     param(
@@ -789,60 +793,73 @@ function Get-Evox2PModeMetadata {
         } catch {}
     }
 
+    $stateError = $null
     try {
-        $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
+        $scheduler = New-Evox2PModeTaskService
+        $scheduler.Connect()
+        $folderPath = $TaskPath.TrimEnd('\')
+        if (!$folderPath) { $folderPath = '\' }
+        $task = $scheduler.GetFolder($folderPath).GetTask($TaskName)
         if ($null -eq $task) {
             throw "Scheduled task $TaskPath$TaskName was not found."
         }
 
-        Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
+        $requestedAt = [DateTimeOffset]::UtcNow
+        $null = $task.Run($null)
 
-        $deadline = (Get-Date).AddMilliseconds($TaskTimeoutMs)
-        while ((Get-Date) -lt $deadline) {
+        $wait = [Diagnostics.Stopwatch]::StartNew()
+        while ($wait.ElapsedMilliseconds -lt $TaskTimeoutMs) {
             Start-Sleep -Milliseconds 100
-
-            if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
-                continue
-            }
-
             $item = Get-Item -LiteralPath $StatePath -ErrorAction SilentlyContinue
-            if ($null -eq $item) {
-                continue
-            }
-
-            if ($null -ne $previousWriteUtc -and $item.LastWriteTimeUtc -le $previousWriteUtc) {
-                continue
-            }
+            if ($null -eq $item -or $item.PSIsContainer) { continue }
+            if ($null -ne $previousWriteUtc -and $item.LastWriteTimeUtc -le $previousWriteUtc) { continue }
 
             try {
-                $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-                if ($null -eq $state) {
-                    continue
+                $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                $capturedAt = [DateTimeOffset]::MinValue
+                if (![DateTimeOffset]::TryParseExact([string]$state.CapturedAt, 'o',
+                        [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$capturedAt) -or
+                    $capturedAt -lt $requestedAt) {
+                    throw 'The state file has no valid capture timestamp for this request.'
                 }
-
-                return [PSCustomObject]@{
-                    ProbeSucceeded = [bool]$state.ProbeSucceeded
-                    Mode           = [string]$state.Mode
-                    RawValue       = $state.RawValue
-                    Source         = [string]$state.Source
-                    Transport      = 'ScheduledTask'
-                    InstanceName   = [string]$state.InstanceName
-                    MethodId       = $state.MethodId
-                    OpenResult     = $state.OpenResult
-                    ExecuteResult  = $state.ExecuteResult
-                    CloseResult    = $state.CloseResult
-                    OutputSize     = $state.OutputSize
-                    Elevated       = $state.Elevated
-                    Error          = $state.Error
-                    CapturedAt     = [string]$state.CapturedAt
+                if ($state.MethodId -ne 2 -or $state.Elevated -isnot [bool] -or !$state.Elevated -or
+                    $state.ProbeSucceeded -isnot [bool]) {
+                    throw 'The state file does not contain an elevated Method ID 2 probe result.'
                 }
             } catch {
-                # The elevated writer replaces the file atomically, but tolerate
-                # a transient parse/read race and keep polling until timeout.
+                $stateError = $_.Exception.Message
+                continue
+            }
+
+            if (!$state.ProbeSucceeded) {
+                throw "Elevated P-MODE probe failed: $($state.Error)"
+            }
+            if ($null -eq $state.RawValue -or $state.RawValue -notin 0, 1, 2 -or
+                $state.Mode -ne (ConvertFrom-Evox2PModeRawValue -RawValue $state.RawValue)) {
+                throw 'The elevated P-MODE result contains an invalid mode or raw value.'
+            }
+
+            return [PSCustomObject]@{
+                ProbeSucceeded = $true
+                Mode           = [string]$state.Mode
+                RawValue       = $state.RawValue
+                Source         = [string]$state.Source
+                Transport      = 'ScheduledTask'
+                InstanceName   = [string]$state.InstanceName
+                MethodId       = $state.MethodId
+                OpenResult     = $state.OpenResult
+                ExecuteResult  = $state.ExecuteResult
+                CloseResult    = $state.CloseResult
+                OutputSize     = $state.OutputSize
+                Elevated       = $state.Elevated
+                Error          = $state.Error
+                CapturedAt     = [string]$state.CapturedAt
             }
         }
 
-        throw "Timed out after $TaskTimeoutMs ms waiting for a fresh P-MODE state file: $StatePath"
+        $message = "Timed out after $TaskTimeoutMs ms waiting for a fresh P-MODE state file: $StatePath"
+        if ($stateError) { $message += ". Last state error: $stateError" }
+        throw $message
     } catch {
         return [PSCustomObject]@{
             ProbeSucceeded = $false

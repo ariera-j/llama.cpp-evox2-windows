@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 
 Set-StrictMode -Version Latest
 
@@ -370,22 +370,11 @@ function Get-Evox2AdlxPModeConsistency {
                 continue
             }
 
-            $adlxResult = $null
-            $usage = $null
-            $power = $null
-
-            try { $adlxResult = [int]$row.adlx_result } catch { continue }
-            if ($adlxResult -ne 0) {
+            if ($row.adlx_result -notin '0', '1', '2') {
                 continue
             }
-
-            try {
-                $usage = ConvertFrom-Evox2InvariantDouble -Value ([string]$row.gpu_usage_pct)
-                $power = ConvertFrom-Evox2InvariantDouble -Value ([string]$row.gpu_power_w)
-            } catch {
-                continue
-            }
-
+            $usage = ConvertTo-Evox2TelemetryNumber $row.gpu_usage_pct -Maximum 100.5
+            $power = ConvertTo-Evox2TelemetryNumber $row.gpu_power_w
             if ($null -eq $usage -or $null -eq $power) {
                 continue
             }
@@ -867,7 +856,7 @@ function Get-Evox2BackgroundActivitySnapshot {
         $needsPerfFallback = $false
         foreach ($proc in $processes) {
             try {
-                if ($null -eq $proc.CPU) { $needsPerfFallback = $true; break }
+                if ($null -eq (ConvertTo-Evox2TelemetryNumber $proc.CPU)) { $needsPerfFallback = $true; break }
             } catch {
                 $needsPerfFallback = $true
                 break
@@ -877,12 +866,9 @@ function Get-Evox2BackgroundActivitySnapshot {
             try {
                 $perfRows = @(Get-CimInstance -ClassName Win32_PerfRawData_PerfProc_Process -ErrorAction Stop)
                 foreach ($perf in $perfRows) {
-                    if ($null -eq $perf.IDProcess -or $null -eq $perf.PercentProcessorTime) {
-                        continue
-                    }
-                    $pidValue = [int]$perf.IDProcess
-                    if ($pidValue -gt 0) {
-                        $cpuByPid[$pidValue] = [double]$perf.PercentProcessorTime / 10000000.0
+                    $rawCpu = ConvertTo-Evox2TelemetryNumber $perf.PercentProcessorTime
+                    if ($null -ne $perf.IDProcess -and [int]$perf.IDProcess -gt 0 -and $null -ne $rawCpu) {
+                        $cpuByPid[[int]$perf.IDProcess] = $rawCpu / 10000000.0
                     }
                 }
             } catch {
@@ -895,8 +881,9 @@ function Get-Evox2BackgroundActivitySnapshot {
             $cpuSource = $null
             $startTime = $null
             try {
-                if ($null -ne $proc.CPU) {
-                    $cpuSeconds = [math]::Round([double]$proc.CPU, 3)
+                $cpu = ConvertTo-Evox2TelemetryNumber $proc.CPU
+                if ($null -ne $cpu) {
+                    $cpuSeconds = [math]::Round($cpu, 3)
                     $cpuSource = 'GetProcess'
                 }
             } catch {}
@@ -960,11 +947,12 @@ function Compare-Evox2BackgroundActivitySnapshots {
     foreach ($p in $afterProcesses) {
         $key = "$($p.Name):$($p.Pid):$($p.StartedUtc)"
         $delta = $null
+        $afterCpu = ConvertTo-Evox2TelemetryNumber $p.CpuSeconds
         if ($byKey.ContainsKey($key)) {
             $matchedBeforeKeys[$key] = $true
-            $prior = $byKey[$key]
-            if ($null -ne $p.CpuSeconds -and $null -ne $prior.CpuSeconds) {
-                $difference = [double]$p.CpuSeconds - [double]$prior.CpuSeconds
+            $priorCpu = ConvertTo-Evox2TelemetryNumber $byKey[$key].CpuSeconds
+            if ($null -ne $afterCpu -and $null -ne $priorCpu) {
+                $difference = $afterCpu - $priorCpu
                 # Never turn a decreasing counter (e.g., PID reuse) into a
                 # misleading zero-CPU claim.
                 if ($difference -ge 0) {
@@ -977,8 +965,8 @@ function Compare-Evox2BackgroundActivitySnapshots {
             $started = $null
             try { $started = [datetime]::Parse([string]$p.StartedUtc).ToUniversalTime() } catch {}
             if ($null -ne $started -and $started -ge $t0 -and
-                $started -le $t1 -and $null -ne $p.CpuSeconds) {
-                $delta = [math]::Max(0.0, [double]$p.CpuSeconds)
+                $started -le $t1 -and $null -ne $afterCpu) {
+                $delta = $afterCpu
             }
         }
 
@@ -1064,7 +1052,212 @@ function Compare-Evox2BackgroundActivitySnapshots {
     }
 }
 
+function ConvertTo-Evox2TelemetryNumber {
+    param($Value, [double]$Minimum = 0, [double]$Maximum = [double]::MaxValue)
+
+    [double]$number = 0
+    if ([double]::TryParse(([string]$Value), [Globalization.NumberStyles]::Float,
+            [Globalization.CultureInfo]::InvariantCulture, [ref]$number) -and
+        $number -ge $Minimum -and $number -le $Maximum) {
+        return $number
+    }
+}
+
+function Get-Evox2MonitoringQuality {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Resource', 'ADLX')][string]$Kind,
+        [Parameter(Mandatory = $true)][string]$CsvPath,
+        [bool]$Requested,
+        [bool]$Started,
+        $ExitCode,
+        [string]$ProcessError,
+        [string]$StdOutPath,
+        [string]$StdErrPath,
+        [double]$IntervalSeconds
+    )
+
+    $metrics = if ($Kind -eq 'Resource') {
+        @('UsedRAM_GiB', 'FreeRAM_GiB', 'PhysicalTotal_GiB', 'Committed_GiB', 'CommitLimit_GiB',
+          'CommittedPercent', 'CommitPeakSinceBoot_GiB', 'SystemCache_GiB', 'TargetWS_GiB',
+          'TargetPrivate_GiB', 'TargetVirtual_GiB', 'PerfMonCommitted_GiB', 'PerfMonCommitLimit_GiB',
+          'PerfMonCommittedPercent', 'PagesInput_PerSec', 'PageReads_PerSec', 'PageFaults_PerSec',
+          'CPU_Percent', 'Disk_Percent', 'DiskRead_MiBps', 'DiskWrite_MiBps', 'AdapterLocal_GiB',
+          'AdapterDedicated_GiB', 'AdapterShared_GiB', 'AdapterTotalCommitted_GiB', 'TargetGPULocal_GiB',
+          'TargetGPUDedicated_GiB', 'TargetGPUShared_GiB', 'TargetGPUTotalCommitted_GiB',
+          'TargetGPUNonLocal_GiB', 'TargetGPUEngineSum_Percent')
+    } else {
+        @('gpu_usage_pct', 'gpu_clock_mhz', 'gpu_vram_clock_mhz', 'gpu_temp_c', 'gpu_hotspot_c',
+          'gpu_power_w', 'gpu_vram_mb', 'total_board_power_w')
+    }
+
+    $rows = @()
+    $readError = $null
+    if (Test-Path -LiteralPath $CsvPath -PathType Leaf) {
+        try { $rows = @(Import-Csv -LiteralPath $CsvPath -ErrorAction Stop) }
+        catch { $readError = $_.Exception.Message }
+    }
+
+    $headers = if ($rows.Count) { @($rows[0].PSObject.Properties.Name) } else { @() }
+    $adlxSupport = [ordered]@{}
+    if ($Kind -eq 'ADLX' -and $StdOutPath -and (Test-Path -LiteralPath $StdOutPath -PathType Leaf)) {
+        $metricNames = @{
+            usage = 'gpu_usage_pct'; clock = 'gpu_clock_mhz'; vram_clock = 'gpu_vram_clock_mhz'
+            temp = 'gpu_temp_c'; hotspot = 'gpu_hotspot_c'; power = 'gpu_power_w'
+            vram = 'gpu_vram_mb'; total_board_power = 'total_board_power_w'
+        }
+        foreach ($line in @(Get-Content -LiteralPath $StdOutPath -TotalCount 80 -ErrorAction SilentlyContinue)) {
+            if ($line -match '^\s+(\w+)=(0|1) result=(-?\d+)\s*$' -and $metricNames.ContainsKey($Matches[1])) {
+                $adlxSupport[$metricNames[$Matches[1]]] = [pscustomobject]@{
+                    Supported = ($Matches[2] -eq '1')
+                    ResultCode = [int]$Matches[3]
+                }
+            }
+        }
+    }
+
+    $adlxCodes = [ordered]@{}
+    $eligible = $rows
+    if ($Kind -eq 'ADLX') {
+        foreach ($row in $rows) {
+            $code = if ('adlx_result' -in $headers -and $row.adlx_result) { [string]$row.adlx_result } else { 'Missing' }
+            $adlxCodes[$code] = 1 + $adlxCodes[$code]
+        }
+        # Same success codes as ADLX_SUCCEEDED. A metric is emitted by the
+        # logger only when its own getter succeeded and it was supported.
+        $eligible = @(if ('adlx_result' -in $headers) { $rows | Where-Object { $_.adlx_result -in '0', '1', '2' } })
+    }
+    $stats = [ordered]@{}
+    $expectedMissing = $false
+    $validCount = 0
+    $constantAdlx = @()
+    $zeroAdlx = @()
+    foreach ($metric in $metrics) {
+        $minimum = if ($metric -in 'gpu_temp_c', 'gpu_hotspot_c') { [double]::MinValue } else { 0 }
+        $maximum = if ($metric -eq 'gpu_usage_pct') { 100.5 } else { [double]::MaxValue }
+        $values = @(if ($metric -in $headers) {
+            foreach ($row in $eligible) {
+                ConvertTo-Evox2TelemetryNumber $row.$metric -Minimum $minimum -Maximum $maximum
+            }
+        })
+        $summary = $values | Measure-Object -Minimum -Maximum -Average
+        $stats[$metric] = [pscustomobject]@{
+            ValidCount = $values.Count
+            MissingCount = $rows.Count - $values.Count
+            Minimum = $(if ($values.Count) { $summary.Minimum } else { $null })
+            Maximum = $(if ($values.Count) { $summary.Maximum } else { $null })
+            Average = $(if ($values.Count) { [math]::Round($summary.Average, 6) } else { $null })
+        }
+        $validCount += $values.Count
+        $knownUnsupported = ($adlxSupport.Contains($metric) -and !$adlxSupport[$metric].Supported -and
+            $adlxSupport[$metric].ResultCode -in 0, 1, 2)
+        if ($values.Count -lt $rows.Count -and !$knownUnsupported) { $expectedMissing = $true }
+        if ($Kind -eq 'ADLX' -and $values.Count -ge 2 -and $summary.Minimum -eq $summary.Maximum) {
+            $constantAdlx += $metric
+            if ($summary.Minimum -eq 0) { $zeroAdlx += $metric }
+        }
+    }
+
+    $cadence = @(if ($Kind -eq 'Resource' -and 'SampleIntervalSecondsActual' -in $headers) {
+        foreach ($row in ($rows | Select-Object -Skip 1)) {
+            ConvertTo-Evox2TelemetryNumber $row.SampleIntervalSecondsActual
+        }
+    } elseif ($Kind -eq 'ADLX' -and 'elapsed_ms' -in $headers) {
+        $previous = $null
+        foreach ($row in $rows) {
+            $elapsed = ConvertTo-Evox2TelemetryNumber $row.elapsed_ms
+            if ($null -ne $elapsed -and $null -ne $previous -and $elapsed -ge $previous) {
+                ($elapsed - $previous) / 1000.0
+            }
+            $previous = $elapsed
+        }
+    })
+    $timings = $cadence | Measure-Object -Minimum -Maximum -Average
+    $cost = @(if ('CounterCollectionMilliseconds' -in $headers) {
+        foreach ($row in $rows) { ConvertTo-Evox2TelemetryNumber $row.CounterCollectionMilliseconds }
+    })
+    $costStats = $cost | Measure-Object -Minimum -Maximum -Average
+    $sources = [ordered]@{}
+    $warnings = @()
+    $legacy = ($Kind -eq 'Resource' -and $rows.Count -gt 0 -and ('ResourceSchemaVersion' -notin $headers -or $rows[0].ResourceSchemaVersion -ne '2'))
+    if ($Kind -eq 'Resource' -and !$legacy) {
+        foreach ($field in 'NativeMemoryStatus', 'ProcessMemoryStatus', 'PerfMonSystemStatus', 'PerfMonPidGpuStatus', 'BackgroundProbeStatus', 'BackgroundCpuCoverage') {
+            if ($field -notin $headers) { continue }
+            $counts = [ordered]@{}
+            foreach ($group in @($rows | Group-Object -Property $field)) { $counts[$group.Name] = $group.Count }
+            $sources[$field] = $counts
+        }
+        $warnings = @(foreach ($field in 'NativeMemoryError', 'ProcessMemoryError', 'PerfMonError', 'BackgroundProbeError') {
+            if ($field -in $headers) {
+                $rows | ForEach-Object { $_.$field } | Where-Object { $_ } | Select-Object -Unique -First 3
+            }
+        })
+        $expectedMissing = $expectedMissing -or ($warnings.Count -gt 0) -or
+            ($sources.Contains('PerfMonSystemStatus') -and $sources['PerfMonSystemStatus']['Partial'] -gt 0) -or
+            ($sources.Contains('PerfMonPidGpuStatus') -and $sources['PerfMonPidGpuStatus']['Partial'] -gt 0) -or
+            ($sources.Contains('BackgroundProbeStatus') -and $sources['BackgroundProbeStatus']['ProbeError'] -gt 0) -or
+            ($sources.Contains('BackgroundCpuCoverage') -and
+                ($sources['BackgroundCpuCoverage']['None'] -gt 0 -or $sources['BackgroundCpuCoverage']['Partial'] -gt 0))
+    }
+
+    [pscustomobject]@{
+        SchemaVersion = 1
+        Status = if (!$Requested) { 'NotRequested' }
+            elseif (!$Started -or $readError -or $validCount -eq 0) { 'Unavailable' }
+            elseif ($legacy) { 'LegacyUnqualified' }
+            elseif ($expectedMissing -or $ProcessError -or ($null -ne $ExitCode -and $ExitCode -ne 0)) { 'Partial' }
+            else { 'Complete' }
+        Requested = $Requested
+        Started = $Started
+        ExitCode = $ExitCode
+        ProcessError = $ProcessError
+        CsvReadError = $readError
+        CsvPath = $CsvPath
+        StdOutPath = $StdOutPath
+        StdErrPath = $StdErrPath
+        SampleCount = $rows.Count
+        Sources = $sources
+        Metrics = $stats
+        SampleIntervalSeconds = [pscustomobject]@{
+            Configured = $IntervalSeconds
+            ObservedCount = $cadence.Count
+            Minimum = $(if ($cadence.Count) { $timings.Minimum } else { $null })
+            Maximum = $(if ($cadence.Count) { $timings.Maximum } else { $null })
+            Average = $(if ($cadence.Count) { [math]::Round($timings.Average, 3) } else { $null })
+        }
+        CounterCollectionMilliseconds = [pscustomobject]@{
+            ObservedCount = $cost.Count
+            Minimum = $(if ($cost.Count) { $costStats.Minimum } else { $null })
+            Maximum = $(if ($cost.Count) { $costStats.Maximum } else { $null })
+            Average = $(if ($cost.Count) { [math]::Round($costStats.Average, 1) } else { $null })
+        }
+        SampleWarnings = $warnings
+        AdlxSupport = $adlxSupport
+        AdlxResultCounts = $adlxCodes
+        AdlxConstantMetrics = $constantAdlx
+        AdlxZeroOnlyMetrics = $zeroAdlx
+    }
+}
+
+function Get-Evox2MonitoringSession {
+    $userName = $env:USERNAME
+    $sessionId = $null
+    try { $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name } catch {}
+    try { $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId } catch {}
+    [pscustomobject]@{
+        UserName = $userName
+        SessionId = $sessionId
+        SessionName = $env:SESSIONNAME
+        Type = if ($env:SSH_CONNECTION -or $env:SSH_CLIENT) { 'SSH' }
+            elseif ($env:SESSIONNAME -like 'RDP-*') { 'RDP' }
+            elseif ($env:SESSIONNAME -eq 'Console') { 'Console' }
+            else { 'Unknown' }
+    }
+}
+
 Export-ModuleMember -Function @(
+    'Get-Evox2MonitoringQuality',
+    'Get-Evox2MonitoringSession',
     'Import-Evox2LocalConfig',
     'Get-Evox2RelevantEnvironment',
     'ConvertTo-Evox2WindowsArgument',

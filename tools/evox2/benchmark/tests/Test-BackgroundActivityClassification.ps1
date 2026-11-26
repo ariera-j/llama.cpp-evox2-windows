@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot '..\Evox2.Benchmark.psm1') -Force
@@ -72,5 +72,25 @@ $x = Compare-Evox2BackgroundActivitySnapshots -Before $a -After $b
 Assert-Evox2 ($x.Status -eq 'NoCandidates') 'No process => NoCandidates'
 Assert-Evox2 ($x.PossibleNoise -eq $false) 'No observed process => False'
 Write-Host 'PASS no observed candidates => NoCandidates'
+
+# Block the optional PerfProc lookup. Keep the readable process and its zero.
+$module = Get-Module Evox2.Benchmark
+$observed = & $module {
+    function Get-Process {
+        [CmdletBinding()]
+        param()
+        [pscustomobject]@{ ProcessName = 'MsMpEng'; Id = 41001; StartTime = [datetime]::UtcNow; CPU = $null }
+        [pscustomobject]@{ ProcessName = 'SearchIndexer'; Id = 41002; StartTime = [datetime]::UtcNow; CPU = 0 }
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]
+        param([string]$ClassName)
+        throw 'simulated optional WMI access denied'
+    }
+    Get-Evox2BackgroundActivitySnapshot
+}
+Assert-Evox2 ($observed.Status -eq 'Observed' -and $observed.CpuProbeError -match 'WMI access denied') 'CIM denial retained as a source error'
+Assert-Evox2 ($observed.Processes.Count -eq 2 -and $null -eq $observed.Processes[0].CpuSeconds -and $observed.Processes[1].CpuSeconds -eq 0) 'CIM denial must preserve process list and readable CPU'
+Write-Host 'PASS optional WMI failure preserves independently read values'
 
 Write-Host 'ALL SYNTHETIC BACKGROUND-ACTIVITY REGRESSIONS PASS'

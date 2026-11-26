@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -42,7 +42,7 @@ foreach ($row in $backgroundRows) {
         throw 'A sampled row is missing BackgroundCollectionMilliseconds.'
     }
     $observed = [datetimeoffset]::Parse(
-        $row.BackgroundSampleTimestampUtc,
+        $(if ($row.BackgroundSampleTimestampUtc) { $row.BackgroundSampleTimestampUtc } else { $row.TimestampUtc }),
         [Globalization.CultureInfo]::InvariantCulture
     )
     if ($null -ne $previous) {
@@ -54,7 +54,7 @@ foreach ($row in $backgroundRows) {
     $previous = $observed
 }
 
-$gaps = @($rows | ForEach-Object {
+$gaps = @($rows | Select-Object -Skip 1 | Where-Object SampleIntervalSecondsActual | ForEach-Object {
     [double]::Parse($_.SampleIntervalSecondsActual, [Globalization.CultureInfo]::InvariantCulture)
 })
 $maxGap = ($gaps | Measure-Object -Maximum).Maximum
