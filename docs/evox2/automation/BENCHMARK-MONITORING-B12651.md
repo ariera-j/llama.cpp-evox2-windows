@@ -1,5 +1,8 @@
 # b12651 通常リソース監視の部分取得と品質記録（作業 3-2）
 
+> 本文は当時の検証記録。標準運用は [計測ルール](BENCHMARK-RULES.md) と [作業3-5の統合記録](BENCHMARK-INTEGRATION.md) を参照。
+
+
 実装とテストは Matrix 専用ブランチ `codex/benchmark-matrix-b12651-20261125` の [実装コミット](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/78e50b838cd885c32cfb34da817f80c8e6c75df2) に置く。作業開始時の専用ブランチは `6afa0c1a0a82b7aa5e38dd2f3cff9ef2fd65dd22`、`main` は `605d2f7e9d5b64acde4ef040167d76aaa2b97a3e`。運用条件は [BENCHMARK-RULES.md](BENCHMARK-RULES.md) に従う。
 
 ## 変更前と変更後

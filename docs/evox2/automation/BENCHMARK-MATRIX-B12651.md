@@ -1,5 +1,8 @@
 # b12651 Benchmark Matrix 移植・互換性確認（作業 3-1）
 
+> 本文は当時の検証記録。標準運用は [計測ルール](BENCHMARK-RULES.md) と [作業3-5の統合記録](BENCHMARK-INTEGRATION.md) を参照。
+
+
 対象は `codex/vulkan-manifest-cpu-variants-20261124` の開始時 HEAD `fdd965967eda4da3c90847c348750694a120561f`。移植元は GitHub `main` の `14bfbe376b8cb6c3b21d4ebbe80aacf005973ded`。実装は専用ブランチ `codex/benchmark-matrix-b12651-20261125` のコミット `0baa3725671a0f3cb9756579d2e78af6e64ee624` に置く。計測時は [BENCHMARK-RULES.md](BENCHMARK-RULES.md) を参照する。実行コードは専用ブランチでレビューする。 [移植元 Matrix](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/14bfbe376b8cb6c3b21d4ebbe80aacf005973ded/tools/evox2/benchmark/Invoke-BenchmarkMatrix.ps1) · [実装コミット](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/0baa3725671a0f3cb9756579d2e78af6e64ee624)
 
 ## 移植範囲と依存関係

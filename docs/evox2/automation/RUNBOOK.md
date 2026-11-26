@@ -4,7 +4,7 @@
 
 このランブックの正本は GitHub の `main`。b12651 のコマンドは対応する作業ブランチのツールに適用する。実行前に製品ソースの SHA とラッパーの引数を照合する。作業例の固定参照は [b12651 のビルドラッパー](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/tools/evox2/automation/Invoke-CodexBuild.ps1)。
 
-性能計測の準備、比較設計、監視、結果保存は [BENCHMARK-RULES.md](BENCHMARK-RULES.md) を参照する。
+性能計測は main の標準ツールを使用する。単独の条件は Measure、複数条件は Matrix で `-PlanOnly` の展開を先に確認する。通常は監視2秒＋ADLX 2,000 ms、詳細診断は250 msから始める。設定の意味と採用条件は [BENCHMARK-RULES.md](BENCHMARK-RULES.md) を参照する。
 
 ## 実行順序
 
@@ -83,3 +83,15 @@ GPU メモリ値は CLI 終了時の内訳で、ピーク値は未計測。ADLX 
 |---|---|---|
 | Vulkan | `20261123-164740-543-cli-vulkan-b12037-ctx4096-c1033772a5a6` | `iq3-Vulkan-baseline-20261123-164655-54f786b214794740a477a46bf128f16e` |
 | ROCm | `20261123-165108-885-cli-rocm-b12037-ctx4096-0e6201be05e2` | `iq3-ROCm-baseline-20261123-165020-5813cdc0433d44cb822e2cca433ce6e7` |
+
+### 無人計測の run 単位の停止手順
+
+作業3-4では ThinkPad が実行順を保持し、各セルを一意の `-RunIdPrefix` と `-OnlyRound`／`-OnlyVariant`（別タスクは `-OnlyJob`）で絞り、`-PlanOnly -MaxRuns 1` を確認してから `-MaxRuns 1 -StopOnError` で起動した。SSH は既存の運用オプションに加えて keepalive を使う。後続セルの起動は ThinkPad 側で判断する。
+
+1. 実行前に System／Application の最新 EventRecordID、起動時刻、P-MODE、空き RAM、コミット、WDDM GPU Dedicated、既存プロセスを記録する。各 run で対象ワークロードと機器を照合する。
+2. 各 run の SSH 終了コード、`matrix-result.json` の `Complete` と1件の OK、子 `result.json`、bench のネイティブ PP/TG 行、残留プロセスを確認する。対象と全モニターが終了してから次へ進む。
+3. 開始時の基準に対する終了後の RAM・コミット・GPU メモリ、P-MODE を確認する。詳細監視の 128 MiB 判定と、計測を続行できるかの安全条件は別に扱う。作業3-4の空き16 GiB・コミット増加4 GiB・GPU Dedicated 増加4 GiB は当時の開始／終了ゲート。実行中の全サンプルが閾値内であったことを示さない。
+4. 前回の EventRecordID より新しいイベントを System／Application で確認する。Display/GPU ドライバ、WHEA、BugCheck、リソース枯渇などを対象にし、WER は実際の障害発生時刻を照合する。正常なチャネルでの `NoMatchingEventsFound` は0件。アクセス拒否、読取り失敗、カーソル巻き戻りは安全確認失敗として停止する。
+5. SSH 切断、異常終了、新規重大イベント、持続的な回復不良、P-MODE の変化があれば後続セルを送らず、ログを保存して報告する。自動再試行・再接続・再起動を行わない。1接続で送るのは1セルなので切断時に実機側が次のセルを起動することはない。
+
+標準 Matrix は実行順、絞り込み、結果・残留 PID 記録、`-StopOnError`、任意の `SafetyGate` による開始／終了の確認を提供する。SSH の監督、複数の単独呼び出しに共通の回復基準、イベントカーソルによる監査、後続セルの開始条件は作業3-4の ThinkPad 側の手順。標準 Matrix 単体で SSH 切断や Windows の重大イベントを監査する機能はない。 [作業3-4の実行記録](BENCHMARK-MATRIX-ROUNDS-B12651.md#event-log-readers-追加後の再開)

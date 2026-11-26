@@ -5,7 +5,23 @@ Follow the [EVO-X2 benchmark rules](../../docs/evox2/automation/BENCHMARK-RULES.
 > **2026-10-24 PLE16 model preparation:** [`model/README.md`](model/README.md) documents the r5-local, r2-derived Python converter, r3-derived PowerShell wrapper, preflight mode, verification and large-model safety checks. No inference or benchmark runtime code changed; run converted GGUFs using COMMON-001-capable binaries.
 
 
-## Current refresh entry point
+
+## Standard benchmark tools
+
+GitHub `main` is the source of truth for the standard tools. The active product branch ships the same benchmark code. [Integration record](../../docs/evox2/automation/BENCHMARK-INTEGRATION.md)
+
+Use `Measure-LlamaBench.ps1` or `Measure-LlamaCli.ps1` for a single condition. Use `Invoke-BenchmarkMatrix.ps1 -Plan ... -LocalConfig ... -PlanOnly` to inspect a matrix before execution. The [b12651 local template](benchmark/configs/local.b12651.example.psd1) uses placeholder paths. Keep the actual config outside Git. The [explicit-round example](benchmark/configs/qwen38-b12651-monitor-overhead.example.psd1) shows independent processes and A/B/C/D monitoring. The [ABBA example](benchmark/configs/qwen38-b12651-vulkan-abba.example.psd1) shows paired order. `Comparison.Runs` counts processes per configuration. Bench `Repetitions` counts repetitions inside one process. The Measure wrappers support `-DryRun` for metadata and command inspection.
+
+| Use | Monitoring |
+|---|---|
+| Routine measurement | Resource monitor every 2 s and ADLX every 2,000 ms |
+| Load or memory investigation | Add `-RamDetail -RamDetailIntervalMs 250` |
+| Short RAM peaks | Use the optional 100 ms detail interval |
+| Small performance differences | Add an unmonitored control if needed |
+
+Enable the resource monitor with `-ResourceMonitor`. Use `-AdlxMonitorExe` when the installed helper lies outside the search paths. To run the unmonitored control, use `-NoAdlxMonitor` and leave both resource monitoring and RAM detail disabled. These are operating profiles. RAM detail remains off by default. [Unattended run procedure](../../docs/evox2/automation/RUNBOOK.md#無人計測の-run-単位の停止手順)
+
+## Historical refresh entry point
 
 Build and measurement utilities are imported from r4 `bddf73442c24545879c9acadc078ba5b2c3cb7d8`. Use the [current handoff](../../docs/evox2/R5-REFRESH-2026-10-09.md), [refresh procedure](../../docs/evox2/UPSTREAM-REFRESH.md) and current build guides.
 
@@ -27,7 +43,7 @@ A benchmark result should derive its backend, llama.cpp build identity, executab
 
 The BIOS UMA setting remains a manual test-condition label because the current tooling does not have a reliable method to read the configured BIOS value directly.
 
-## Current implementation status
+## Historical implementation status
 
 Reusable tooling is imported from r3 freeze `0a93fcbb8e5bcf51b331275c4f4b142d822168d6`:
 
@@ -572,7 +588,7 @@ The full native rows are also embedded in `result.json`.
 
 ## Phase 4: benchmark matrix runner
 
-The examples in this section apply to branches that include the Matrix script and plans. Check the [benchmark rules and coverage limits](../../docs/evox2/automation/BENCHMARK-RULES.md#9-現行の対応範囲と修正候補) for the current b12651 work branch.
+The examples below document legacy plan syntax. For standard plans and current coverage, use the [examples above](#standard-benchmark-tools) and the [benchmark rules](../../docs/evox2/automation/BENCHMARK-RULES.md).
 
 `Invoke-BenchmarkMatrix.ps1` orchestrates the already-validated
 `Measure-LlamaCli.ps1` and `Measure-LlamaBench.ps1` wrappers.
