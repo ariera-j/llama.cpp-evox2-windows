@@ -1,0 +1,11 @@
+name,bytes,sha256,reference,when_observed
+ggml.dll,86528,e6c75ec2b62c82fca8d8c0d61f3c2b6ce1688ea4c3854eff0612291c5a069a85,evox2-build.json,preflight
+ggml-base.dll,921600,dcf3ff860b897fafa9d3cbd67211ec2e3f66386985d14f905ec52820fb3e3f6f,evox2-build.json,preflight
+ggml-cpu.dll,969216,d2ac4ba11e7b617421cd187869cff2623ccb2be34ca1ca6735efa77b6b179893,evox2-build.json,preflight
+ggml-vulkan.dll,54950912,48d80b947129a29c3e5d3438dde2e81dea2e0cb7c90b89f09bd709189523c12e,evox2-build.json,preflight
+llama.dll,4243968,edef9e61b0e86553b6847c614b4f7170f3877ebd57709fe29b2a734b24591f67,evox2-build.json,preflight
+llama-bench.exe,10240,aad7b53f5e67fb83e493611bae9818096efa8b3159748a9ef7c482aa78e1187d,evox2-build.json,preflight
+llama-common.dll,9241600,2322f831ae79bf4c1510f3694259294d9de173fdbe11f8d2b5544b7156a0f18e,evox2-build.json,preflight
+llama-bench-impl.dll,430592,3dbf0daf4dcb99b5b07a5dfadc53db150e29bb6482df87b2eb794b89d7599bf6,build link record; original SHA unavailable,after first ON and separately matched before later runs
+ggml-rpc.dll,262144,1201d8e8ea538a89372c5f2309e24e042a411f2611946d5cec1d40e837853847,build link record; original SHA unavailable,after first ON and separately matched before later runs
+libomp.dll,856064,1e4222f195d84e7355109d778e751dfe3c085e42c947f7fe3d7853181329dd40,OpenMP pinned cache,after first ON and separately matched before later runs

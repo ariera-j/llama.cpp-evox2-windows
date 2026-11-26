@@ -1,0 +1,4 @@
+run,mode,group,buffer,rank,operation,start_model_us,duration_us,estimated_start_s,tensor_name,tensor,shard,file_offset,tensor_file_offset,tensor_offset,slot,request_bytes
+R44-01-ON-M001,ON,2,Vulkan_Host,1,host_read,50031879,313831,50.645643,token_embd.weight,1,0,29339631712,29339631712,0,-1,521472000
+R44-04-ON-M001,ON,2,Vulkan_Host,1,host_read,49503418,316921,49.801085,token_embd.weight,1,0,29339631712,29339631712,0,-1,521472000
+R44-05-ON-M001,ON,2,Vulkan_Host,1,host_read,49527334,317264,49.781316,token_embd.weight,1,0,29339631712,29339631712,0,-1,521472000
