@@ -184,8 +184,8 @@ try {
     $adapter = @(Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Video' | ForEach-Object {
         $key = Join-Path $_.PSPath '0000'
         if (Test-Path $key) { Get-ItemProperty -LiteralPath $key }
-    } | Where-Object DriverDesc -Like '*8060S*')
-    $driver = @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object DisplayName -like 'AMD Software*')
+    } | Where-Object { $_.PSObject.Properties['DriverDesc'] -and $_.DriverDesc -like '*8060S*' })
+    $driver = @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -like 'AMD Software*' })
     if ($adapter.Count -ne 1 -or $adapter[0].DriverVersion -ne '32.0.32029.2010' -or $adapter[0].'HardwareInformation.qwMemorySize' -ne 96GB -or $driver.Count -ne 1 -or $driver[0].DisplayVersion -ne '26.11.2') { throw 'Unexpected driver or UMA' }
 
     Save-Record 'provenance.json' ([ordered]@{
@@ -273,4 +273,7 @@ try {
     Save-Record 'audit.json' $audit
     if (!$audit.Passed) { throw "D0 GET_ROWS acceptance criteria were not met. See $log." }
     Write-Host "Passed: $log"
+} catch {
+    Save-Record 'entry-error.json' (Get-D0Error $_)
+    throw
 } finally { Pop-Location }
