@@ -17,6 +17,14 @@
 
 リモートで標準出力と標準エラーを別々の一意名で `C:\llama-build\_logs\codex` に記録し、configure、ビルド、各スモークの終了コードと所要時間を残す。SSH が切れたら、再実行の前にプロセスとログを確認する。非ゼロ終了、SDK/キャッシュ不一致、UI 取得、期待デバイスの欠落、マニフェスト不一致があれば停止し、失敗箇所とログを報告する。失敗したビルドディレクトリは保存する。詳細は [既知の問題](KNOWN-ISSUES.md)。
 
+## 承認済み worktree と中断後の確認
+
+既定は専用 clone。承認済みの完全 SHA がある場合は `C:\llama-build\automation` 直下の `w54` など、短い未使用の名前で Git worktree を登録できる。未使用の `build-vk`／`build-rm` を選び、対象 worktree 内のスクリプトを同じ Windows PowerShell 5.1 で使用する。 `-Worktree -SourceCommit <完全SHA> -PreflightOnly -Offline` で開始条件とパス長を検査する。Vulkan は後掲の b12651 手順と同じ Clang、SDK、CPU variant を指定する。ROCm は既存の TheRock 10.0.0／`gfx1151`。preflight の終了0と出力先の不在を確認後、同じ引数から `-PreflightOnly` だけを外して実行する。 [実行記録と使用コマンド](BUILD-VALIDATION-20261126.md)
+
+中断後は `C:\llama-build\_logs\codex` の同じ実行 ID の stdout、stderr、result、state、worker、progress を照合する。対象ツールの `Evox2.BuildState.psm1` を import し、`Read-Evox2BuildState -Stem <拡張子を除いた絶対パス>` で状態を確認する。 `Unconfirmed` は完了未確認。PID は開始時刻と組み合わせ、残留とイベントを確認したうえで次の操作を判断する。
+
+計測の開始前にビルド来歴と依存ファイルを照合する。新マニフェストは `RuntimeDependenciesV1`、旧形式は `LegacyArtifacts`。不正な拡張は実行を停止する。 `ManifestOnly` の `Observed` は実ビルド終了時に確定した来歴と区別する。保存済みマニフェストはその版のまま使用する。 [計測ツールの統合記録](BENCHMARK-INTEGRATION.md)
+
 ## P-MODE の取得
 
 対応する作業ブランチの計測ラッパーでは、直接WMIの読み取りに失敗した場合、計測ラッパーはTask Scheduler COMで既存の `\Evox2\PModeProbe` を引数なしで起動する。 `ai` のInteractiveログオンが必要で、結果ファイルの新規更新を検証する。保護先、管理者による更新・SHA-256確認、通常ユーザーでの検証コマンド、障害時の切り分けは [P-MODE 読み取り運用](PMODE-PROBE.md) を参照する。

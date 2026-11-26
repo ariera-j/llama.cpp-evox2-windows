@@ -2,6 +2,8 @@
 
 ## Codex b12651 builds
 
+The fixed checkout and approved short registered worktrees share the standard wrapper. Use `-Worktree -SourceCommit <full SHA>` from the approved worktree, then use `-PreflightOnly -Offline` before a normal offline build. Read the execution ID with `Read-Evox2BuildState` after an interruption. The Release manifest includes the runtime dependency inventory and records whether the hashes were captured during the build or observed later. [Standard operations and release verification](../../../docs/evox2/automation/BUILD-VALIDATION-20261126.md)
+
 GitHub `main` is the source of truth for the standard build tools. The current product branch uses the same files. Check the product source commit before invoking the wrapper in the fixed Codex clone. The sections below the b12651 instructions record historical toolchains. See [integration and release verification](../../../docs/evox2/automation/BUILD-INTEGRATION.md).
 
 Use the fixed Codex clone and a short, unused output name. The [runbook](../../../docs/evox2/automation/RUNBOOK.md#b12651-の再現コマンド) has executable Vulkan and ROCm commands, the verified compiler and SDK combinations, and build times. The [b12651 record](../../../docs/evox2/automation/UPSTREAM-B12651-20261124.md) has artifact SHA-256 values and historical failure details.

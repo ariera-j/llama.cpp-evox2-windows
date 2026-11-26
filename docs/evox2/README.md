@@ -167,6 +167,8 @@ runtime/build facts rather than trusting lookup-key labels.
 - [BENCHMARK-MATRIX-ROUNDS-B12651.md](automation/BENCHMARK-MATRIX-ROUNDS-B12651.md) — independent rounds, matched comparisons and monitoring overhead
 - [BENCHMARK-INTEGRATION.md](automation/BENCHMARK-INTEGRATION.md) — standard benchmark tools and current integration status
 - [BUILD-INTEGRATION.md](automation/BUILD-INTEGRATION.md) — standard build tools and Vulkan/ROCm release verification
+- [BUILD-VALIDATION-20261126.md](automation/BUILD-VALIDATION-20261126.md) — current standard build and manifest validation
+- [BUILD-IMPROVEMENTS-20261126.md](automation/BUILD-IMPROVEMENTS-20261126.md) — worktree, runtime dependencies and build state design
 - [BENCHMARKING.md](BENCHMARKING.md) — historical long-context workload, throughput metrics and baseline references
 - [R5-ADLX-PMODE-VALIDATION-2026-10-15.md](R5-ADLX-PMODE-VALIDATION-2026-10-15.md): ADLX benchmark integration/overhead, display/power-state validation and Evo-X2 P-MODE performance + WMI/event mapping
 - [PATCHES.md](PATCHES.md): downstream patch registry and status

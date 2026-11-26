@@ -16,6 +16,7 @@ Codex、OpenCode などが ThinkPad から EVO-X2 の専用 clone を操作す�
 - 両バックエンドとも自動検証は CLI のバージョン、デバイス列挙、マニフェスト照合まで。`test-backend-ops.exe` はビルド対象に含められる。自動実行と `-RunBackendTest` は禁止する。GPU 異常時の扱いは [既知の問題](KNOWN-ISSUES.md) を参照する。
 - Codex 専用ラッパーの通常ビルドと configure-only は、レビュー済み b12651 の公式 BoringSSL / LLVM OpenMP が専用キャッシュにない場合に限り自動取得できる。preflight は検査のみで、`-Offline` は依存取得を禁止する。破損、取得元・ハッシュ・SHA 不一致、取得不能、未レビューの upstream 入力は configure 前に停止する。SDK や開発ツールの自動導入・更新は行わない。
 - Codex 専用 clone のパスを維持し、ビルド先には短い未使用のディレクトリ名を選ぶ。長時間コンパイル時は Ninja の進捗、コンパイラのコマンドと PID、CPU 時間、メモリ、ログを保存する。変更を判断する前に同じ条件での再実行を避ける。
+- 承認済みの完全 SHA を指定する場合は、`C:\llama-build\automation` 直下の短い登録 worktree でも外側ラッパーを使える。`-Worktree -SourceCommit <完全SHA>` を付け、先に `-PreflightOnly -Offline` で絶対パス長、Git、ACL、依存キャッシュを検査する。中断後は実機の状態ログと PID・開始時刻を照合し、再開は運用者が判断する。 [標準の実ビルド検証](BUILD-VALIDATION-20261126.md)
 
 ## 文書の正本と同期
 

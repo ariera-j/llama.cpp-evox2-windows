@@ -2,6 +2,8 @@
 
 For b12651-series ROCm builds with TheRock 10.0.0 and `gfx1151`, follow the [standard Codex runbook](automation/RUNBOOK.md#b12651-の再現コマンド). The procedures below record earlier source and toolchain combinations.
 
+The approved short worktree procedure verified the eight TheRock 10.0.0 runtime DLLs and both data trees for `gfx1151`. See the [Release and runtime verification record](automation/BUILD-VALIDATION-20261126.md).
+
 ## Scope
 
 This procedure builds the clean current-refresh ROCm baseline on the Evo-X2 using the ROCm 10.0 / TheRock Python distribution.
