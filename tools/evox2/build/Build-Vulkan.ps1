@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [string]$BuildDir = '',
@@ -24,7 +24,8 @@ param(
     [switch]$SkipSmoke,
 
     [string[]]$ExtraCMakeArgs = @(),
-    [string[]]$ExtraTargets = @()
+    [string[]]$ExtraTargets = @(),
+    [ValidateSet('ON', 'OFF')][string]$CpuAllVariants = 'ON'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,11 +68,42 @@ function Resolve-Evox2RepoPath {
     return [IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
 }
 
+function Get-Evox2VulkanCpuAllVariants {
+    param([string]$BuildDir, [string]$Expected)
+
+    $cachePath = Join-Path $BuildDir 'CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
+        throw "CMake cache not found: $cachePath"
+    }
+
+    $entries = @(Select-String -LiteralPath $cachePath -CaseSensitive -Pattern '^GGML_CPU_ALL_VARIANTS:BOOL=(.*)$')
+    if ($entries.Count -ne 1) {
+        throw "Expected exactly one GGML_CPU_ALL_VARIANTS:BOOL entry in $cachePath (found $($entries.Count))."
+    }
+
+    $actual = $entries[0].Matches[0].Groups[1].Value
+    if ($actual -cnotin @('ON', 'OFF')) {
+        throw "Invalid GGML_CPU_ALL_VARIANTS:BOOL value '$actual' in $cachePath (expected ON or OFF)."
+    }
+
+    if ($Expected -and $actual -ne $Expected) {
+        throw "CpuAllVariants mismatch: requested $Expected, CMake cache reports $actual ($cachePath)."
+    }
+
+    return $actual
+}
+
 if ([string]::IsNullOrWhiteSpace($BuildDir)) {
     $BuildDir = Join-Path $RepoRoot 'build-vulkan-r4'
 }
 $BuildDir = Resolve-Evox2RepoPath -Path $BuildDir
 $BinDir = Join-Path $BuildDir "bin\$Configuration"
+
+# Existing configurations are authoritative unless the caller requested a value.
+if ($BuildOnly -or $ManifestOnly) {
+    $expected = if ($PSBoundParameters.ContainsKey('CpuAllVariants')) { $CpuAllVariants }
+    $CpuAllVariants = Get-Evox2VulkanCpuAllVariants -BuildDir $BuildDir -Expected $expected
+}
 
 # VS2022 Developer shells can put their own cmake.exe ahead of the pinned one.
 # Allow an explicit executable selection without changing the process PATH.
@@ -261,7 +293,7 @@ try {
         '-DGGML_VULKAN=ON',
         '-DGGML_NATIVE=OFF',
         '-DGGML_BACKEND_DL=ON',
-        '-DGGML_CPU_ALL_VARIANTS=ON',
+        "-DGGML_CPU_ALL_VARIANTS:BOOL=$CpuAllVariants",
         '-DGGML_OPENMP=ON',
         '-DGGML_OPENMP_FETCH=ON',
         '-DLLAMA_BUILD_BORINGSSL=ON',
@@ -304,6 +336,7 @@ try {
     if ($BuildOnly) {
         $configureRecord.MetadataRefresh = Invoke-Evox2BuildMetadataRefresh `
             -CMake $cmake -RepoRoot $RepoRoot -BuildDir $BuildDir -Backend 'Vulkan'
+        $null = Get-Evox2VulkanCpuAllVariants -BuildDir $BuildDir -Expected $CpuAllVariants
     }
 
     if (-not $ManifestOnly -and -not $BuildOnly) {
@@ -312,6 +345,7 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "CMake configure failed with exit code $LASTEXITCODE."
         }
+        $null = Get-Evox2VulkanCpuAllVariants -BuildDir $BuildDir -Expected $CpuAllVariants
         $configureRecord.Executed = $true
         $dependencyCache.Record.Captured = Save-Evox2DependencyCacheFromBuild `
             -RepoRoot $RepoRoot `
@@ -333,6 +367,7 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "CMake build failed with exit code $LASTEXITCODE."
         }
+        $CpuAllVariants = Get-Evox2VulkanCpuAllVariants -BuildDir $BuildDir -Expected $CpuAllVariants
         $buildRecord.Executed = $true
         $buildRecord.Arguments = @($buildArgs)
     }
@@ -402,7 +437,7 @@ try {
             Vulkan = $true
             Native = $false
             BackendDl = $true
-            CpuAllVariants = $true
+            CpuAllVariants = ($CpuAllVariants -eq 'ON')
         }) `
         -Runtime ([ordered]@{
             VulkanSdk = $env:VULKAN_SDK

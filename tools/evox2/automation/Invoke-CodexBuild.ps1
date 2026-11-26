@@ -4,10 +4,26 @@ param(
     [Parameter(Mandatory)][ValidateSet('Vulkan', 'ROCm')][string]$Backend,
     [Parameter(Mandatory)][ValidatePattern('\Abuild-[A-Za-z0-9][A-Za-z0-9_-]*\z')][string]$BuildDir,
     [Parameter(ParameterSetName = 'Preflight')][switch]$PreflightOnly,
-    [Parameter(ParameterSetName = 'Configure')][switch]$ConfigureOnly
+    [Parameter(ParameterSetName = 'Configure')][switch]$ConfigureOnly,
+    [ValidateNotNullOrEmpty()][string]$VulkanLlvmBin,
+    [ValidatePattern('\A[0-9]+\.[0-9]+\.[0-9]+\z')][string]$ExpectedVulkanClangVersion,
+    [ValidateSet('ON', 'OFF')][string]$CpuAllVariants = 'ON',
+    [switch]$Offline
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Backend -ne 'Vulkan' -and $PSBoundParameters.ContainsKey('CpuAllVariants')) { throw '-CpuAllVariants requires -Backend Vulkan.' }
+if ([bool]$VulkanLlvmBin -ne [bool]$ExpectedVulkanClangVersion) {
+    throw 'Specify both -VulkanLlvmBin and -ExpectedVulkanClangVersion.'
+}
+if ($Backend -ne 'Vulkan' -and $VulkanLlvmBin) { throw 'Vulkan Clang options require -Backend Vulkan.' }
+if ($VulkanLlvmBin) {
+    if (![IO.Path]::IsPathRooted($VulkanLlvmBin)) { throw 'Specify an absolute Vulkan LLVM path.' }
+    $VulkanLlvmBin = (Resolve-Path -LiteralPath $VulkanLlvmBin).ProviderPath
+} else {
+    $VulkanLlvmBin = 'C:\Program Files\LLVM\bin'
+    $ExpectedVulkanClangVersion = '20.1.8'
+}
 $ProgressPreference = 'SilentlyContinue'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\..')).Path
 $mode = $PSCmdlet.ParameterSetName
@@ -20,16 +36,19 @@ $result = [ordered]@{
     ExitCode = 1
     ElapsedSeconds = $null
 }
+if ($Backend -eq 'Vulkan') { $result.Command += @('-VulkanLlvmBin', $VulkanLlvmBin, '-ExpectedVulkanClangVersion', $ExpectedVulkanClangVersion, '-CpuAllVariants', $CpuAllVariants) }
 if ($mode -ne 'Build') { $result.Command += "-$($mode)Only" }
+if ($Offline) { $result.Command += '-Offline' }
 if (!(Test-Path -LiteralPath $logRoot -PathType Container)) { throw "Missing log directory: $logRoot" }
 
 $worker = {
-    param($repo, $backend, $name, $mode)
+    param($repo, $backend, $name, $mode, $vulkanBin, $vulkanClangVersion, $cpuVariants, $offline)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
     $env:VSLANG = '1033'
     $env:GIT_OPTIONAL_LOCKS = '0'
+    $env:GIT_TERMINAL_PROMPT = '0'
     $env:PYTHONDONTWRITEBYTECODE = '1'
     if ($repo -ine 'C:\llama-build\automation\llama.cpp-evox2-windows') { throw 'Use the EVO-X2 Codex clone.' }
     Set-Location -LiteralPath $repo
@@ -49,7 +68,7 @@ $worker = {
 
     $parent = Split-Path -Parent $repo
     $cache = Join-Path $parent '_deps'
-    foreach ($path in 'C:\llama-build', $parent, $repo, $cache, "$cache\fetchcontent") { Assert-Directory $path }
+    foreach ($path in 'C:\llama-build', $parent, $repo) { Assert-Directory $path }
     $destination = Join-Path $repo $name
     if (Test-Path -LiteralPath $destination) { throw "Build directory already exists: $destination" }
     $head = Read-Native git @('rev-parse', 'HEAD')
@@ -101,10 +120,11 @@ $worker = {
         }
         "TheRock 10.0.0, gfx1151: $root"
     } else {
-        $clang = 'C:\Program Files\LLVM\bin'
-        $clangVersion = '^clang version 20\.1\.8(?:\s|$)'
+        $clang = $vulkanBin
+        $clangVersion = '^clang version ' + [regex]::Escape($vulkanClangVersion) + '(?:\s|$)'
         $params.CMakeExe = $cmake
         $params.LlvmBin = $clang
+        $params.CpuAllVariants = $cpuVariants
         $params.VulkanSdk = 'C:\VulkanSDK\1.4.357.0'
         foreach ($file in 'Include\vulkan\vulkan.h', 'Lib\vulkan-1.lib', 'Bin\glslc.exe') {
             if (!(Test-Path -LiteralPath (Join-Path $params.VulkanSdk $file) -PathType Leaf)) {
@@ -134,37 +154,9 @@ $worker = {
     if ($msvcVersion -notmatch '^14\.44\.') { throw "Unexpected MSVC version: $msvcVersion" }
     "$cl : $msvcVersion"
 
-    $module = Import-Module .\tools\evox2\build\Evox2.DependencyCache.psm1 -PassThru
-    & $module {
-        param($repo, $cache, $backend)
-        $versions = Get-Evox2DependencyVersions -RepoRoot $repo
-        if (!$versions.BoringSsl) { throw 'BoringSSL version is missing from source.' }
-        $source = Join-Path $cache "fetchcontent\boringssl-$($versions.BoringSsl)-src"
-        foreach ($path in $source, "$source\.git") {
-            $item = Get-Item -LiteralPath $path -Force
-            if (!$item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-                throw "Invalid private BoringSSL checkout: $path"
-            }
-        }
-        if ((Test-Path -LiteralPath "$source\.git\objects\info\alternates") -or
-            !(Test-Evox2BoringSslCheckout -SourceDir $source -ExpectedVersion $versions.BoringSsl)) {
-            throw "Invalid private BoringSSL checkout: $source"
-        }
-        "Cached BoringSSL: $source"
-        if ($backend -eq 'Vulkan') {
-            if (!$versions.OpenMp) { throw 'OpenMP version is missing from source.' }
-            $runtime = Join-Path $cache "openmp\llvm-openmp-$($versions.OpenMp)-x64"
-            foreach ($path in "$cache\openmp", $runtime) {
-                if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                    throw "Unexpected cache reparse point: $path"
-                }
-            }
-            if (!(Test-Evox2OpenMpLayout -Root $runtime) -or !(Test-Path -LiteralPath "$runtime\LICENSE.TXT" -PathType Leaf)) {
-                throw "Incomplete private OpenMP cache: $runtime"
-            }
-            "Cached OpenMP: $runtime"
-        }
-    } $repo $cache $backend
+    Import-Module .\tools\evox2\build\Evox2.DependencyCache.psm1
+    $allowDownload = $mode -ne 'Preflight' -and $offline -eq 'False'
+    Initialize-Evox2CodexDependencies -RepoRoot $repo -CacheRoot $cache -Backend $backend -AllowDownload:$allowDownload
 
     if ($mode -eq 'Preflight') {
         if ($backend -eq 'Vulkan') { & $wrapper @params -PreflightOnly }
@@ -179,6 +171,18 @@ $worker = {
     $configured = Get-Content -LiteralPath "$destination\CMakeCache.txt"
     foreach ($flag in 'LLAMA_BUILD_UI:BOOL=OFF', 'LLAMA_USE_PREBUILT_UI:BOOL=OFF', 'FETCHCONTENT_FULLY_DISCONNECTED:BOOL=ON') {
         if ($configured -notcontains $flag) { throw "Unexpected cache: $flag" }
+    }
+    if ($backend -eq 'Vulkan') {
+        foreach ($flag in "GGML_CPU_ALL_VARIANTS:BOOL=$cpuVariants", 'GGML_NATIVE:BOOL=OFF', 'GGML_BACKEND_DL:BOOL=ON') {
+            if ($configured -notcontains $flag) { throw "Unexpected cache: $flag" }
+        }
+        $targets = Read-Native $pins['ninja.exe'][0] @('-C', $destination, '-f', 'build-Release.ninja', '-t', 'targets', 'all')
+        $hasSapphireRapids = [bool]($targets -match 'ggml-cpu-sapphirerapids')
+        if ($cpuVariants -eq 'OFF' -and $hasSapphireRapids) { throw 'Unexpected Sapphire Rapids target.' }
+        "Verified Vulkan CPU variants: $cpuVariants, Sapphire Rapids target present: $hasSapphireRapids"
+    } else {
+        if (-not ($configured -match '^AMDGPU_TARGETS:[^=]+=gfx1151$')) { throw 'Unexpected AMDGPU_TARGETS cache value.' }
+        if ($configured -notcontains 'GGML_HIP:BOOL=ON') { throw 'Unexpected GGML_HIP cache value.' }
     }
     if ($mode -eq 'Configure') { return }
 
@@ -204,7 +208,7 @@ $worker = {
 }
 
 # All phases run in one child PowerShell, with separate native output streams.
-$quoted = @($repo, $Backend, $BuildDir, $mode) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
+$quoted = @($repo, $Backend, $BuildDir, $mode, $VulkanLlvmBin, $ExpectedVulkanClangVersion, $CpuAllVariants, $Offline.IsPresent.ToString()) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
 $payload = "try { & {" + $worker.ToString() + "} " + ($quoted -join ' ') +
     '; exit 0 } catch { [Console]::Error.WriteLine($_.ToString()); exit 1 }'
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))
