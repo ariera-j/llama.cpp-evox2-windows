@@ -33,6 +33,7 @@
 #include <ctime>
 #include <future>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -2577,6 +2578,63 @@ struct test_get_rows : public test_case {
                     data[i] = rand() % m;
                 }
                 ggml_backend_tensor_set(t, data.data(), 0, data.size() * sizeof(int));
+            } else {
+                init_tensor_uniform(t);
+            }
+        }
+    }
+};
+
+struct test_get_rows_iq4_nl : public test_case {
+    const int width;
+    const bool padded;
+
+    test_get_rows_iq4_nl(int width, bool padded = false) : width(width), padded(padded) {}
+
+    std::string vars() override {
+        return "type=iq4_nl,d0_1_width=" + std::to_string(width) + ",padded=" + std::to_string(padded);
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        const int block_width = ggml_blck_size(GGML_TYPE_IQ4_NL);
+        const int b1 = padded ? 2 : 1;
+        const int b2 = padded ? 3 : 1;
+        ggml_tensor * in = ggml_new_tensor_4d(ctx, GGML_TYPE_IQ4_NL,
+            width + (padded ? 2*block_width : 0), padded ? 7 : 5, b1, b2);
+        ggml_tensor * rows = ggml_new_tensor_3d(ctx, GGML_TYPE_I32, padded ? 7 : 5, b1, b2);
+        if (padded) {
+            in = ggml_view_4d(ctx, in, width, 5, b1, b2, in->nb[1], in->nb[2], in->nb[3], in->nb[1] + in->nb[0]);
+            rows = ggml_view_3d(ctx, rows, 5, b1, b2, rows->nb[1], rows->nb[2], rows->nb[0]);
+        }
+        return ggml_get_rows(ctx, in, rows);
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
+            if (ggml_is_view_op(t->op)) {
+                continue;
+            }
+            if (t->type == GGML_TYPE_IQ4_NL) {
+                std::mt19937 rng(0x504c4531);
+                std::vector<float> data(ggml_nelements(t));
+                for (float & value : data) {
+                    value = (static_cast<int>(rng() % 255) - 127) / 128.0f;
+                }
+                std::vector<uint8_t> quantized(ggml_nbytes(t));
+                ggml_quantize_chunk(t->type, data.data(), quantized.data(), 0, ggml_nrows(t), t->ne[0], nullptr);
+                ggml_backend_tensor_set(t, quantized.data(), 0, quantized.size());
+            } else if (t->type == GGML_TYPE_I32) {
+                constexpr std::array<int32_t, 5> indices = {4, 0, 2, 4, 1};
+                std::vector<int32_t> data(ggml_nelements(t), 3);
+                for (int64_t batch = 0; batch < ggml_nrows(t); ++batch) {
+                    for (size_t row = 0; row < indices.size(); ++row) {
+                        data[batch*t->ne[0] + padded + row] = indices[(row + batch) % indices.size()];
+                    }
+                }
+                ggml_backend_tensor_set(t, data.data(), 0, data.size() * sizeof(int32_t));
+            } else if (t->op == GGML_OP_GET_ROWS) {
+                std::vector<float> data(ggml_nelements(t), std::numeric_limits<float>::quiet_NaN());
+                ggml_backend_tensor_set(t, data.data(), 0, data.size() * sizeof(float));
             } else {
                 init_tensor_uniform(t);
             }
@@ -11029,6 +11087,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         test_cases.emplace_back(new test_get_rows(GGML_TYPE_F8_E4M3, n, 5, 3, 1, 1, false));
     }
     // many rows of a wide table, as a per-layer embedding lookup does
+    test_cases.emplace_back(new test_get_rows_iq4_nl(32));
+    test_cases.emplace_back(new test_get_rows_iq4_nl(160));
+    test_cases.emplace_back(new test_get_rows_iq4_nl(160, true));
+    test_cases.emplace_back(new test_get_rows_iq4_nl(256));
+    test_cases.emplace_back(new test_get_rows_iq4_nl(288));
+
     test_cases.emplace_back(new test_get_rows(GGML_TYPE_Q3_0_ROCMFPX, 160, 5, 3, 1, 1, false));
     test_cases.emplace_back(new test_get_rows(GGML_TYPE_F8_E4M3, 160, 100000, 32768, 1, 1, false));
     // past the fused dequant GEMM's column limit the reordered weight goes through the conversion kernels
