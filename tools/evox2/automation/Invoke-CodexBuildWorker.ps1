@@ -191,6 +191,11 @@ try {
     if ($backend -eq 'ROCm' -and $manifest.Runtime.RuntimePolicy.Verification -ne 'DllAndRuntimeDataHashesVerified') {
         throw 'TheRock runtime staging was not verified.'
     }
+    Import-Module .\tools\evox2\lib\Evox2.Common.psm1
+    $runtimeCheck = Test-Evox2RuntimeArtifacts -Executable $exe -Manifest $manifest
+    if ($runtimeCheck.Status -ne 'Verified' -or $runtimeCheck.Scope -ne 'RuntimeDependenciesV1') {
+        throw "Expanded runtime verification failed: $($runtimeCheck.Issues -join ', ')"
+    }
     "Verified $backend, $device, $head, SHA-256 $($manifest.ExecutableIdentity.Sha256)"
 } finally {
     $end = Get-Evox2BuildCheckout $repo

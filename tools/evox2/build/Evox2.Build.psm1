@@ -274,7 +274,7 @@ function Write-Evox2BuildManifest {
 
     if ($Configuration -eq 'Release') {
         $manifest.RuntimeDependencies = Get-Evox2RuntimeDependencies -BinDir $BinDir -BuildDir $BuildDir `
-            -Backend $Backend -Runtime $Runtime -Built $Build.Executed
+            -Backend $Backend -Runtime $Runtime -Built ($Build.Executed -and $identityStatus -eq 'Verified')
     }
     Write-Evox2Json -InputObject $manifest -Path $manifestPath -Depth 32
     if ($identityStatus -eq 'Mismatch') {

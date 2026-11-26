@@ -116,13 +116,17 @@ function Get-Evox2RuntimeDependencies {
                 if (!$external.ContainsKey($name)) {
                     $candidate = Join-Path ([Environment]::SystemDirectory) $name
                     $observed = if (Test-Path -LiteralPath $candidate -PathType Leaf) { Get-Item -LiteralPath $candidate }
-                    $external[$name] = [ordered]@{
-                        Name = $name
-                        ObservedPath = $(if ($observed) { $observed.FullName })
-                        FileVersion = $(if ($observed) { $observed.VersionInfo.FileVersion })
-                        Sha256 = $(if ($observed) { (Get-FileHash -LiteralPath $candidate).Hash.ToLowerInvariant() })
-                        Evidence = if ($observed) { 'SystemDirectoryCandidate' } else { 'ImportNameOnly' }
+                    $record = [ordered]@{
+                        Name = $name; ObservedPath = $null; FileVersion = $null; Sha256 = $null
+                        Evidence = 'ImportNameOnly'
                     }
+                    if ($observed) {
+                        $record.ObservedPath = $observed.FullName
+                        $record.FileVersion = $observed.VersionInfo.FileVersion
+                        $record.Sha256 = (Get-FileHash -LiteralPath $candidate).Hash.ToLowerInvariant()
+                        $record.Evidence = 'SystemDirectoryCandidate'
+                    }
+                    $external[$name] = $record
                 }
             }
         }
@@ -188,7 +192,7 @@ function Test-Evox2RuntimeDependencies {
         $files = @{}
         foreach ($file in $extension.Files) {
             Assert-RuntimeName $file.Name '^[a-z0-9_-][a-z0-9_.+-]*\.(dll|exe)$'
-            if ($files.ContainsKey($file.Name) -or $file.Sha256 -notmatch '\A[0-9a-f]{64}\z' -or
+            if ($files.ContainsKey($file.Name) -or $file.Sha256 -isnot [string] -or $file.Sha256 -notmatch '\A[0-9a-f]{64}\z' -or
                 $file.Kind -cnotin @('Product','BundledRuntime') -or
                 $file.BundledImports -isnot [array] -or $file.ExternalImports -isnot [array]) {
                 throw "Invalid or duplicated runtime file: $($file.Name)"
@@ -201,8 +205,11 @@ function Test-Evox2RuntimeDependencies {
             if ($external.ContainsKey($entry.Name) -or $files.ContainsKey($entry.Name) -or
                 $entry.Evidence -cnotin @('SystemDirectoryCandidate','ImportNameOnly') -or
                 ($entry.Evidence -eq 'SystemDirectoryCandidate' -and
-                    (!$entry.ObservedPath -or $entry.Sha256 -notmatch '\A[0-9a-f]{64}\z' -or
-                     [IO.Path]::GetFileName($entry.ObservedPath) -ine $entry.Name))) {
+                    ($entry.ObservedPath -isnot [string] -or $entry.ObservedPath -notmatch '\A[A-Za-z]:[\\/]' -or
+                     $entry.ObservedPath -match '(?:^|[\\/])\.\.?([\\/]|$)' -or
+                     $entry.Sha256 -isnot [string] -or $entry.Sha256 -notmatch '\A[0-9a-f]{64}\z' -or
+                     [IO.Path]::GetFileName($entry.ObservedPath) -ine $entry.Name)) -or
+                ($entry.Evidence -eq 'ImportNameOnly' -and ($entry.ObservedPath -or $entry.Sha256))) {
                 throw "Invalid external runtime information: $($entry.Name)"
             }
             $external[$entry.Name] = $true
@@ -261,6 +268,7 @@ function Test-Evox2RuntimeDependencies {
             throw 'No recorded CPU variant is present.'
         }
         $trees = @{}
+        if ($extension.Backend -ne 'ROCm' -and $extension.DataTrees.Count) { throw 'Unexpected ROCm data trees for this backend.' }
         foreach ($entry in $extension.DataTrees) {
             Assert-RuntimeName $entry.Name '^(rocblas|hipblaslt)$'
             if ($trees.ContainsKey($entry.Name) -or $entry.Sha256 -notmatch '\A[0-9a-f]{64}\z' -or
