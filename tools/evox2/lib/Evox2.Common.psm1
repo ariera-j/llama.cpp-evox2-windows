@@ -1,6 +1,7 @@
 ﻿#requires -Version 5.1
 
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot 'Evox2.RuntimeDependencies.psm1')
 
 function Set-Evox2Utf8Console {
     [CmdletBinding()]
@@ -1078,6 +1079,9 @@ function Test-Evox2RuntimeArtifacts {
     if ($null -eq $Manifest) {
         return [PSCustomObject]@{ Status = 'MissingManifest'; Digest = $null; Artifacts = @(); Issues = @() }
     }
+    if ($Manifest.PSObject.Properties['RuntimeDependencies']) {
+        return Test-Evox2RuntimeDependencies -Executable $Executable -Manifest $Manifest
+    }
     $binDir = Split-Path -Parent $Executable
     $requiredNames = @([IO.Path]::GetFileName($Executable))
     $dllNames = @('llama.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-vulkan.dll', 'ggml-hip.dll', 'llama-cli.dll', 'llama-server.dll', 'llama-common.dll')
@@ -1114,7 +1118,7 @@ function Test-Evox2RuntimeArtifacts {
                 ForEach-Object { $_.ToString('x2') }) -join ''
         } finally { $sha.Dispose() }
     }
-    return [PSCustomObject]@{ Status = $status; Digest = $digest; Artifacts = @($artifacts); Issues = @($issues) }
+    return [PSCustomObject]@{ Status = $status; Scope = 'LegacyArtifacts'; Digest = $digest; Artifacts = @($artifacts); Issues = @($issues) }
 }
 
 function Get-Evox2LlamaIdentity {
@@ -1133,12 +1137,12 @@ function Get-Evox2LlamaIdentity {
     $Executable = (Resolve-Path -LiteralPath $Executable).Path
 
     $manifest = Read-Evox2BuildManifest -Executable $Executable
-    $exe = Get-Evox2ExecutableMetadata -Executable $Executable `
-        -SkipHash:$SkipExecutableHash
     $runtimeArtifacts = Test-Evox2RuntimeArtifacts -Executable $Executable -Manifest $manifest
     if ($runtimeArtifacts.Status -eq 'Mismatch') {
         throw ($runtimeArtifacts.Issues -join '; ')
     }
+    $exe = Get-Evox2ExecutableMetadata -Executable $Executable `
+        -SkipHash:$SkipExecutableHash
     $device = Get-Evox2DeviceMetadata -Executable $Executable
 
     $git = $null

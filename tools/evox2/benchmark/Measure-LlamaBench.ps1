@@ -256,6 +256,11 @@ if (-not $hasPromptWork -and -not $hasGenerationWork) {
     throw 'At least one prompt-processing or generation workload must be non-zero.'
 }
 
+Write-Host 'Detecting llama-bench executable, backend, Git, and system metadata...'
+$Identity = Get-Evox2LlamaIdentity `
+    -Executable $LlamaBench `
+    -RepoRoot $RepoRoot
+
 # In b11908, llama-bench has no -c and computes n_ctx from
 # n_prompt + n_gen + n_depth per test. Keep older forks usable by
 # checking optional arguments against the ACTUAL executable's --help.
@@ -277,11 +282,6 @@ if ($Context -gt 0 -or -not [string]::IsNullOrWhiteSpace($InputFile)) {
         throw 'This llama-bench does not support -f / --prompt-slice for real input files. b11908 supports random-token -p/-n/-d tests only; use the llama-cli wrapper for real-text measurements, or a deliberately compatible older bench build.'
     }
 }
-
-Write-Host 'Detecting llama-bench executable, backend, Git, and system metadata...'
-$Identity = Get-Evox2LlamaIdentity `
-    -Executable $LlamaBench `
-    -RepoRoot $RepoRoot
 
 $DetectedBackend = [string]$Identity.Device.BackendDetected
 if ([string]::IsNullOrWhiteSpace($DetectedBackend)) {
@@ -598,6 +598,7 @@ $Conditions = [ordered]@{
     ExecutableIdentity = $Identity.Executable
     DeviceIdentity     = $Identity.Device
     BuildManifest      = $Identity.BuildManifest
+    RuntimeArtifacts   = $Identity.RuntimeArtifacts
     GitIdentity        = $Identity.Git
     SystemIdentity     = $Identity.System
 

@@ -1,6 +1,7 @@
 ﻿#requires -Version 5.1
 
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot '..\lib\Evox2.RuntimeDependencies.psm1')
 
 function Get-Evox2ToolIdentity {
     [CmdletBinding()]
@@ -271,6 +272,10 @@ function Write-Evox2BuildManifest {
         Artifacts = @($artifacts)
     }
 
+    if ($Configuration -eq 'Release') {
+        $manifest.RuntimeDependencies = Get-Evox2RuntimeDependencies -BinDir $BinDir -BuildDir $BuildDir `
+            -Backend $Backend -Runtime $Runtime -Built $Build.Executed
+    }
     Write-Evox2Json -InputObject $manifest -Path $manifestPath -Depth 32
     if ($identityStatus -eq 'Mismatch') {
         throw "$identityReason Manifest preserved at $manifestPath"
