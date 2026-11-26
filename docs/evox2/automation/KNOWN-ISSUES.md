@@ -80,3 +80,34 @@ IQ2_S MatVec 実験の Logger OFF TG256 で、A1 初回の run-02 は TG 計測�
 ## 登録 worktree の CMake Git index 警告
 
 Windows の `.git` ファイルがドライブ付き絶対パスを指す場合、CMake がこれを相対パスと解釈し `Git index not found in git repository.` を出す場合がある。`git rev-parse --path-format=absolute --git-path index` で Git が解決した実体を確認する。明示 configure と `BuildOnly` の再生成、CLI の埋め込み SHA、`BuildIdentity=Verified` を照合する。短い worktree と出力名を使い、Windows の長いパス設定は変更しない。 [w54 の両バックエンド検証](BUILD-VALIDATION-20261126.md)
+
+## 2026-11-26 Adrenalin 更新後の backend-op 数値テストの扱い（ソース再確認）
+
+Adrenalin 26.8.1 から 26.11.2（表示ドライバー 32.0.32029.2010）へ更新。TheRock 10.0.0、Vulkan SDK/Loader 1.4.357.0、UMA 96 GiB は維持した。更新前後の6条件の推論比較は完了し、更新後の計測中に GPU リセットは観測されなかった。ただし backend-op の全条件テストや過去の障害条件の再実行はしていない。推論の正常終了は backend-op の安全性や障害解消の証拠ではない。[更新前後の比較](ADRENALIN-UPDATE-COMPARISON-20261126.md)
+
+### 既知の FLASH_ATTN_EXT 障害と現行コード
+
+2026-10-22 の ROCm の障害では DKQ=64、logit-softcap 有効のケースが上位の対応判定を通過し、GPU カーネルの NO_DEVICE_CODE / trap に到達した。HIP launch failure、LiveKernelEvent 141（WATCHDOG-20261022-0244.dmp）、画面・RDP の応答停止が観測された。trap と watchdog の直接の因果関係はダンプ解析で確定していない。[当時の記録](../BUILD-ROCM-WINDOWS.md#backend-tests)
+
+現行製品 SHA `9ae819d5be4fe9861d2aa8547983aed801c437ac`（upstream b12651 ベース、b12696 のビルド元と推論ソース一致）を静的に再確認した。
+
+- [fattn-mma-f16.cuh L1977-L1981](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/9ae819d5be4fe9861d2aa8547983aed801c437ac/ggml/src/ggml-cuda/fattn-mma-f16.cuh#L1977-L1981)：MMA F16 カーネルは `use_logit_softcap && !(DKQ == 128 || DKQ == 256 || DKQ == 512)` の場合に NO_DEVICE_CODE を実行して return する。
+- [fattn.cu L672-L683](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/9ae819d5be4fe9861d2aa8547983aed801c437ac/ggml/src/ggml-cuda/fattn.cu#L672-L683)：softcap に関する head size の拒否判定は `mask && mask->ne[2] != 1` の内側にある。
+- [fattn.cu L762-L766](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/9ae819d5be4fe9861d2aa8547983aed801c437ac/ggml/src/ggml-cuda/fattn.cu#L762-L766)：AMD WMMA の MMA F16 選択は GQA、head size、実効 batch 等に依存する。softcap と DKQ の組み合わせをここで独立に拒否していない。
+
+このため、対応判定と実カーネルの契約の不一致が残る可能性がある。旧障害ケースが現行ビルドで実際に同じ dispatch に到達するかは未実行・未確認。ドライバー更新によって launch failure 後のエラー処理、GPU リセットからの復旧、画面/RDP/OS の応答性が改善する可能性はあるが、明示的な trap 経路そのものをドライバー更新で修正したとは判断できない。障害の再現性と復旧性はいずれも未確認。
+
+### 今後の運用（自動実行禁止は維持）
+
+| テスト範囲 | 扱い |
+|---|---|
+| 全演算の一括実行、広範囲 sweep | 禁止を維持 |
+| FLASH_ATTN_EXT 全条件、既知の危険ケース | 実行しない。必要な修正と別途レビューを先行 |
+| ビルド直後の自動 backend-op テスト、`-RunBackendTest` | 禁止を維持 |
+| 実装対象の演算・型・形状を明示した限定数値テスト | ソース・dispatch・フィルターの実効範囲をレビューし、運用者の個別承認後にのみ実行を検討 |
+
+限定テストは過去に Vulkan ROCmFPx で r6 150/150、b12651 159/159 の PASS 実績がある。ただし HIP または新ドライバー下の安全性を示すものではない。[r6 S2](../R6-ROCMFPX-S2-IMPLEMENTATION-2026-10-25.md)・[b12651 Stage 2](../B12651-STAGE2-ROCMFP4-VULKAN-20261124.md)
+
+次の D0（ROCm IQ4_NL GET_ROWS 幅160対応）ではソース実装とケース表を先にレビューし、D0-2 の限定 GPU 数値検証を別途承認する。小規模な GET_ROWS のみを対象とし、対象外ケースが実行されないフィルター、期待件数、CPU 参照比較、タイムアウト、プロセス・RAM/コミット/GPU 回復、イベント監査を事前に確認する。既存の安全閾値を変更せず、異常終了、SSH 切断、GPU エラー、重大イベント、資源回復不良では後続テストを停止してログを保全する。自動再試行、TDR 設定変更は行わない。今回の記録は将来の個別承認の代わりではない。[D0 の実装計画](../ROCMFP4-HIP-PORT-REVIEW-2026-11-26.md)・[AGENT-RULES](AGENT-RULES.md)
+
+FA の対応判定と dispatch の整合性修正は、Gemma 4 HIP FA の候補 #32901 / #33045 と併せて将来の独立調査候補とする。これらの PR が旧障害を修正するとは未確認。D0 に混在させない。今回は文書と静的ソースの確認のみで、実機の backend-op テスト、ビルド、推論、ソースや運用ルールの変更は行っていない。
