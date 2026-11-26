@@ -15,6 +15,10 @@ VS `17.0`、`VSCMD_ARG_HOST_ARCH=x64`、`VSCMD_ARG_TGT_ARCH=x64` を確認する
 
 `Get-Command` と `--version` で実体を確認する。Vulkan は `-CMakeExe` に上記の絶対パスを指定する。ROCm は `PATH` 上の先頭が上記 CMake と Ninja になるよう確認する。バージョン検証は有効のまま使用する。
 
+## 標準計測ツール
+
+GitHub main と現行製品作業ブランチは作業3-5で同じ標準計測コードを使用する。実機設定は引き続き Git 管理外の `C:\llama-build\automation\benchmark-configs`。ADLX ヘルパーの既存配置がツールの自動検出範囲外の場合は、実機設定から実行ファイルを明示する。 [作業3-5の統合記録](BENCHMARK-INTEGRATION.md)
+
 ## SSH のイベントログ読み取り
 
 2026-11-26、運用者が管理者権限で `evox2-runner` を Windows の組み込み **Event Log Readers**（SID `S-1-5-32-573`）へ追加した。新規 SSH 接続の `whoami /groups` で有効を確認した。Windows PowerShell 5.1 の `Get-WinEvent` で System／Application の各最新1件を取得できた。両チャネルで意図的に該当0件の検索を行い、`NoMatchingEventsFound` を確認した。アクセス拒否や読み取りエラーがあれば、0件と扱わず無人計測を停止する。
