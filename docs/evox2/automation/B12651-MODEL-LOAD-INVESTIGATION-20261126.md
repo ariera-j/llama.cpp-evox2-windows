@@ -251,10 +251,10 @@ Adrenalin 26.8.1、ROCm 10.0.0、UMA 設定および Performance を維持。次
 
 ### 再集計用の成果物
 
-ThinkPad のコントローラー作業領域 `/home/agent/codex-evox2-controller/analysis/work4-1` に `analyze.py`、`resources.py`、`extra.py` と入力の配置手順を保存した。フェーズ受信境界、RAM・通常監視・ADLX の時刻対応、しきい値区間、既知の実行物と低速6件の照合を再現できる。派生表はこれらの標準出力と本書の表に残した。過去のまとめ用 CSV は既存の実機索引にある。生ログ・一時コピー・スクリプトは main の文書専用コミットに含めない。
+[オフライン再集計手順とスクリプト](b12651-model-load-analysis-20261126/README.md)で、フェーズ受信境界、RAM・通常監視・ADLX の時刻対応、しきい値区間、実行物の識別情報と低速6件のログ照合を再現できる。派生表はスクリプトの標準出力と本書の表に残した。過去のまとめ用 CSV は既存の実機索引にある。
 
 ## 15. 終了時の状態
 
 GitHub の2参照と専用 clone の HEAD・追跡参照を終了時に再照合した。開始時と同じ `3bc6d1f`／`f500e9b`、専用 clone はクリーン、ahead／behind は双方0／0。Matrix worktree は `d8dd87128d726e45612f18480dd24b07f243f143` のままクリーン（追跡先と0／0）。参照・ログ取得用の ThinkPad 一時 clone は main 基準の detached HEAD でクリーン。
 
-EVO-X2 は SSH で既存 Git、ログ、マニフェスト、イベントを読み取った。製品・計測・ビルドソース、設定、モデル、既存ログ、M005 原本と保全コピーに対する変更はない。追加モデルロード、推論、ベンチマーク、ビルド、GPU テスト、コミット、push は実施していない。解析時の成果物は ThinkPad の Markdown ドラフト。レビュー用に同じ内容のコピーを EVO-X2 専用 clone の `docs/evox2/automation/B12651-MODEL-LOAD-INVESTIGATION-20261126.md` に置き、SHA-256 `178198bc0909a5ceb473985c9d001e1c359fdaad4295729c8d99929c1ef4fdaa` を照合済み。このレビュー版は専用 clone の未追跡ファイルとして保存し、確定版は GitHub main の本書に記録する。
+EVO-X2 は SSH で既存 Git、ログ、マニフェスト、イベントを読み取った。製品・計測・ビルドソース、設定、モデル、既存ログ、M005 原本と保全コピーに対する変更はない。追加モデルロード、推論、ベンチマーク、ビルド、GPU テスト、コミット、push は実施していない。解析時の成果物は ThinkPad の Markdown ドラフト。レビュー用に同じ内容のコピーを EVO-X2 専用 clone の `docs/evox2/automation/B12651-MODEL-LOAD-INVESTIGATION-20261126.md` に置き、SHA-256 `178198bc0909a5ceb473985c9d001e1c359fdaad4295729c8d99929c1ef4fdaa` を照合済み。調査時、このレビュー版は専用 clone の未追跡ファイルとして保存した。確定版は GitHub main の本書に記録した。
