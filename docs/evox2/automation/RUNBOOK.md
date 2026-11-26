@@ -2,7 +2,7 @@
 
 運用範囲は [エージェントルール](AGENT-RULES.md)、ツールの固定値は [EVO-X2 環境](EVOX2-ENVIRONMENT.md) を参照する。ラッパーの構文、キャッシュ形式、マニフェストの正本は [ビルドラッパー README](../../../tools/evox2/build/README.md) と各ビルドガイド ([Vulkan](../BUILD-VULKAN-WINDOWS.md)、[ROCm](../BUILD-ROCM-WINDOWS.md))。
 
-このランブックの正本は GitHub の `main`。b12651 のコマンドは対応する作業ブランチのツールに適用する。実行前に製品ソースの SHA とラッパーの引数を照合する。作業例の固定参照は [b12651 のビルドラッパー](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/f4f1aa3e85124fed75a891ec63a1504536049eff/tools/evox2/automation/Invoke-CodexBuild.ps1)。
+このランブックと標準ビルドツールの正本は GitHub の `main`。b12651 のコマンドは現行製品ブランチなど、レビュー済みの b12651 系ソースを選んだ専用 clone で実行する。実行前に製品ソースの SHA とラッパーの引数を照合する。 [標準ツールの採用元と実ビルド検証](BUILD-INTEGRATION.md)
 
 性能計測は main の標準ツールを使用する。単独の条件は Measure、複数条件は Matrix で `-PlanOnly` の展開を先に確認する。通常は監視2秒＋ADLX 2,000 ms、詳細診断は250 msから始める。設定の意味と採用条件は [BENCHMARK-RULES.md](BENCHMARK-RULES.md) を参照する。
 
@@ -54,6 +54,8 @@ $clang = 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\
 `-BuildDir` は clone 直下の未使用の `build-*` 名を指定する。configure と build にはクリーンな作業ツリーが必要。SSH セッションで必要な場合は PowerShell 起動時に `-ExecutionPolicy RemoteSigned` を指定する。
 
 各コマンドが終了コード 0 だったことを確認してから次へ進む。キャッシュ不足で preflight が停止し、公式依存の取得が許可されている場合は、通常ビルドまたは `-ConfigureOnly` がツールの確認後に依存を取得する。ネットワーク取得を禁止するときは通常ビルドにも `-Offline` を付ける。preflight は依存とビルド先を変更せず、検査ログだけを出力する。
+
+外側ラッパーの通常呼び出しは、同じ Windows PowerShell 5.1 プロセス内で内側の `ConfigureOnly`、実キャッシュ検証、`BuildOnly` の順に実行する。外側の `ConfigureOnly` は実キャッシュ検証までで、通常呼び出しとは別の未使用ディレクトリを指定する。上の例に `-Offline` を付けて作業5-2の経路を再現できる。旧 main の依存構成は既存の検証済みキャッシュのみを再利用する。
 
 | Release 構成 | 所要時間 | BuildIdentity | llama-cli.exe SHA-256 |
 |---|---:|---|---|

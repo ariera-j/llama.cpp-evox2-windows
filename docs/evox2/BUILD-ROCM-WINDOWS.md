@@ -1,5 +1,7 @@
 # Windows ROCm 10.0 build
 
+For b12651-series ROCm builds with TheRock 10.0.0 and `gfx1151`, follow the [standard Codex runbook](automation/RUNBOOK.md#b12651-の再現コマンド). The procedures below record earlier source and toolchain combinations.
+
 ## Scope
 
 This procedure builds the clean current-refresh ROCm baseline on the Evo-X2 using the ROCm 10.0 / TheRock Python distribution.
