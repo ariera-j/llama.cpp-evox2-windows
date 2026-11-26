@@ -6499,7 +6499,30 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                     case GGML_TYPE_IQ1_M:
                     case GGML_TYPE_IQ4_XS:
                         return true;
-                    case GGML_TYPE_IQ4_NL:
+                    case GGML_TYPE_IQ4_NL: {
+                        const ggml_tensor * src = op->src[0];
+                        const ggml_tensor * ids = op->src[1];
+                        constexpr size_t src_align = alignof(block_iq4_nl);
+                        constexpr size_t id_size = sizeof(int32_t);
+                        constexpr int64_t batch_limit = std::numeric_limits<int32_t>::max();
+                        const int block_dim = src->ne[0] % QK_K == 0 ? 32 : 4;
+                        // HIP requires grid.x * block.x < 2^32.
+                        const int64_t row_limit = std::numeric_limits<uint32_t>::max() / block_dim;
+
+                        // The batch fast division adds two uint32_t values before shifting.
+                        return src->ne[0] > 0 && src->ne[0] % QK4_NL == 0 && src->ne[1] > 0 &&
+                            src->nb[0] == sizeof(block_iq4_nl) && src->view_offs % src_align == 0 &&
+                            src->nb[1] % src_align == 0 && src->nb[2] % src_align == 0 && src->nb[3] % src_align == 0 &&
+                            ids->type == GGML_TYPE_I32 && ids->ne[3] == 1 &&
+                            ids->ne[0] > 0 && ids->ne[0] <= row_limit &&
+                            ids->ne[1] > 0 && ids->ne[2] > 0 && ids->ne[1] <= batch_limit / ids->ne[2] &&
+                            src->ne[2] == ids->ne[1] && src->ne[3] == ids->ne[2] &&
+                            ids->nb[0] == id_size && ids->view_offs % id_size == 0 &&
+                            ids->nb[1] % id_size == 0 && ids->nb[2] % id_size == 0 &&
+                            op->type == GGML_TYPE_F32 && ggml_is_contiguous(op) && op->nb[0] == sizeof(float) &&
+                            op->view_offs % sizeof(float) == 0 && op->ne[0] == src->ne[0] &&
+                            op->ne[1] == ids->ne[0] && op->ne[2] == ids->ne[1] && op->ne[3] == ids->ne[2];
+                    }
                     case GGML_TYPE_MXFP4:
                         // 32-value sub-blocks, the row size does not guarantee
                         // the QK_K super-blocks the get_rows kernel iterates on

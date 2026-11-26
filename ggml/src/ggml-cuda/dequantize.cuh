@@ -405,19 +405,23 @@ static __device__ __forceinline__ void dequantize_iq1_m(const void * vx, const i
 }
 
 template<typename dst_t>
-static __device__ __forceinline__ void dequantize_iq4_nl(const void * vx, const int64_t ibs, dst_t * yy, const int tid) {
-
-    const block_iq4_nl * x = (const block_iq4_nl *) vx + ibs*(QK_K/QK4_NL);
-
-    const int64_t il = tid/8; // 0...3
-    const int64_t ib = tid%8; // 0...7
-    dst_t * y = yy + 32*ib + 4*il;
-    const uint8_t  * q4 = x[ib].qs + 4*il;
-    const float d = (float)x[ib].d;
+static __device__ __forceinline__ void dequantize_iq4_nl_block(const void * vx, const int64_t ib, dst_t * yy, const int tid) {
+    const block_iq4_nl & x = ((const block_iq4_nl *) vx)[ib];
+    dst_t * y = yy + 4*tid;
+    const uint8_t * q4 = x.qs + 4*tid;
+    const float d = (float)x.d;
     for (int j = 0; j < 4; ++j) {
         y[j+ 0] = ggml_cuda_cast<dst_t>(d * kvalues_iq4nl[q4[j] & 0xf]);
         y[j+16] = ggml_cuda_cast<dst_t>(d * kvalues_iq4nl[q4[j] >>  4]);
     }
+}
+
+template<typename dst_t>
+static __device__ __forceinline__ void dequantize_iq4_nl(const void * vx, const int64_t ibs, dst_t * yy, const int tid) {
+    constexpr int blocks_per_superblock = QK_K/QK4_NL;
+    const int ib = tid % blocks_per_superblock;
+    const int il = tid / blocks_per_superblock;
+    dequantize_iq4_nl_block(vx, ibs*blocks_per_superblock + ib, yy + QK4_NL*ib, il);
 }
 
 template<typename dst_t>
