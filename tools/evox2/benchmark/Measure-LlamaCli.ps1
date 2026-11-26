@@ -105,7 +105,17 @@ param(
     [string[]]$ExtraArgs = @(),
 
     [switch]$DryRun,
-    [switch]$NoThrowOnFailure
+    [switch]$NoThrowOnFailure,
+
+    [switch]$CapturePhaseMarkers,
+    [switch]$RamDetail,
+    [ValidateRange(100, 1000)][int]$RamDetailIntervalMs = 250,
+    [ValidateRange(0, 120)][int]$RamDetailPreSeconds = 3,
+    [ValidateRange(0, 120)][int]$RamDetailPostSeconds = 5,
+    [ValidateRange(1, 60)][int]$RamDetailReadyTimeoutSeconds = 10,
+    [ValidateRange(1, 86400)][int]$RamDetailTimeoutSeconds = 3600,
+    [ValidateRange(1, 1048576)][int]$RamDetailPeakThresholdMiB = 64,
+    [ValidateRange(0, 1048576)][int]$RamDetailRecoveryToleranceMiB = 128
 )
 
 $ErrorActionPreference = 'Stop'
@@ -136,6 +146,8 @@ $benchmarkModule = Join-Path $benchmarkDir 'Evox2.Benchmark.psm1'
 
 Import-Module $commonModule -Force
 Import-Module $benchmarkModule -Force
+Import-Module (Join-Path $benchmarkDir 'Evox2.OsStartup.psm1') -Force
+if ($RamDetail -or $CapturePhaseMarkers) { Import-Module (Join-Path $benchmarkDir 'Evox2.RamDetail.psm1') -Force }
 Set-Evox2Utf8Console
 
 $RepoRoot = Get-Evox2RepoRoot -StartPath $MyInvocation.MyCommand.Path
@@ -469,6 +481,14 @@ $ConditionFingerprint = [ordered]@{
     Environment = $RelevantEnvironment
 }
 
+$RamSettings = @{
+    IntervalMs = $RamDetailIntervalMs; PreSeconds = $RamDetailPreSeconds; PostSeconds = $RamDetailPostSeconds
+    ReadyTimeoutSeconds = $RamDetailReadyTimeoutSeconds; TimeoutSeconds = $RamDetailTimeoutSeconds
+    PeakThresholdMiB = $RamDetailPeakThresholdMiB; RecoveryToleranceMiB = $RamDetailRecoveryToleranceMiB
+}
+
+if ($RamDetail) { $ConditionFingerprint.RamDetail = $RamSettings }
+if ($CapturePhaseMarkers) { $ConditionFingerprint.CapturePhaseMarkers = $true }
 $ConditionId = Get-Evox2ConditionId -Condition $ConditionFingerprint
 $BuildLabel = Get-Evox2BuildLabel -ExecutableMetadata $Identity.Executable
 $CommandLine = ConvertTo-Evox2CommandLine `
@@ -490,6 +510,8 @@ $Preview = [PSCustomObject]@{
     MTP               = [bool]$Mtp
     UmaLabel          = $UmaLabel
     ResourceMonitor   = [bool]$ResourceMonitor
+    RamDetail         = [bool]$RamDetail
+    RamDetailIntervalMs = $(if ($RamDetail) { $RamDetailIntervalMs } else { $null })
     BackgroundIntervalSeconds = if ($ResourceMonitor) { $BackgroundIntervalSeconds } else { $null }
     AdlxMonitor       = $AdlxMonitorRequested
     AdlxAvailable     = $AdlxMonitorAvailable
@@ -574,6 +596,8 @@ $Conditions = [ordered]@{
         UmaLabel = $UmaLabel
     }
 
+    CapturePhaseMarkers = [bool]$CapturePhaseMarkers
+    RamDetail = @{ Requested = [bool]$RamDetail; Settings = $RamSettings }
     ResourceMonitor = [ordered]@{
         Enabled         = [bool]$ResourceMonitor
         IntervalSeconds = if ($ResourceMonitor) { $ResourceIntervalSeconds } else { $null }
@@ -624,9 +648,14 @@ $argumentLine = (
     ForEach-Object { ConvertTo-Evox2WindowsArgument -Value ([string]$_) }
 ) -join ' '
 
+$DetailMonitor = $null
+$RamDetailResult = @{ Requested = [bool]$RamDetail; Status = 'NotRequested' }
 $process = $null
 $processHandle = [IntPtr]::Zero
 $monitorProcess = $null
+$monitorHandle = [IntPtr]::Zero
+$monitorError = $null
+$monitorExitCode = $null
 $adlxMonitorProcess = $null
 $adlxMonitorHandle = [IntPtr]::Zero
 $adlxMonitorStarted = $false
@@ -635,11 +664,56 @@ $adlxMonitorExitCode = $null
 $ExitCode = $null
 $ExitCodeSource = 'unavailable'
 $runException = $null
+$OsStartup = $null
 
 try {
     Write-Host "Run directory: $RunDirectory"
+    $OsStartup = Get-Evox2OsStartup
     Write-Host "Starting llama-cli..."
 
+    if ($RamDetail) {
+        try {
+            $DetailMonitor = New-Evox2RamDetail $RunDirectory $RunId $RamSettings $StdOutPath $StdErrPath
+            Start-Evox2RamDetail $DetailMonitor
+            Wait-Evox2RamDetailReady $DetailMonitor
+        } catch {
+            $RamDetailResult = @{ Requested = $true; Status = 'Unavailable'; Error = $_.Exception.Message }
+            if ($DetailMonitor) {
+                $DetailMonitor.Error = $_.Exception.Message
+                Stop-Evox2RamDetail $DetailMonitor $null
+            }
+            Write-Warning "RAM detail startup failed: $($_.Exception.Message)"
+        }
+        if ($DetailMonitor -and $DetailMonitor.Ready -and $AdlxMonitorRequested -and $AdlxMonitorAvailable) {
+            try {
+                $gpuLaunch = @{
+                    Executable = $AdlxMonitorExe; OutputPath = $GpuMetricsPath; StdOutPath = $AdlxStdOutPath
+                    StdErrPath = $AdlxStdErrPath; IntervalMs = $AdlxIntervalMs; GpuIndex = $AdlxGpuIndex
+                    TargetProcessId = $DetailMonitor.Process.Id
+                }
+                $adlxMonitorProcess = Start-Evox2AdlxGpuMonitor @gpuLaunch
+                $adlxMonitorHandle = $adlxMonitorProcess.Handle
+                $adlxMonitorStarted = $true
+            } catch { $adlxMonitorStartError = $_.Exception.Message }
+        }
+        if ($DetailMonitor) {
+            try {
+                Wait-Evox2RamBaseline $DetailMonitor
+                Write-Evox2RamLaunch $DetailMonitor
+            } catch {
+                $DetailMonitor.Error = $_.Exception.Message
+                Write-Warning "RAM detail baseline failed: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if ($CapturePhaseMarkers -and !$RamDetail) {
+        try {
+            $DetailMonitor = New-Evox2RamDetail $RunDirectory $RunId $RamSettings $StdOutPath $StdErrPath
+            Open-Evox2PhaseMarkers $DetailMonitor
+            Write-Evox2RamLaunch $DetailMonitor
+        } catch { Write-Warning "Phase trace could not start: $($_.Exception.Message)" }
+    }
     $process = Start-Process `
         -FilePath $LlamaCli `
         -ArgumentList $argumentLine `
@@ -654,8 +728,13 @@ try {
     # Force .NET to open and retain a process handle while the child is alive.
     # This gives us a reliable native fallback for the exit code later.
     $processHandle = $process.Handle
+    if ($DetailMonitor) {
+        try { Connect-Evox2RamTarget $DetailMonitor $process }
+        catch { $DetailMonitor.Error = $_.Exception.Message }
+    }
 
-    if ($AdlxMonitorRequested) {
+
+    if ($AdlxMonitorRequested -and !$adlxMonitorStarted -and !$adlxMonitorProcess) {
         if (-not $AdlxMonitorAvailable) {
             $adlxMonitorStartError = "ADLX GPU monitor executable not found: $AdlxMonitorExe"
             Write-Warning "$adlxMonitorStartError; continuing without ADLX telemetry."
@@ -681,35 +760,41 @@ try {
     }
 
     if ($ResourceMonitor) {
-        $monitorScript = Join-Path $benchmarkDir 'Monitor-LlamaProcess.ps1'
-        $powerShellExe = (Get-Process -Id $PID).Path
+        try {
+            $monitorScript = Join-Path $benchmarkDir 'Monitor-LlamaProcess.ps1'
+            $powerShellExe = (Get-Process -Id $PID).Path
 
-        $monitorArgs = @(
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', $monitorScript,
-            '-TargetProcessId', "$($process.Id)",
-            '-LogPath', $ResourcePath,
-            '-RunId', $RunId,
-            '-IntervalSeconds', "$ResourceIntervalSeconds",
-            '-BackgroundIntervalSeconds', "$BackgroundIntervalSeconds"
-        )
+            $monitorArgs = @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', $monitorScript,
+                '-TargetProcessId', "$($process.Id)",
+                '-LogPath', $ResourcePath,
+                '-RunId', $RunId,
+                '-IntervalSeconds', "$ResourceIntervalSeconds",
+                '-BackgroundIntervalSeconds', "$BackgroundIntervalSeconds"
+            )
 
-        $monitorArgumentLine = (
-            $monitorArgs |
-            ForEach-Object { ConvertTo-Evox2WindowsArgument -Value ([string]$_) }
-        ) -join ' '
+            $monitorArgumentLine = (
+                $monitorArgs |
+                ForEach-Object { ConvertTo-Evox2WindowsArgument -Value ([string]$_) }
+            ) -join ' '
 
-        $monitorProcess = Start-Process `
-            -FilePath $powerShellExe `
-            -ArgumentList $monitorArgumentLine `
-            -WorkingDirectory $benchmarkDir `
-            -RedirectStandardOutput $MonitorStdOutPath `
-            -RedirectStandardError $MonitorStdErrPath `
-            -NoNewWindow `
-            -PassThru
+            $monitorProcess = Start-Process `
+                -FilePath $powerShellExe `
+                -ArgumentList $monitorArgumentLine `
+                -WorkingDirectory $benchmarkDir `
+                -RedirectStandardOutput $MonitorStdOutPath `
+                -RedirectStandardError $MonitorStdErrPath `
+                -NoNewWindow `
+                -PassThru
 
-        Write-Host "Resource monitor PID: $($monitorProcess.Id)"
+            $monitorHandle = $monitorProcess.Handle
+            Write-Host "Resource monitor PID: $($monitorProcess.Id)"
+        } catch {
+            $monitorError = $_.Exception.Message
+            Write-Warning "Resource monitor could not be started: $monitorError"
+        }
     }
 
     $nextProgress = (Get-Date).AddSeconds($ProgressIntervalSeconds)
@@ -725,6 +810,7 @@ try {
     while (-not $process.HasExited) {
         Start-Sleep -Milliseconds 500
         $process.Refresh()
+        if ($DetailMonitor) { Read-Evox2RamMarkers $DetailMonitor }
 
         if ($rgpTraceCueEnabled -and -not $rgpTraceCueReported -and
                 (Get-Date) -ge $nextRgpTraceProbe) {
@@ -809,6 +895,8 @@ try {
     $runException = $_.Exception.ToString()
     Write-Warning "Run exception: $($_.Exception.Message)"
 } finally {
+    if ($DetailMonitor) { Stop-Evox2RamDetail $DetailMonitor $process }
+
     if ($null -ne $adlxMonitorProcess) {
         try {
             $adlxWaitMilliseconds = [math]::Max(5000, $AdlxIntervalMs + 3000)
@@ -841,19 +929,54 @@ try {
                     }
                 }
             }
-        } catch {}
+        } catch {
+            if (!$adlxMonitorStartError) { $adlxMonitorStartError = $_.Exception.Message }
+        }
     }
 
     if ($null -ne $monitorProcess) {
         try {
             if (-not $monitorProcess.HasExited) {
                 if (-not $monitorProcess.WaitForExit(10000)) {
-                    Stop-Process -Id $monitorProcess.Id -Force -ErrorAction SilentlyContinue
+                    $monitorError = 'Resource monitor did not stop after the target exited; forced termination was used.'
+                    Stop-Process -Id $monitorProcess.Id -Force -ErrorAction Stop
+                    [void]$monitorProcess.WaitForExit(2000)
                 }
             }
-        } catch {}
+            $monitorProcess.Refresh()
+            if ($monitorProcess.HasExited) {
+                try { $monitorExitCode = $monitorProcess.ExitCode } catch {}
+                if ($null -eq $monitorExitCode -and $monitorHandle -ne [IntPtr]::Zero) {
+                    [uint32]$nativeMonitorExitCode = 0
+                    if ([Evox2NativeProcess]::GetExitCodeProcess($monitorHandle, [ref]$nativeMonitorExitCode)) {
+                        $monitorExitCode = $nativeMonitorExitCode
+                    }
+                }
+            }
+        } catch {
+            $monitorError = $_.Exception.Message
+        }
     }
 }
+
+$TargetLifecycle = [ordered]@{
+    StartedUtc = $null; ExitedUtc = $null; ProcessSeconds = $null
+    ResidualPids = @()
+}
+if ($process) {
+    try {
+        $targetStart = $process.StartTime.ToUniversalTime()
+        $TargetLifecycle.StartedUtc = $targetStart.ToString('o')
+        if ($process.HasExited) {
+            $targetExit = $process.ExitTime.ToUniversalTime()
+            $TargetLifecycle.ExitedUtc = $targetExit.ToString('o')
+            $TargetLifecycle.ProcessSeconds = ($targetExit - $targetStart).TotalSeconds
+        }
+    } catch {}
+}
+$TargetLifecycle.ResidualPids = @(foreach ($observedProcess in @($process, $monitorProcess, $adlxMonitorProcess, $(if ($DetailMonitor) {$DetailMonitor.Process}))) {
+    if ($observedProcess -and !$observedProcess.HasExited) { $observedProcess.Id }
+})
 
 $Finished = Get-Date
 $BackgroundAtFinish = Get-Evox2BackgroundActivitySnapshot
@@ -951,8 +1074,6 @@ if ($Status -eq 'OK' -and $NoDisplayPromptActive -and $OutputFingerprintStatus -
     $Status = 'CHECK_OUTPUT_FINGERPRINT'
 }
 
-$resourceSampleCount = 0
-$adlxSampleCount = 0
 if ($Status -eq 'OK' -and $Mtp -and $env:LLAMA_MTP_SKIP_DENSE_INDEXER -in @('0', '1') -and
     $DenseIndexerEvidence.Status -ne 'Verified') {
     $Status = 'CANDIDATE_EVIDENCE_' + $DenseIndexerEvidence.Status.ToUpperInvariant()
@@ -962,16 +1083,28 @@ if ($Status -eq 'OK' -and $QsaNoopEvidence.Status -ne 'NotApplicable' -and
     $QsaNoopEvidence.Status -ne 'Verified') {
     $Status = 'QSA_NOOP_EVIDENCE_' + $QsaNoopEvidence.Status.ToUpperInvariant()
 }
-if (Test-Path -LiteralPath $ResourcePath -PathType Leaf) {
-    try {
-        $resourceSampleCount = @(Import-Csv -LiteralPath $ResourcePath).Count
-    } catch {}
-}
+$ResourceQuality = Get-Evox2MonitoringQuality -Kind Resource -CsvPath $ResourcePath `
+    -Requested ([bool]$ResourceMonitor) -Started ($null -ne $monitorProcess) `
+    -ExitCode $monitorExitCode -ProcessError $monitorError `
+    -StdOutPath $MonitorStdOutPath -StdErrPath $MonitorStdErrPath -IntervalSeconds $ResourceIntervalSeconds
+$AdlxQuality = Get-Evox2MonitoringQuality -Kind ADLX -CsvPath $GpuMetricsPath `
+    -Requested $AdlxMonitorRequested -Started $adlxMonitorStarted `
+    -ExitCode $adlxMonitorExitCode -ProcessError $adlxMonitorStartError `
+    -StdOutPath $AdlxStdOutPath -StdErrPath $AdlxStdErrPath -IntervalSeconds ($AdlxIntervalMs / 1000.0)
+$resourceSampleCount = $ResourceQuality.SampleCount
+$adlxSampleCount = $AdlxQuality.SampleCount
 
-if (Test-Path -LiteralPath $GpuMetricsPath -PathType Leaf) {
-    try {
-        $adlxSampleCount = @(Import-Csv -LiteralPath $GpuMetricsPath).Count
-    } catch {}
+if ($RamDetail -and $DetailMonitor) {
+    try { $RamDetailResult = Get-Evox2RamDetailResult $DetailMonitor $GpuMetricsPath }
+    catch {
+        $RamDetailResult = @{
+            Requested = $true; Status = 'Unavailable'; Error = $_.Exception.Message
+            Files = @{ Csv = $DetailMonitor.CsvPath; Events = $DetailMonitor.EventPath; Monitor = $DetailMonitor.MonitorPath }
+        }
+    }
+    finally {
+        if ($DetailMonitor.Process) { $DetailMonitor.Process.Dispose() }
+    }
 }
 
 $AdlxPModeConsistency = Get-Evox2AdlxPModeConsistency `
@@ -1008,6 +1141,7 @@ $Result = [ordered]@{
     ExitCodeSource = $ExitCodeSource
     RunException   = $runException
 
+    OsStartup      = $OsStartup
     StartedAt      = $Started.ToString('o')
     FinishedAt     = $Finished.ToString('o')
     DurationSeconds = [math]::Round(($Finished - $Started).TotalSeconds, 3)
@@ -1072,6 +1206,14 @@ $Result = [ordered]@{
     AdlxMonitorExitCode         = $adlxMonitorExitCode
     AdlxMonitorError            = $adlxMonitorStartError
     AdlxSampleCount             = $adlxSampleCount
+    RamDetail = $RamDetailResult
+    TargetLifecycle = $TargetLifecycle
+    PhaseTracePath = $(if ($DetailMonitor -and (Test-Path -LiteralPath $DetailMonitor.EventPath)) { $DetailMonitor.EventPath } else { $null })
+    MonitoringQuality = [ordered]@{
+        Session = Get-Evox2MonitoringSession
+        Resource = $ResourceQuality
+        ADLX = $AdlxQuality
+    }
     PModeAtStart                = $PModeAtStart
     PModeAtFinish               = $PModeAtFinish
     PModeChanged                = $PModeChanged
@@ -1146,6 +1288,22 @@ $Summary = [PSCustomObject]@{
     PModeWarningCount   = $PModeWarnings.Count
     DurationMinutes     = [math]::Round(($Finished - $Started).TotalMinutes, 3)
     RunDirectory        = $RunDirectory
+    ResourceMonitorStatus = $ResourceQuality.Status
+    AdlxMonitorStatus = $AdlxQuality.Status
+    RamDetailStatus = $RamDetailResult.Status
+    RamDetailIncreaseMiB = $RamDetailResult.IncreaseMiB
+    RamDetailSystemRecovery = $RamDetailResult.SystemRecovery
+    LastBootUpTimeUtc = $OsStartup.LastBootUpTimeUtc
+    OsUptimeSeconds = $OsStartup.UptimeSeconds
+    OsUptimeHours = $OsStartup.UptimeHours
+    OsBootTimeSource = $OsStartup.LastBootUpTimeSource
+    OsBootCimStatus = $OsStartup.CimStatus
+    OsShutdownEventStatus = $OsStartup.ShutdownEventStatus
+    OsUptimeErrorId = $OsStartup.UptimeErrorId
+    PromptMilliseconds = $Parsed.PromptEvalMilliseconds
+    GenerationMilliseconds = $Parsed.GenerationEvalMilliseconds
+    ActualContext = $Parsed.ActualContext
+    InputSha256 = $(if ($InputIdentity) { $InputIdentity.Sha256 } else { $null })
 }
 
 if ($env:LLAMA_MTP_DIAG -in @('wall', 'sync')) {
