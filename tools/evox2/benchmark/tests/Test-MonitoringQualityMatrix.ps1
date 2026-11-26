@@ -20,7 +20,8 @@ $fixtureLib = Join-Path $fixtureTools 'lib'
 [void][IO.Directory]::CreateDirectory((Join-Path $fixture '.git'))
 try {
     $encoding = [Text.UTF8Encoding]::new($true)
-    Copy-Item -LiteralPath $common -Destination $fixtureLib
+    $runtime = Join-Path (Split-Path -Parent $common) 'Evox2.RuntimeDependencies.psm1'
+    Copy-Item -LiteralPath $common,$runtime -Destination $fixtureLib
     Copy-Item -LiteralPath (Join-Path $benchmark 'Evox2.Benchmark.psm1'),(Join-Path $benchmark 'Invoke-BenchmarkMatrix.ps1'),(Join-Path $benchmark 'Evox2.MatrixComparison.psm1') -Destination $fixtureBench
 
     $ResourcePath = Join-Path $fixture 'resources.csv'
