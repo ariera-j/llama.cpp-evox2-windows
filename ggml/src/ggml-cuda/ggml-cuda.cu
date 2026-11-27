@@ -6505,7 +6505,14 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                         constexpr size_t src_align = alignof(block_iq4_nl);
                         constexpr size_t id_size = sizeof(int32_t);
                         constexpr int64_t batch_limit = std::numeric_limits<int32_t>::max();
-                        const int block_dim = src->ne[0] % QK_K == 0 ? 32 : 4;
+                        const bool use_superblock = src->ne[0] % QK_K == 0;
+                        const ggml_tensor * storage = src->view_src ? src->view_src : src;
+                        if (!use_superblock && storage->buffer && ggml_backend_buft_is_cuda_host(storage->buffer->buft)) {
+                            // Do not move input-layer IQ4_NL weights into pinned host memory.
+                            return false;
+                        }
+
+                        const int block_dim = use_superblock ? 32 : 4;
                         // HIP requires grid.x * block.x < 2^32.
                         const int64_t row_limit = std::numeric_limits<uint32_t>::max() / block_dim;
 

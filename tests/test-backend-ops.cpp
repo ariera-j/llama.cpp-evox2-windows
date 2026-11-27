@@ -1809,7 +1809,7 @@ struct test_case {
         return true;
     }
 
-    bool eval_support(ggml_backend_t backend, const char * op_names_filter, printer * output_printer) {
+    virtual bool eval_support(ggml_backend_t backend, const char * op_names_filter, printer * output_printer) {
         mode = MODE_SUPPORT;
 
         static const size_t graph_nodes = 8192;
@@ -2639,6 +2639,65 @@ struct test_get_rows_iq4_nl : public test_case {
                 init_tensor_uniform(t);
             }
         }
+    }
+};
+
+// Support-only cases mirror the model loader's zero-byte weight buffer probe.
+struct test_get_rows_iq4_nl_buffer : public test_get_rows_iq4_nl {
+    enum class buffer_kind { device, host, cpu };
+    const buffer_kind buffer;
+    const bool expected;
+
+    test_get_rows_iq4_nl_buffer(int width, buffer_kind buffer, bool expected = true, bool padded = false)
+        : test_get_rows_iq4_nl(width, padded), buffer(buffer), expected(expected) {}
+
+    std::string vars() override {
+        const char * name = buffer == buffer_kind::device ? "device" : buffer == buffer_kind::host ? "host" : "cpu";
+        return "type=iq4_nl,d0_4d_width=" + std::to_string(width) +
+            ",buffer=" + name + ",padded=" + std::to_string(padded);
+    }
+
+    bool eval_support(ggml_backend_t backend, const char * op_names_filter, printer * output_printer) override {
+        const auto dev = ggml_backend_get_device(backend);
+        const std::string reg = ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev));
+        const bool cuda_family = reg == "CUDA" || reg == "ROCm" || reg == "MUSA";
+        const bool applicable = buffer == buffer_kind::cpu
+            ? ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU : cuda_family;
+        if (!applicable) {
+            return true;
+        }
+
+        mode = MODE_SUPPORT;
+        ggml_context_ptr ctx(ggml_init({ggml_tensor_overhead()*5, nullptr, true}));
+        GGML_ASSERT(ctx);
+        ggml_tensor * out = build_graph(ctx.get());
+        if (!matches_filter(out, op_names_filter)) {
+            return true;
+        }
+
+        const auto buft = buffer == buffer_kind::host ? ggml_backend_dev_host_buffer_type(dev)
+                                                     : ggml_backend_dev_buffer_type(dev);
+        if (!buft) {
+            fprintf(stderr, "missing buffer type for GET_ROWS(%s) on %s\n", vars().c_str(), ggml_backend_name(backend));
+            return false;
+        }
+
+        // For a padded view, expose the underlying buffer before allocating the view itself.
+        ggml_tensor * weight = out->src[0]->view_src ? out->src[0]->view_src : out->src[0];
+        ggml_backend_buffer_ptr dummy(ggml_backend_buft_alloc_buffer(buft, 0));
+        weight->buffer = dummy.get();
+        const bool supported = ggml_backend_supports_op(backend, out);
+        weight->buffer = nullptr;
+
+        const bool passed = supported == expected;
+        if (!passed) {
+            fprintf(stderr, "unexpected support for GET_ROWS(%s) on %s: expected %s\n",
+                vars().c_str(), ggml_backend_name(backend), expected ? "yes" : "no");
+        }
+        output_printer->print_test_result(test_result(ggml_backend_name(backend), op_desc(out), vars(), "support",
+            supported, passed, passed ? "" : "unexpected support", 0.0, 0.0, 0.0, 0, 0,
+            ggml_backend_dev_description(dev), reg));
+        return passed;
     }
 };
 
@@ -14856,6 +14915,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases(test_mode mode, c
         case MODE_GRAD:
         case MODE_SUPPORT:
             test_cases = make_test_cases_eval();
+            if (mode == MODE_SUPPORT && params_filter != nullptr) {
+                using probe = test_get_rows_iq4_nl_buffer;
+                using kind = probe::buffer_kind;
+                test_cases.emplace_back(new probe(160, kind::device));
+                test_cases.emplace_back(new probe(160, kind::host, false));
+                test_cases.emplace_back(new probe(160, kind::host, false, true));
+                test_cases.emplace_back(new probe(256, kind::device));
+                test_cases.emplace_back(new probe(256, kind::host));
+                test_cases.emplace_back(new probe(160, kind::cpu));
+            }
             break;
         case MODE_PERF:
             test_cases = make_test_cases_perf();
@@ -15031,10 +15100,13 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
     }
 
     if (mode == MODE_SUPPORT) {
+        bool passed = true;
         for (auto & test : test_cases) {
-            test->eval_support(backend, op_names_filter, output_printer);
+            if (!test->eval_support(backend, op_names_filter, output_printer)) {
+                passed = false;
+            }
         }
-        return true;
+        return passed;
     }
 
     GGML_ABORT("fatal error");
