@@ -13,6 +13,7 @@
 | b12651 初期ビルド | [Vulkan／ROCm ベースライン](automation/UPSTREAM-B12651-20261124.md) |
 | b12651 PP/TG | [32k 試験](automation/UPSTREAM-B12651-32K-PP-TG-TRIAL-20261124.md) · [本計測](automation/UPSTREAM-B12651-PP-TG-20261124.md) |
 | b12651 Stage 1 / 2 | [COMMON-001](B12651-STAGE1-COMMON001-20261124.md) · [ROCmFP4 FAST PLE16 の Vulkan 検証](B12651-STAGE2-ROCMFP4-VULKAN-20261124.md) |
+| b12651 D0 / ROCM-002 | [製品採用と検証範囲](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md) · [PLE16 64k最終比較](B12651-D0-4D-5-HIP-IQ4NL-GETROWS-20261127.md) |
 | PR #30904 移植前調査 | [IQ3_XXS の経路・テンソル調査](pr30904-preport-20261125/README.md) |
 | IQ2_S Vulkan MatVec | [A1/A2 実験結果](iq2-s-vulkan-matvec-20261125/README.md) |
 | b12651 系モデルロード | [既存ログ・ソース解析（作業4-1）](automation/B12651-MODEL-LOAD-INVESTIGATION-20261126.md) · [基準計測・診断設計案（作業4-2）](automation/B12651-MODEL-LOAD-BASELINE-20261126.md) · [診断実装・ビルド検証（作業4-3）](automation/B12651-MODEL-LOAD-DIAG-20261126.md) · [実モデルの診断計測（作業4-4）](automation/B12651-MODEL-LOAD-DIAG-RESULTS-20261126.md) |

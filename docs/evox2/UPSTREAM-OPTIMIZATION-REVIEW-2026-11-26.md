@@ -1,5 +1,8 @@
 # EVO-X2 upstream・fork・推論エンジン調査（2026-11-26）
 
+> **2026-11-27 引き継ぎ。** 優先項目D0を製品SHA `a650d641ee99198543697e1e3913c593059721f7` に採用済み。次工程はROCmFP4 FAST HIP対応。 [D0採用記録](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md) · [HIP-1以降](ROCMFP4-HIP-PORT-REVIEW-2026-11-26.md#段階4--実装候補と承認後の検証)
+
+
 ## 参照時点と再開方法
 
 2026-11-26 22:10–22:22 JST に GitHub と実機の Git 参照を確認した。GitHub の文書正本は `f47e19a0203add434545a35adbd097215775d03e`、現行製品と専用 clone の HEAD は `9ae819d5be4fe9861d2aa8547983aed801c437ac`、標準ビルド b12696 のビルド元は `20f48bfe162d8d886b9f5fea7ad6d7df91eb3266`。実機のローカル main は `07c33cf4b7e69057f45b9903f762b28ec221d588`、追跡参照は `f47e19a`。製品の推論ソースを文書と標準ツールの正本の推論ソースから区別する。 [標準ビルド検証](automation/BUILD-VALIDATION-20261126.md)

@@ -1,5 +1,10 @@
 # Evo-X2 optimization roadmap
 
+## 2026-11-27 b12651製品のD0採用
+
+D0（ROCM-002）を製品へ採用した。PLE16 64kでGPU配置と応答を維持し、Original 4kではjoined PLEのCPU配置が復帰した。次工程は製品SHA `a650d641ee99198543697e1e3913c593059721f7` を基準とするROCmFP4 FAST HIP対応。実装と検証は別承認で進める。 [D0採用記録](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md) · [HIP移植レビュー](ROCMFP4-HIP-PORT-REVIEW-2026-11-26.md)
+
+
 ## 2026-11-26 計測環境の安定性
 
 - 作業3-4の本計測・スモークと作業3-5の計測ツール統合が完了。モデルロード遅延等は [作業4への引き継ぎ](automation/BENCHMARK-MATRIX-ROUNDS-B12651.md#ram-詳細監視と作業4への引き継ぎ) を参照。

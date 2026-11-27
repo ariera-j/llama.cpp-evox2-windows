@@ -1,5 +1,8 @@
 # EVO-X2 ROCmFP4 FAST PLE16 の HIP 移植調査（2026-11-26）
 
+> **2026-11-27 引き継ぎ。** D0（ROCM-002）はhost配置制限を含め製品採用済み。次のROCmFP4 FAST HIP対応は、統合後製品SHA `a650d641ee99198543697e1e3913c593059721f7` を基準にHIP-1から進める。下記の調査SHA・候補表は2026-11-26時点の記録。 [D0採用と検証範囲](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md)
+
+
 ## 段階3 — 対象、ソース、移植元
 
 2026-11-26 22:11 JST の各 HEAD を固定した。基準は製品 `9ae819d5be4fe9861d2aa8547983aed801c437ac`、upstream b12651。b12696 実ビルド元 `20f48bfe162d8d886b9f5fea7ad6d7df91eb3266` と製品の `src`、`ggml`、`common`、`include`、ルート CMake は一致。COMMON-001、COMMON-003A、VULKAN-001A/B を現行の比較基準とする。再開時は表の固定 SHA と製品 SHA を取得し、`git show SHA:<path>` で型、CPU decoder、HIP decoder、dispatch、配置の順に照合する。 [全体調査](UPSTREAM-OPTIMIZATION-REVIEW-2026-11-26.md) · [Stage 1](B12651-STAGE1-COMMON001-20261124.md) · [Stage 2](B12651-STAGE2-ROCMFP4-VULKAN-20261124.md)

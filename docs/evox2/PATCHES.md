@@ -1,5 +1,12 @@
 # Evo-X2 downstream patch registry
 
+## b12651 製品採用（2026-11-27）
+
+| パッチ | 対象 | 製品状態 |
+| --- | --- | --- |
+| **ROCM-002** | CUDA/HIP共有のIQ4_NL GET_ROWS。非256整列の32要素経路とCUDA系host配置制限 | 製品 `a650d641ee99198543697e1e3913c593059721f7` に採用。gfx1151で対応判定6件・数値比較5件、PLE16 4k・64kとOriginal 4kを確認。CUDA・MUSAは未検証。 [採用記録](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md) |
+
+
 > **2026-11-23現行運用補足:** [文書統合・実験ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)。2026-10-29の公開tag／Vulkan b11908、後日r6のCOMMON-005最適化（ROCm/MTP-OFF・opt-in/default OFF）、11月の研究用診断ブランチは**異なるソース／検証範囲**。MH-Hard・Strata・Gemma4の後続実験やCodex preflightの完了は、これらの高速化パッチがmainや公開ZIPへ自動的に追加された証拠ではない。以前の「not implemented / quality pending / next」は記載日時の履歴であり、当該ゲートの最終結果を優先。
 
 > **2026-11-03 COMMON-005 FINAL STATUS:** r6の`QWEN4EXP_QSA_GATHER=1`は**source main統合済み／デフォルトOFF／限定検証完了**（同一バイナリABBA 64k/128k/256k TG +12.66/+28.88/+56.02%、128k ROCm IQ3/元IQ4 18run検索品質でON/OFF両方106/108の回答インスタンス正解）。IQ4 ONだけのQ08誤答は1度発生したが、同条件再試行では再現せず。完全数値等価、MTP-ON、Vulkan active pathまで認証したわけではない。以下の「quality pending」は当時の履歴であり、この限定ゲートについては[最終品質記録](R6-COMMON005-MH128K-QUALITY-PLAN-2026-11-03.md)が優先。以後の計測ツール・ROCmFPx HIP・他エンジン・upstream調査は[2026-11-03作業引き継ぎ](R6-POST-COMMON005-HANDOFF-AND-RESEARCH-2026-11-03.md)を参照。公開b11908/tagは変更しない。
