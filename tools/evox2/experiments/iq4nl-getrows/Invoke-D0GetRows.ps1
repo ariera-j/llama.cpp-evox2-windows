@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('\A[0-9a-f]{40}\z')][string]$ExpectedHead,
+    [Parameter(Mandatory)][ValidateSet('RocmSupport','CpuSupport','RocmNumerical')][string]$Case,
     [switch]$RunApproved
 )
 Set-StrictMode -Version 3
@@ -10,16 +11,19 @@ $ProgressPreference = 'SilentlyContinue'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\..\..')).Path
 if ($root -ine 'C:\llama-build\automation\w55') { throw 'This experiment is pinned to w55.' }
 $head = $ExpectedHead
-$sha = '044be892e12bffdfd06cfb698bf55e54582ae63a'
-$bin = Join-Path $root 'build-rm\bin\Release'
+$sha = 'e199e5f4319731071199d84f4f2e571fcaa7d413'
+$bin = Join-Path $root 'build-rh\bin\Release'
 $exe = Join-Path $bin 'test-backend-ops.exe'
-$nativeArgs = 'test -b ROCm0 -j 1 -o GET_ROWS -p "^type=iq4_nl,d0_1_width=(32,padded=0|160,padded=[01]|256,padded=0|288,padded=0)$"'
 $module = Join-Path $PSScriptRoot 'D0GetRows.Supervisor.psm1'
 $memoryModule = Join-Path $root 'tools\evox2\benchmark\Evox2.Memory.psm1'
 Import-Module $module
+$caseModule = Join-Path $PSScriptRoot 'D0GetRows.Cases.psm1'
+Import-Module $caseModule
+$plan = Get-D0GetRowsPlan -Case $Case
+$nativeArgs = $plan.NativeArguments
 Import-Module $memoryModule
 Import-Module (Join-Path $root 'tools\evox2\lib\Evox2.Common.psm1')
-$log = Join-Path 'C:\llama-build\_logs\codex' ('d0-2c-getrows-' + [guid]::NewGuid().ToString('N'))
+$log = Join-Path 'C:\llama-build\_logs\codex' ('d0-4d-getrows-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $log | Out-Null
 Write-Host "Logs: $log"
 function Save-Record($name, $value) {
@@ -47,6 +51,7 @@ $resourceFunctions = {
         $provider = $entry.ProviderName
         return ($entry.Level -in 1,2 -or $provider -match 'WHEA|BugCheck|Resource-Exhaustion|^Display$|amdkmd|amdwdd|DxgKrnl|Application Hang|Application Error' -or
             ($provider -match 'Kernel-Power' -and $entry.Id -eq 41) -or
+            ($provider -eq 'Application Popup' -and $entry.Id -eq 26 -and $entry.Message -match 'virtual memory|仮想メモリ不足') -or
             ($provider -match 'Windows Error Reporting' -and $entry.Message -match 'LiveKernelEvent|BlueScreen|AppHang|APPCRASH|test-backend-ops'))
     }
 }
@@ -79,11 +84,12 @@ function Assert-Snapshot($snapshot) {
     }
 }
 
-$failPattern = '(?i)\b(?:HIP|ROCm|CUDA|GPU|device) (?:error|lost)|hipError\w+|launch (?:failure|failed)|\b(?:FAILED|FAIL|NaN|Inf)\b|not supported|skipping large tensors'
 
 $monitorBody = @'
 $memoryModule = 'C:\llama-build\automation\w55\tools\evox2\benchmark\Evox2.Memory.psm1'
 Import-Module $memoryModule
+Import-Module $caseModule
+$plan = Get-D0GetRowsPlan -Case $caseName
 $stop = Join-Path $dir 'monitor.stop'
 $child = Join-Path $dir 'child.json'
 while (!(Test-Path -LiteralPath $child)) {
@@ -119,7 +125,9 @@ while (!(Test-Path -LiteralPath $stop) -and (Test-D0ProcessIdentity $identity)) 
             throw "New potentially major event: $channel"
         }
     }
-    if (@(Select-String -LiteralPath (Join-Path $dir 'stdout.log'),(Join-Path $dir 'stderr.log') -Pattern $failPattern).Count) {
+    $out = @(Get-Content -LiteralPath (Join-Path $dir 'stdout.log'))
+    $err = Get-Content -LiteralPath (Join-Path $dir 'stderr.log') -Raw
+    if (Test-D0GetRowsFailureLog $plan $out $err) {
         throw 'Failure signature in the child logs.'
     }
     $delay = [Math]::Max(0, 2000 - $timer.ElapsedMilliseconds)
@@ -129,7 +137,8 @@ while (!(Test-Path -LiteralPath $stop) -and (Test-D0ProcessIdentity $identity)) 
 $monitorCode = @'
 param($dir)
 '@ + [Environment]::NewLine + $resourceFunctions.ToString() + [Environment]::NewLine +
-    '$failPattern = ' + "'" + $failPattern + "'" + [Environment]::NewLine + $monitorBody
+    '$caseModule = ' + "'" + $caseModule + "'" + [Environment]::NewLine +
+    '$caseName = ' + "'" + $Case + "'" + [Environment]::NewLine + $monitorBody
 $monitor = [scriptblock]::Create($monitorCode)
 
 Push-Location $root
@@ -142,12 +151,10 @@ try {
     if ($LASTEXITCODE -ne 0 -or $dirty.Count) { throw 'Dirty worktree' }
     $diff = @(git diff --name-status $sha HEAD)
     $allowed = @(
-        "A`tdocs/evox2/B12651-D0-2A-HIP-IQ4NL-GETROWS-20261126.md",
-        "A`tdocs/evox2/B12651-D0-2B-HIP-IQ4NL-GETROWS-20261126.md",
-        "A`tdocs/evox2/B12651-D0-2C-HIP-IQ4NL-GETROWS-20261127.md",
-        "A`ttools/evox2/experiments/iq4nl-getrows/D0GetRows.Supervisor.psm1",
-        "A`ttools/evox2/experiments/iq4nl-getrows/Invoke-D0GetRows.ps1",
-        "A`ttools/evox2/experiments/iq4nl-getrows/Test-D0GetRowsSupervisor.ps1"
+        "A`tdocs/evox2/B12651-D0-4D-2A-HIP-IQ4NL-GETROWS-20261127.md",
+        "A`ttools/evox2/experiments/iq4nl-getrows/D0GetRows.Cases.psm1",
+        "M`ttools/evox2/experiments/iq4nl-getrows/Invoke-D0GetRows.ps1",
+        "A`ttools/evox2/experiments/iq4nl-getrows/Test-D0GetRowsCases.ps1"
     )
     if ($LASTEXITCODE -ne 0 -or $diff.Count -ne $allowed.Count -or @(Compare-Object $allowed $diff -CaseSensitive).Count) {
         throw 'Unexpected change since the binary was built.'
@@ -158,20 +165,20 @@ try {
 
     $exeInfo = Get-Item -LiteralPath $exe
     $exeHash = (Get-FileHash -LiteralPath $exe).Hash
-    if ($exeInfo.FullName -ine $exe -or $exeInfo.Attributes -band [IO.FileAttributes]::ReparsePoint -or $exeInfo.Length -ne 2490368 -or $exeHash -ne '24ef370e740df616c2e64dd7114811a037e7089a9a7dd34f7dc9299b0762a5ac') { throw 'EXE verification failed' }
+    if ($exeInfo.FullName -ine $exe -or $exeInfo.Attributes -band [IO.FileAttributes]::ReparsePoint -or $exeInfo.Length -ne 2500096 -or $exeHash -ne '993c6f4b16c52d82d246f48c4e67eb5c751d703379ccdd39c8f34cc512e003f3') { throw 'EXE verification failed' }
     $manifestPath = Join-Path $bin 'evox2-build.json'
     $manifestHash = (Get-FileHash -LiteralPath $manifestPath).Hash
-    if ($manifestHash -ne '28ec1ff4ee9ced5469a86c6970738eed59acd4647cb1575e4bac2a3894cdbd7f') { throw 'Manifest hash mismatch' }
+    if ($manifestHash -ne '8739b90b5833c5da38bcde6e2d4c466a986d7acc6200a4f03f7f41f5fcfc7116') { throw 'Manifest hash mismatch' }
     $m = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $testArtifact = @($m.Artifacts | Where-Object Name -eq $exeInfo.Name)
     if ($m.Source.Commit -ne $sha -or $m.BuildSource.Commit -ne $sha -or $m.BuildIdentity.Status -ne 'Verified' -or $m.Backend -ne 'ROCm' -or
         $m.BackendSettings.AmdGpuTarget -ne 'gfx1151' -or $testArtifact.Count -ne 1 -or $testArtifact[0].Sha256 -ne $exeHash -or $m.Validation.BackendTestRequested) { throw 'Manifest identity mismatch' }
     $cli = Join-Path $bin 'llama-cli.exe'
-    if ((Get-FileHash -LiteralPath $cli).Hash -ne $m.ExecutableIdentity.Sha256) { throw 'CLI hash mismatch' }
+    if ($m.ExecutableIdentity.Sha256 -ne '538a12f93ed12ab2a639640d87aeb78582acca4d9d9c086fe5d6f9220f7c01de' -or (Get-FileHash -LiteralPath $cli).Hash -ne $m.ExecutableIdentity.Sha256) { throw 'CLI hash mismatch' }
     $verified = Test-Evox2RuntimeArtifacts -Executable $cli -Manifest $m
     if ($verified.Status -ne 'Verified' -or $verified.Scope -ne 'RuntimeDependenciesV1') { throw 'Runtime manifest verification failed' }
     $hip = @($m.Artifacts | Where-Object Name -eq 'ggml-hip.dll')
-    if ($hip.Count -ne 1 -or (Get-FileHash -LiteralPath (Join-Path $bin 'ggml-hip.dll')).Hash -ne $hip[0].Sha256) { throw 'HIP backend hash mismatch' }
+    if ($hip.Count -ne 1 -or $hip[0].Sha256 -ne '2fa77001a526fff6bf907577b39cec29122d4bc35dbbc957d3b47b0f34d5089f' -or (Get-FileHash -LiteralPath (Join-Path $bin 'ggml-hip.dll')).Hash -ne $hip[0].Sha256) { throw 'HIP backend hash mismatch' }
     if ($m.Runtime.RuntimePolicy.Verification -ne 'DllAndRuntimeDataHashesVerified' -or $m.Runtime.RuntimePolicy.ObservedSdkVersion -ne '10.0.0' -or
         @($m.Runtime.RuntimeDlls).Count -ne 8 -or @($m.Runtime.RuntimeDataTrees).Count -ne 2 -or
         !(Test-Path -LiteralPath (Join-Path $m.Toolchain.RocmPath '..\rocm_sdk_device_gfx1151-10.0.0.dist-info') -PathType Container)) { throw 'TheRock runtime or SDK mismatch' }
@@ -189,7 +196,7 @@ try {
     if ($adapter.Count -ne 1 -or $adapter[0].DriverVersion -ne '32.0.32029.2010' -or $adapter[0].'HardwareInformation.qwMemorySize' -ne 96GB -or $driver.Count -ne 1 -or $driver[0].DisplayVersion -ne '26.11.2') { throw 'Unexpected driver or UMA' }
 
     Save-Record 'provenance.json' ([ordered]@{
-        ChildExecutable=$exe; Arguments=$nativeArgs; ExeHash=$exeHash; ExeSize=$exeInfo.Length
+        TestCase=$Case; ChildExecutable=$exe; Arguments=$nativeArgs; ExeHash=$exeHash; ExeSize=$exeInfo.Length
         ManifestHash=$manifestHash; HipHash=$hip[0].Sha256; BuildSha=$sha; Head=$actualHead; Tracking=$tracking
         Diff=$diff; Overrides=$overrides; RuntimeStatus=$verified.Status; RuntimeScope=$verified.Scope
         Driver=$driver[0].DisplayVersion; SDK=$m.Runtime.RuntimePolicy.ObservedSdkVersion; UmaGiB=96
@@ -222,7 +229,7 @@ try {
     try { $result = Invoke-D0SupervisedProcess @run }
     catch { $supervisorError = Get-D0Error $_ }
     $audit = [ordered]@{
-        Passed=$false; NumericalCases=$false; SamplesWhileChildAlive=0; NoActiveSamplesReason=$null; MajorEventCandidates=@(); Error=$supervisorError
+        TestCase=$Case; Passed=$false; ExpectedOutput=$false; SamplesWhileChildAlive=0; NoActiveSamplesReason=$null; MajorEventCandidates=@(); Error=$supervisorError
     }
     try {
         $before = Get-Content -LiteralPath (Join-Path $log 'before.json') -Raw | ConvertFrom-Json
@@ -251,19 +258,10 @@ try {
             } else { 'Child exit time is unavailable for sample alignment.' }
         }
 
-        $out = @(Get-Content -LiteralPath (Join-Path $log 'stdout.log') | ForEach-Object { ($_ -replace ([string][char]27 + '\[[0-9;]*m'), '').Trim() })
+        $out = @(Get-Content -LiteralPath (Join-Path $log 'stdout.log'))
         $err = Get-Content -LiteralPath (Join-Path $log 'stderr.log') -Raw
-        $expected = @(foreach ($case in '32,0','160,0','160,1','256,0','288,0') {
-            $width,$padded = $case.Split(',')
-            "GET_ROWS(type=iq4_nl,d0_1_width=$width,padded=$padded)`: OK"
-        })
-        $actual = @($out | Where-Object { $_ -match '^[A-Z][A-Z0-9_]*\(' })
-        $backendResults = @($out | Where-Object { $_ -match '^Backend [^:]+: (?:OK|FAIL)$' })
-        $hipLoad = 'load_backend: loaded ROCm backend from ' + (Join-Path $bin 'ggml-hip.dll')
-        $audit.NumericalCases = ($actual.Count -eq 5 -and !@(Compare-Object $expected $actual -CaseSensitive).Count -and
-            @($out -ceq '5/5 tests passed').Count -eq 1 -and $backendResults.Count -eq 1 -and $backendResults[0] -ceq 'Backend ROCm0: OK' -and ($err -split '\r?\n') -icontains $hipLoad -and
-            ($out -join "`n") -notmatch $failPattern -and $err -notmatch $failPattern -and $err -match 'Device 0: AMD Radeon.*8060S.*gfx1151')
-        $audit.Passed = ($audit.NumericalCases -and !$audit.MajorEventCandidates.Count -and $result -and $result.Started -and
+        $audit.ExpectedOutput = Test-D0GetRowsOutput $plan $out $err $bin
+        $audit.Passed = ($audit.ExpectedOutput -and !$audit.MajorEventCandidates.Count -and $result -and $result.Started -and
             $result.ChildEnded -and $result.MonitorEnded -and $null -ne $result.ExitCode -and $result.ExitCode -eq 0 -and
             $null -ne $result.ChildElapsedMilliseconds -and $result.ChildElapsedMilliseconds -ge 0 -and
             $result.ChildElapsedMilliseconds -le 60000 -and !$result.StopReason -and !$result.Error -and
