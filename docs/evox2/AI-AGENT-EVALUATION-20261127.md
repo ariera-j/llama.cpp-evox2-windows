@@ -1,0 +1,79 @@
+# AI エージェント評価記録 — Antigravity 初期調査（2026-11-27）
+
+状態: 試用途中。技術候補・実装計画は [B12651 高速化候補統合調査](B12651-ANTIGRAVITY-OPTIMIZATION-REVIEW-20261127.md) に分離する。本記録は能力・利用枠・安全な運用の比較用。公開リポジトリに保存するため個人の認証情報、ローカル接続情報、セッション生ログは含めない。
+
+## 1. 試用目的と条件
+
+EVO-X2 の開発で Codex の利用枠消費を抑え、複数モデルの独立調査・レビュー・実装・計測を活用できるか評価する。モデル名は試用時の UI 表示。Antigravity Web/Remote Agent、同一 GitHub Project、試行ごとに新規 Conversation。簡易試行以外は同一の詳細プロンプトを使用。既往計測事実は参照可、前の Conversation の提案・レビューは与えない。製品と文書を別 SHA に固定。実機接続、ビルド、ソース変更、commit/push/PR を禁止。実際の隔離や hidden context までは確認できない。
+
+- 製品: a650d641ee99198543697e1e3913c593059721f7 / codex/vulkan-manifest-cpu-variants-20261124。
+- 文書: 2a65d8629a62927d0f20e00893a2d988c2159698 / main。
+- 調査対象: Qwen3.8 Flash Next IQ3/PLE16/将来 FP4、Gemma 4 31B Q4_0、gfx1151 Windows ROCm 優先、Vulkan/共通も対象。
+- 詳細プロンプトは ChatGPT が作成。最新ソース実行経路、既存パッチ、外部 PR/Strata、ボトルネック、定量推定と反証条件を要求。以下は再現用の**要約**であり原文全文ではない。
+
+### 共通プロンプトの要件（要約）
+
+1. 調査開始時に製品と文書の SHA を確認。main の推論ソースを製品と誤認しない。古い CURRENT-REFRESH 等は日付と版を確認。
+2. EVO-X2 / RDNA3.5 Wave32/WMMA/UMA96 / Windows / TheRock10.0 / Adrenalin26.11.2 を基準に、NVIDIA/CDNA/RDNA、Windows/Linux の差を考慮。
+3. Qwen3.8 長文脈64/128/256K PP/TGを優先、短文脈と Gemma 4 に回帰を生じさせない。ROCmFP4 HIP 対応は別工程。
+4. PATCHES、PERFORMANCE-RESEARCH-LOG、INTEGRATED-RELEASES、BASELINE、ROADMAP、B12651、automation、RGP/host trace 等を必要に応じて調査。現行・旧独自・upstream済み・不採用・外部・新規を区別。
+5. 現行の host dispatch、テンプレート実体化、device 制約、型、shape、fallback まで追跡。upstream PR/Issue、Strata、AMD fork/技術資料を探索。
+6. PP/TG の演算、帯域、同期、CPU待ち、入力依存等を分析。Amdahl、前提、理論/実測/推定を区別。精度・決定性・VRAM・安定性・保守・検証難易度を評価。
+7. 日本語レポート A:対象版、B:課題、C:5～10候補、D:上位3件の詳細（変更箇所、PoC、測定、採否）、E:重複、F:順序、G:限界/反証条件。コミット固定リンクを提示。
+8. 読み取り専用。公開 repo の取得/検索は可、変更・push・SSH・実機ビルド/推論は禁止。調査の正確さを優先。
+
+原文は2026-11-27の同一 ChatGPT 会話の詳細プロンプトを使用。厳密な再試行時は要約で代用せず、原文・SHA を再利用する。
+
+## 2. 利用枠の観測
+
+| 試行 | モデル・effort | 週間残量の変化 | 状態 |
+|---|---|---|---|
+| A0 | Neon Medium / 簡易 | 100→99%（1pt） | 完了 |
+| A1 | Neon Medium / 詳細 | 99→95%（4pt） | 完了 |
+| A2 | Neon High / 詳細 | 95→92%（3pt） | 完了 |
+| A3 | Sonnet 5.5 Medium / 同一詳細 | 100→50%（50pt、途中） | 未完了、5時間制限の可能性 |
+
+A2終了後の Gemini 5時間残量72%、週間92%。Sonnet 開始前の Claude and GPT models 枠は5時間/週間とも100%。Sonnet 途中の週間50%はユーザー観測。5時間制限への到達は疑いで、エラー文・残量の確証未取得。スクリーンショットでは両SHA確認・取得、4サブエージェント（B12651 docs、r6 PP profiling、product ROCm audit、Strata）が完了表示、upstream pages 読み取り中（32m45s 表示）で停止しているように見える。実際の終了理由・内部状態・最終結果は未確認。5時間枠回復後に同一 Conversation の再開を評価する。
+
+週間割合は表示値の差であり、実際のトークン、キャッシュ、呼び出し回数、重み付き消費係数、各モデル群の総容量は不明。Gemini 枠と Claude/GPT 枠は UI 上別。High が Medium より常に安い、Sonnet がトークンで十数倍消費する、という結論は出せない。実行時間の揃った記録なし。各条件1回で統計的比較ではない。
+
+## 3. 調査品質の比較（ChatGPT の技術レビュー）
+
+| 観点 | A0 簡易 Medium | A1 詳細 Medium | A2 詳細 High |
+|---|---|---|---|
+| 製品版 | 古い main を参照 | 指定 SHA 確認 | 指定 SHA 確認 |
+| Sparse FA | 8×8 PP / 1×8 TG、WMMA制約見落とし | GQA12/8×4 PP、TG Tile、CDNA既存を認識 | 明示的 PP dispatch、TG 1×16 vs Tile、関連PR深掘り |
+| 過去・現行計測 | r6 の事実を活用 | 一部最新値見落とし | D0-4B発見、ただし最終SHAへの誤帰属 |
+| 外部実装 | 独自 LDS/union 案 | #30370/#31751/#32224/#28613/#32528/#32919 | #32741/#32731/#30489/#28714 を追加 |
+| 独自候補 | 密マスク回避の発想 | GDN ub2048、Vulkan INT8 | MMVQ専用table、Gemma Vulkan切り分け |
+| 不確実性 | 実測根拠不明の union・楽観推定 | 反証条件追加、最大unionの誤り | 詳細な反証条件、なお楽観的断定 |
+| 安全・検証 | 要精査 | 限定 backend-op test を意識 | 全件テスト提案は既知TDRリスクを再考 |
+
+A1/A2 は同じ詳細プロンプトで両方とも Sparse FA を最上位に選定。異なる発見を補完できた。A0→A1 はプロンプト改善の効果と試行差を含み、A1→A2 も effort だけの因果とは断定できない。High は実装経路追跡と PR の深掘りで今回優位、Medium は低工数候補発見と一部安全性で優位。コード実装能力や実機操作能力はまだ評価していない。
+
+技術レビューの主な訂正: GQA12 の TG 1×16 は余剰 head/境界確認が必要、8-query 最大16408行、現行FA占有率未測、J=32 spill の外部環境からの転用不可、#32731 は allocator のマスク予約が残る、既知TDR対応、FP4への融合適用は実行経路次第。詳細は技術文書。
+
+## 4. 運用の仮説・次の比較
+
+| 役割 | 担当候補 | 評価状況 |
+|---|---|---|
+| 広範囲の独立調査 | Neon Medium/High Cloud | 今回有用、Highを積極利用する仮説 |
+| 限定設計レビュー | Sonnet/Opus または OpenRouter | Claude枠の制約大、短い範囲で評価予定 |
+| 計測/ログ解析/定型作業 | Hydrogen CLI、OpenCodeの低価格モデル | 未試用 |
+| 小規模実装 | Hydrogen、Neon、OpenCode | 未試用、既存正解を隠した再実装等 |
+| 実機検証・製品統合 | Codex | 既存環境で運用中 |
+
+次は ThinkPad に Antigravity CLI を先行導入し、ローカル読み取り→SSH読み取り監査→PlanOnly→短時間推論→ログ集計を段階的に評価する案。OpenCode は同じタスクを再実行する比較対象、将来のローカルLLM接続・従量課金の代替環境。Cloud/CLI の枠が同一かは未確認で、共有前提で管理する。Opus に同じ大規模プロンプトを再投入するより、Sonnet再開結果を踏まえ、限定レビューを優先する案。
+
+将来の試行で記録: モデル/effort、prompt版/ハッシュ、開始/終了残量（5h/weekly）、壁時間、完遂/停止理由、ツール呼出/キャッシュ/ログ入手可否、独自発見、誤認、指示遵守、修正回数、実測採否、手戻り含む総コスト。OpenRouter は実際のAPI費用も別列で比較。モデルの役割分担は実測で更新する。
+
+## 5. 安全・独立性
+
+- Antigravity GitHub App は選択 repo の読み書き権限が付与されているとのユーザー確認。Cloud 調査時 UI は Turbo。プロンプトで push 禁止とすることは権限制御とは別。ログ上の調査コマンドは読み取り中心だが、全副作用の監査は未実施。
+- 今後の実装は専用実験ブランチ/隔離ワークツリー、権限設定 Default/Review の実動作確認、製品・main 保護を検討。既存 Codex 統合手順を妨げないよう事前設計する。今回設定変更は行っていない。
+- ThinkPad/EVO-X2 操作は共通 [AGENT-RULES](automation/AGENT-RULES.md) と runbook を使用。SSH鍵等の権限を無制限に広げない。複数エージェントでビルド・計測を同時実行しない。停止・残留・RAM監査を守る。
+- Sonnet は旧 main SHA を固定済み。新規文書を main に追加しても固定 SHA の内容は変化しない。再開時に latest main や本レポートを読み直さないことを確認し、独立性を維持する。必要なら再開時に「固定済みSHAと既取得資料から続行、前回以降の新規文書を参照しない」と最小限補足し、補足の有無も記録する。
+
+## 6. 更新履歴
+
+- 2026-11-27: A0/A1/A2 と ChatGPT の比較レビューを記録。A3 は調査途中、結果未採点。Sonnet が完了したら週間/5時間残量、再開挙動、最終成果、追加発見/反証を追記する。Hydrogen/CLI/OpenCode は未導入・未評価として扱う。
