@@ -26,17 +26,22 @@ class Case(NamedTuple):
     sgemms: int
 
 
+SCHED_FIXTURES = {'S-HC-CPU': '6', 'S-HC-PIN': '6', 'S-ID-PIN': '8'}
+
+
 def catalog():
     rows = []
     for line in Path(__file__).with_name('cases.inc').read_text().splitlines():
         if line.startswith('CASE(') and line.endswith(')'):
             fields = next(csv.reader([line[5:-1]], skipinitialspace=True))
             rows.append(Case(*fields[:2], *map(int, fields[2:])))
-    if [c.id for c in rows] != ['1', '1-NC', '2', '2-C', '5', '6', '7', '8', '9', '9-Z']:
+    if [c.id for c in rows] != ['1', '1-NC', '2', '2-C', '5', '6', '7', '8', '9', '9-Z', *SCHED_FIXTURES]:
         raise ValueError('unexpected case catalog')
     records = '\n'.join(line for line in Path(__file__).with_name('cases.inc').read_text().splitlines() if line.startswith('CASE('))
-    if hashlib.sha256(records.encode()).hexdigest() != '0f5c1cf6b166d57f6c8ed16bc85c3ef6d8a88f10837c09d55655dfd577c6feea':
+    if hashlib.sha256('\n'.join(records.splitlines()[:10]).encode()).hexdigest() != '0f5c1cf6b166d57f6c8ed16bc85c3ef6d8a88f10837c09d55655dfd577c6feea':
         raise ValueError('operation, shape or layout differs from reviewed enumeration')
+    if hashlib.sha256(records.encode()).hexdigest() != '5afb7000d94c9bcadba08336d2f4ba3c018a32d36dda53dd8595e7d8cf4b0136':
+        raise ValueError('unexpected scheduler catalog')
     return rows
 
 
@@ -68,6 +73,7 @@ def check_codec_tables():
 
 
 def fixture(c):
+    c = c._replace(id=SCHED_FIXTURES.get(c.id, c.id))
     converting = c.op.startswith('F')
     row = c.k//32 + c.padding
     expert = row*c.m + c.gap
@@ -176,6 +182,20 @@ def check_cpu(c, data):
     else:
         if len(x) != c.k*c.b*c.t or len(ref) != c.m*c.s*c.t or not all(map(math.isfinite, ref + bounds)):
             raise ValueError('invalid reference')
+        if c.id in ('S-HC-CPU', 'S-HC-PIN'):
+            # Decode whole rows and sum exact binary rationals independently of the FP64 dot loop.
+            from fractions import Fraction
+            for m in range(c.m):
+                weights = []
+                for b in range(c.k//32):
+                    start = 17*(c.offset + m*(c.k//32 + c.padding) + b)
+                    block = packed[start:start+17]
+                    codes = [a & 15 for a in block[:16]] + [a >> 4 for a in block[:16]]
+                    weights.extend(Fraction(decode(block[16], q)) for q in codes)
+                for r in range(c.b):
+                    terms = [w*v for w, v in zip(weights, map(Fraction, x[r*c.k:(r+1)*c.k]))]
+                    if float(sum(terms)) != ref[r*c.m+m]:
+                        raise ValueError('independent dense dot mismatch')
         if c.pitch:
             id_span(c.s, c.t, 4, c.pitch*4, 0, len(ids)*4, len(ids)*4)
             # Reconstruct the synchronized grouping and reverse scatter independently of direct slot lookup.
@@ -215,13 +235,25 @@ def gpu(c, data, path):
     path = path.resolve(strict=True)
     with os.add_dll_directory(str(path.parent)):
         dll = ct.CDLL(str(path))
-        run = dll.evox2_hip2a_case
-        run.argtypes = [ct.c_char_p, ct.c_char_p, ct.c_void_p, ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_size_t,
+        reg_args = []
+        if c.id in SCHED_FIXTURES:
+            registry = ct.CDLL(str(path.with_name('ggml.dll').resolve(strict=True)))
+            registry.ggml_backend_load.argtypes = [ct.c_char_p]
+            registry.ggml_backend_load.restype = ct.c_void_p
+            cpu_path = path.with_name('ggml-cpu.dll').resolve(strict=True)
+            cpu = registry.ggml_backend_load(os.fsencode(cpu_path))
+            if not cpu:
+                raise RuntimeError('CPU backend registration failed')
+            reg_args.append(cpu)
+            run = dll.evox2_hip2e_sched_case
+        else:
+            run = dll.evox2_hip2a_case
+        run.argtypes = [ct.c_void_p]*len(reg_args) + [ct.c_char_p, ct.c_char_p, ct.c_void_p, ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_size_t,
                         ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_size_t]
         run.restype = ct.c_int
         out = ct.create_string_buffer(output_bytes)
         geometry = (ct.c_int*10)(*c[2:-1])
-        done = run(c.id.encode(), c.op.encode(), geometry, packed, len(packed), (ct.c_float*len(x))(*x), len(x),
+        done = run(*reg_args, c.id.encode(), c.op.encode(), geometry, packed, len(packed), (ct.c_float*len(x))(*x), len(x),
                    (ct.c_int32*len(ids))(*ids), len(ids), out, output_bytes)
         if done != 1:
             raise RuntimeError('expected one executed case')
@@ -259,6 +291,8 @@ def main():
         check_id_bounds()
         print("CPU codec 4096 pairs; ID span 1 positive, 10 negative")
     for c in catalog():
+        if c.id in SCHED_FIXTURES and not args.case and args.mode != 'enumerate':
+            continue
         if args.case and c.id != args.case:
             continue
         print(*c, flush=True)

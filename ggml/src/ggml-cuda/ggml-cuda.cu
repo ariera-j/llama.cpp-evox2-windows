@@ -1913,6 +1913,8 @@ struct batched_mul_mat_traits<GGML_TYPE_F16> {
 
 #ifdef GGML_HIP_ROCMFP4_TEST
 thread_local int rocmfp4_test_sgemms = 0;
+thread_local int rocmfp4_test_h2d = 0, rocmfp4_test_d2h = 0, rocmfp4_test_host_reads = 0;
+thread_local size_t rocmfp4_test_id_span = 0, rocmfp4_test_id_pitch = 0;
 #endif
 
 template<ggml_type compute_type>
@@ -2889,6 +2891,11 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST && ggml_backend_buffer_is_host(ids->buffer)) {
         CUDA_CHECK(cudaStreamSynchronize(stream));
         memcpy(ids_host.data(), ids->data, ids_host.size());
+#ifdef GGML_HIP_ROCMFP4_TEST
+        ++rocmfp4_test_host_reads;
+        rocmfp4_test_id_span = ids_host.size();
+        rocmfp4_test_id_pitch = ids->nb[1];
+#endif
     } else
 #endif
     {
@@ -2901,6 +2908,11 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
             for (int64_t iex = 0; iex < n_expert_used; ++iex) {
                 const int32_t expert_to_use = *(const int32_t *)(ids_host.data() + i12*ids->nb[1] + iex*ids->nb[0]);
 #if defined(GGML_USE_HIP) && defined(_WIN32)
+#ifdef GGML_HIP_ROCMFP4_TEST
+                if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST && ggml_backend_buffer_is_host(ids->buffer)) {
+                    GGML_ASSERT(expert_to_use >= -1 && expert_to_use < ne02);
+                }
+#endif
                 if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST && expert_to_use == -1) {
                     ids_from_sorted_host[i12*n_expert_used + iex] = -1;
                     continue;
@@ -3041,6 +3053,9 @@ static void rocmfp4_fast_stage_host(ggml_backend_cuda_context & ctx, ggml_tensor
         activation = *x;
         stage(activation, input_buffer);
         CUDA_CHECK(cudaMemcpyAsync(activation.data, x->data, ggml_nbytes(x), cudaMemcpyHostToDevice, ctx.stream()));
+#ifdef GGML_HIP_ROCMFP4_TEST
+        ++rocmfp4_test_h2d;
+#endif
         op.src[1] = &activation;
     }
     if (ggml_backend_buffer_is_host(dst->buffer)) {
@@ -3053,6 +3068,9 @@ static void rocmfp4_fast_stage_host(ggml_backend_cuda_context & ctx, ggml_tensor
     }
     if (output_buffer) {
         CUDA_CHECK(cudaMemcpyAsync(dst->data, op.data, ggml_nbytes(dst), cudaMemcpyDeviceToHost, ctx.stream()));
+#ifdef GGML_HIP_ROCMFP4_TEST
+        ++rocmfp4_test_d2h;
+#endif
     }
     CUDA_CHECK(cudaStreamSynchronize(ctx.stream()));
 }
