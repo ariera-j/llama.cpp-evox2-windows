@@ -26,7 +26,10 @@ class Case(NamedTuple):
     sgemms: int
 
 
-SCHED_FIXTURES = {'S-HC-CPU': '6', 'S-HC-PIN': '6', 'S-ID-PIN': '8'}
+SCHED_FIXTURES = {'S-HC-CPU': '6', 'S-HC-PIN-COPY': '6', 'S-ID-PIN-COPY': '8'}
+
+
+PLACEMENT_CASE = 'S-HC-PIN-REJECT'
 
 
 def catalog():
@@ -35,12 +38,12 @@ def catalog():
         if line.startswith('CASE(') and line.endswith(')'):
             fields = next(csv.reader([line[5:-1]], skipinitialspace=True))
             rows.append(Case(*fields[:2], *map(int, fields[2:])))
-    if [c.id for c in rows] != ['1', '1-NC', '2', '2-C', '5', '6', '7', '8', '9', '9-Z', *SCHED_FIXTURES]:
+    if [c.id for c in rows] != ['1', '1-NC', '2', '2-C', '5', '6', '7', '8', '9', '9-Z', *SCHED_FIXTURES, PLACEMENT_CASE]:
         raise ValueError('unexpected case catalog')
     records = '\n'.join(line for line in Path(__file__).with_name('cases.inc').read_text().splitlines() if line.startswith('CASE('))
     if hashlib.sha256('\n'.join(records.splitlines()[:10]).encode()).hexdigest() != '0f5c1cf6b166d57f6c8ed16bc85c3ef6d8a88f10837c09d55655dfd577c6feea':
         raise ValueError('operation, shape or layout differs from reviewed enumeration')
-    if hashlib.sha256(records.encode()).hexdigest() != '5afb7000d94c9bcadba08336d2f4ba3c018a32d36dda53dd8595e7d8cf4b0136':
+    if hashlib.sha256(records.encode()).hexdigest() != '5d5a2e08ae7eed50a6d6cb52013a4ce0e92c6c51cfa94088690039cb990258a6':
         raise ValueError('unexpected scheduler catalog')
     return rows
 
@@ -182,7 +185,7 @@ def check_cpu(c, data):
     else:
         if len(x) != c.k*c.b*c.t or len(ref) != c.m*c.s*c.t or not all(map(math.isfinite, ref + bounds)):
             raise ValueError('invalid reference')
-        if c.id in ('S-HC-CPU', 'S-HC-PIN'):
+        if c.id in ('S-HC-CPU', 'S-HC-PIN-COPY'):
             # Decode whole rows and sum exact binary rationals independently of the FP64 dot loop.
             from fractions import Fraction
             for m in range(c.m):
@@ -236,7 +239,7 @@ def gpu(c, data, path):
     with os.add_dll_directory(str(path.parent)):
         dll = ct.CDLL(str(path))
         reg_args = []
-        if c.id in SCHED_FIXTURES:
+        if c.id in SCHED_FIXTURES or c.id == PLACEMENT_CASE:
             registry = ct.CDLL(str(path.with_name('ggml.dll').resolve(strict=True)))
             registry.ggml_backend_load.argtypes = [ct.c_char_p]
             registry.ggml_backend_load.restype = ct.c_void_p
@@ -251,12 +254,14 @@ def gpu(c, data, path):
         run.argtypes = [ct.c_void_p]*len(reg_args) + [ct.c_char_p, ct.c_char_p, ct.c_void_p, ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_size_t,
                         ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_size_t]
         run.restype = ct.c_int
-        out = ct.create_string_buffer(output_bytes)
+        out = ct.create_string_buffer(output_bytes) if output_bytes else None
         geometry = (ct.c_int*10)(*c[2:-1])
         done = run(*reg_args, c.id.encode(), c.op.encode(), geometry, packed, len(packed), (ct.c_float*len(x))(*x), len(x),
                    (ct.c_int32*len(ids))(*ids), len(ids), out, output_bytes)
         if done != 1:
             raise RuntimeError('expected one executed case')
+    if c.id == PLACEMENT_CASE:
+        return
     if isinstance(ref, bytes):
         if out.raw != ref:
             raise ValueError('GPU decoder bits')
@@ -294,6 +299,16 @@ def main():
         if c.id in SCHED_FIXTURES and not args.case and args.mode != 'enumerate':
             continue
         if args.case and c.id != args.case:
+            continue
+        if c.id == PLACEMENT_CASE:
+            if args.mode == 'enumerate':
+                print(*c, 'allocation-only', flush=True)
+            elif args.mode == 'gpu':
+                packed, x, _, _, _ = fixture(c._replace(id='6'))
+                gpu(c, (packed, x, [], b'', []), args.dll)
+                print('PASS', c.id, 'allocation-only')
+            elif args.case:
+                parser.error('allocation-only case has no numerical reference')
             continue
         print(*c, flush=True)
         if args.mode != 'enumerate':

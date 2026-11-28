@@ -73,6 +73,11 @@ void convert(const test_case & c, const uint8_t * packed, size_t bytes, uint8_t 
     CUDA_CHECK(hipFree(input));
 }
 
+bool same_layout(const ggml_tensor * a, const ggml_tensor * b) {
+    return a->type == b->type && std::equal(a->ne, a->ne + GGML_MAX_DIMS, b->ne) &&
+           std::equal(a->nb, a->nb + GGML_MAX_DIMS, b->nb);
+}
+
 void expect_bytes(ggml_tensor * tensor, const void * expected, size_t n) {
     GGML_ASSERT(ggml_nbytes(tensor) == n);
     std::vector<uint8_t> actual(n);
@@ -92,11 +97,12 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
     ggml_backend_t backends[] = {hip, cpu};
     auto sched = ggml_backend_sched_new(backends, nullptr, 2, 64, false, false);
     GGML_ASSERT(sched);
-    const bool split_copy = std::strcmp(c.id, "S-HC-CPU") == 0;
-    const bool pinned_io = std::strcmp(c.id, "S-HC-PIN") == 0;
+    const bool cpu_input = std::strcmp(c.id, "S-HC-CPU") == 0;
+    const bool split_copy = cpu_input || std::strcmp(c.id, "S-HC-PIN-COPY") == 0;
+    const bool pinned_io = std::strcmp(c.id, "S-HC-PIN-REJECT") == 0;
     const auto device = ggml_backend_cuda_buffer_type(0);
     const auto host = ggml_backend_cuda_host_buffer_type();
-    const auto input_type = split_copy ? ggml_backend_cpu_buffer_type() : pinned_io ? host : device;
+    const auto input_type = cpu_input ? ggml_backend_cpu_buffer_type() : ids ? device : host;
     std::vector<ggml_tensor *> owned;
     auto allocate = [&](ggml_tensor * t, ggml_backend_buffer_type_t type) {
         const size_t guard = ggml_backend_buft_get_alignment(type);
@@ -124,6 +130,36 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
     ggml_backend_tensor_set(activation, x, 0, ggml_nbytes(activation));
     auto graph = ggml_new_graph_custom(ctx, 16, false);
     ggml_build_forward_expand(graph, dst);
+    auto cleanup = [&]() {
+        ggml_backend_sched_free(sched);
+        for (auto t : owned) {
+            ggml_backend_buffer_free(t->buffer);
+        }
+        ggml_backend_free(cpu);
+    };
+    if (pinned_io) {
+        const bool hb = ggml_backend_supports_buft(hip, host);
+        const bool ho = ggml_backend_supports_op(hip, dst);
+        const bool cb = ggml_backend_supports_buft(cpu, host);
+        const bool co = ggml_backend_supports_op(cpu, dst);
+        std::fprintf(stderr, "placement probe %s hip_buft=%d hip_op=%d cpu_buft=%d cpu_op=%d\n",
+                     c.id, hb, ho, cb, co);
+        const bool allocated = ggml_backend_sched_alloc_graph(sched, graph);
+        auto assigned = allocated ? ggml_backend_sched_get_tensor_backend(sched, dst) : nullptr;
+        std::fprintf(stderr, "%s backend=%s weight=%s activation=%s dst=%s hip_buft=%d hip_op=%d "
+                     "cpu_buft=%d cpu_op=%d alloc=%d split_copy=%d id_copy=0 observed_span=0 observed_pitch=0 compute=0 ops=0 sgemms=%d stage_h2d=%d "
+                     "stage_d2h=%d host_reads=%d span=%zu pitch=%zu\n", c.id,
+                     assigned ? ggml_backend_name(assigned) : "-",
+                     ggml_backend_buffer_name(w->buffer), ggml_backend_buffer_name(activation->buffer),
+                     ggml_backend_buffer_name(dst->buffer), hb, ho, cb, co, allocated, int(dst->src[1] != activation), rocmfp4_test_sgemms,
+                     rocmfp4_test_h2d, rocmfp4_test_d2h, rocmfp4_test_host_reads,
+                     rocmfp4_test_id_span, rocmfp4_test_id_pitch);
+        GGML_ASSERT(!hb && !ho && cb && co && allocated && assigned == cpu && dst->src[1] == activation);
+        GGML_ASSERT(!rocmfp4_test_sgemms && !rocmfp4_test_h2d && !rocmfp4_test_d2h &&
+                    !rocmfp4_test_host_reads && !rocmfp4_test_id_span && !rocmfp4_test_id_pitch);
+        cleanup();
+        return;
+    }
     GGML_ASSERT(ggml_backend_sched_alloc_graph(sched, graph));
     GGML_ASSERT(ggml_backend_sched_get_tensor_backend(sched, dst) == hip);
     GGML_ASSERT(ggml_graph_n_nodes(graph) == (ids ? 3 : 2));
@@ -140,15 +176,21 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
     GGML_ASSERT(!activation->view_src && !actual_x->view_src && !dst->view_src);
     GGML_ASSERT(type_of(w) == device && type_of(activation) == input_type);
     GGML_ASSERT(type_of(actual_x) == (split_copy ? device : input_type));
-    GGML_ASSERT(type_of(dst) == (pinned_io ? host : device));
+    GGML_ASSERT(type_of(dst) == device);
     GGML_ASSERT(split_copy == (actual_x != activation) && split_copy == (actual_x->data != activation->data));
     if (split_copy) {
+        GGML_ASSERT(same_layout(actual_x, activation));
         GGML_ASSERT(ggml_backend_sched_get_tensor_backend(sched, activation) == cpu);
         GGML_ASSERT(ggml_nbytes(actual_x) == ggml_nbytes(activation));
         ggml_backend_tensor_memset(actual_x, 0xff, 0, ggml_nbytes(actual_x));
     }
+    auto actual_ids = dst->src[2];
     if (ids) {
-        GGML_ASSERT(dst->src[2] == ids && ids->view_src == parent && ids->src[0] == parent && ids->view_offs == 0 &&
+        GGML_ASSERT(actual_ids && actual_ids != ids && actual_ids->data != ids->data && !actual_ids->view_src &&
+                    actual_ids->view_offs == 0 && type_of(actual_ids) == device &&
+                    same_layout(actual_ids, ids) && ggml_nbytes(parent) == 6144);
+        ggml_backend_tensor_memset(actual_ids, 0xff, 0, ggml_nbytes(actual_ids));
+        GGML_ASSERT(ids->view_src == parent && ids->src[0] == parent && ids->view_offs == 0 &&
                     ids->buffer == parent->buffer && ids->data == parent->data && type_of(ids) == host &&
                     ids->nb[0] == 4 && ids->nb[1] == 4u*c.pitch && ggml_nbytes(ids) == 4104);
     }
@@ -156,9 +198,12 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
     struct observation {
         ggml_tensor * dst;
         const float * x;
+        ggml_tensor * activation;
+        ggml_tensor * ids;
         size_t bytes;
+        const int32_t * indices;
         int completed;
-    } seen{dst, x, ggml_nbytes(activation), 0};
+    } seen{dst, x, activation, ids, ggml_nbytes(activation), ids ? indices : nullptr, 0};
     ggml_backend_sched_set_eval_callback(sched, [](ggml_tensor * node, bool ask, void * user) {
         auto & obs = *static_cast<observation *>(user);
         if (node != obs.dst) {
@@ -167,7 +212,12 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
         }
         if (ask) {
             // Split inputs have been copied. Check every byte before the operation consumes it.
+            GGML_ASSERT(same_layout(node->src[1], obs.activation));
             expect_bytes(node->src[1], obs.x, obs.bytes);
+            if (obs.indices) {
+                GGML_ASSERT(same_layout(node->src[2], obs.ids));
+                expect_bytes(node->src[2], obs.indices, 4104);
+            }
         } else {
             ++obs.completed;
         }
@@ -175,10 +225,8 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
     }, &seen);
     GGML_ASSERT(ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS);
     GGML_ASSERT(seen.completed == 1 && rocmfp4_test_sgemms == c.expected_sgemms);
-    GGML_ASSERT(rocmfp4_test_h2d == int(pinned_io) && rocmfp4_test_d2h == int(pinned_io));
-    GGML_ASSERT(rocmfp4_test_host_reads == int(ids != nullptr));
-    GGML_ASSERT(rocmfp4_test_id_span == (ids ? ggml_nbytes(ids) : 0));
-    GGML_ASSERT(rocmfp4_test_id_pitch == (ids ? ids->nb[1] : 0));
+    GGML_ASSERT(!rocmfp4_test_h2d && !rocmfp4_test_d2h && !rocmfp4_test_host_reads &&
+                !rocmfp4_test_id_span && !rocmfp4_test_id_pitch);
     expect_bytes(root, packed, bytes);
     expect_bytes(activation, x, ggml_nbytes(activation));
     if (parent) {
@@ -199,18 +247,16 @@ void schedule(const test_case & c, ggml_backend_reg_t cpu_reg, ggml_backend_t hi
         }
     }
     ggml_backend_tensor_get(dst, result, 0, ggml_nbytes(dst));
-    std::fprintf(stderr, "%s backend=%s weight=%s activation=%s->%s dst=%s ids=%s split_copy=%d "
+    std::fprintf(stderr, "%s backend=%s weight=%s activation=%s->%s dst=%s ids=%s split_copy=%d id_copy=%d observed_span=%zu observed_pitch=%zu "
                  "stage_h2d=%d stage_d2h=%d host_reads=%d span=%zu pitch=%zu ops=%d sgemms=%d\n",
-                 c.id, ggml_backend_name(hip), ggml_backend_buft_name(type_of(w)), ggml_backend_buft_name(input_type),
+                 c.id, ggml_backend_name(ggml_backend_sched_get_tensor_backend(sched, dst)), ggml_backend_buft_name(type_of(w)), ggml_backend_buft_name(input_type),
                  ggml_backend_buft_name(type_of(actual_x)), ggml_backend_buft_name(type_of(dst)),
-                 ids ? ggml_backend_buft_name(type_of(ids)) : "-", int(split_copy), rocmfp4_test_h2d,
+                 ids ? ggml_backend_buft_name(type_of(actual_ids)) : "-", int(actual_x != activation),
+                 int(ids && actual_ids != ids), actual_ids ? ggml_nbytes(actual_ids) : size_t(0),
+                 actual_ids ? actual_ids->nb[1] : size_t(0), rocmfp4_test_h2d,
                  rocmfp4_test_d2h, rocmfp4_test_host_reads, rocmfp4_test_id_span, rocmfp4_test_id_pitch,
                  seen.completed, rocmfp4_test_sgemms);
-    ggml_backend_sched_free(sched);
-    for (auto t : owned) {
-        ggml_backend_buffer_free(t->buffer);
-    }
-    ggml_backend_free(cpu);
+    cleanup();
 }
 
 void multiply(ggml_backend_reg_t cpu_reg, const test_case & c, const uint8_t * packed, size_t bytes, const float * x,
@@ -344,10 +390,11 @@ int run_case(ggml_backend_reg_t cpu_reg, const char * id, const char * op_name, 
         const bool gemm = c.op == MM || c.op == MM_ID;
         const size_t count = gemm ? c.m*c.s*c.t : c.m*c.k;
         GGML_ASSERT(bytes == 17u*(c.offset + c.e*((c.k/32 + c.padding)*c.m + c.gap) + 1));
-        GGML_ASSERT(result_bytes == count*(c.op == F16_C || c.op == F16_NC ? 2 : 4));
+        const bool placement = std::strcmp(id, "S-HC-PIN-REJECT") == 0;
+        GGML_ASSERT(result_bytes == (placement ? 0 : count*(c.op == F16_C || c.op == F16_NC ? 2 : 4)));
         GGML_ASSERT(nx == size_t(gemm ? c.k*c.b*c.t : 0) && ni == size_t(c.pitch*c.t));
-        GGML_ASSERT(packed && result && (!nx || x) && (!ni || indices));
-        int sgemms = gemm ? 1 : 0;
+        GGML_ASSERT(packed && (placement ? !result : result != nullptr) && (!nx || x) && (!ni || indices));
+        int sgemms = gemm && !placement ? 1 : 0;
         if (c.op == MM_ID) {
             constexpr int ids7[] = {3, 1};
             constexpr int ids8[] = {2, 0, 0, 2, 2, 2};
