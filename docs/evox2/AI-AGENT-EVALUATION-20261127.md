@@ -346,3 +346,27 @@ ChatGPT は固定文書 SHA の RUNBOOK.md 101〜107行、BENCHMARK-RULES.md 51/
 | H0含む累計 | 3.94pt + H0未測分 | 約16.27pt |
 
 Claude/GPT weekly 4.51%不変。新規セッションでのルール再読込込みの観測。ローカル読み取りの承認負担削減を確認したが、同じ作業を設定前後で対照実施していない。proceed-in-sandbox 設定後の SSH/SCP の承認が維持されるかは H7では試験していない。次は H8 として、既存の監査ルールを変更せず、模擬JSONを入力とする純粋な判定・集計ロジックを ThinkPad 内で実装・単体テストする案。実機操作・既存製品変更・本番安全ゲートへの組込・push は別途レビューと承認を要する。
+
+## 16. Hydrogen Medium H8: 安全監査判定の試作実装（2026-11-28）
+
+H7 に続き ThinkPad のワークスペース内で Python 標準ライブラリのみの純粋な判定関数・JSON CLI・unittest・README を作成。実機操作、既存計測ツールへの組込、Git push は行っていないとの報告。提出された3ファイルを ChatGPT が直接検査し、SHA-256 が全て報告値と一致、独立環境で unittest 23/23 成功（0.831秒、Hydrogen環境0.083秒、環境差のため速度比較しない）。
+
+| ファイル | SHA-256 |
+|---|---|
+| evaluate_benchmark_safety.py | 2b7cc3593f46899231eb34ff2019baa3ac532424ed9200aaa8697f000824bfc4 |
+| test_evaluate_benchmark_safety.py | d395c57dc12b1dd1b409f99ecbd48f386005414777b3731218965acf732d51e5 |
+| README.md | de8ef2db8d9a879c4a5645e15836c3b45c6ba306526c5b37b048f5565436bf7d |
+
+通常ケース、H7の8ケース、必須欠損、不正型、NaN/Infinity、境界、複数異常を検証した点は評価できる。追加の独立試験では (1) 10**400 の整数を RAM 値に渡すと math.isfinite で OverflowError、(2) JSON の ssh_completed に false と true を重複記載すると後者が採用され CONTINUE、(3) expected/before/after P-MODE を全て Unknown にすると CONTINUE、(4) WER の record_id/description 不在、時刻確認済み・期間外というフラグのみでも CONTINUE を再現。期間外と過去発生の区別やイベントのカーソル範囲照合はアダプターの契約を含めて要設計。CLI は STOP でも正常JSON出力なら exit 0（README記載の仕様）なので、統合時は decision を厳密に検査し、例外・非ゼロ終了・欠損・不正出力も停止扱いとする必要がある。README の WER 説明「いずれかが未確認または true」は条件の記述が曖昧。実際の承認済み閾値との照合や実ログアダプターは未実装。H8 は試作能力として合格、本番の安全判定としては未承認。今回は追加修正・本番統合を保留し、ソースは運用者側の試作品として保持（GitHubには評価記録のみ）。
+
+| 観測 | Gemini weekly | Gemini 5h |
+|---|---:|---:|
+| H7終了後 | 87.49% | 83.73% |
+| H8終了後 | 87.30% | 82.97% |
+| H8消費（表示差） | 0.19pt | 0.76pt |
+| H1〜H8累計 | 4.13pt | 16.54pt |
+| H0含む累計 | 4.13pt + H0未測分 | 約17.03pt |
+
+Claude/GPT weekly 4.51%不変。H8の承認回数は未報告。H7後と同一Conversationを意図。実壁時間、トークン・キャッシュ等は未取得。次はセッションログの保存形式と取得可能指標の調査、導入手順の文書化をもって初期評価を終了する。Low比較、OpenCode導入、試作品の本番統合は保留し、llama.cppの高速化・ROCmFP4対応へ復帰する。
+
+AGENTS.md の誤操作防止として root:antigravity / 0440 に加え ext4 の immutable 属性を設定する案を提示。親ディレクトリが書き込み可能なら所有者・モードだけでは unlink/rename を防げない。対象ファイルの設定は実機確認待ちであり、ワークスペース全体や参照用 clone を強制的に保護する境界ではない。
