@@ -7,7 +7,8 @@
 | 製品基準 | `a650d641ee99198543697e1e3913c593059721f7` |
 | HIP-1文書・今回の運用文書同期元 main | `244ec7a97d5206e897786481b4b34cedf3173521` |
 | 実装コミット | `f19d5c75f68ae25bbd5a95b223e67d816c97e2fc` |
-| 実験ブランチ `codex/b12651-rocmfp4-hip2-20261128` の文書同期後 HEAD・HIP-2C ビルド元 | `cab3886c3e76c6cb0716be62a60bfe752d9c0b7c` |
+| 実験ブランチ `codex/b12651-rocmfp4-hip2-20261128` の文書同期後 HEAD（初回 HIP-2C-1 Preflight 失敗時・`w57` 保全） | `cab3886c3e76c6cb0716be62a60bfe752d9c0b7c` |
+| 実験ブランチ `codex/b12651-rocmfp4-hip2-20261128` の共通ツール監査例外反映後 HEAD・HIP-2C ビルド元 | `56e4f6dc7f332eb275de9d27bd3c12a7ed0c320d` |
 
 同期は EVOX2-ENVIRONMENT.md と KNOWN-ISSUES.md のみ。Windows コンパイル、GPU 数値、scheduler の実配置、実モデルは未検証。製品採用の判定は保留。
 
@@ -32,7 +33,7 @@
 短い登録済み clean worktree で完全 SHA と GitHub の実験ブランチを照合し、各版に未使用の build 先を確保する。以下はその worktree のルートから実行する案。通常版は標準外側ラッパーの既定値、テスト版は内側へ限定 BOOL を渡す。共通ツールの変更はない。
 
 ```powershell
-$sha = 'cab3886c3e76c6cb0716be62a60bfe752d9c0b7c'
+$sha = '56e4f6dc7f332eb275de9d27bd3c12a7ed0c320d'
 $outer = '.\tools\evox2\automation\Invoke-CodexBuild.ps1'
 & $outer -Backend ROCm -Worktree -SourceCommit $sha -BuildDir build-h2n -PreflightOnly -Offline
 & $outer -Backend ROCm -Worktree -SourceCommit $sha -BuildDir build-h2t -PreflightOnly -Offline

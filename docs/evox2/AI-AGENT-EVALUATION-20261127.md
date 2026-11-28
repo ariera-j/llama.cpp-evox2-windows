@@ -554,3 +554,14 @@ Workの時間あたり消費はCLI HIP-1設計の約3.7倍（運用者申告時�
 | HIP-2B修正 | 77% | 8分1秒 |
 
 リセット後の表示差は合計23ポイント。ChatGPT の独立再レビューでは CPU 参照10件の SHA-256 が一致し、実験版の固定を GO とした。Windows コンパイル、GPU 数値、実モデルは未検証。[レビュー結果・HIP-2C引き継ぎ](B12651-ROCMFP4-HIP2B-REVIEW-HIP2C-20261128.md)
+
+## 23. Hydrogen Medium: HIP-2C-1 Preflight 停止と HIP-2C-1A 監査例外対応（2026-11-28）
+
+HIP-2C テスト版ビルドの開始後、HIP-2C-1（Preflight）で `ggml/src/ggml-hip/CMakeLists.txt` の監査基準差分により停止した（実行 ID `build-ROCm-Preflight-b2374726fce641959d88303c85e2325f`、終了コード `1`、所要時間 `3.998` 秒）。ルールに従い Configure へ進まず停止・報告し、後続の HIP-2C-1A で `Evox2.DependencyCache.psm1` と `Test-Evox2DependencyInputs.ps1` に固定監査基準 SHA・厳密 blob 一致・`tracked` 差分限定の例外および実 Git オブジェクトによる隔離テストを追加し、独立レビュー（CONDITIONAL GO → GO）を経て `main`（`fe5dc0832ec6d7bc0d20d3537eef00fcb3b67693`）と実験ブランチ（`56e4f6dc7f332eb275de9d27bd3c12a7ed0c320d`）へ反映した。[HIP-2C-1 / HIP-2C-1A 記録](B12651-ROCMFP4-HIP2C1-PREFLIGHT-AUDIT-20261128.md)
+
+| 時点（運用者記録） | 週間残量 | 5時間残量 | Context | 承認回数 |
+|---|---:|---:|---:|---:|
+| 開始時 | 82.83% | 82.14% | 0 | — |
+| 初回 Preflight 後 | 82.08% | 79.12% | 125.6k | 6 回 |
+| HIP-2C-1A 実装後 | 80.64% | 73.38% | 164.5k | 8 回 |
+| 最終修正後 | 80.00% | 70.80% | 185.2k | 5 回 |
