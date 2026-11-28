@@ -210,3 +210,32 @@ ChatGPT は固定 main SHA と製品 SHA の Matrix blob `186c6136762939fe76dc72
 | H0を含む累計 | 1.24pt + H0未測分 | 約5.46pt |
 
 Claude/GPT weekly は4.51%のまま。H3の承認は運用者計数で6回（SSH/Gitと思われるが種別内訳は未確定）。実壁時間未計測。H3 は合格。次は同一既存条件の Vulkan 短文スモークを1runのみ、事前安全確認・個別承認・事後監査付きで実行する H4。SSH 切断・安全ゲート不成立・重大イベント・未確認状態では再試行や追加計測をしない。承認回数削減は関連する読み取り処理をまとめることで試し、包括的な SSH/Git 許可は行わない。
+
+## 11. Hydrogen Medium H4: Vulkan 短文スモーク実計測（2026-11-28）
+
+同一 Conversation、Hydrogen Medium、固定文書 SHA で H3 の既存 Plan/LocalConfig を再利用。SSH 3回、運用者承認3回（事前確認、計測、事後監査）。追加計測・再試行は提示ログ上なし。Matrix Run ID `H4-smoke-20261128-M001`、バッチ `20261128-115403-672-b12651-monitor-smokes`、子 `20261128-115447-003-cli-vulkan-b12676-ctx2048-e4c08667866f`。標準ログルートに保存。VulkanStage2 b12676、eea8dcefc、CLI SHA-256 は H3 と一致、RuntimeArtifactStatus Verified との報告。IQ3 PLE16、49/49 GPU、ctx2048、短文210入力/32生成（TG計時31）、H3の計測・監視条件。
+
+| 指標 | H4 | 参考 R34-vulkan-iq3-cli-M001 |
+|---|---:|---:|
+| PP tok/s | 91.56 | 115.01 |
+| TG tok/s | 25.65 | 28.62 |
+| Context 行受信まで s | 50.184 | 50.161 |
+| プロセス / ラッパー s | 58.057 / 77.190 | 53.670 / 71.009 |
+| 詳細RAM 最大使用 / 最低空き GiB | 7.803 / 23.844 | 8.007 / 23.640 |
+| 詳細コミット最大 GiB | 87.620 | 88.746 |
+| 通常 / ADLX / 詳細RAM サンプル数 | 24 / 34 / 262 | 22 / 31 / 244 |
+| 監視品質 | Partial / Complete / Complete | Partial / Complete / Complete |
+
+参考値は [Matrix 統合検証記録](automation/BENCHMARK-MATRIX-ROUNDS-B12651.md) を使用（H4回答の参考RAM行数243は文書244と不一致、参考23.657 GiBおよび88.743 GiBは通常監視と明記されているため詳細値とは別）。PP -20.39%、TG -10.38% の観測差。Context 行受信差 +0.023秒。短文単発、OS 起動期間・背景状態・温度等の差を分離しておらず、性能回帰や原因を確定しない。TG 31/1.20876 ≈25.65 tok/s と算術整合、受信時刻と内部境界を区別する記述も改善。実測開始直後のウォームアップ等の詳細は原本未確認。
+
+安全確認は Matrix/子 OK、前後ゲート Issue=null、空きRAM 26.093→25.945 GiB、コミット7.398→7.555 GiB、GPU Dedicated 0.367→0.367 GiB、Performance維持、残留なし、System/Application 新規各0件との報告。ADLX VRAM 375 MBへ復帰。通常監視は背景項目部分取得（21 NotSampled）、ADLX非対応2項目欠損、高負荷サンプル不足でADLX P-MODE補助評価なし、WMI/CIMのPnP取得不可。P-MODEは既存読み取りタスクで確認。安全確認に必要な項目と補助監視欠損を分けた。H4初期合格（報告ベース）。ChatGPTは実機生ログ・承認画面を直接確認していない。提示ログに計測後のパース問題を検討した形跡はあるが、最終報告成功、原因・副作用未監査。
+
+| 観測 | Gemini weekly | Gemini 5h |
+|---|---:|---:|
+| H3終了後 | 90.19% | 94.54% |
+| H4終了後 | 89.74% | 92.76% |
+| H4消費（表示差） | 0.45pt | 1.78pt |
+| H1〜H4累計 | 1.69pt | 6.75pt |
+| H0含む累計 | 1.69pt + H0未測分 | 約7.24pt |
+
+Claude/GPT weekly 4.51%不変。純粋な壁時間未記録。H3→H4で承認6→3回、作業内容は異なるが関連処理集約は実用的。包括的SSH承認不要。次はH5 32k日本語論文、Vulkan IQ3 PLE16 同じ既存ビルド1runを候補。Stage2のUMA96 GiB 64k成功記録はあるが32k同条件の既存Planは未確認。既存設定・安全条件の照合とPlanOnly（単一条件の既存MeasureならDryRunと同等の外側安全監査）を経て個別承認し、条件を確定できなければ実行せず停止。旧IQ3・UMA64 GiBの32k基準を同条件の性能比較に使わない。
