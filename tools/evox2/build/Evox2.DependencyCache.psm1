@@ -584,16 +584,28 @@ function Assert-Evox2DependencyInputs {
         ':(icase,literal)ui/apps/chat/.npmrc'
     )
     $gitArgs = @('-C', $RepoRoot, '-c', 'core.quotePath=false')
-    # This reviewed ggml-base source-list addition enables the ROCmFPx codecs.
-    # Any other change to the file still requires a dependency review.
-    $rocmfpxBuildPath = 'ggml/src/CMakeLists.txt'
-    $rocmfpxBuildBlob = 'cfdb9a0ac0fe698592cf448657fc81bf7d247cdc'
-    $reviewedRocmFpxBuild = $false
-    if (Test-Path -LiteralPath (Join-Path $RepoRoot $rocmfpxBuildPath) -PathType Leaf) {
-        $blob = Invoke-Evox2DependencyCommand git ($gitArgs + @(
-            'hash-object', "--path=$rocmfpxBuildPath", '--', $rocmfpxBuildPath
-        ))
-        $reviewedRocmFpxBuild = $blob -ceq $rocmfpxBuildBlob
+    # Reviewed b12651 CMake additions (each requires an exact working-tree blob match
+    # against the pinned b12651 audit baseline and tracked status):
+    # - ggml/src/CMakeLists.txt: enables the ROCmFPx codecs in ggml-base.
+    # - ggml/src/ggml-hip/CMakeLists.txt: adds the Windows-only GGML_HIP_ROCMFP4_TEST harness target.
+    $reviewedB12651Baseline = 'f5e6915c28f10330885fcb9243a93ae98d3115ab'
+    $reviewedCMakeExceptions = @(
+        @{ Path = 'ggml/src/CMakeLists.txt'; Blob = 'cfdb9a0ac0fe698592cf448657fc81bf7d247cdc' },
+        @{ Path = 'ggml/src/ggml-hip/CMakeLists.txt'; Blob = 'b683a1d32fd8cf8e3bf15a788b16b1f2c083bd76' }
+    )
+    $approvedTrackedPaths = @()
+    if ($AuditedCommit -ceq $reviewedB12651Baseline) {
+        foreach ($entry in $reviewedCMakeExceptions) {
+            $fullPath = Join-Path $RepoRoot $entry.Path
+            if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+                $blob = Invoke-Evox2DependencyCommand git ($gitArgs + @(
+                    'hash-object', "--path=$($entry.Path)", '--', $entry.Path
+                ))
+                if ($blob -ceq $entry.Blob) {
+                    $approvedTrackedPaths += $entry.Path
+                }
+            }
+        }
     }
 
     $issues = @(foreach ($inputGroup in @(
@@ -603,8 +615,8 @@ function Assert-Evox2DependencyInputs {
         $tracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
             'diff', '--name-only', '--no-ext-diff', '--no-renames', '--ignore-submodules=none', $AuditedCommit, '--'
         ) + $inputGroup.Paths)
-        if ($reviewedRocmFpxBuild -and $AuditedCommit -ceq 'f5e6915c28f10330885fcb9243a93ae98d3115ab') {
-            $tracked = @($tracked | Where-Object { $_ -cne $rocmfpxBuildPath })
+        if ($approvedTrackedPaths.Count -gt 0) {
+            $tracked = @($tracked | Where-Object { $approvedTrackedPaths -cnotcontains $_ })
         }
         $untracked = Invoke-Evox2DependencyCommand git ($gitArgs + @(
             'ls-files', '--others', '--exclude-standard', '--'
