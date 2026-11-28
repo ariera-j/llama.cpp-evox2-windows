@@ -185,3 +185,28 @@ H0 は当日最初の利用で、前回利用から5時間以上経過したと�
 改善点: ROCm TG の記述「1093.17 ms / 32 tokens」と28.36 tok/sは算術上整合しない（31/1.09317 ≈28.36）。生成数32と計時対象eval数31の区別が考えられるが、stderr原本の再確認が必要。1 GiB未満24件の最初から最後のスパン8.596秒という報告は連続逼迫時間を証明しない。CSV隣接間隔とラッパー集計最大値も別定義で比較する（Vulkan 148.632 vs 既存記録147.2 ms、ROCm 380.187 vs 384.7 ms）。差の原因は原本・実装照合前には断定しない。PromptRunReported 等はログ行受信時刻であり真の内部処理開始時刻とは区別。R34R3D は重大イベント0件だが Application 情報イベント2件あり。
 
 判定: H2 初期合格（小さな解釈・表記の修正あり）。利用枠の消費は小さい一方、SSH 個別承認による人間の拘束が今後の課題。次は既存の実機設定と標準 Matrix を使う1セル PlanOnly。初回実計測は RAM 逼迫が既知の ROCm 条件を避け、検証済み Vulkan 短文条件を優先する案。包括的 SSH 自動承認は導入しない。
+
+## 10. Hydrogen Medium H3: Matrix PlanOnly（2026-11-28）
+
+H0〜H2 と同一 Conversation・Hydrogen Medium・固定文書 SHA で実施。実機 HEAD は H1 と同じ `a650d641ee99198543697e1e3913c593059721f7`、クリーンとの報告。既存 R34-vulkan-iq3-cli-M001 の Plan / LocalConfig を再利用し、`-OnlyJob vulkan-iq3-cli -PlanOnly -MaxRuns 1` で1件を展開、終了0。推論・監視・ビルドは未実施。
+
+| 項目 | 報告内容 |
+|---|---|
+| ビルド | VulkanStage2、b12676、ソース eea8dcefc52b2892dfde0b8b4a3a58f52ceaaee1、BuildIdentity Verified |
+| CLI SHA-256 | 406f91ac5d09e83ba7c54d4babf0043e3879dfed84ef8edd82256921c8b829f8、過去 run と一致との報告 |
+| ワークロード | IQ3 PLE16、既存短文入力 short-ja-writing-v1.txt、ctx2048、生成上限32、Vulkan0、t/tb4、b2048/ub1024、ngl999、CPU MoE0、KV f16、FA ON、MTP OFF、prompt cache 0 |
+| 監視 | 通常2秒、ADLX 2000ms、背景15秒、RAM詳細250ms（前3秒・後5秒） |
+| SafetyGate | 空き16 GiB以上、開始基準からのコミット・GPU Dedicated 増加上限各4 GiB、Performance |
+| PlanOnly | b12651-monitor-smokes / 1 run / H3-smoke-M001 / cli / vulkan-iq3-cli / VulkanStage2 / UnslothPle16 |
+
+ChatGPT は固定 main SHA と製品 SHA の Matrix blob `186c6136762939fe76dc72503d7c50e9f962f46e`、Measure-LlamaCli blob `20c6809e04cc98f54c77bcdc9020a49203227269` を GitHub から独立確認。両 SHA で同一。Matrix 1002行付近の PlanOnly return はバッチディレクトリ作成より前。SafetyGate は run 前後のメモリ/競合確認、前の P-MODE 確認と子結果の P-MODE/残留/GPU エラーを検査する。イベント監査は別途必要。16 GiB は run 前後のゲートであり実行中の最低空き保証ではない。実機 EXE・モデル・入力・実行ログは ChatGPT から直接確認していない。H3 の表の Plan パス表記に区切り欠落があり、実計測前に実在するパスとハッシュを再確認する。マニフェスト形式に適合した依存検証（新旧形式の区別）を行うこと。
+
+| 観測時点 | Gemini weekly | Gemini 5h |
+|---|---:|---:|
+| H2終了後 | 90.62% | 96.25% |
+| H3終了後 | 90.19% | 94.54% |
+| H3消費（表示差） | 0.43pt | 1.71pt |
+| H1〜H3 累計 | 1.24pt | 4.97pt |
+| H0を含む累計 | 1.24pt + H0未測分 | 約5.46pt |
+
+Claude/GPT weekly は4.51%のまま。H3の承認は運用者計数で6回（SSH/Gitと思われるが種別内訳は未確定）。実壁時間未計測。H3 は合格。次は同一既存条件の Vulkan 短文スモークを1runのみ、事前安全確認・個別承認・事後監査付きで実行する H4。SSH 切断・安全ゲート不成立・重大イベント・未確認状態では再試行や追加計測をしない。承認回数削減は関連する読み取り処理をまとめることで試し、包括的な SSH/Git 許可は行わない。
