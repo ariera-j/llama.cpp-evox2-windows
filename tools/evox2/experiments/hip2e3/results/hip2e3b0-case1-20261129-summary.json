@@ -1,0 +1,84 @@
+{
+  "run_id": "hip2e3b0-case1-20261129",
+  "pre_audit_only": false,
+  "started_utc": "2026-11-28T15:47:29.560178+00:00",
+  "pinned": {
+    "main_sha": "57d60df3c2507c1a96c6370a8fba8736ceb906b4",
+    "branch": "codex/b12651-rocmfp4-hip2e-20261128",
+    "source_commit": "5cc54b8c04f5ec812d5b8a35f452eb8679de948e",
+    "worktree": "C:\\llama-build\\automation\\w62",
+    "binary_dir": "C:\\llama-build\\automation\\w62\\build-h2e\\bin\\Release",
+    "manifest_sha256": "6045E9D8F39D904F04454982240A66B613BC6EF4B5641475083F8E1D2C2126F7",
+    "hip_dll_sha256": "434C41BCEF5BDE37F1BFE342E6C200D2ABB38F390BF81A15A48BCABE03FE1BC5",
+    "ggml_dll_sha256": "E3B242FFFA5481634E8006510CE4C545DF2000E500C52ACBCB5CEBDECBE33A2D",
+    "base_dll_sha256": "9AE8C6C3F108D56A0E6489799C44D3F23070656D8D4D4194370677EC7CAE8ABA",
+    "cpu_dll_sha256": "5B3F06E2B13633B83C6AB120A5149E36C07D6317CE2AAA14166EA665A7A9EBBD",
+    "cli_sha256": "EB9060DD51AC745FCD48FDE0ECA8D4E00AA09E3939FC06C7D51389390F9C9646",
+    "libomp_sha256": "4a20c1e5c115c29771a12324513eb109badac72180f79481527ad79d996ffb33",
+    "old_catalog_sha256": "0f5c1cf6b166d57f6c8ed16bc85c3ef6d8a88f10837c09d55655dfd577c6feea",
+    "new_catalog_sha256": "5afb7000d94c9bcadba08336d2f4ba3c018a32d36dda53dd8595e7d8cf4b0136",
+    "remote_log_root": "C:\\llama-build\\_logs\\codex"
+  },
+  "pre_audit": {
+    "Head": "5cc54b8c04f5ec812d5b8a35f452eb8679de948e",
+    "RemoteMain": "57d60df3c2507c1a96c6370a8fba8736ceb906b4",
+    "RemoteBranch": "5cc54b8c04f5ec812d5b8a35f452eb8679de948e",
+    "Clean": true,
+    "Hashes": {
+      "manifest": "6045E9D8F39D904F04454982240A66B613BC6EF4B5641475083F8E1D2C2126F7",
+      "hip_dll": "434C41BCEF5BDE37F1BFE342E6C200D2ABB38F390BF81A15A48BCABE03FE1BC5",
+      "ggml_dll": "E3B242FFFA5481634E8006510CE4C545DF2000E500C52ACBCB5CEBDECBE33A2D",
+      "base_dll": "9AE8C6C3F108D56A0E6489799C44D3F23070656D8D4D4194370677EC7CAE8ABA",
+      "cpu_dll": "5B3F06E2B13633B83C6AB120A5149E36C07D6317CE2AAA14166EA665A7A9EBBD",
+      "cli_exe": "EB9060DD51AC745FCD48FDE0ECA8D4E00AA09E3939FC06C7D51389390F9C9646"
+    },
+    "LibompSystem32": "4a20c1e5c115c29771a12324513eb109badac72180f79481527ad79d996ffb33",
+    "PMode": "Performance",
+    "BootUtc": "2026-11-28T02:39:40.0575102Z",
+    "SysId": 70260,
+    "AppId": 44889,
+    "PhysAvailGiB": 25.513,
+    "CommitGiB": 8.516,
+    "CommitLimitGiB": 127.647,
+    "DedicatedGiB": 0.418,
+    "SharedGiB": 0.06
+  },
+  "cases": [
+    {
+      "case_id": "1",
+      "status": "PASS",
+      "reason": "OK",
+      "pid": 10316,
+      "process_start_utc": "2026-11-28T15:47:53.2757197Z",
+      "elapsed_seconds": 0.313,
+      "exit_code": 0,
+      "timed_out": false,
+      "unconfirmed": false,
+      "during_samples_count": 0,
+      "during_peak_note": "unmeasured (duration < 2s)",
+      "expected_ref_sha256": "d29a1e441ed6e8730a2bfeff0d79bdd63b3d438b1ec43a07b794fc4c4baae70a",
+      "scheduler_diagnostics": null,
+      "scheduler_route": null,
+      "post_mem": {
+        "PhysAvailGiB": 25.463,
+        "CommitGiB": 8.558,
+        "CommitLimGiB": 127.647
+      },
+      "post_wddm": {
+        "DedicatedGiB": 0.418,
+        "SharedGiB": 0.06
+      },
+      "post_sys_id": 70260,
+      "post_app_id": 44889,
+      "log_stem": "C:\\llama-build\\_logs\\codex\\hip2e3b0-case1-20261129-1"
+    }
+  ],
+  "gpu_cases_passed": true,
+  "overall_status": "PASS",
+  "stop_reason": null,
+  "collected_logs": {
+    "collected_count": 4,
+    "sha256sums_path": "review/hip2e3/smoke-results/hip2e3b0-case1-20261129-logs/SHA256SUMS"
+  },
+  "ended_utc": "2026-11-28T15:47:51.779396+00:00"
+}
