@@ -299,3 +299,23 @@ Claude/GPT weekly 4.51%不変。実壁時間・トークン数・キャッシュ
 H5 は stderr 170〜171行のモデルバッファ容量報告（5.865秒付近）から177行の constructing llama_context（151.116秒付近）まで145.250秒、ラッパー受信時刻差145.321秒。Context 構築開始から warmup 開始報告までのネイティブログ時刻差は0.166秒。起動要求基準の resources.csv 47.747〜146.262秒に40サンプル、Disk Read 53.18〜59.22 MiB/s（中央値58.225）、GPU Dedicated 76.892 GiBで横ばい。148.277/150.286秒の読み取りは1542.79/1488.23 MiB/sに回復。Context 直前14秒の中央値 Disk Read 58.82 MiB/s、Pages Input 15312.9/s、ADLX GPU 1%を再現。RAMピークはContext受信0.586秒前。H4容量→Context 44.012秒はHydrogen報告。過去 R42/R34R3D と低帯域値は共通、H5では末尾の読み取り回復と RAM ピーク位置が異なる。システム全体のディスク/ページ入力であり SSD の限界・ページファイル・個別 API の因果は確定しない。追加推論は行わない。後日のロード調査用データとして保全。
 
 TG計時分母 n_gen-1 は b12676 ソース tools/server/server-common.h の n_gen_steps() と n_gen_tps()、server-context.cpp の print_timings() で確認。stderrは256 tokensを表示するが速度分母は255。H5 graphs reused=253 はグラフ再利用回数で分母根拠ではない。H5 の実引数と stderr 217行でwarmup有効、FA autoが有効解決されたことを確認。H6a文書にはこれらの根拠と、低帯域40サンプル・末尾回復、PP/TG回帰を同条件で判定していない点、H4原本未レビュー等を反映するよう依頼する。H6aは初期合格（軽微な修正あり）、H6bでレビュー済み文書だけを最新mainにfast-forwardで保存する。既存製品ブランチと参照用rules-mainを維持する。
+
+## 14. Hydrogen Medium H6b/H6c: レビュー反映・文書専用 GitHub 保存（2026-11-28）
+
+H6a の計測記録を同一 Conversation で修正。ThinkPad の参照用 clone を変更せず、EVO-X2 に最新 main `9e12855d1ac2ea85b22f097a29462acc72552113` を基点とする文書専用 worktree `w-doc-h6` とブランチ `docs/hydrogen-cli-benchmark-20261128` を作成。SCP 転送前後の SHA-256 一致、指定 Markdown 1件のみ、commit/push 前の明示承認待ちを確認した。製品 clone の HEAD は a650d641、clean のままとの報告。
+
+H6b はレビュー指摘7項目を反映したと報告したが、H6c の staged diff 全文を ChatGPT が確認したところ第8節に PP/TG 低下なしとの断定が残り、第9節の未確定との記述に矛盾。1箇所だけ修正し、事前に指定した期待 SHA-256 `a6a72a4859f2ccddc966a8abf94856579c4648b0422c13e20bc07fab9286940c`、Git blob `09d343bc396578693022b133669db731fbf76a81` の一致を条件に commit/push を明示承認した。
+
+最終コミット [226e31f2](https://github.com/ariera-j/llama.cpp-evox2-windows/commit/226e31f284b0297432f14fb1efa02212999d175c) を Hydrogen が通常 push。ChatGPT が GitHub の compare API と固定コミットのファイルを独立確認し、基準 main から ahead 1 / behind 0、指定文書1件の新規追加186行のみ、期待 blob 完全一致、修正箇所も一致、評価追記直前の main が同コミットであることを確認した。[技術文書](automation/HYDROGEN-CLI-BENCHMARK-20261128.md)。製品・参照 clone 未変更、文書用 worktree clean/残置は運用者提供報告による。H6c 最終指示中に2コマンド失敗、構文エラー停止1回との報告があり、全文は未収録。失敗時の副作用や再実行の妥当性は独立監査できない。SSH/SCP 計5回（H6c 初回確認含む）との報告。H6 は軽微な修正漏れ・手戻りありで合格、複数段階レビューの必要性と人間の介入負担が明確になった。
+
+| 工程 | Gemini weekly 残量 | Gemini 5h 残量 | weekly消費pt | 5h消費pt | 承認回数 |
+|---|---:|---:|---:|---:|---:|
+| H6a終了 | 89.07% | 90.08% | 0.23 | 0.92 | 4 |
+| H6b終了 | 88.43% | 87.51% | 0.64 | 2.57 | 5 |
+| H6cコミット前確認 | 88.36% | 87.24% | 0.07 | 0.27 | 2 |
+| H6c最終修正・push | 87.72% | 84.66% | 0.64 | 2.58 | 6 |
+| H6全体 | — | — | 1.58 | 6.34 | 17 |
+| H1〜H6累計 | — | — | 3.71 | 14.85 | 一部未計数 |
+| H0を含む累計 | — | — | 3.71 + H0未測分 | 約15.34 | 一部未計数 |
+
+Claude/GPT weekly 4.51%不変。H6 は H0〜H6 の推定5h消費の約41.3%。ローカル sha256sum 等にも承認が必要との運用者報告。現行 request-review の評価はここまで。次は Default モード・Sandbox ON・Non-Workspace Access OFF を維持したまま、proceed-in-sandbox でローカル処理の承認負担を試験。SSH/SCP・外部ネットワークは個別承認を維持し、参照用 clone と AGENTS.md の変更を禁止する。H7 は保存済み記録または明示的な模擬ケースだけで停止判断を評価し、実機接続・推論・異常発生操作は行わない。新規 Conversation で文書を更新してから開始し、利用枠は設定変更・文書再読込分を区別可能な範囲で記録する。実際の障害時停止は未評価。
