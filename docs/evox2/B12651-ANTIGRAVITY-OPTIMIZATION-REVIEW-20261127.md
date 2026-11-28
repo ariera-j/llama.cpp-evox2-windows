@@ -1,6 +1,6 @@
 # B12651 — 高速化候補の独立調査・統合レビュー（2026-11-27）
 
-状態: **暫定候補一覧 / 未実装・未実機検証**。Neon Medium（簡易・詳細）、Neon High（詳細）の独立調査を ChatGPT で比較し、主要な製品ソースおよび upstream PR 本文を照合した記録。Sonnet の独立調査は未完了で、本版には結論を含めない。エージェントの評価・利用枠については [別記録](AI-AGENT-EVALUATION-20261127.md) を参照。
+状態: **暫定候補一覧 / 未実装・未実機検証**。Neon Medium（簡易・詳細）、Neon High（詳細）の独立調査を ChatGPT で比較し、主要な製品ソースおよび upstream PR 本文を照合した記録。Sonnet 5.5 Medium の中断・再開後の最終レポートも 2026-11-28 にレビュー・追記済み（第8節）。エージェントの評価・利用枠については [別記録](AI-AGENT-EVALUATION-20261127.md) を参照。
 
 ## 1. 調査の固定条件
 
@@ -52,6 +52,8 @@ M=詳細 Neon Medium、H=Neon High、M0=簡易 Medium。PR は調査時点の未
 | G4-V | Gemma 4 Vulkan ub512/1024 切り分け | H | 先に同一条件 A/B |
 | MTP | 過去 MTP-DENSE/QSA-NOOP/Stage-B 等 | H | MTP ON ベースライン後 |
 | KV-Q | KV 量子化 | M/H | 非等価、品質優先のため保留 |
+| FA-G | COMMON-005 compact-KV gather TG 再移植 | S（Sonnet） | 既存候補の独立項目化・比較対照/フォールバック、低工数なら先行 PoC |
+| G4-B | Gemma 4 dense Q4_0 の形状別 hipBLAS/MMQ 切替 | S | 新規の具体的 PoC、別トラック |
 
 ## 4. Sparse FA の詳細とレビュー
 
@@ -102,10 +104,10 @@ Amdahl: 全体倍率=1/(1-f+f/s)。r6 128K FA 比率 f=0.45 と仮定すると F
 
 0. 既定計画 ROCmFP4 FAST HIP 対応を維持。IQ3/FP4/Gemma の測定対象を明確化。現行最終製品で64/128/256Kの PP/TG 基準と演算別 GPU 時間（FA、mask、Indexer、MoE、Dense、MMVQ、GDN）、HIP Graph 実行状態を確認。診断 ON/OFF の速度を混ぜない。
 1. 低工数の MMQ-S metadata/ISA 調査、GDN-U ub2048 経路確認、必要なら MMVQ-T の小規模 sweep。実装着手順と期待効果順を区別する。
-2. FA-P / FA-T / FA-R の独立 PoC。PP の 8×4 選択と TG の Tile 対応を分離。TG MMA 1×16 は境界検証できた場合のみ比較。既存 COMMON-005 を対照に残す。
+2. FA-P / FA-T / FA-R の独立 PoC。FA-G (COMMON-005) の現行適合性・再移植工数を事前調査し、低工数なら TG の先行対照を作る。PP の 8×4 選択と TG の Tile 対応を分離。TG MMA 1×16 は境界検証できた場合のみ比較。既存 COMMON-005 を対照に残す。
 3. FA-F（mask+圧縮の占有率とメモリ量に応じて）を独立検証。
 4. GLU-Q、MMQ-P、MMVQ-T、MMQ-S の実測有望なものを一つずつ検証。MoE-F/GEMM は FP4 後の残余比率で再順位付け。
-5. Vulkan/Gemma 別トラック、MTP ON 再評価時に FEW/MMVQ-B/過去 MTP パッチ。KV-Q は必要性が出てから。
+5. Vulkan/Gemma 別トラック（G4-B の限定 dense Q4_0 BLAS/MMQ A/B を含む）、MTP ON 再評価時に FEW/MMVQ-B/過去 MTP パッチ。KV-Q は必要性が出てから。
 
 共通ゲート: [AGENT-RULES](automation/AGENT-RULES.md) と標準計測 runbook を遵守。既知の test-backend-ops TDR リスクがあるため全件一括ではなく対応済み・小規模な限定ケースから、停止監査を挟む。変更前後のビルド identity、入力/model hash、環境、実行経路を記録。A/B または ABBA、短文脈 smoke→32/64K→128/256K、メモリ容量判定、GPU エラー/残留プロセスなし。F16 KV・同一量子化・MTP OFF の等価比較を基本とし、出力/数値比較、必要に応じて日本語要約・MH-Hard、Gemma 回帰を行う。速度差はばらつきと手戻りも含めて判断する。予測値を機械的な合格基準にしない。
 
@@ -114,4 +116,66 @@ Amdahl: 全体倍率=1/(1-f+f/s)。r6 128K FA 比率 f=0.45 と仮定すると F
 - Medium/High とも同じモデル系列の独立セッションであり、同じ結論は実機での独立証明ではない。
 - H は最新 D0-4B 数値を拾ったが最終 SHA に帰属した点を訂正。M は最新長文脈値を一部見落とした。M の Gemma TG Amdahl 上限は MMVQ 以外だけを高速化する場合に限定される。
 - H の推定改善率、Windows 動作可能、Gemma 副作用ゼロ、J=32 spill 断定は未確認。外部 PR 本文と主要ソースは照合したが全差分/コメント/実機を網羅した検証ではない。
-- Sonnet の結果が得られたら新候補、反証、重複、順位変更を追記し、根拠がある場合のみ優先度を更新する。独立調査中はこの文書を参照させない。製品ソースや既存ロードマップは本記録追加では変更しない。
+- Sonnet の結果は第8節へ追記済み。今後も新規独立調査中は本統合文書を参照させない。製品ソースや既存ロードマップは本記録では変更しない。
+
+## 8. Sonnet 5.5 Medium の独立調査と統合レビュー（2026-11-28）
+
+### 8.1 調査範囲と制約
+
+Neon A1/A2 と同一詳細プロンプトで開始。初回停止後、同じ Conversation に固定 SHA と完了済み成果を再利用する再開指示を送った。報告上、4サブエージェントの成果は取得できず、メインが固定ソース/文書を読み直した。最新 main の統合文書は参照させていない（ログに再取得や当文書参照は見当たらず、固定 SHA 使用を本人が報告。内部状態の完全監査は未実施）。最終レポートは10候補。実機計測なし。
+
+参照: 製品 a650d641 / 文書 2a65d862、Strata c234774038d1、upstream discussion #26377、issue #21284、PR #28195。最新 upstream HEADとの差分の網羅、外部forkの実ソース、D0-4B/D0-5、r6 COMMON-005 詳細、KNOWN-ISSUES、ROCmFP4 HIP review 等は未確認または未読。GGUF メタデータ未取得。Sonnet 自身が限界を明記。最新 PR の探索が不十分で、Neon が発見した #30370/#32741/#32731/#31751/#30489/#28714/#32224 等を否定する材料ではない。
+
+### 8.2 10候補と既存台帳との対応
+
+| Sonnet 候補 | 統合台帳 | 扱い |
+|---|---|---|
+| 1: COMMON-005 gather TG | FA-G | 明示的な比較対照/条件付き先行 PoC に昇格 |
+| 2: WMMA sparse-index FA | FA-P/FA-T | 重複、詳細は Neon 案を優先し union 実測を追加 |
+| 3: Gemma Q4_0 BLAS/MMQ | G4-B | 新規の具体的な低工数検証 |
+| 4: fresh RGP/MMQ/非FA | ロードマップ0 | 共通の前提計測 |
+| 5: indexer/mask/get_rows | FA-F/残余調査 | 重複、現行内訳測定後 |
+| 6: D256 Tile/MMA tuning | FA-P/FA-T | 未具体化、実測後 |
+| 7: MTP stack | MTP | 重複 |
+| 8: Vulkan union | VK-U | 重複 |
+| 9: Gemma Vulkan PP | G4-V | 重複 |
+| 10: Strata PF_PAD/GEMM/MoE/HC Q8 | GEMM/MOE-F | 既往、HC Q8は非等価として別扱い |
+
+Sonnet は新規高速化として FA-G を最優先、G4-B を2位、FA-Pを3位とした（着手前に fresh RGP）。これは過去の実測と実装工数を重視した順序。Neon のカーネル内 sparse FA と対立するというより比較対照の重要性を強める提案。全体ロードマップは ROCmFP4 FAST HIP の既定計画、現行プロファイル、独立PoCを維持する。
+
+### 8.3 FA-G: COMMON-005 の再評価
+
+- Sonnet の +10/+24.3/+48.7% (64/128/256K TG) は旧 r3 の [PATCHES](PATCHES.md#L736-L873) に基づく。r6 詳細を未読だったため、より新しい [r6 b12013 / f29592d6a の ABBA](R6-COMMON005-IMPLEMENTATION-2026-11-02.md) を優先参照する。
+- r6 PLE16 / F16 KV / MTP OFF / ub1024 の同一ビルドABBA: 64K 21.80→24.56 (+12.66%)、128K 17.625→22.715 (+28.88%)、256K 12.665→19.760 (+56.02%) tok/s。異なる版へ保証される値ではない。4K fallback と32K smoke、長文脈安定性ゲートを通過したが、既知の非決定性のため品質完全等価や default ON は未承認。
+- r6 は single-token/single-sequence、opt-in QWEN4EXP_QSA_GATHER=1、選択 pool の全メンバー＋tail から n_sel=2051 を構成し、F16 KV を gather→F32→F16 経路で compact 化、n_kv_max=0 で通常FA。旧 r3 固定幅2048と区別。MTP ON と量子化 KV は未検証。Sonnet の old get_rows 時間は旧診断区間であり現行の残余コストとは限らない。
+- b12651 で既存グラフ/API/型/stride/sequence/物理セル対応を照合し、独立 opt-in PoC。現行の密FA、FA-G、#30370→#32741 の Tile sparse を同じ model/seed/input/KV/ubatch/build identity で比較。128/256Kに進む前に4/32/64Kゲートと出力/数値/メモリ確認。gather の効果は PP へ流用しない。
+- 旧 top_k 非決定性や argsort+cont コストを b12651 へ無条件で転用しない。現行 top_k で選択集合と tie、出力の再現性を測定。既存パッチの品質評価は smoke レベルである。
+
+### 8.4 G4-B: Gemma dense Q4_0 hipBLAS/MMQ
+
+固定製品の [mmq.cu](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/a650d641ee99198543697e1e3913c593059721f7/ggml/src/ggml-cuda/mmq.cu#L395-L528) を再確認。通常の MMQ 対応型/48KiB shared-memory/コンパイル条件等を満たす RDNA3.5 WMMA の Q4_0 は switch default true で、大バッチの BLAS crossover は未設定。全演算が MMQ になるという意味ではない。
+
+過去の [Q6_K 強制ルート実験](V1-STRATA-Q6K-DENSE-BLAS-MMQ-EXPERIMENT-20261115.md) の実測（別モデル/型）:
+
+| shape | N | BLAS us | MMQ us |
+|---|---:|---:|---:|
+| Attn Q K2560/M12288 | 512 | 1501.72 | 2220.61 |
+| 同上 | 1024 | 2581.34 | 4122.41 |
+| Attn Output K6144/M2560 | 512 | 1832.11 | 1100.88 |
+| 同上 | 1024 | 2405.51 | 2709.23 |
+
+Sonnet の「N<=512はMMQ有利」は過度な一般化。Attn Qでは512でもBLAS優位。旧実験は実モデル PP 改善未実証で停止。Q4_0の予測+10–20%や1.3–1.5倍は根拠の弱い仮説で採用基準にしない。Gemma の実際の dense projection/FFN shape と N の分布を確認し、gfx1151・HIP・Q4_0・dense・実測形状限定の default OFF ルート指定で dequant+BLAS と MMQ を比較。全 backend の FORCE_CUBLAS は使用しない。既存の選択条件、非連続/バッチ/alias、MoE/MUL_MAT_ID、Qwen、FP4、TGを巻き込まないよう host dispatch を追跡する。単なる1行変更で安全に限定できるとは未確認。F16 dequant+GEMM と量子化 MMQ は近似数値一致を確認する必要があり、bitwise等価ではない。追加バッファ、実帯域、WDDM、32K PP/TG、品質と出力を確認。
+
+### 8.5 ソース/推定の追加レビュー
+
+- Sonnet は QSA sparse MMA の WMMA最小幅、ncols2=4、CDNA/NVIDIA限定を認識し、広範 backend-op テストでの TDR 既往を考慮した限定テストを提案した点が良い。ただし GQA12 は未確定と報告しており、Neonの 8×4 明示 dispatch や TG Tile の関連PR調査ほど具体化されていない。実測モデルメタデータを確認する。
+- QSA top_k=2048 はセル予算、kpool=4 の場合の pool 選択は最大512、tail込み n_sel=2051。[qwen4exp.cpp](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/a650d641ee99198543697e1e3913c593059721f7/src/models/qwen4exp.cpp#L897-L923) で n_top_pool=min(n_pool,indexer_top_k/kpool) を確認。pool indexとセル indexを区別する。
+- 16-query union の理論最大は16×2051=32816行。128Ki KV の約25.04%、256Ki KVの約12.52%。Sonnet の40%超という撤回条件はこれらの深さで成立しない（より短いKVでは成立し得る）。128Kの20%閾値だけで採否を決めず、実分布、圧縮・padding・occupancy・総FA時間で判断する。
+- Sonnet が r5 64-query union を11k–17kと要約したのはコード入力の一部KV binに偏った値。[3 corpus統計](R5-QSA-UNION-128K-THREE-CORPUS-STATS-2026-10-10.md) では文学/randomはさらに大きい。コードの値を全入力へ一般化しない。
+- PP/TG latency の定数＋KV依存項の近似は有用な仮説。ただし総スループットから FA と Indexer を分離できない。Sonnet の256K FA占有率50%・3/5倍FA改善なら全体は1.50/1.67倍、FAだけの理論上限は2倍。3.1倍はKV依存項68%全体を除去した別の仮想上限で、Sparse FA単独には使えない。r6プロファイル及び現行実測で再推定する。
+- Sonnet は clean b12651 基準を使用し、D0-4B 長文脈 PLE16 を未確認。Highの最終SHA誤帰属を繰り返してはいないが、現行 PLE16 の基準として十分ではない。
+- 追加調査で新たに採用確定したパッチなし。ChatGPTは mmq.cu、qwen4exp.cpp、r3/r6 gather 文書、Q6_K BLAS/MMQ 実験、union 統計を再確認した。Sonnetの全ソース主張や外部資料の全件再照合、実機計測は未実施。
+
+### 8.6 更新後の方針
+
+既定の FP4 HIP 対応を優先し、その後に現行 profile。TG の COMMON-005再移植工数を調べ、低工数なら opt-in 比較対照を作成する。新しい Tile sparse FA と比較して維持/置換/撤回を決める。PP WMMA sparseは独立で進める。Gemma Q4_0 BLAS/MMQ は小規模な別トラックとして、#28714等のMMQ改善とは個別に比較。その他のNeon候補は維持する。
