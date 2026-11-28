@@ -4,7 +4,7 @@
 #if defined(GGML_USE_HIP) && defined(_WIN32)
 #include "../../rocmfp4/rocmfp4.h"
 
-static_assert(GGML_TYPE_ROCMFP4_FAST == 101 && QK_ROCMFP4 == 32);
+static_assert(GGML_TYPE_Q4_0_ROCMFP4_FAST == 101 && QK_ROCMFP4 == 32);
 static_assert(sizeof(block_rocmfp4_fast) == 17 && alignof(block_rocmfp4_fast) == 1);
 static_assert(offsetof(block_rocmfp4_fast, e) == 16);
 

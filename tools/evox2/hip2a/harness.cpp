@@ -35,7 +35,7 @@ void convert(const test_case & c, const uint8_t * packed, size_t bytes, uint8_t 
     CUDA_CHECK(hipMemcpy(input, packed, bytes, hipMemcpyHostToDevice));
     CUDA_CHECK(hipMemcpy(output, checked.data(), checked.size(), hipMemcpyHostToDevice));
     const void * blocks = input + 17*c.offset;
-    const auto type = GGML_TYPE_ROCMFP4_FAST;
+    const auto type = GGML_TYPE_Q4_0_ROCMFP4_FAST;
     switch (c.op) {
         case F32_C:  ggml_get_to_fp32_cuda(type)(blocks, (float *)(output + 32), count, nullptr); break;
         case F16_C:  ggml_get_to_fp16_cuda(type)(blocks, (half *)(output + 32), count, nullptr); break;
@@ -74,7 +74,7 @@ void multiply(const test_case & c, const uint8_t * packed, size_t bytes, const f
     auto backend = ggml_backend_cuda_init(0);
     GGML_ASSERT(backend && std::strcmp(ggml_backend_name(backend), "ROCm0") == 0);
     auto ctx = ggml_init({2*1024*1024, nullptr, true});
-    auto root = ggml_new_tensor_1d(ctx, GGML_TYPE_ROCMFP4_FAST, bytes/17*32);
+    auto root = ggml_new_tensor_1d(ctx, GGML_TYPE_Q4_0_ROCMFP4_FAST, bytes/17*32);
     const int row = 17*(c.k/32 + c.padding);
     const int expert = row*c.m + 17*c.gap;
     auto w = ggml_view_3d(ctx, root, c.k, c.m, c.e, row, expert, c.offset*17);

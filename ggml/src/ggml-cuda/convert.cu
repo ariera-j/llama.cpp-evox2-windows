@@ -555,7 +555,7 @@ to_bf16_cuda_t ggml_get_to_bf16_cuda(ggml_type type) {
 to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
     switch (type) {
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-        case GGML_TYPE_ROCMFP4_FAST:
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST:
             if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
                 return nullptr;
             }
@@ -624,7 +624,7 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
 to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
     switch (type) {
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-        case GGML_TYPE_ROCMFP4_FAST:
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST:
             if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
                 return nullptr;
             }
@@ -690,7 +690,7 @@ to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
 to_fp16_nc_cuda_t ggml_get_to_fp16_nc_cuda(ggml_type type) {
     switch (type) {
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-        case GGML_TYPE_ROCMFP4_FAST:
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST:
             if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
                 return nullptr;
             }
@@ -751,7 +751,7 @@ to_bf16_nc_cuda_t ggml_get_to_bf16_nc_cuda(ggml_type type) {
 to_fp32_nc_cuda_t ggml_get_to_fp32_nc_cuda(ggml_type type) {
     switch (type) {
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-        case GGML_TYPE_ROCMFP4_FAST:
+        case GGML_TYPE_Q4_0_ROCMFP4_FAST:
             if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
                 return nullptr;
             }

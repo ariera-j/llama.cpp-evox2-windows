@@ -2052,7 +2052,7 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
     //     probably because the internal kernel selection logic is suboptimal.
     if (compute_type == GGML_TYPE_F32 && ne12 == 1 && ne13 == 1) {
 #ifdef GGML_HIP_ROCMFP4_TEST
-        if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+        if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
             ++rocmfp4_test_sgemms;
         }
 #endif
@@ -2244,7 +2244,7 @@ static bool ggml_cuda_should_fuse_mul_mat(const ggml_tensor * ffn_up,
         return false;
     }
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (ffn_up->src[0]->type == GGML_TYPE_ROCMFP4_FAST || ffn_gate->src[0]->type == GGML_TYPE_ROCMFP4_FAST) {
+    if (ffn_up->src[0]->type == GGML_TYPE_Q4_0_ROCMFP4_FAST || ffn_gate->src[0]->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
         return false;
     }
 #endif
@@ -2356,7 +2356,7 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
     const ggml_tensor * dst  = tensor;
 
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+    if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
         return false;
     }
 #endif
@@ -2589,7 +2589,7 @@ static bool rocmfp4_fast_storage(const ggml_tensor * t, int device, bool executi
     if (!buf) {
         return !executing && !root->data && !t->data;
     }
-    const bool weight = t->type == GGML_TYPE_ROCMFP4_FAST;
+    const bool weight = t->type == GGML_TYPE_Q4_0_ROCMFP4_FAST;
     const bool device_buffer = buf->buft == ggml_backend_cuda_buffer_type(device);
     if (!device_buffer) {
         if (weight || !ggml_backend_buffer_is_host(buf) ||
@@ -2615,7 +2615,7 @@ static bool rocmfp4_fast_storage(const ggml_tensor * t, int device, bool executi
         return true;
     }
     return (!executing || t->buffer == buf) && uintptr_t(t->data) == addr + t->view_offs &&
-           (t->type == GGML_TYPE_ROCMFP4_FAST || uintptr_t(t->data) % 4 == 0);
+           (t->type == GGML_TYPE_Q4_0_ROCMFP4_FAST || uintptr_t(t->data) % 4 == 0);
 }
 
 static bool rocmfp4_fast_supported(const ggml_tensor * dst, int device, bool executing) {
@@ -2686,7 +2686,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     GGML_TENSOR_BINARY_OP_LOCALS
 
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+    if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
         GGML_ASSERT(rocmfp4_fast_supported(dst, ctx.device, true));
         ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>(ctx, src0, src1, dst);
         return;
@@ -2761,7 +2761,7 @@ static bool ggml_cuda_mul_mat_id_needs_sync(const ggml_tensor * dst, const int c
     const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
 
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+    if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
         return true;
     }
 #endif
@@ -2812,7 +2812,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+    if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
         GGML_ASSERT(rocmfp4_fast_supported(dst, ctx.device, true));
     } else
 #endif
@@ -2886,7 +2886,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
     std::vector<char> ids_host(ggml_nbytes(ids));
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (src0->type == GGML_TYPE_ROCMFP4_FAST && ggml_backend_buffer_is_host(ids->buffer)) {
+    if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST && ggml_backend_buffer_is_host(ids->buffer)) {
         CUDA_CHECK(cudaStreamSynchronize(stream));
         memcpy(ids_host.data(), ids->data, ids_host.size());
     } else
@@ -2901,7 +2901,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
             for (int64_t iex = 0; iex < n_expert_used; ++iex) {
                 const int32_t expert_to_use = *(const int32_t *)(ids_host.data() + i12*ids->nb[1] + iex*ids->nb[0]);
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-                if (src0->type == GGML_TYPE_ROCMFP4_FAST && expert_to_use == -1) {
+                if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST && expert_to_use == -1) {
                     ids_from_sorted_host[i12*n_expert_used + iex] = -1;
                     continue;
                 }
@@ -2918,7 +2918,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         }
     }
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-    if (src0->type == GGML_TYPE_ROCMFP4_FAST && ids_to_sorted_host.size() < size_t(ne_get_rows)) {
+    if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST && ids_to_sorted_host.size() < size_t(ne_get_rows)) {
         // Skipped slots share the first unused sorted output row.
         const int32_t zero_row = int32_t(ids_to_sorted_host.size());
         size_t skipped = 0;
@@ -2994,7 +2994,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         dst_slice.data   = dst_data_cur;
 
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-        if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+        if (src0->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
             const size_t src_offset = src1_data_cur - src1_sorted.ptr;
             const size_t dst_offset = dst_data_cur - dst_sorted.ptr;
             GGML_ASSERT(src_offset <= src1_sorted.actual_size && src1_slice.nb[2] <= src1_sorted.actual_size - src_offset);
@@ -3019,7 +3019,7 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 #if defined(GGML_USE_HIP) && defined(_WIN32)
 static bool rocmfp4_fast_op(const ggml_tensor * op) {
     return (op->op == GGML_OP_MUL_MAT || op->op == GGML_OP_MUL_MAT_ID) &&
-           op->src[0]->type == GGML_TYPE_ROCMFP4_FAST;
+           op->src[0]->type == GGML_TYPE_Q4_0_ROCMFP4_FAST;
 }
 
 // The scheduler can leave compatible pinned buffers in place on an integrated GPU.
@@ -6670,7 +6670,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                 struct ggml_tensor * a = op->src[0];
                 struct ggml_tensor * b = op->src[1];
 #if defined(GGML_USE_HIP) && defined(_WIN32)
-                if (a->type == GGML_TYPE_ROCMFP4_FAST) {
+                if (a->type == GGML_TYPE_Q4_0_ROCMFP4_FAST) {
                     return rocmfp4_fast_supported(op, dev_ctx->device, false);
                 }
 #endif
