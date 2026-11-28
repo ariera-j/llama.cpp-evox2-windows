@@ -79,3 +79,12 @@ foreach ($dir in 'build-h2n','build-h2t') {
     Get-FileHash -Algorithm SHA256 -LiteralPath $dll
 }
 ```
+
+## HIP-2C / HIP-2D 完了と HIP-2E への引き継ぎ（2026-11-28）
+
+- **HIP-2C（テスト版ビルド）**：`GGML_TYPE_ROCMFP4_FAST` → `GGML_TYPE_Q4_0_ROCMFP4_FAST` への 21 箇所修正後の SHA `a8b8a6ffd4e74f50de9d9d9a1704c47f38c3f959`（`w60` / `build-h2t`）にて Preflight・Configure・Build（435.545 秒）・CLI smoke・Runtime/PE/Export 検査がすべて **PASS**。[HIP-2C ビルド記録](B12651-ROCMFP4-HIP2C-BUILD-20261128.md)
+- **HIP-2D（限定 GPU 数値検証 10 件）**：上記テスト版 `ggml-hip.dll` にて 1 プロセス 1 ケース・直列 1 worker で全 10 ケース（`1`, `1-NC`, `2`, `2-C`, `5`, `6`, `7`, `8`, `9`, `9-Z`）が **PASS**（10/10）。全件で `DuringSamples` は空であり実行中ピーク使用量は未測定。[HIP-2D 数値検証記録](B12651-ROCMFP4-HIP2D-NUMERICAL-VALIDATION-20261128.md)
+- **HIP-2E への引き継ぎ（後続実装・未着手）**：次の scheduler 経由検証 3 件を後続工程として実装・検証する（完了まで実モデルロード・推論は行わない）。
+  - `S-HC-CPU`：通常 CPU 入力の split copy、`MUL_MAT` 1 件、SGEMM 1 回
+  - `S-HC-PIN`：pinned 入出力の FAST 内 H2D/D2H、`MUL_MAT` 1 件、SGEMM 1 回
+  - `S-ID-PIN`：pitched host ID view 保持、`MUL_MAT_ID` 1 件、SGEMM 2 回

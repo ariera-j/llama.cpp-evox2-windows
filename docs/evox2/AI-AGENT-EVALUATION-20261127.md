@@ -555,13 +555,19 @@ Workの時間あたり消費はCLI HIP-1設計の約3.7倍（運用者申告時�
 
 リセット後の表示差は合計23ポイント。ChatGPT の独立再レビューでは CPU 参照10件の SHA-256 が一致し、実験版の固定を GO とした。Windows コンパイル、GPU 数値、実モデルは未検証。[レビュー結果・HIP-2C引き継ぎ](B12651-ROCMFP4-HIP2B-REVIEW-HIP2C-20261128.md)
 
-## 23. Hydrogen Medium: HIP-2C-1 Preflight 停止と HIP-2C-1A 監査例外対応（2026-11-28）
+## 23. Hydrogen Medium: HIP-2C / HIP-2D 完了と Astra Medium 実装の補足評価（2026-11-28）
 
-HIP-2C テスト版ビルドの開始後、HIP-2C-1（Preflight）で `ggml/src/ggml-hip/CMakeLists.txt` の監査基準差分により停止した（実行 ID `build-ROCm-Preflight-b2374726fce641959d88303c85e2325f`、終了コード `1`、所要時間 `3.998` 秒）。ルールに従い Configure へ進まず停止・報告し、後続の HIP-2C-1A で `Evox2.DependencyCache.psm1` と `Test-Evox2DependencyInputs.ps1` に固定監査基準 SHA・厳密 blob 一致・`tracked` 差分限定の例外および実 Git オブジェクトによる隔離テストを追加し、独立レビュー（CONDITIONAL GO → GO）を経て `main`（`fe5dc0832ec6d7bc0d20d3537eef00fcb3b67693`）と実験ブランチ（`56e4f6dc7f332eb275de9d27bd3c12a7ed0c320d`）へ反映した。[HIP-2C-1 / HIP-2C-1A 記録](B12651-ROCMFP4-HIP2C1-PREFLIGHT-AUDIT-20261128.md)
+Hydrogen Medium により HIP-2C（テスト版ビルド）および HIP-2D（限定 GPU 数値検証 10 件）を完了した。初回 Preflight 停止の報告、HIP-2C-1A 監査例外の実装・レビュー対応、型名修正（21 箇所）を経て、テスト版ビルド（`a8b8a6ffd4e74f50de9d9d9a1704c47f38c3f959`）と限定 GPU 数値検証 10 件がすべて PASS した。[HIP-2C 記録](B12651-ROCMFP4-HIP2C-BUILD-20261128.md) · [HIP-2D 記録](B12651-ROCMFP4-HIP2D-NUMERICAL-VALIDATION-20261128.md)
 
-| 時点（運用者記録） | 週間残量 | 5時間残量 | Context | 承認回数 |
+| 工程 | 週間枠残量 | 5時間枠残量 | Context | 承認回数 |
 |---|---:|---:|---:|---:|
-| 開始時 | 82.83% | 82.14% | 0 | — |
-| 初回 Preflight 後 | 82.08% | 79.12% | 125.6k | 6 回 |
-| HIP-2C-1A 実装後 | 80.64% | 73.38% | 164.5k | 8 回 |
-| 最終修正後 | 80.00% | 70.80% | 185.2k | 5 回 |
+| 開始 | 82.83% | 82.14% | 0 | 0 |
+| 初回Preflight | 82.08% | 79.12% | 125.6k | 6 |
+| 監査ツール実装 | 80.64% | 73.38% | 164.5k | 8 |
+| 最終修正 | 80.00% | 70.80% | 185.2k | 5 |
+| commit・初回Build | 77.99% | 95.58% | 242.8k | 17 |
+| 型名修正・Build成功 | 76.17% | 90.30% | 268.4k | 6 |
+| HIP-2D完了 | 74.33% | 82.98% | 311.7k | 15 |
+
+- **週間枠消費合計**：`8.50pt`（82.83% → 74.33%）、**承認合計**：`57回`（6+8+5+17+6+15）。5 時間枠は途中でリセットされたため、単純な開始・終了差を総消費量としない。
+- **Astra Medium 実装の補足評価**：HIP-2A/2B 実装の初回 Windows コンパイルにおいて、未定義 enum 名 `GGML_TYPE_ROCMFP4_FAST`（正：`GGML_TYPE_Q4_0_ROCMFP4_FAST`）が 4 ファイル計 21 箇所で発見された。Hydrogen Medium が演算ロジックを変更せず識別子のみを置換した結果、再ビルドおよび直接 backend 数値検証 10 件がすべて PASS した。
