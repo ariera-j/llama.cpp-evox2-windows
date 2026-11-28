@@ -4,7 +4,7 @@
 
 | パッチ | 対象 | 製品状態 |
 | --- | --- | --- |
-| **ROCM-002** | CUDA/HIP共有のIQ4_NL GET_ROWS。非256整列の32要素経路とCUDA系host配置制限 | 製品 `a650d641ee99198543697e1e3913c593059721f7` に採用。gfx1151で対応判定6件・数値比較5件、PLE16 4k・64kとOriginal 4kを確認。CUDA・MUSAは未検証。 [採用記録](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md) |
+| **ROCM-002** | CUDA/HIP共有のIQ4_NL GET_ROWS。非256整列の32要素経路とCUDA系host配置制限 | 製品 `a650d641ee99198543697e1e3913c593059721f7` に採用。gfx1151で対応判定6件・数値比較5件、PLE16 4k・64kとOriginal 4kを確認（統合時点では128k/256k・Gemma 4はb12709未検証）。2026-11-28にb12709でPLE16 64k/128k/256kおよびGemma 4 31B 32kの残存回帰検証を完了（全4 run合格、5%超の低下なし）。CUDA・MUSAは未検証。 [採用記録](B12651-D0-5-HIP-IQ4NL-GETROWS-INTEGRATION-20261127.md) · [最終回帰検証](B12651-ROCM002-FINAL-REGRESSION-20261128.md) |
 
 
 > **2026-11-23現行運用補足:** [文書統合・実験ステータス](DOCUMENTATION-RECONCILIATION-2026-11-23.md)。2026-10-29の公開tag／Vulkan b11908、後日r6のCOMMON-005最適化（ROCm/MTP-OFF・opt-in/default OFF）、11月の研究用診断ブランチは**異なるソース／検証範囲**。MH-Hard・Strata・Gemma4の後続実験やCodex preflightの完了は、これらの高速化パッチがmainや公開ZIPへ自動的に追加された証拠ではない。以前の「not implemented / quality pending / next」は記載日時の履歴であり、当該ゲートの最終結果を優先。

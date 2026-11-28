@@ -59,3 +59,14 @@ OriginalではUMA 96 GiBでの一時的な物理RAM逼迫が残る。今回の�
 生ログのルートは実機 `C:\llama-build\_logs\codex`。各ビルド・対応判定・推論・失敗のログ名と監査先は個別記録に記載した。mainには16件の検証文書と公開用の結果CSV3件を集約。初回数値検証の総合合格未成立記録とOriginalの失敗記録を保持した。実験専用の監督スクリプト、解析コード、planは固定ツリーを参照する。 [初回監督記録](B12651-D0-2B-HIP-IQ4NL-GETROWS-20261126.md) · [限定再検証](B12651-D0-2B-RETEST-HIP-IQ4NL-GETROWS-20261127.md) · [実験専用ツール](https://github.com/ariera-j/llama.cpp-evox2-windows/tree/fe961fa0685e141b9967b31271aef7ab4afb99b4/tools/evox2/experiments/iq4nl-getrows) · [D0-4A CSV](d0-4a-20261127/ram-timeline.csv) · [D0-4B CSV](d0-4b-20261127/summary.csv) · [Original失敗時CSV](d0-4c-original-20261127/ram-timeline.csv)
 
 次工程のROCmFP4 FAST HIP対応は製品SHA `a650d641ee99198543697e1e3913c593059721f7` を出発点とし、別承認で開始する。 [HIP移植レビュー](ROCMFP4-HIP-PORT-REVIEW-2026-11-26.md)
+
+## 2026-11-28 b12709 残存回帰検証の完了
+
+2026-11-28 JST。上記 D0-5 統合時点で未検証であった `b12709`（host 配置制限入り最終版）による PLE16 128k / 256k および Gemma 4 31B Q4_0 QAT 32k（ならびに 64k 再確認）の残存回帰検証を完了し、**全 4 run 合格**を確認した。
+
+- **IQ3 PLE16 64k**: `PP 408.18 / TG 21.76 tok/s`（D0-4D-5 基準比 `+0.11% / +0.05%`）
+- **IQ3 PLE16 128k**: `PP 302.65 / TG 17.45 tok/s`（D0-4B 基準比 `-0.19% / -0.51%`）
+- **IQ3 PLE16 256k**: `PP 199.03 / TG 12.53 tok/s`（D0-4B 基準比 `-0.11% / -0.71%`）
+- **Gemma 4 31B 32k**: `PP 186.30 / TG 9.03 tok/s`（D0-4C 基準比 `-1.32% / +0.11%`）
+
+いずれも 5% を超える速度低下はなく、バッファ配置・出力妥当性・終了監査を通過した。CUDA・MUSA のビルドと実機は引き続き対象外。次工程は **ROCmFP4 FAST HIP-1** とし、HIP 対応完了時点で `batch=2048` 固定、`ubatch 1024 / 2048` の比較と常用 `llama-server` 設定の再評価を予定している。 [最終回帰検証](B12651-ROCM002-FINAL-REGRESSION-20261128.md)
