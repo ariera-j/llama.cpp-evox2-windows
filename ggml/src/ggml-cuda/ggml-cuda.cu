@@ -1,3 +1,6 @@
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+#include "ggml-cpp.h"
+#endif
 #include "ggml-cuda.h"
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
@@ -1908,6 +1911,10 @@ struct batched_mul_mat_traits<GGML_TYPE_F16> {
     static inline auto convert_nc(ggml_type src_type) { return ggml_get_to_fp16_nc_cuda(src_type); }
 };
 
+#ifdef GGML_HIP_ROCMFP4_TEST
+thread_local int rocmfp4_test_sgemms = 0;
+#endif
+
 template<ggml_type compute_type>
 static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     using traits = batched_mul_mat_traits<compute_type>;
@@ -2044,6 +2051,11 @@ static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const
     // However, for some old NVIDIA and AMD GPUs the strided/Ex GEMM is much slower,
     //     probably because the internal kernel selection logic is suboptimal.
     if (compute_type == GGML_TYPE_F32 && ne12 == 1 && ne13 == 1) {
+#ifdef GGML_HIP_ROCMFP4_TEST
+        if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+            ++rocmfp4_test_sgemms;
+        }
+#endif
         CUBLAS_CHECK(
             cublasSgemm(cublas_h, CUBLAS_OP_T, CUBLAS_OP_N,
                     ne01, ne11, ne10,
@@ -2231,6 +2243,11 @@ static bool ggml_cuda_should_fuse_mul_mat(const ggml_tensor * ffn_up,
     if (!is_mul_mat && !is_mul_mat_id) {
         return false;
     }
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (ffn_up->src[0]->type == GGML_TYPE_ROCMFP4_FAST || ffn_gate->src[0]->type == GGML_TYPE_ROCMFP4_FAST) {
+        return false;
+    }
+#endif
 
     const ggml_op expected_bias_op = is_mul_mat ? GGML_OP_ADD : GGML_OP_ADD_ID;
     const ggml_tensor * ffn_up_bias_src   = has_scale ? ffn_up_scale   : ffn_up;
@@ -2338,6 +2355,11 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
     ggml_tensor *       src1 = tensor->src[1];
     const ggml_tensor * dst  = tensor;
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+        return false;
+    }
+#endif
     const bool bad_padding_clear = ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
                                    ggml_nbytes(src0) != ggml_backend_buffer_get_alloc_size(src0->buffer, src0) &&
                                    src0->view_src;
@@ -2532,9 +2554,144 @@ static bool ggml_cuda_should_fuse_mul_mat_q(const ggml_tensor * up, const ggml_t
     return ggml_cuda_mmq_fusion_is_efficient(x_up->type, ggml_prec_get_src(up, 1), x_up->ne[1], ncols, nchannels, device);
 }
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+static bool rocmfp4_fast_span(const ggml_tensor * t, size_t & span) {
+    const size_t block = ggml_blck_size(t->type);
+    if (t->ne[0] <= 0 || !block || t->ne[0] % block || t->nb[0] != ggml_type_size(t->type)) {
+        return false;
+    }
+    span = t->nb[0];
+    for (int dim = 0; dim < 4; ++dim) {
+        if (t->ne[dim] <= 0 || t->nb[dim] == 0) {
+            return false;
+        }
+        const size_t steps = size_t(t->ne[dim]) / (dim == 0 ? block : 1) - 1;
+        if (steps > (SIZE_MAX - span) / t->nb[dim]) {
+            return false;
+        }
+        span += steps * t->nb[dim];
+    }
+    return true;
+}
+
+static bool rocmfp4_fast_storage(const ggml_tensor * t, int device, bool executing, bool output) {
+    const ggml_tensor * root = t->view_src ? t->view_src : t;
+    size_t span, root_span;
+    if (root->view_src || root->type != t->type || !rocmfp4_fast_span(t, span) ||
+            !rocmfp4_fast_span(root, root_span) || t->view_offs > root_span ||
+            span > root_span - t->view_offs || t->view_offs % ggml_type_size(t->type)) {
+        return false;
+    }
+    const auto buf = root->buffer;
+    if (t->buffer && t->buffer != buf) {
+        return false;
+    }
+    if (!buf) {
+        return !executing && !root->data && !t->data;
+    }
+    const bool weight = t->type == GGML_TYPE_ROCMFP4_FAST;
+    const bool device_buffer = buf->buft == ggml_backend_cuda_buffer_type(device);
+    if (!device_buffer) {
+        if (weight || !ggml_backend_buffer_is_host(buf) ||
+                (output && !(ggml_cuda_info().devices[device].integrated && ggml_backend_buft_is_cuda_host(buf->buft)))) {
+            return false;
+        }
+    } else if (weight && t->view_src && buf->usage == GGML_BACKEND_BUFFER_USAGE_COMPUTE) {
+        return false;
+    }
+    if (!buf->size) {
+        return !executing && !root->data && !t->data;
+    }
+    if (!buf->iface.get_base) {
+        return false;
+    }
+    const uintptr_t base = uintptr_t(ggml_backend_buffer_get_base(buf));
+    const uintptr_t addr = uintptr_t(root->data);
+    if (!base || addr < base || addr - base > buf->size || root_span > buf->size - (addr - base) ||
+            t->view_offs > UINTPTR_MAX - addr) {
+        return false;
+    }
+    if (!executing && t->view_src && !t->data) {
+        return true;
+    }
+    return (!executing || t->buffer == buf) && uintptr_t(t->data) == addr + t->view_offs &&
+           (t->type == GGML_TYPE_ROCMFP4_FAST || uintptr_t(t->data) % 4 == 0);
+}
+
+static bool rocmfp4_fast_supported(const ggml_tensor * dst, int device, bool executing) {
+    const ggml_tensor * w = dst->src[0];
+    const ggml_tensor * x = dst->src[1];
+    const bool routed = dst->op == GGML_OP_MUL_MAT_ID;
+    const ggml_tensor * ids = routed ? dst->src[2] : nullptr;
+    if (!ggml_hip_rocmfp4_fast_device(device) ||
+            !x || (routed && !ids) || x->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32 ||
+            ggml_prec_get_src(dst, 1) != GGML_PREC_UNDEFINED ||
+            (ggml_prec_get_acc(dst) != GGML_PREC_UNDEFINED && ggml_prec_get_acc(dst) != GGML_PREC_F32)) {
+        return false;
+    }
+    if (const char * env = getenv("GGML_CUDA_CUBLAS_COMPUTE_TYPE")) {
+        std::string setting(env);
+        for (char & c : setting) {
+            c = std::tolower(static_cast<unsigned char>(c));
+        }
+        if (setting != "auto" && setting != "f32" && setting != "fp32") {
+            return false;
+        }
+    }
+    for (const ggml_tensor * t : {w, x, dst, ids}) {
+        if (!t) {
+            continue;
+        }
+        for (int d = 0; d < 4; ++d) {
+            if (t->ne[d] <= 0 || t->ne[d] > INT32_MAX || t->nb[d] > INT64_MAX / 32) {
+                return false;
+            }
+        }
+        if (t->ne[3] != 1 || !rocmfp4_fast_storage(t, device, executing, t == dst)) {
+            return false;
+        }
+    }
+
+    const int64_t k = w->ne[0], m = w->ne[1];
+    const int64_t slots = dst->ne[1], tokens = dst->ne[2];
+    const int64_t rows = slots * tokens;
+    if (k % 32 || x->ne[0] != k || dst->ne[0] != m || k * m > INT32_MAX ||
+            rows > INT32_MAX || rows * k > INT32_MAX || rows * m > INT32_MAX ||
+            w->nb[1] < size_t(k / 32 * 17) || w->nb[1] % 17 ||
+            w->nb[1] / 17 > INT32_MAX / 32 || (m == 1 && w->nb[1] != size_t(k / 32 * 17)) || w->nb[2] % 17 || w->nb[2] < (m - 1) * w->nb[1] + k / 32 * 17) {
+        return false;
+    }
+    if (routed) {
+        if (rows > UINT32_MAX / CUDA_GET_ROWS_BLOCK_SIZE || ids->type != GGML_TYPE_I32 || ids->ne[2] != 1 || ids->ne[0] != slots || ids->ne[1] != tokens ||
+                ids->nb[1] % 4 || ids->nb[1] < size_t(4 * slots) || slots % x->ne[1] || x->ne[2] != tokens) {
+            return false;
+        }
+    } else if (w->ne[2] != 1 || x->ne[2] != 1 || tokens != 1 || x->ne[1] != slots) {
+        return false;
+    }
+    for (const ggml_tensor * t : {x, dst}) {
+        size_t stride = sizeof(float);
+        for (int d = 0; d < 4; ++d) {
+            if (t->nb[d] != stride) {
+                return false;
+            }
+            stride *= t->ne[d];
+        }
+    }
+    return true;
+}
+#endif
+
 static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     GGML_TENSOR_BINARY_OP_LOCALS
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+        GGML_ASSERT(rocmfp4_fast_supported(dst, ctx.device, true));
+        ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>(ctx, src0, src1, dst);
+        return;
+    }
+#endif
     if (ggml_cuda_op_mul_mat_use_fwht(dst) && ggml_cuda_op_fwht(ctx, src1, dst)) {
         return;
     }
@@ -2603,6 +2760,11 @@ static bool ggml_cuda_mul_mat_id_needs_sync(const ggml_tensor * dst, const int c
     const ggml_tensor * src1 = dst->src[1];
     const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+        return true;
+    }
+#endif
     if (src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
         return true;
     }
@@ -2649,6 +2811,11 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
 
     // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+        GGML_ASSERT(rocmfp4_fast_supported(dst, ctx.device, true));
+    } else
+#endif
     if (src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
         // up to 24 tokens few-row MMQ is faster than MMQ, on DGX Spark also faster than MMVQ
         const bool use_mmq_few = ggml_cuda_should_use_mmq_few(src0, src1, ids, cc);
@@ -2718,13 +2885,27 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
     ggml_cuda_pool_alloc<char>  dst_sorted(ctx.pool(), ne2 *n_expert_used* ne0*ts_dst_sorted);
 
     std::vector<char> ids_host(ggml_nbytes(ids));
-    CUDA_CHECK(cudaMemcpyAsync(ids_host.data(), ids->data, ggml_nbytes(ids), cudaMemcpyDeviceToHost, stream));
-    CUDA_CHECK(cudaStreamSynchronize(stream));
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (src0->type == GGML_TYPE_ROCMFP4_FAST && ggml_backend_buffer_is_host(ids->buffer)) {
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        memcpy(ids_host.data(), ids->data, ids_host.size());
+    } else
+#endif
+    {
+        CUDA_CHECK(cudaMemcpyAsync(ids_host.data(), ids->data, ggml_nbytes(ids), cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+    }
 
     for (int64_t i02 = 0; i02 < ne02; ++i02) { // expert matrices
         for (int64_t i12 = 0; i12 < ne12; ++i12) { // tokens
             for (int64_t iex = 0; iex < n_expert_used; ++iex) {
                 const int32_t expert_to_use = *(const int32_t *)(ids_host.data() + i12*ids->nb[1] + iex*ids->nb[0]);
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+                if (src0->type == GGML_TYPE_ROCMFP4_FAST && expert_to_use == -1) {
+                    ids_from_sorted_host[i12*n_expert_used + iex] = -1;
+                    continue;
+                }
+#endif
                 assert(expert_to_use >= 0 && expert_to_use < ne02);
                 if (expert_to_use == i02) {
                     ids_from_sorted_host[i12*n_expert_used + iex] = ids_to_sorted_host.size();
@@ -2736,6 +2917,22 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
             }
         }
     }
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (src0->type == GGML_TYPE_ROCMFP4_FAST && ids_to_sorted_host.size() < size_t(ne_get_rows)) {
+        // Skipped slots share the first unused sorted output row.
+        const int32_t zero_row = int32_t(ids_to_sorted_host.size());
+        size_t skipped = 0;
+        for (int32_t & row : ids_from_sorted_host) {
+            if (row == -1) {
+                row = zero_row;
+                ++skipped;
+            }
+        }
+        GGML_ASSERT(ids_to_sorted_host.size() + skipped == size_t(ne_get_rows));
+        ids_to_sorted_host.resize(ne_get_rows, 0);
+        CUDA_CHECK(cudaMemsetAsync(dst_sorted.ptr + size_t(zero_row)*ne0*sizeof(float), 0, ne0*sizeof(float), stream));
+    }
+#endif
     GGML_ASSERT(ids_to_sorted_host.size() == size_t(ne_get_rows));
 
     ids_to_sorted_host.insert(ids_to_sorted_host.end(), ids_from_sorted_host.begin(), ids_from_sorted_host.end());
@@ -2796,6 +2993,16 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         dst_slice.nb[3]  = dst_slice.ne[2] * dst_slice.nb[2];
         dst_slice.data   = dst_data_cur;
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        if (src0->type == GGML_TYPE_ROCMFP4_FAST) {
+            const size_t src_offset = src1_data_cur - src1_sorted.ptr;
+            const size_t dst_offset = dst_data_cur - dst_sorted.ptr;
+            GGML_ASSERT(src_offset <= src1_sorted.actual_size && src1_slice.nb[2] <= src1_sorted.actual_size - src_offset);
+            GGML_ASSERT(dst_offset <= dst_sorted.actual_size && dst_slice.nb[2] <= dst_sorted.actual_size - dst_offset);
+            // The outer op validated all expert addresses. Sorted slices belong to the pool.
+            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>(ctx, &src0_slice, &src1_slice, &dst_slice);
+        } else
+#endif
         ggml_cuda_mul_mat(ctx, &src0_slice, &src1_slice, &dst_slice);
         CUDA_CHECK(cudaGetLastError());
 
@@ -2809,7 +3016,56 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         nb1, nb2, nb3, stream);
 }
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+static bool rocmfp4_fast_op(const ggml_tensor * op) {
+    return (op->op == GGML_OP_MUL_MAT || op->op == GGML_OP_MUL_MAT_ID) &&
+           op->src[0]->type == GGML_TYPE_ROCMFP4_FAST;
+}
+
+// The scheduler can leave compatible pinned buffers in place on an integrated GPU.
+static void rocmfp4_fast_stage_host(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+    GGML_ASSERT(rocmfp4_fast_supported(dst, ctx.device, true));
+    ggml_tensor op = *dst;
+    ggml_tensor activation;
+    ggml_backend_buffer_ptr input_buffer, output_buffer;
+    auto stage = [&](ggml_tensor & local, ggml_backend_buffer_ptr & buffer) {
+        buffer.reset(ggml_backend_buft_alloc_buffer(ggml_backend_cuda_buffer_type(ctx.device), ggml_nbytes(&local)));
+        GGML_ASSERT(buffer);
+        local.buffer = buffer.get();
+        local.data = ggml_backend_buffer_get_base(local.buffer);
+        local.view_src = nullptr;
+        local.view_offs = 0;
+    };
+    const ggml_tensor * x = dst->src[1];
+    if (ggml_backend_buffer_is_host(x->buffer)) {
+        activation = *x;
+        stage(activation, input_buffer);
+        CUDA_CHECK(cudaMemcpyAsync(activation.data, x->data, ggml_nbytes(x), cudaMemcpyHostToDevice, ctx.stream()));
+        op.src[1] = &activation;
+    }
+    if (ggml_backend_buffer_is_host(dst->buffer)) {
+        stage(op, output_buffer);
+    }
+    if (op.op == GGML_OP_MUL_MAT_ID) {
+        ggml_cuda_mul_mat_id(ctx, &op);
+    } else {
+        ggml_cuda_mul_mat(ctx, op.src[0], op.src[1], &op);
+    }
+    if (output_buffer) {
+        CUDA_CHECK(cudaMemcpyAsync(dst->data, op.data, ggml_nbytes(dst), cudaMemcpyDeviceToHost, ctx.stream()));
+    }
+    CUDA_CHECK(cudaStreamSynchronize(ctx.stream()));
+}
+#endif
+
 static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct ggml_tensor * dst) {
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+    if (rocmfp4_fast_op(dst) && (ggml_backend_buffer_is_host(dst->buffer) ||
+            ggml_backend_buffer_is_host(dst->src[1]->buffer))) {
+        rocmfp4_fast_stage_host(ctx, dst);
+        return true;
+    }
+#endif
     switch (dst->op) {
         case GGML_OP_ARGMAX:
             ggml_cuda_argmax(ctx, dst);
@@ -3322,6 +3578,11 @@ static bool ggml_cuda_graph_check_compability(ggml_cgraph * cgraph) {
             continue;
         }
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        if (rocmfp4_fast_op(node)) {
+            return false;
+        }
+#endif
         // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
         if (node->op == GGML_OP_MUL_MAT_ID) {
             const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
@@ -5487,6 +5748,11 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 for (int j = 0; j < GGML_MAX_SRC; j++) {
                     if (node->src[j] != nullptr) {
                         assert(node->src[j]->buffer);
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+                        if (j > 0 && rocmfp4_fast_op(node) && ggml_backend_buffer_is_host(node->src[j]->buffer)) {
+                            continue; // FAST stages host inputs before dispatch.
+                        }
+#endif
                         assert(node->src[j]->buffer->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) ||
                                (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
                     }
@@ -6403,6 +6669,11 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
             {
                 struct ggml_tensor * a = op->src[0];
                 struct ggml_tensor * b = op->src[1];
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+                if (a->type == GGML_TYPE_ROCMFP4_FAST) {
+                    return rocmfp4_fast_supported(op, dev_ctx->device, false);
+                }
+#endif
                 if (a->nb[0] != ggml_element_size(a) || b->nb[0] != ggml_element_size(b)) {
                     return false; // TODO this could in principle be implemented though currently there is no use case.
                 }

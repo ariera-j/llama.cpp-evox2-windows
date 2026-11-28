@@ -142,3 +142,8 @@ if (GGML_HIP_RCCL)
 endif()
 
 target_link_libraries(ggml-hip PRIVATE ggml-base hip::host roc::rocblas roc::hipblas)
+
+if (WIN32 AND GGML_HIP_ROCMFP4_TEST)
+    target_compile_definitions(ggml-hip PRIVATE GGML_HIP_ROCMFP4_TEST)
+    target_sources(ggml-hip PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/evox2/hip2a/harness.cpp")
+endif()

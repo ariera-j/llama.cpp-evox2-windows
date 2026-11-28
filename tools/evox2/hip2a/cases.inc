@@ -1,0 +1,11 @@
+// id, operation, K, M, E, T, S, B, row padding (blocks), expert padding (blocks), weight offset (blocks), ID pitch (I32), expected SGEMMs
+CASE("1",    F32_C,  32, 256, 1, 1, 1, 1, 0, 0, 1, 0, 0)
+CASE("1-NC", F32_NC, 32, 256, 1, 1, 1, 1, 1, 0, 1, 0, 0)
+CASE("2",    F16_NC,160, 256, 1, 1, 1, 1, 1, 0, 1, 0, 0)
+CASE("2-C",  F16_C, 160, 256, 1, 1, 1, 1, 0, 0, 1, 0, 0)
+CASE("5",    MM,      32,  3, 1, 1, 1, 1, 0, 0, 0, 0, 1)
+CASE("6",    MM,     160,  5, 1, 1, 7, 7, 1, 0, 1, 0, 1)
+CASE("7",    MM_ID,   32,  3, 4, 1, 2, 1, 0, 0, 0, 2, 2)
+CASE("8",    MM_ID,  160,  5, 4, 3, 2, 2, 0, 0, 0, 512, 2)
+CASE("9",    MM_ID,  640,  7, 3, 5, 2, 1, 1, 3, 2, 4, 3)
+CASE("9-Z",    MM_ID,  640,  7, 3, 5, 2, 1, 1, 3, 2, 4, 0)

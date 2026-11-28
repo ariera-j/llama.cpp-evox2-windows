@@ -1,6 +1,30 @@
 #include "common.cuh"
 #include "convert.cuh"
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+#include "../../rocmfp4/rocmfp4.h"
+
+static_assert(GGML_TYPE_ROCMFP4_FAST == 101 && QK_ROCMFP4 == 32);
+static_assert(sizeof(block_rocmfp4_fast) == 17 && alignof(block_rocmfp4_fast) == 1);
+static_assert(offsetof(block_rocmfp4_fast, e) == 16);
+
+static __device__ __forceinline__ float rocmfp4_fast_value(int code, float scale) {
+    const int magnitude[8] = {0, 1, 2, 3, 4, 6, 8, 10};
+    const float value = magnitude[code & 7] * scale;
+    return code > 8 ? copysignf(value, -1.0f) : value;
+}
+
+static __device__ __forceinline__ void dequantize_rocmfp4_fast(const void * vx, int64_t ib, int j, float2 & v) {
+    const block_rocmfp4_fast & block = static_cast<const block_rocmfp4_fast *>(vx)[ib];
+    const int b = block.e;
+    const int m = b & 7;
+    const float scale = b > 126 ? 0.0f : b < 8 ? m * 0x1p-10f : ldexpf(float(8 + m), (b >> 3) - 11);
+    const int packed = block.qs[j];
+    v.x = rocmfp4_fast_value(packed & 15, scale);
+    v.y = rocmfp4_fast_value(packed >> 4, scale);
+}
+#endif
+
 static __device__ __forceinline__ void dequantize_q1_0(const void * vx, const int64_t ib, const int iqs, float2 & v){
     const block_q1_0 * x = (const block_q1_0 *) vx;
 

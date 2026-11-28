@@ -1325,6 +1325,13 @@ const ggml_cuda_device_info & ggml_cuda_info();
 void ggml_cuda_set_device(int device);
 int ggml_cuda_get_device();
 
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+inline bool ggml_hip_rocmfp4_fast_device(int device) {
+    const auto & info = ggml_cuda_info();
+    return info.device_count == 1 && device == 0 && info.devices[device].cc == GGML_CUDA_CC_OFFSET_AMD + 0x1151;
+}
+#endif
+
 bool ggml_cuda_pool_debug_enabled();
 
 struct ggml_cuda_pool {

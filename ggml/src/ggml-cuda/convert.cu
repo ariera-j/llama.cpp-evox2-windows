@@ -554,6 +554,13 @@ to_bf16_cuda_t ggml_get_to_bf16_cuda(ggml_type type) {
 
 to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
     switch (type) {
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        case GGML_TYPE_ROCMFP4_FAST:
+            if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
+                return nullptr;
+            }
+            return dequantize_block_cont_cuda<32, 2, dequantize_rocmfp4_fast>;
+#endif
         case GGML_TYPE_Q1_0:
             return dequantize_block_cont_cuda<QK1_0, QR1_0, dequantize_q1_0>;
         case GGML_TYPE_Q2_0:
@@ -616,6 +623,13 @@ to_fp16_cuda_t ggml_get_to_fp16_cuda(ggml_type type) {
 
 to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
     switch (type) {
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        case GGML_TYPE_ROCMFP4_FAST:
+            if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
+                return nullptr;
+            }
+            return dequantize_block_cont_cuda<32, 2, dequantize_rocmfp4_fast>;
+#endif
         case GGML_TYPE_Q1_0:
             return dequantize_block_cont_cuda<QK1_0, QR1_0, dequantize_q1_0>;
         case GGML_TYPE_Q2_0:
@@ -675,6 +689,13 @@ to_fp32_cuda_t ggml_get_to_fp32_cuda(ggml_type type) {
 
 to_fp16_nc_cuda_t ggml_get_to_fp16_nc_cuda(ggml_type type) {
     switch (type) {
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        case GGML_TYPE_ROCMFP4_FAST:
+            if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
+                return nullptr;
+            }
+            return dequantize_block_cuda<32, 2, dequantize_rocmfp4_fast>;
+#endif
         case GGML_TYPE_F32:
             return convert_unary_cuda<float>;
         case GGML_TYPE_Q1_0:
@@ -729,6 +750,13 @@ to_bf16_nc_cuda_t ggml_get_to_bf16_nc_cuda(ggml_type type) {
 
 to_fp32_nc_cuda_t ggml_get_to_fp32_nc_cuda(ggml_type type) {
     switch (type) {
+#if defined(GGML_USE_HIP) && defined(_WIN32)
+        case GGML_TYPE_ROCMFP4_FAST:
+            if (!ggml_hip_rocmfp4_fast_device(ggml_cuda_get_device())) {
+                return nullptr;
+            }
+            return dequantize_block_cuda<32, 2, dequantize_rocmfp4_fast>;
+#endif
         case GGML_TYPE_F16:
             return convert_unary_cuda<half, float>;
         case GGML_TYPE_Q1_0:
