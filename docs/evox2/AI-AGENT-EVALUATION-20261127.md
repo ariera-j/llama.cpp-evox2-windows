@@ -357,7 +357,7 @@ H7 に続き ThinkPad のワークスペース内で Python 標準ライブラ�
 | test_evaluate_benchmark_safety.py | d395c57dc12b1dd1b409f99ecbd48f386005414777b3731218965acf732d51e5 |
 | README.md | de8ef2db8d9a879c4a5645e15836c3b45c6ba306526c5b37b048f5565436bf7d |
 
-通常ケース、H7の8ケース、必須欠損、不正型、NaN/Infinity、境界、複数異常を検証した点は評価できる。追加の独立試験では (1) 10**400 の整数を RAM 値に渡すと math.isfinite で OverflowError、(2) JSON の ssh_completed に false と true を重複記載すると後者が採用され CONTINUE、(3) expected/before/after P-MODE を全て Unknown にすると CONTINUE、(4) WER の record_id/description 不在、時刻確認済み・期間外というフラグのみでも CONTINUE を再現。期間外と過去発生の区別やイベントのカーソル範囲照合はアダプターの契約を含めて要設計。CLI は STOP でも正常JSON出力なら exit 0（README記載の仕様）なので、統合時は decision を厳密に検査し、例外・非ゼロ終了・欠損・不正出力も停止扱いとする必要がある。README の WER 説明「いずれかが未確認または true」は条件の記述が曖昧。実際の承認済み閾値との照合や実ログアダプターは未実装。H8 は試作能力として合格、本番の安全判定としては未承認。今回は追加修正・本番統合を保留し、ソースは運用者側の試作品として保持（GitHubには評価記録のみ）。
+通常ケース、H7の8ケース、必須欠損、不正型、NaN/Infinity、境界、複数異常を検証した点は評価できる。追加の独立試験では (1) 10**400 の整数を RAM 値に渡すと math.isfinite で OverflowError、(2) JSON の ssh_completed に false と true を重複記載すると後者が採用され CONTINUE、(3) expected/before/after P-MODE を全て Unknown にすると CONTINUE、(4) WER の record_id/description 不在、時刻確認済み・期間外というフラグのみでも CONTINUE を再現。期間外と過去発生の区別やイベントのカーソル範囲照合はアダプターの契約を含めて要設計。CLI は STOP でも正常JSON出力なら exit 0（README記載の仕様）なので、統合時は decision を厳密に検査し、例外・非ゼロ終了・欠損・不正出力も停止扱いとする必要がある。README の WER 説明「いずれかが未確認または true」は条件の記述が曖昧。実際の承認済み閾値との照合や実ログアダプターは未実装。H8 は試作能力として合格、本番の安全判定としては未承認。今回は追加修正・本番統合を保留し、ソースは当初運用者側の試作品として保持し、後に非公開実験リポジトリに原版とレビューを保存（第17節）。
 
 | 観測 | Gemini weekly | Gemini 5h |
 |---|---:|---:|
@@ -370,3 +370,42 @@ H7 に続き ThinkPad のワークスペース内で Python 標準ライブラ�
 Claude/GPT weekly 4.51%不変。H8の承認回数は0回（運用者の追加報告で確認）。proceed-in-sandbox で指定されたローカル実装と単体テストを承認操作なしで完了。H7後と同一Conversationを意図。実壁時間、トークン・キャッシュ等は未取得。次はセッションログの保存形式と取得可能指標の調査、導入手順の文書化をもって初期評価を終了する。Low比較、OpenCode導入、試作品の本番統合は保留し、llama.cppの高速化・ROCmFP4対応へ復帰する。
 
 AGENTS.md の誤操作防止として root:antigravity / 0440 に加え ext4 の immutable 属性を設定する案を提示。親ディレクトリが書き込み可能なら所有者・モードだけでは unlink/rename を防げない。対象ファイルの設定は実機確認待ちであり、ワークスペース全体や参照用 clone を強制的に保護する境界ではない。
+
+## 17. Antigravity CLI セッションログ調査と初期評価の完了（2026-11-28）
+
+運用者が CLI 終了後に Python sqlite3 の読み取り専用接続と CLI ログのキーワード集計を実行した結果。対象は H0〜H6 と H7〜H8 の2セッション。生ログ・会話DB・認証情報は GitHub へ保存しない。集計値は運用者提供出力に基づき、ChatGPT は実機 DB の原本を直接照合していない。
+
+| 指標 | H0〜H6 | H7〜H8 | 合計 |
+|---|---:|---:|---:|
+| DB bytes | 6553600 | 1966080 | 8519680 |
+| steps | 171 | 36 | 207 |
+| gen_metadata | 61 | 10 | 71 |
+| executor_metadata | 14 | 2 | 16 |
+| step_type 14 | 10 | 2 | 12 |
+| step_type 15 | 61 | 10 | 71 |
+| step_type 101 | 17 | 1 | 18 |
+| step_type 132 | 83 | 23 | 106 |
+
+全 steps は status=3 / step_format=0。error_details、permissions、render_info は全行NULL。task_details は前者3件が非NULL、後者は全NULL。gen_metadata.data、executor_metadata.data、trajectory_metadata_blob.data、steps.metadata、steps.step_payload と非NULL task_details は全て OTHER_BINARY_OR_TEXT（JSON・GZIP/ZSTD magic・候補ZLIBヘッダに該当しない）。Protocol Buffers等の可能性はあるが未確定。step_type 15 件数が gen_metadata 件数と一致し、14 はユーザー指示数と整合するが enum 定義未確認。モデル/API呼出し回数、ユーザーターン数、ツール回数、失敗回数への換算はしない。summaries DB は8会話、FTS 16行。会話本文は取得しない。
+
+| CLI ログのキーワード行数 | H0〜H6 | H7〜H8 |
+|---|---:|---:|
+| token | 17 | 12 |
+| usage | 0 | 1 |
+| quota | 34 | 9 |
+| cache | 10 | 8 |
+| thinking | 0 | 0 |
+| latency | 10 | 2 |
+| duration | 141 | 30 |
+| approval | 1 | 0 |
+| permission | 44 | 3 |
+| tool_call / compact / compression | 各0 | 各0 |
+| error | 11 | 10 |
+
+runner.go:961 の duration 行140/30、latency_breakdown.go:168 の latency 行10/2、quota_manager.go:68 の quota 行33/8。input_loop.go:821 の permission 行41/0、設定管理ソースの permission 行3/3。token/cache は認証・初期化関連の出力を含む可能性があり、使用量と同定できない。duration 行の内容・単位・重複、latency 内訳、実承認待ち時間は今回未解析。permission 行の減少は設定変更後の承認0回と整合するが、作業量が違い比較対照ではない。BLOB 内部形式解析は保留。
+
+H0〜H8 は 5h 約17.03pt（H0開始100%推定）、weekly 4.13pt＋H0未測分。H7/H8 は新規Conversation＋proceed-in-sandbox で承認各0回。実トークン・キャッシュ効率・圧縮・正確な推論/承認待ち時間は不明であり Codex のトークンログと直接比較しない。H8 原版3ファイルとレビューは非公開実験リポジトリの commit 84e4664793a2150e1967554783fdaf62e268799b に保全済み、本番未採用。
+
+導入・運用記録: [ANTIGRAVITY-CLI-SETUP-20261128.md](automation/ANTIGRAVITY-CLI-SETUP-20261128.md)。読み取り専用集計ツール: [inspect_antigravity_logs.py](../../tools/evox2/automation/inspect_antigravity_logs.py)。統合版は模擬 DB/ログで検証済み、実機への適用は未確認。既存の製品コード・安全ゲートは未変更。
+
+初期評価はここで終了。次は現行ブランチと Neon/Sonnet の高速化候補を照合し、ROCmFP4対応またはPP/TG高速化へ進む。OpenCodeの追加導入・Low比較・共通コントローラー本番実装・ログBLOB解析は保留する。
