@@ -59,7 +59,7 @@ A1/A2 は同じ詳細プロンプトで両方とも Sparse FA を最上位に選
 |---|---|---|
 | 広範囲の独立調査 | Neon Medium/High Cloud | 今回有用、Highを積極利用する仮説 |
 | 限定設計レビュー | Sonnet/Opus または OpenRouter | Claude枠の制約大、短い範囲で評価予定 |
-| 計測/ログ解析/定型作業 | Hydrogen CLI、OpenCodeの低価格モデル | Hydrogen H0/H1 初期確認済み（第8節）、実計測とOpenCodeは未試用 |
+| 計測/ログ解析/定型作業 | Hydrogen CLI、OpenCodeの低価格モデル | Hydrogen H0〜H5 初期合格（第8〜12節）、定型計測の実用候補。OpenCodeは未評価 |
 | 小規模実装 | Hydrogen、Neon、OpenCode | 未試用、既存正解を隠した再実装等 |
 | 実機検証・製品統合 | Codex | 既存環境で運用中 |
 
@@ -239,3 +239,41 @@ Claude/GPT weekly は4.51%のまま。H3の承認は運用者計数で6回（SSH
 | H0含む累計 | 1.69pt + H0未測分 | 約7.24pt |
 
 Claude/GPT weekly 4.51%不変。純粋な壁時間未記録。H3→H4で承認6→3回、作業内容は異なるが関連処理集約は実用的。包括的SSH承認不要。次はH5 32k日本語論文、Vulkan IQ3 PLE16 同じ既存ビルド1runを候補。Stage2のUMA96 GiB 64k成功記録はあるが32k同条件の既存Planは未確認。既存設定・安全条件の照合とPlanOnly（単一条件の既存MeasureならDryRunと同等の外側安全監査）を経て個別承認し、条件を確定できなければ実行せず停止。旧IQ3・UMA64 GiBの32k基準を同条件の性能比較に使わない。
+
+## 12. Hydrogen Medium H5: 32k 日本語論文入力（2026-11-28）
+
+H0〜H5 同一 Conversation / Hydrogen Medium / 固定文書 SHA。運用者によれば H4 前に VMware Ubuntu の OpenCode と EVO-X2 llama-server の接続試験を行い、その後 EVO-X2 を1回再起動した。H4 の起動時刻 2026-11-28T02:39:39.500Z、計測開始付近の OS uptime 916.5秒。H5 は同じ起動期間を意図したが H5 報告には OS 起動時刻・uptime の実測値がないため同一期間の独立確認は未実施。
+
+既存 Matrix に希望条件の32k定義がなく、設定を変更せず標準 Measure-LlamaCli.ps1 の DryRun と外側の前後安全確認を選択。SSH 3回（事前＋DryRun、実計測、事後集計）、運用者承認4回（内訳未計数）。1件正常終了、追加計測・再試行・手戻りなしとの報告。計測中は既存実行の task 状態確認1回、15秒ハートビートを確認。新規独立計測タスクではない。
+
+- Run ID `20261128-120941-872-cli-vulkan-b12676-ctx32768-19f83241c073`、Condition ID `19f83241c073`、標準ログルートに保存。
+- VulkanStage2 b12676 / eea8dcefc / Clang 22.1.3、CLI SHA-256 は H3/H4 と同じ、RuntimeArtifactStatus Verified。製品 HEAD a650d641、clean との報告。IQ3 PLE16、49/49 GPU。
+- nlp-survey-ch3-d3-b1.txt、SHA-256 `1709ebfd6f2e005d94af03fe7029e8d4d87f66ba1a22a226d9f63da6a003b601` は既存記録と一致。UMA96、Performance、ctx32768、n256、t/tb4、b2048/ub1024、KV f16、FA auto、Fit OFF、MTP OFF、cache-ram 0、temp0、top-p0.8、reasoning OFF、jinja、single-turn、seed1234、ctx-checkpoints0、no-display-prompt、Vulkan0。warmupの実効設定と全実行引数は今回の最終報告では未明示。通常2秒、ADLX 2000ms、RAM詳細250ms、フェーズマーカー有効。
+
+| 指標 | H5 |
+|---|---:|
+| PP / TG tok/s | 483.20 / 27.59 |
+| 入力 / 生成 / TG計時対象 | 29557 / 256 / 255 |
+| PP / TG 計時 s | 61.16877 / 9.24350 |
+| 起動→Context / Warmup 行受信 s | 151.492 / 151.494 |
+| プロセス / ラッパー s | 222.818 / 241.126 |
+| 詳細RAM 最大使用 / 最低空き / コミット最大 GiB | 7.841 / 23.806 / 88.512 |
+| 通常 / ADLX / 詳細RAM 行数 | 88 / 116 / 900 |
+| 監視品質 | Partial / Complete / Complete |
+| 詳細RAM 間隔平均 / 最大 ms | 256.808 / 292.675 |
+| GPU Local 最大 GiB / ADLX VRAM 最大 MB | 78.927 / 80642 |
+| GPU 温度 / 電力 最大 | 74 C / 124 W |
+
+安全確認は ExitCode 0 / OK、競合・残留0、Performance維持、空きRAM 25.989→26.119 GiB、コミット7.531→7.584 GiB、GPU Dedicated 0.370→0.370 GiB、System/Application 新規各0件との報告。1 GiB未満の詳細RAMサンプル0。通常監視 PID GPU 一部 Partial、背景CPU取得不可、ADLX非対応2項目、WMI/CIM制約、ページファイル使用量未測定。PP/TGの算術は報告値と整合。生成に明らかな異常なしとの報告だが独立品質評価ではない。ChatGPTは実機原本・承認画面を直接閲覧していない。
+
+Context 行受信151.492秒は H4 50.184秒より101.308秒長い。ネイティブ load time は未出力。Context/入力条件が異なるためこの差をモデルロード時間差と確定しないが、過去の [モデルロード低速調査](automation/B12651-MODEL-LOAD-BASELINE-20261126.md) の追加候補として生ログを保全し、容量報告→Context とディスク/ページ入力/ADLX 時系列を別途確認する価値がある。PagesInput_PerSec 最大506155.5/s、平均94206.1/s は全区間の集約であり、ファイルマッピング等を含みページファイルI/OやRAM逼迫の直接証拠ではない。旧IQ3 Original b12660/UMA64の32kと同条件ではなく、性能回帰・改善の判定を行わない。
+
+| 観測 | Gemini weekly | Gemini 5h |
+|---|---:|---:|
+| H4終了後 | 89.74% | 92.76% |
+| H5終了後 | 89.30% | 91.00% |
+| H5消費（表示差） | 0.44pt | 1.76pt |
+| H1〜H5累計 | 2.13pt | 8.51pt |
+| H0含む累計 | 2.13pt + H0未測分 | 約9.00pt |
+
+Claude/GPT weekly 4.51%不変。H4/H5 ラッパー時間77.190→241.126秒（約3.12倍）でも利用枠差1.78→1.76ptと同程度。各1件・同一セッションでの観測であり、トークン数やキャッシュ寄与、純粋な壁時間は未取得。H5 は初期合格、定型計測の実用候補。複数runや異常時の実際の停止判断、GitHub書き込み、実装は引き続き未評価。次は H6 計測記録作成・レビュー済み文書のみの GitHub 保存、H7 保存済み異常ログの模擬停止判断、H8 小規模実装。
