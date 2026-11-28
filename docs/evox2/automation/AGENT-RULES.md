@@ -21,6 +21,7 @@ Codex、OpenCode などが ThinkPad から EVO-X2 の専用 clone を操作す�
 ## 文書の正本と同期
 
 - GitHub の `main` を共通ドキュメントと確定済み調査記録の正本とする。作業前に GitHub の `main` の SHA を確認し、[運用ルール](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/AGENT-RULES.md)、[実機環境](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/EVOX2-ENVIRONMENT.md)、[ランブック](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/RUNBOOK.md)、[既知の問題](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/KNOWN-ISSUES.md) と対象の検証記録を読む。必要な運用文書を確認できなければ停止して報告する。
+- GitHub 側の対象 ref が指定 SHA と一致し、実機 clone の remote-tracking ref だけが古い場合は、承認範囲内で該当 ref を fetch し、指定 SHA と再照合できる。GitHub 側の SHA が異なる場合、fetch 後も不一致の場合、または作業ツリーに想定外の変更がある場合は停止する。main の一括 merge と強制 reset は行わない。
 - 性能計測の計画・実行前に GitHub の `main` にある [BENCHMARK-RULES.md](https://github.com/ariera-j/llama.cpp-evox2-windows/blob/main/docs/evox2/automation/BENCHMARK-RULES.md) を必ず確認する。
 - 共通の計測ツールは GitHub の main を正本とする。実験ソース、実験固有の計測・検証スクリプト、未採用パッチは作業ブランチに置く。確定した Markdown、結果 CSV、マニフェスト、実行ログの必要な部分を文書専用コミットで `main` に反映する。実験で使用したブランチ、ソース SHA、ビルド識別情報、実行条件、生ログの所在を記録し、実装やスクリプトの参照は実行時のコミットに固定する。
 - 共通のビルドツールは GitHub の `main` を正本とする。現行製品と実験ブランチへは採用コミットと対象パスを固定し、差分を確認して取り込む。ビルド元の製品 SHA とツールの採用元を記録する。詳しい手順は [ビルドツールの統合記録](BUILD-INTEGRATION.md) を参照する。
